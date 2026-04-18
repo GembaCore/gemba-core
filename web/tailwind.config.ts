@@ -1,17 +1,14 @@
 import type { Config } from 'tailwindcss';
+import animate from 'tailwindcss-animate';
 
-// Keep this config minimal; shadcn/ui initialization will extend it.
+// Minimal scaffold config. The app-shell polecat (gm-e4.1) extends this
+// with shadcn/ui design tokens. tailwindcss-animate ships with shadcn so
+// component primitives (Dialog, DropdownMenu, …) animate correctly.
 export default {
   darkMode: ['class'],
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
-    extend: {
-      fontFamily: {
-        // Intentionally not picking a font here; the frontend polecat
-        // gets to make that call as part of gm-e4.1 (app shell). See
-        // the frontend-design skill for taste guidance.
-      },
-    },
+    extend: {},
   },
-  plugins: [],
+  plugins: [animate],
 } satisfies Config;

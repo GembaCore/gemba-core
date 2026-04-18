@@ -31,7 +31,7 @@ function Nav() {
   );
   return (
     <nav className="flex gap-1 items-center px-4 h-12 border-b border-neutral-800">
-      <span className="font-semibold mr-4">bullet farm</span>
+      <span className="font-semibold mr-4">Gemba</span>
       {link('/', 'Home')}
       {link('/health', 'Health')}
       <span className="ml-auto text-xs text-neutral-500">scaffold</span>
@@ -47,9 +47,9 @@ function Home() {
         This is the gm-e1.4 placeholder. Real app shell lands with gm-e4.1.
       </p>
       <p className="text-neutral-400">
-        The build toolchain is live: React 18, TypeScript, Tailwind,
-        TanStack Query, React Router. The frontend talks to the Go backend
-        through <code className="text-neutral-200">/api/*</code>.
+        The build toolchain is live: React 18, TypeScript, Tailwind, TanStack Query, React Router.
+        The frontend talks to the Go backend through{' '}
+        <code className="text-neutral-200">/api/*</code>.
       </p>
     </div>
   );
@@ -68,8 +68,7 @@ function Health() {
         <div className="text-red-400">
           {(error as Error).message}
           <p className="mt-2 text-sm text-neutral-500">
-            Is <code>gemba serve</code> running? In dev, Vite proxies to
-            :7666 by default.
+            Is <code>gemba serve</code> running? In dev, Vite proxies to :7666 by default.
           </p>
         </div>
       )}
