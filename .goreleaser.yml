@@ -1,0 +1,68 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: bc
+    main: ./cmd/gemba
+    binary: bc
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+      - freebsd
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+      - goos: freebsd
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.ShortCommit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: bc
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: '{{ incpatch .Version }}-next'
+
+release:
+  draft: true
+  prerelease: auto
+
+# Enabled in gm-e8.2 once the tap repo exists and HOMEBREW_TAP_TOKEN is set.
+# brews:
+#   - name: gemba
+#     repository:
+#       owner: YOUR_ORG
+#       name: homebrew-tap
+#       token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
+#     homepage: https://github.com/YOUR_ORG/gemba
+#     description: Atlassian-style UI for Gas Town
+#     license: MIT
+#     test: |
+#       system "#{bin}/gemba version"

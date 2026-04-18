@@ -1,0 +1,48 @@
+# Build outputs
+/bin/
+/dist/
+/tmp/
+web/dist/*
+!web/dist/.keep
+web/node_modules/
+
+# Go
+*.test
+*.out
+/vendor/
+
+# Frontend
+web/.vite/
+.vite/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Secrets (never commit)
+.env
+.env.local
+*.pem
+*.key
+*.crt
+
+# Audit log produced at runtime
+~/.bc/
+
+# Gas Town (added by gt)
+.runtime/
+.claude/
+.logs/
+__pycache__/
+state.json
+CLAUDE.md
+CLAUDE.local.md
+
+# Rig-level beads config (machine-specific; storage is in Dolt server)
+.beads/
+.beads/
+mail/
+.DS_Store

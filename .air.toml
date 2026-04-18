@@ -1,0 +1,16 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/bc ./cmd/gemba"
+  bin = "./tmp/bc"
+  args_bin = ["serve", "--port", "7666"]
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "web", "bin", "dist", "node_modules", ".git"]
+  delay = 300
+
+[log]
+  time = false
+
+[misc]
+  clean_on_exit = true

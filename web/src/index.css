@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Defer real theming to gm-e4.1. For now, keep the shell neutral so the
+ * polecat executing the app-shell task isn't biased by arbitrary taste
+ * choices made in the scaffold. */
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
