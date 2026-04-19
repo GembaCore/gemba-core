@@ -4,11 +4,12 @@
 //
 // Contents:
 //
-//   - types.go    WorkItem, AgentRef, Relationship, Evidence (+ their enums)
-//   - state.go    StateCategory ∈ backlog|unstarted|started|completed|canceled
-//   - dod.go      DefinitionOfDone (informational-only; never blocks)
-//   - budget.go   Sprint, TokenBudget (three-tier inform/warn/stop)
-//   - codegen.go  CoreTypesTS — source of truth emitted to web/src/types
+//   - types.go          WorkItem, AgentRef, Relationship, Evidence (+ their enums)
+//   - state.go          StateCategory ∈ backlog|unstarted|started|completed|canceled
+//   - dod.go            DefinitionOfDone (informational-only; never blocks)
+//   - budget.go         Sprint, TokenBudget (three-tier inform/warn/stop)
+//   - orchestration.go  OrchestrationPlaneAdaptor + OrchestrationCapabilityManifest
+//   - codegen.go        CoreTypesTS — source of truth emitted to web/src/types
 //
 // Regenerate the TypeScript mirror via `make gen`.
 package core
