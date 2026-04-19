@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
-	"strings"
 
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
@@ -95,57 +94,6 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 	mux.NotFound(r.serveSPA)
 
 	return mux
-}
-
-// --- SPA fallback ---------------------------------------------------------
-
-func (r *Router) serveSPA(w http.ResponseWriter, req *http.Request) {
-	path := strings.TrimPrefix(req.URL.Path, "/")
-
-	// Safety: never let the SPA fallback answer for API paths, even if
-	// routing changes in the future. The /api and /events subrouters
-	// have their own NotFound handlers; this is defense-in-depth.
-	if strings.HasPrefix(path, "api/") || path == "events" || strings.HasPrefix(path, "events/") {
-		apiNotFound(w, req)
-		return
-	}
-
-	if r.spa == nil {
-		spaUnbuilt(w)
-		return
-	}
-
-	// Try the requested file first (for /assets/*.js, /favicon.ico, etc.)
-	if path != "" {
-		if f, err := r.spa.Open(path); err == nil {
-			f.Close()
-			http.ServeFileFS(w, req, r.spa, path)
-			return
-		}
-	}
-
-	// Fall through to index.html for client-side routing.
-	if f, err := r.spa.Open("index.html"); err != nil {
-		spaUnbuilt(w)
-		return
-	} else {
-		f.Close()
-	}
-	http.ServeFileFS(w, req, r.spa, "index.html")
-}
-
-func spaUnbuilt(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusServiceUnavailable)
-	_, _ = w.Write([]byte(`<!doctype html>
-<html><body style="font-family:system-ui;max-width:40em;margin:3em auto;padding:1em">
-<h1>Gemba frontend not built</h1>
-<p>The <code>web/dist</code> directory is empty. Run:</p>
-<pre>make build</pre>
-<p>from the repo root, or run in dev mode:</p>
-<pre>make dev</pre>
-<p>The dev server (Vite on :5173) proxies API calls back to this binary.</p>
-</body></html>`))
 }
 
 // --- stock handlers -------------------------------------------------------

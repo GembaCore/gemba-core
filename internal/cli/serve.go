@@ -94,7 +94,13 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
-	handler := server.NewRouter(cfg, gemba.SPA())
+	spa := gemba.SPA()
+	if spa == nil {
+		slog.Warn("SPA not embedded in this binary",
+			"hint", "run `make build` to embed web/dist; "+
+				"non-API routes will return a 503 build hint")
+	}
+	handler := server.NewRouter(cfg, spa)
 
 	srv := &http.Server{
 		Addr:              addr,
