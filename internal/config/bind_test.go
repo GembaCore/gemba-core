@@ -6,59 +6,58 @@ import (
 )
 
 func TestValidateBindPolicy(t *testing.T) {
+	// Bind matrix × auth matrix. Loopback bypasses the gate for every auth
+	// mode; non-loopback requires a non-"none" auth mode.
+	loopbackHosts := []string{"127.0.0.1", "::1", "localhost", ""}
+	nonLoopbackHosts := []string{
+		"0.0.0.0",     // ipv4 unspecified
+		"::",          // ipv6 unspecified
+		"192.168.1.5", // typical LAN
+		"10.0.0.1",    // private RFC1918
+		"172.16.0.1",  // private RFC1918
+	}
+	authModes := []string{"", "none", "token", "oidc"}
+
 	cases := []struct {
 		name    string
 		cfg     ServeConfig
 		wantErr bool
 		errHas  string
-	}{
-		{
-			name: "default loopback no auth is ok",
-			cfg:  ServeConfig{Listen: "127.0.0.1"},
-		},
-		{
-			name: "ipv6 loopback no auth is ok",
-			cfg:  ServeConfig{Listen: "::1"},
-		},
-		{
-			name: "empty listen (default) is ok",
-			cfg:  ServeConfig{},
-		},
-		{
-			name: "loopback with token auth is ok (redundant but allowed)",
-			cfg:  ServeConfig{Listen: "127.0.0.1", AuthMode: "token"},
-		},
-		{
-			name:    "0.0.0.0 without auth is rejected",
-			cfg:     ServeConfig{Listen: "0.0.0.0"},
-			wantErr: true,
-			errHas:  "non-loopback",
-		},
-		{
-			name:    "0.0.0.0 with auth=none is rejected",
-			cfg:     ServeConfig{Listen: "0.0.0.0", AuthMode: "none"},
-			wantErr: true,
-			errHas:  "non-loopback",
-		},
-		{
-			name: "0.0.0.0 with token auth is ok",
-			cfg:  ServeConfig{Listen: "0.0.0.0", AuthMode: "token"},
-		},
-		{
-			name: "0.0.0.0 with oidc auth is ok",
-			cfg:  ServeConfig{Listen: "0.0.0.0", AuthMode: "oidc"},
-		},
-		{
-			name:    "ipv6 unspecified without auth is rejected",
-			cfg:     ServeConfig{Listen: "::"},
-			wantErr: true,
-			errHas:  "non-loopback",
-		},
-		{
-			name: "localhost hostname no auth is ok",
-			cfg:  ServeConfig{Listen: "localhost"},
-		},
+	}{}
+
+	for _, host := range loopbackHosts {
+		for _, mode := range authModes {
+			cases = append(cases, struct {
+				name    string
+				cfg     ServeConfig
+				wantErr bool
+				errHas  string
+			}{
+				name: "loopback " + showHost(host) + " auth=" + showAuth(mode) + " ok",
+				cfg:  ServeConfig{Listen: host, AuthMode: mode},
+			})
+		}
 	}
+	for _, host := range nonLoopbackHosts {
+		for _, mode := range authModes {
+			gate := mode == "" || mode == "none"
+			c := struct {
+				name    string
+				cfg     ServeConfig
+				wantErr bool
+				errHas  string
+			}{
+				name: "non-loopback " + host + " auth=" + showAuth(mode),
+				cfg:  ServeConfig{Listen: host, Port: 7666, AuthMode: mode},
+			}
+			if gate {
+				c.wantErr = true
+				c.errHas = "non-loopback bind requires --auth"
+			}
+			cases = append(cases, c)
+		}
+	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.cfg.ValidateBindPolicy()
@@ -76,6 +75,46 @@ func TestValidateBindPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestValidateBindPolicy_ErrorMentionsListen pins the error format required
+// by gm-e5.1: the operator's --listen value (with port) must appear verbatim
+// so they can immediately see which intent was rejected.
+func TestValidateBindPolicy_ErrorMentionsListen(t *testing.T) {
+	cases := []struct {
+		listen string
+		port   int
+		want   string
+	}{
+		{"0.0.0.0", 7666, "--listen 0.0.0.0:7666"},
+		{"192.168.1.5", 9000, "--listen 192.168.1.5:9000"},
+		{"::", 7666, "--listen [::]:7666"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.listen, func(t *testing.T) {
+			err := (ServeConfig{Listen: tc.listen, Port: tc.port}).ValidateBindPolicy()
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error %q missing %q", err.Error(), tc.want)
+			}
+		})
+	}
+}
+
+func showHost(h string) string {
+	if h == "" {
+		return "(default)"
+	}
+	return h
+}
+
+func showAuth(m string) string {
+	if m == "" {
+		return "(default)"
+	}
+	return m
 }
 
 func TestNormalizeListen(t *testing.T) {

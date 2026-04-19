@@ -2,7 +2,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -76,7 +75,7 @@ func (c ServeConfig) EffectiveAuthMode() string {
 // ValidateBindPolicy refuses to start the server if the configuration would
 // expose the API on a non-loopback interface without authentication.
 //
-// This is the single most important security check. See gm-e3.1 for the
+// This is the single most important security check. See gm-e5.1 for the
 // full rationale and test matrix.
 func (c ServeConfig) ValidateBindPolicy() error {
 	loopback, err := isLoopback(c.Listen)
@@ -89,12 +88,30 @@ func (c ServeConfig) ValidateBindPolicy() error {
 	}
 
 	if c.EffectiveAuthMode() == "none" {
-		return errors.New(
-			"refusing to bind non-loopback interface without authentication\n" +
-				"  Pass --auth=token to generate a token, or keep the default bind\n" +
-				"  (127.0.0.1). See docs/remote-access.md for details.")
+		return fmt.Errorf(
+			"non-loopback bind requires --auth; got --listen %s\n"+
+				"  Pass --auth=token to generate a token, or keep the default bind\n"+
+				"  (127.0.0.1). See docs/remote-access.md for details.",
+			c.listenDisplay())
 	}
 	return nil
+}
+
+// listenDisplay formats Listen+Port the way it would appear on the command
+// line, so error messages can echo the user's intent verbatim.
+func (c ServeConfig) listenDisplay() string {
+	host := c.Listen
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if c.Port == 0 {
+		return host
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		// IPv6 literal — bracket it for the host:port form.
+		return fmt.Sprintf("[%s]:%d", host, c.Port)
+	}
+	return fmt.Sprintf("%s:%d", host, c.Port)
 }
 
 // isLoopback returns true if the given host (which may be a hostname,
