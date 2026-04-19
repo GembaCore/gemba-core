@@ -1,4 +1,4 @@
-package api
+package server
 
 import (
 	"net/http"
@@ -7,7 +7,7 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/YOUR_ORG/gemba/internal/config"
+	"github.com/MikeBengtson/gemba/internal/config"
 )
 
 func fakeSPA() fstest.MapFS {

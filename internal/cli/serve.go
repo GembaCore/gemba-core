@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	bulletcity "github.com/YOUR_ORG/gemba"
-	"github.com/YOUR_ORG/gemba/internal/api"
-	"github.com/YOUR_ORG/gemba/internal/config"
+	gemba "github.com/MikeBengtson/gemba"
+	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/MikeBengtson/gemba/internal/server"
 	"github.com/spf13/cobra"
 )
 
@@ -33,14 +33,12 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		},
 	}
 
-	// Bind policy and networking
 	cmd.Flags().StringVar(&cfg.Listen, "listen", "127.0.0.1",
 		"interface to bind to (use 0.0.0.0 for all interfaces; requires --auth)")
 	cmd.Flags().IntVar(&cfg.Port, "port", 7666, "TCP port to listen on")
 	cmd.Flags().BoolVar(&cfg.Open, "open", false,
 		"open the UI in a browser after starting")
 
-	// Auth
 	cmd.Flags().StringVar(&cfg.AuthMode, "auth", "",
 		"authentication mode: none (default), token, oidc")
 	cmd.Flags().StringVar(&cfg.TLSCert, "tls-cert", "",
@@ -50,15 +48,12 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 	cmd.Flags().BoolVar(&cfg.TLSSelfSigned, "tls-self-signed", false,
 		"generate a self-signed TLS certificate on first run")
 
-	// Workspace wiring. --city is the go-forward Gas City path;
-	// --town is retained as a legacy alias for Gas Town workspaces.
 	cmd.Flags().StringVar(&cfg.City, "city", "",
 		"path to Gas City workspace (default: auto-detect city.toml or ~/my-city)")
 	cmd.Flags().StringVar(&cfg.Town, "town", "",
 		"path to Gas Town HQ (legacy; prefer --city for Gas City workspaces)")
 
-	// Danger zone. Flag name is copied verbatim from Claude Code.
-	// Do not rename or soften.
+	// Flag name copied verbatim from Claude Code. Do not rename or soften.
 	cmd.Flags().BoolVar(&cfg.DangerouslySkipPermissions,
 		"dangerously-skip-permissions", false,
 		"disable mutation confirmation prompts for this server session "+
@@ -68,8 +63,6 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 }
 
 func runServe(ctx context.Context, cfg config.ServeConfig) error {
-	// Validate the bind policy before doing any other work. This is the
-	// single most important security check — see gm-e3.1.
 	if err := cfg.ValidateBindPolicy(); err != nil {
 		return err
 	}
@@ -79,7 +72,7 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
-	handler := api.NewRouter(cfg, bulletcity.SPA())
+	handler := server.NewRouter(cfg, gemba.SPA())
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -87,7 +80,6 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	// Signal handling
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 

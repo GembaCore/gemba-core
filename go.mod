@@ -1,4 +1,4 @@
-module github.com/YOUR_ORG/gemba
+module github.com/MikeBengtson/gemba
 
 // Real repo should set go 1.23+; using 1.22 here to match this sandbox.
 // The `slog` package requires 1.21+ and everything else works on 1.22+.

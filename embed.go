@@ -1,9 +1,9 @@
-// Package bulletcity is the module root. It exists primarily to host the
-// go:embed declaration for the Vite SPA build output, which cannot live
-// inside cmd/gemba because go:embed paths cannot traverse upward with "..".
+// Package gemba is the module root. It exists primarily to host the
+// embed directive for the Vite SPA build output, which cannot live
+// inside cmd/gemba because embed paths cannot traverse upward with "..".
 //
 // Consumers (cmd/gemba) call SPA() to get the embedded filesystem.
-package bulletcity
+package gemba
 
 import (
 	"embed"

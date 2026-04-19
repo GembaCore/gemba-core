@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"encoding/json"
@@ -7,23 +7,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newVersionCmd() *cobra.Command {
+func newVersionCmd(b BuildInfo) *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: "Print build info",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			info := map[string]string{
-				"version": version,
-				"commit":  commit,
-				"date":    date,
+				"version": b.Version,
+				"commit":  b.Commit,
+				"date":    b.Date,
 			}
 			if asJSON {
-				b, _ := json.MarshalIndent(info, "", "  ")
-				fmt.Println(string(b))
+				out, _ := json.MarshalIndent(info, "", "  ")
+				fmt.Println(string(out))
 				return nil
 			}
-			fmt.Printf("bc %s (commit %s, built %s)\n",
+			fmt.Printf("gemba %s (commit %s, built %s)\n",
 				info["version"], info["commit"], info["date"])
 			return nil
 		},

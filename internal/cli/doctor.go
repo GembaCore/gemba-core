@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"errors"
@@ -14,7 +14,7 @@ import (
 func newDoctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
-		Short: "Check that bc prerequisites are satisfied",
+		Short: "Check that gemba prerequisites are satisfied",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor()
 		},
@@ -56,19 +56,13 @@ func runDoctor() error {
 	return nil
 }
 
-// checkGtOrGc: Gas Town v1.0 is the stable runtime Gemba ships
-// against today. Gas City is in alpha and on track for GA — we accept it
-// too so the binary becomes useful immediately when Gas City stabilizes.
-//
-// Note: `gc` is also a binary shipped by graphviz on many systems, so a
-// bare LookPath hit is not enough — we probe for Gas City-specific
-// vocabulary to confirm we actually found Gas City before trusting it.
+// checkGtOrGc: Gas Town v1.0 is the stable runtime Gemba ships against
+// today; Gas City is the alpha follow-on. `gc` is also shipped by graphviz,
+// so we probe the binary to confirm it's actually Gas City before trusting it.
 func checkGtOrGc() error {
-	// Prefer gt since it's the v1 stable runtime and the common case.
 	if _, err := exec.LookPath("gt"); err == nil {
 		return nil
 	}
-	// Fall back to gc — but only if it's actually Gas City, not graphviz.
 	if path, err := exec.LookPath("gc"); err == nil {
 		if looksLikeGasCity(path) {
 			return nil
@@ -79,30 +73,23 @@ func checkGtOrGc() error {
 		"(alpha) first")
 }
 
-// looksLikeGasCity probes a `gc` binary by running `gc --help` and looking
-// for Gas City-specific vocabulary. Short-timeout exec so we don't hang
-// on a non-responsive binary.
 func looksLikeGasCity(path string) bool {
-	// Using --help rather than `gc init --help` to keep the probe cheap and
-	// to match cobra-style command trees. Any Gas City help output mentions
-	// the controller, packs, or city.
 	cmd := exec.Command(path, "--help")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return false
 	}
 	s := string(out)
-	return (containsFold(s, "city.toml") ||
+	return containsFold(s, "city.toml") ||
 		containsFold(s, "gascity") ||
 		containsFold(s, "Gas City") ||
-		containsFold(s, "controller") && containsFold(s, "pack"))
+		(containsFold(s, "controller") && containsFold(s, "pack"))
 }
 
 func containsFold(haystack, needle string) bool {
 	if len(needle) > len(haystack) {
 		return false
 	}
-	// simple case-insensitive substring check; good enough for a probe
 	hl := []byte(haystack)
 	nl := []byte(needle)
 	for i := 0; i <= len(hl)-len(nl); i++ {
@@ -128,23 +115,16 @@ func containsFold(haystack, needle string) bool {
 	return false
 }
 
-// checkWorkspace returns nil if the current directory (or an ancestor) looks
-// like a Gas Town HQ (.gt/ directory or rigs/) or a Gas City workspace
-// (.gc/ directory or city.toml). Gas Town is preferred because it's the
-// stable v1 runtime; Gas City is accepted for alpha users. Walk up instead
-// of requiring exact cwd, to match the behavior users expect from git.
 func checkWorkspace() error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return err
 	}
 	for dir := cwd; ; {
-		// Gas Town markers (v1 stable — primary)
 		if isDir(filepath.Join(dir, ".gt")) ||
 			isDir(filepath.Join(dir, "rigs")) {
 			return nil
 		}
-		// Gas City markers (alpha — future-ready)
 		if isDir(filepath.Join(dir, ".gc")) ||
 			isFile(filepath.Join(dir, "city.toml")) {
 			return nil

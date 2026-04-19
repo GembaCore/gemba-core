@@ -1,6 +1,6 @@
-// Package api wires the HTTP surface. See doc.go for the package-level
+// Package server wires the HTTP surface. See doc.go for the package-level
 // overview.
-package api
+package server
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/YOUR_ORG/gemba/internal/config"
+	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )

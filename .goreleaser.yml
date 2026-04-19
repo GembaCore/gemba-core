@@ -58,10 +58,10 @@ release:
 # brews:
 #   - name: gemba
 #     repository:
-#       owner: YOUR_ORG
+#       owner: MikeBengtson
 #       name: homebrew-tap
 #       token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
-#     homepage: https://github.com/YOUR_ORG/gemba
+#     homepage: https://github.com/MikeBengtson/gemba
 #     description: Atlassian-style UI for Gas Town
 #     license: MIT
 #     test: |
