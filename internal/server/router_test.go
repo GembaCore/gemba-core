@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -46,20 +47,81 @@ func TestSPAFallback_ServesAssets(t *testing.T) {
 	}
 }
 
-// gm-b2: SPA fallback must not shadow API 404s. If it did, client fetches
-// to unknown API paths would return HTML instead of JSON, breaking error
-// handling in the frontend.
+// gm-b2 / gm-xke: API 404s must be a JSON envelope, not chi's default
+// text/plain body and not the SPA shell. Frontend code using fetch().then(r=>r.json())
+// will throw SyntaxError on anything else.
 func TestAPIFallbackReturnsJSON404NotSPA(t *testing.T) {
 	h := NewRouter(config.ServeConfig{}, fakeSPA())
-	req := httptest.NewRequest(http.MethodGet, "/api/nonexistent", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nonexistent", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d; body=%q", rec.Code, rec.Body.String())
 	}
+	ct := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("want application/json, got %q; body=%q", ct, rec.Body.String())
+	}
 	if strings.Contains(rec.Body.String(), "<html>") {
 		t.Fatalf("api/* must not return HTML; got %q", rec.Body.String())
+	}
+
+	var env map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body must parse as JSON: %v; body=%q", err, rec.Body.String())
+	}
+	if env["error"] == "" {
+		t.Fatalf("expected non-empty error key; got %v", env)
+	}
+	if env["path"] != "/api/v1/nonexistent" {
+		t.Fatalf("expected path=/api/v1/nonexistent, got %q", env["path"])
+	}
+	if env["method"] != http.MethodGet {
+		t.Fatalf("expected method=GET, got %q", env["method"])
+	}
+}
+
+// gm-b2 / gm-xke: /events/* unknown paths must also return the JSON envelope.
+func TestEventsFallbackReturnsJSON404(t *testing.T) {
+	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	req := httptest.NewRequest(http.MethodGet, "/events/nonexistent", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	ct := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("want application/json, got %q; body=%q", ct, rec.Body.String())
+	}
+	var env map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body must parse as JSON: %v; body=%q", err, rec.Body.String())
+	}
+	if env["error"] == "" {
+		t.Fatalf("expected non-empty error key; got %v", env)
+	}
+}
+
+// gm-b2 DoD: unknown non-API paths still serve the SPA shell so client-side
+// routing works.
+func TestSPAFallback_UnknownPageServesSPA(t *testing.T) {
+	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	req := httptest.NewRequest(http.MethodGet, "/not-a-real-page", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	ct := rec.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("want text/html, got %q", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "SPA") {
+		t.Fatalf("expected SPA shell body, got %q", rec.Body.String())
 	}
 }
 

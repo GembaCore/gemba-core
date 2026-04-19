@@ -50,6 +50,9 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 		if apiAuth != nil {
 			api.Use(apiAuth)
 		}
+		api.NotFound(apiNotFound)
+		api.MethodNotAllowed(apiNotFound)
+
 		api.Get("/health", r.health)
 		api.Get("/version", r.version)
 		api.Get("/config", r.config)
@@ -79,11 +82,14 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 		api.Get("/drift", notImplemented)
 	})
 
-	if apiAuth != nil {
-		mux.With(apiAuth).Get("/events", notImplemented)
-	} else {
-		mux.Get("/events", notImplemented)
-	}
+	mux.Route("/events", func(ev chi.Router) {
+		if apiAuth != nil {
+			ev.Use(apiAuth)
+		}
+		ev.NotFound(apiNotFound)
+		ev.MethodNotAllowed(apiNotFound)
+		ev.Get("/", notImplemented)
+	})
 
 	// SPA fallback is last and only matches non-API paths.
 	mux.NotFound(r.serveSPA)
@@ -97,9 +103,10 @@ func (r *Router) serveSPA(w http.ResponseWriter, req *http.Request) {
 	path := strings.TrimPrefix(req.URL.Path, "/")
 
 	// Safety: never let the SPA fallback answer for API paths, even if
-	// routing changes in the future.
-	if strings.HasPrefix(path, "api/") || strings.HasPrefix(path, "events") {
-		http.NotFound(w, req)
+	// routing changes in the future. The /api and /events subrouters
+	// have their own NotFound handlers; this is defense-in-depth.
+	if strings.HasPrefix(path, "api/") || path == "events" || strings.HasPrefix(path, "events/") {
+		apiNotFound(w, req)
 		return
 	}
 
@@ -170,6 +177,18 @@ func (r *Router) config(w http.ResponseWriter, _ *http.Request) {
 func notImplemented(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusNotImplemented, map[string]string{
 		"error": "not implemented yet; see gm-e2.6",
+	})
+}
+
+// apiNotFound is the 404 handler for /api/* and /events/*. It always
+// returns a JSON error envelope so frontend clients using fetch(...).then(r => r.json())
+// get structured errors instead of chi's default text/plain body.
+// See gm-b2 / gm-xke.
+func apiNotFound(w http.ResponseWriter, req *http.Request) {
+	writeJSON(w, http.StatusNotFound, map[string]string{
+		"error":  "not_found",
+		"path":   req.URL.Path,
+		"method": req.Method,
 	})
 }
 
