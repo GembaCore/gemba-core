@@ -12,6 +12,7 @@ import (
 	"time"
 
 	gemba "github.com/MikeBengtson/gemba"
+	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/server"
 	"github.com/spf13/cobra"
@@ -73,6 +74,20 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 	if cfg.DangerouslySkipPermissions {
 		slog.Warn("DANGEROUSLY-SKIP-PERMISSIONS IS ACTIVE",
 			"note", "mutations will not require confirmation for this session")
+	}
+
+	// Generate a token when the operator opts into token auth but hasn't
+	// supplied one. Printed once at startup so it can be copied; never
+	// re-logged on subsequent requests (gm-99g / gm-b3).
+	if cfg.EffectiveAuthMode() == "token" && cfg.AuthToken == "" {
+		tok, err := auth.NewToken()
+		if err != nil {
+			return fmt.Errorf("generate auth token: %w", err)
+		}
+		cfg.AuthToken = tok
+		slog.Info("generated token auth credential",
+			"token", tok,
+			"usage", "pass header: Authorization: Bearer <token>")
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)

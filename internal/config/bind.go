@@ -16,6 +16,7 @@ type ServeConfig struct {
 	Open   bool
 
 	AuthMode      string
+	AuthToken     string
 	TLSCert       string
 	TLSKey        string
 	TLSSelfSigned bool

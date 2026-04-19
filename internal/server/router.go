@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -34,9 +35,21 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 	mux.Use(middleware.Recoverer)
 	mux.Use(middleware.Timeout(30_000_000_000)) // 30s
 
+	// Auth middleware is mounted on the API/events surface only, regardless
+	// of bind interface. Token auth must enforce on loopback too (gm-b3 /
+	// gm-99g): any /api/* or /events request must reject before route
+	// lookup when a missing/invalid bearer is presented.
+	var apiAuth func(http.Handler) http.Handler
+	if cfg.EffectiveAuthMode() == "token" && cfg.AuthToken != "" {
+		apiAuth = auth.BearerAuth(cfg.AuthToken)
+	}
+
 	// API routes. Everything under /api/* and /events/* is explicit so the
 	// SPA fallback never shadows them (see gm-b2).
 	mux.Route("/api", func(api chi.Router) {
+		if apiAuth != nil {
+			api.Use(apiAuth)
+		}
 		api.Get("/health", r.health)
 		api.Get("/version", r.version)
 		api.Get("/config", r.config)
@@ -66,7 +79,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 		api.Get("/drift", notImplemented)
 	})
 
-	mux.Get("/events", notImplemented)
+	if apiAuth != nil {
+		mux.With(apiAuth).Get("/events", notImplemented)
+	} else {
+		mux.Get("/events", notImplemented)
+	}
 
 	// SPA fallback is last and only matches non-API paths.
 	mux.NotFound(r.serveSPA)
