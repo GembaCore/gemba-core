@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build release release-dry
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build release release-dry gen
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -53,6 +53,11 @@ lint: ## run golangci-lint and frontend lint
 fmt: ## format Go + frontend
 	gofmt -s -w .
 	cd web && pnpm format
+
+## --- Codegen ---
+
+gen: ## regenerate code (TS types from Go core)
+	go run ./cmd/gen-core-types
 
 ## --- Release ---
 

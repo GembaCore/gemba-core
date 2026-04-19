@@ -2,5 +2,13 @@
 // every adapter, transport, and server handler speaks. Nothing in core may
 // import internal/adapter, internal/transport, or internal/server.
 //
-// Phase placeholder: the real types land with gm-e3.1.
+// Contents:
+//
+//   - types.go    WorkItem, AgentRef, Relationship, Evidence (+ their enums)
+//   - state.go    StateCategory ∈ backlog|unstarted|started|completed|canceled
+//   - dod.go      DefinitionOfDone (informational-only; never blocks)
+//   - budget.go   Sprint, TokenBudget (three-tier inform/warn/stop)
+//   - codegen.go  CoreTypesTS — source of truth emitted to web/src/types
+//
+// Regenerate the TypeScript mirror via `make gen`.
 package core
