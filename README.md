@@ -90,3 +90,25 @@ gemba serve
 ```
 
 Until then, the orchestrator (Mayor in Gas Town terms) decomposes work from `bd ready` against the imported `issues.jsonl`.
+
+## Development
+
+The repo ships a single `Makefile` covering the full dev/build/release loop. From a fresh clone:
+
+```bash
+make help         # list every target with one-line docs
+make dev          # Vite + Go server, both with hot reload (needs: air, pnpm)
+make build        # build the SPA, embed it, produce ./bin/gemba
+make test         # go test -race ./... + pnpm test --run
+make lint         # golangci-lint + pnpm lint
+make release      # local goreleaser snapshot (multi-OS/arch tarballs in ./dist)
+make clean        # remove bin/, dist/, web/dist/*, web/node_modules
+```
+
+Tooling expected on `PATH`:
+
+- Go (see `go.mod` for the minimum version)
+- [`pnpm`](https://pnpm.io/installation) — frontend package manager
+- [`air`](https://github.com/air-verse/air) — Go hot reload for `make dev` (`go install github.com/air-verse/air@latest`)
+- [`golangci-lint`](https://golangci-lint.run/usage/install/) — `make lint`
+- [`goreleaser`](https://goreleaser.com/install/) — `make release`

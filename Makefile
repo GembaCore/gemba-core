@@ -1,4 +1,4 @@
-.PHONY: help dev build test lint clean fmt frontend-install frontend-build release-dry
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build release release-dry
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -32,16 +32,16 @@ frontend-build: frontend-install ## build the Vite SPA into web/dist
 	@touch web/dist/.keep   # vite's emptyOutDir:true sweeps this; restore so go build on a fresh clone still finds the dir
 
 build: frontend-build ## build the single-binary with SPA embedded
-	go build -ldflags="$(LDFLAGS)" -o bin/bc ./cmd/gemba
-	@echo "built bin/bc ($(VERSION))"
-	@du -h bin/bc | awk '{print "  size: " $$1}'
+	go build -ldflags="$(LDFLAGS)" -o bin/gemba ./cmd/gemba
+	@echo "built bin/gemba ($(VERSION))"
+	@du -h bin/gemba | awk '{print "  size: " $$1}'
 
 build-go-only: ## build without rebuilding the frontend (fast dev iteration)
-	go build -ldflags="$(LDFLAGS)" -o bin/bc ./cmd/gemba
+	go build -ldflags="$(LDFLAGS)" -o bin/gemba ./cmd/gemba
 
 ## --- Test / Lint ---
 
-test: ## run Go + frontend tests
+test: ## run Go (race) + frontend tests
 	go test -race -count=1 ./...
 	cd web && pnpm test --run
 
@@ -56,9 +56,11 @@ fmt: ## format Go + frontend
 
 ## --- Release ---
 
-release-dry: ## dry-run a goreleaser release
+release: ## build a local snapshot release via goreleaser
 	@command -v goreleaser >/dev/null 2>&1 || { echo "install goreleaser: https://goreleaser.com/install/"; exit 1; }
 	goreleaser release --snapshot --clean
+
+release-dry: release ## alias for `make release` (snapshot, no publish)
 
 ## --- Housekeeping ---
 
