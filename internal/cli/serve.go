@@ -58,6 +58,9 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 	cmd.Flags().StringVar(&cfg.Town, "town", "",
 		"path to Gas Town HQ (legacy; prefer --city for Gas City workspaces)")
 
+	cmd.Flags().StringVar(&cfg.ConfigPath, "config", "",
+		"path to gemba.toml (default: probe cwd, then ~/.config/gemba/)")
+
 	// Flag name copied verbatim from Claude Code. Do not rename or soften.
 	cmd.Flags().BoolVar(&cfg.DangerouslySkipPermissions,
 		"dangerously-skip-permissions", false,

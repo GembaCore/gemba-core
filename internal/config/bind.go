@@ -27,6 +27,11 @@ type ServeConfig struct {
 	City string
 	Town string
 
+	// ConfigPath is an explicit gemba.toml override. Empty means "probe
+	// the standard locations." File loading lands with a later bead;
+	// serve threads the path through today so the flag surface is stable.
+	ConfigPath string
+
 	DangerouslySkipPermissions bool
 }
 
