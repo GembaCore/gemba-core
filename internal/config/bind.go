@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 )
 
 // ServeConfig captures every flag `gemba serve` accepts. Held on the CLI side
@@ -26,6 +27,35 @@ type ServeConfig struct {
 	Town string
 
 	DangerouslySkipPermissions bool
+}
+
+// NormalizeListen splits c.Listen if it is in host:port form (e.g.
+// "127.0.0.1:7666" or "[::1]:7666"), routing the port half into c.Port and
+// reducing c.Listen to the host. This lets users type the universal Unix
+// host:port idiom for --listen instead of having to remember --port is a
+// separate flag.
+//
+// portFlagSet should be true if the caller (CLI) saw an explicit --port flag;
+// supplying both forms is an error so precedence is never ambiguous.
+func (c *ServeConfig) NormalizeListen(portFlagSet bool) error {
+	host, port, err := net.SplitHostPort(c.Listen)
+	if err != nil {
+		// Not host:port form (missing colon, IPv6 literal without brackets,
+		// empty string, etc). Leave Listen alone.
+		return nil
+	}
+	if portFlagSet {
+		return fmt.Errorf(
+			"port specified twice: --listen %q includes a port and --port "+
+				"was also given; pass one or the other", c.Listen)
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p < 1 || p > 65535 {
+		return fmt.Errorf("invalid port in --listen %q", c.Listen)
+	}
+	c.Listen = host
+	c.Port = p
+	return nil
 }
 
 // EffectiveAuthMode returns the auth mode that will actually be applied,

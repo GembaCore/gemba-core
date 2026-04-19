@@ -29,12 +29,16 @@ By default binds to 127.0.0.1:7666 with no authentication. To expose on the
 network, pass --listen with a non-loopback address AND --auth to enable
 authentication. Binding a non-loopback interface without --auth is an error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := cfg.NormalizeListen(cmd.Flags().Changed("port")); err != nil {
+				return err
+			}
 			return runServe(cmd.Context(), cfg)
 		},
 	}
 
 	cmd.Flags().StringVar(&cfg.Listen, "listen", "127.0.0.1",
-		"interface to bind to (use 0.0.0.0 for all interfaces; requires --auth)")
+		"interface to bind to, or host:port (e.g. 127.0.0.1:7666, [::1]:7666); "+
+			"use 0.0.0.0 for all interfaces (requires --auth)")
 	cmd.Flags().IntVar(&cfg.Port, "port", 7666, "TCP port to listen on")
 	cmd.Flags().BoolVar(&cfg.Open, "open", false,
 		"open the UI in a browser after starting")
