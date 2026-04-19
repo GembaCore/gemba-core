@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom';
+import { AdaptorBanner } from '@/components/AdaptorBanner';
 import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
 
@@ -8,6 +9,7 @@ export function AppShell() {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
+        <AdaptorBanner />
         <main className="min-h-0 flex-1 overflow-auto">
           <Outlet />
         </main>

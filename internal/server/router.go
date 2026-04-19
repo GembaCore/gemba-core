@@ -56,6 +56,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 		api.Get("/version", r.version)
 		api.Get("/config", r.config)
 
+		// Per-adaptor runtime health. Drives the SPA's degraded-state
+		// banner (gm-b1). The SPA polls this every few seconds and
+		// surfaces a banner when any adaptor reports healthy=false.
+		api.Get("/adaptors", adaptorsHealth)
+
 		// Stubs for the real surface. Filled in by Phase 2 work
 		// (gm-e2.6 and children). Returning 501 now makes it obvious
 		// which endpoints aren't wired yet.

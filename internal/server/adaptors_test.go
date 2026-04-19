@@ -1,0 +1,166 @@
+package server
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/MikeBengtson/gemba/internal/adapter/registry"
+	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/go-chi/chi/v5"
+)
+
+// gm-b1: /api/adaptors reports per-adaptor health with the shape the SPA
+// banner depends on. The endpoint must succeed (200) even when some
+// adaptors are degraded — a degraded backend is a banner, not a 500.
+func TestAdaptorsEndpoint_ReportsPerAdaptorHealth(t *testing.T) {
+	registry.Reset()
+	t.Cleanup(registry.Reset)
+
+	registry.Register(registry.Adaptor{
+		Name:  "beads",
+		Plane: registry.WorkPlane,
+		Probe: func() registry.DetectResult {
+			return registry.DetectResult{Ok: false, Reason: "daemon offline"}
+		},
+	})
+	registry.Register(registry.Adaptor{
+		Name:  "gastown",
+		Plane: registry.OrchestrationPlane,
+		Probe: func() registry.DetectResult { return registry.DetectResult{Ok: true} },
+	})
+
+	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	req := httptest.NewRequest(http.MethodGet, "/api/adaptors", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 even with a degraded adaptor, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+
+	var env struct {
+		Adaptors []registry.AdaptorStatus `json:"adaptors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body must parse: %v; body=%q", err, rec.Body.String())
+	}
+	if len(env.Adaptors) != 2 {
+		t.Fatalf("want 2 adaptors, got %d: %+v", len(env.Adaptors), env.Adaptors)
+	}
+
+	byName := map[string]registry.AdaptorStatus{}
+	for _, a := range env.Adaptors {
+		byName[a.Name] = a
+	}
+	if byName["beads"].Healthy {
+		t.Errorf("beads should be unhealthy, got %+v", byName["beads"])
+	}
+	if byName["beads"].Reason != "daemon offline" {
+		t.Errorf("beads reason should reach the wire; got %q", byName["beads"].Reason)
+	}
+	if !byName["gastown"].Healthy {
+		t.Errorf("gastown should be healthy, got %+v", byName["gastown"])
+	}
+}
+
+// gm-b1: The mutation middleware rejects writes against a degraded
+// adaptor with a clear 503 envelope — no 30s hang, no opaque 5xx.
+func TestRequireHealthyAdaptor_Rejects503OnDegraded(t *testing.T) {
+	registry.Reset()
+	t.Cleanup(registry.Reset)
+
+	registry.Register(registry.Adaptor{
+		Name:  "beads",
+		Plane: registry.WorkPlane,
+		Probe: func() registry.DetectResult {
+			return registry.DetectResult{Ok: false, Reason: "Dolt unreachable"}
+		},
+	})
+
+	r := chi.NewRouter()
+	called := false
+	r.With(requireHealthyAdaptor(registry.WorkPlane)).
+		Post("/beads", func(http.ResponseWriter, *http.Request) { called = true })
+
+	req := httptest.NewRequest(http.MethodPost, "/beads", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	if called {
+		t.Fatalf("inner handler must not run when adaptor is degraded")
+	}
+
+	var env map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body must parse: %v; body=%q", err, rec.Body.String())
+	}
+	if env["error"] != "adaptor_degraded" {
+		t.Errorf("want error=adaptor_degraded, got %v", env["error"])
+	}
+	if env["adaptor"] != "beads" {
+		t.Errorf("want adaptor=beads, got %v", env["adaptor"])
+	}
+	if env["reason"] != "Dolt unreachable" {
+		t.Errorf("reason must reach the wire; got %v", env["reason"])
+	}
+}
+
+// gm-b1: When the plane's adaptor is healthy, the middleware is a no-op
+// and the inner handler runs normally.
+func TestRequireHealthyAdaptor_AllowsWhenHealthy(t *testing.T) {
+	registry.Reset()
+	t.Cleanup(registry.Reset)
+
+	registry.Register(registry.Adaptor{
+		Name:  "beads",
+		Plane: registry.WorkPlane,
+		Probe: func() registry.DetectResult { return registry.DetectResult{Ok: true} },
+	})
+
+	r := chi.NewRouter()
+	r.With(requireHealthyAdaptor(registry.WorkPlane)).
+		Post("/beads", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+		})
+
+	req := httptest.NewRequest(http.MethodPost, "/beads", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("want 201 when adaptor is healthy, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+// gm-b1: With no adaptor registered for the plane, the middleware
+// reports a distinct "not configured" error so operators can tell
+// "misconfigured" apart from "degraded". Both still 503 — they're both
+// unusable — but the reason is different.
+func TestRequireHealthyAdaptor_NotConfigured(t *testing.T) {
+	registry.Reset()
+	t.Cleanup(registry.Reset)
+
+	r := chi.NewRouter()
+	r.With(requireHealthyAdaptor(registry.WorkPlane)).
+		Post("/beads", func(http.ResponseWriter, *http.Request) {})
+
+	req := httptest.NewRequest(http.MethodPost, "/beads", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rec.Code)
+	}
+	var env map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body must parse: %v", err)
+	}
+	if env["error"] != "adaptor_not_configured" {
+		t.Errorf("want error=adaptor_not_configured, got %v", env["error"])
+	}
+}

@@ -1,9 +1,13 @@
 package gt
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 )
@@ -13,6 +17,7 @@ func init() {
 		Name:   "gastown",
 		Plane:  registry.OrchestrationPlane,
 		Detect: detect,
+		Probe:  probe,
 	})
 }
 
@@ -46,4 +51,50 @@ func detect() registry.DetectResult {
 func isDir(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// probeTimeout bounds how long we'll wait for `gt` to answer. Gas Town
+// reads/writes beads through the shared Dolt server; the DoD in gm-b1
+// explicitly calls out detecting Gas Town degradation, so the probe must
+// catch Dolt hangs too.
+var probeTimeout = 2 * time.Second
+
+// probe: runtime health check used by /api/adaptors. `gt dolt status`
+// is the documented way to check Gas Town's data-plane health (see the
+// town CLAUDE.md "Dolt Server — Operational Awareness" section), so it's
+// the right lever here. A failure means either gt itself is broken or
+// the Dolt daemon is unreachable — both are "degraded" from the UI's
+// perspective.
+func probe() registry.DetectResult {
+	if d := detect(); !d.Ok {
+		return d
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "gt", "dolt", "status")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return registry.DetectResult{
+				Reason: "gt dolt status timed out; Dolt may be hung",
+			}
+		}
+		trimmed := strings.TrimSpace(string(out))
+		if trimmed == "" {
+			trimmed = err.Error()
+		}
+		return registry.DetectResult{
+			Reason: "gt probe failed: " + firstLine(trimmed),
+		}
+	}
+	return registry.DetectResult{Ok: true}
+}
+
+func firstLine(s string) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
