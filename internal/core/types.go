@@ -3,16 +3,17 @@ package core
 
 import "time"
 
-// WorkItemID is the adaptor-qualified identifier for a work item. Format
-// is intentionally opaque to Gemba core; adaptors choose whatever scheme
-// is stable and unique within their own namespace (e.g. "bd:gm-e3.1",
-// "jira:GEMBA-17"). The prefix lets multi-adaptor setups round-trip IDs
-// without collision.
+// WorkItemID is the workspace-qualified identifier for a work item.
+// Format is "<workspace>/<repo>/<native-id>" (e.g. "gemba/gemba/gm-e3.1",
+// "myorg/atl/GEMBA-17"). The workspace/repo prefix disambiguates
+// multi-workspace deployments (gm-root DD-6); two Beads workspaces on
+// the same Gemba instance are distinguishable by this prefix where a
+// bare adaptor-kind prefix would collide.
 type WorkItemID string
 
-// AgentID is the adaptor-qualified identifier for an agent. Same shape
-// rules as WorkItemID; the prefix names the orchestration adaptor (e.g.
-// "gt:gemba/polecats/jasper", "langgraph:run-42/node-a").
+// AgentID is the workspace-qualified identifier for an agent. Same shape
+// rules as WorkItemID: "<workspace>/<repo-or-scope>/<native-id>" (e.g.
+// "gemba/polecats/jasper", "langgraph/run-42/node-a").
 type AgentID string
 
 // WorkItem is the adaptor-agnostic view of a unit of work. Every
@@ -49,40 +50,67 @@ type WorkItem struct {
 	Custom        map[string]any    `json:"custom,omitempty"`
 }
 
-// AgentRef is the adaptor-agnostic view of an agent — a human, a polecat,
-// a LangGraph node, a Gas Town crew member, or a plain human user. Core
+// AgentKind distinguishes an automated agent from a human operator.
+// The UI renders the two with distinct visual treatment (gm-e12.4
+// Agents dashboard depends on this); capability manifests may also
+// gate action types on Kind.
+type AgentKind string
+
+const (
+	// AgentKindAgent — an automated actor (polecat, LangGraph node,
+	// Gas Town crew member, etc.).
+	AgentKindAgent AgentKind = "agent"
+	// AgentKindHuman — a human operator.
+	AgentKindHuman AgentKind = "human"
+)
+
+// AgentRef is the adaptor-agnostic view of an agent — a polecat, a
+// LangGraph node, a Gas Town crew member, or a human user. Core
 // doesn't care which; capability manifests decide what actions that
 // agent can be the subject of.
+//
+// ParentID carries parent-agent federation (gm-root DD-1): orchestrators
+// with hierarchical structures (Gas Town Mayor → Polecats; LangGraph
+// supervisor → subgraph nodes) populate it so the UI can render agent
+// hierarchies without adaptor-specific hacks. Nil means the agent is
+// top-level or standalone.
 type AgentRef struct {
-	ID        AgentID `json:"id"`
-	Name      string  `json:"name"`
-	Role      string  `json:"role,omitempty"`
-	Workspace string  `json:"workspace,omitempty"`
+	ID        AgentID   `json:"id"`
+	Name      string    `json:"name"`
+	Kind      AgentKind `json:"agent_kind"`
+	ParentID  *AgentID  `json:"parent_id,omitempty"`
+	Role      string    `json:"role,omitempty"`
+	Workspace string    `json:"workspace,omitempty"`
 }
 
 // RelationshipKind enumerates the directed edges the two planes share.
-// Adaptor-specific link types must map onto one of these or be exposed
-// through Custom; the Kanban UI only renders these.
+// Per gm-root DD-9, core recognises exactly three kinds; any richer
+// adaptor-native edge type (Beads's 7 edges, Jira's link catalogue,
+// LangGraph's control/data flow) either maps onto one of these at the
+// adaptor boundary or is declared through the adaptor's
+// CapabilityManifest and rendered as "relates_to" in the core Kanban UI.
 type RelationshipKind string
 
 const (
-	// RelBlocks — From blocks To. Inverse of depends_on.
+	// RelBlocks — directed: From blocks To (From must complete before
+	// To can start). Adaptors whose native edge is "depends_on" map the
+	// inverse to this edge at their boundary.
 	RelBlocks RelationshipKind = "blocks"
-	// RelDependsOn — From depends on To completing first.
-	RelDependsOn RelationshipKind = "depends_on"
-	// RelParentOf — hierarchical parent→child (epic→story).
-	RelParentOf RelationshipKind = "parent_of"
-	// RelChildOf — the other direction of parent_of, exposed explicitly so
-	// adaptors that only know "my parent is X" don't have to invert.
-	RelChildOf RelationshipKind = "child_of"
-	// RelRelated — non-directional association. Use sparingly.
-	RelRelated RelationshipKind = "related"
+	// RelParentChild — directed: From is the parent of To (epic→story,
+	// supervisor→subtask, orchestrator→polecat work).
+	RelParentChild RelationshipKind = "parent_child"
+	// RelRelatesTo — advisory cross-reference. No ordering semantics.
+	// This is the edge the capability-negotiation UI falls back to when
+	// an adaptor declares a non-core edge type that core should still
+	// render as "associated with".
+	RelRelatesTo RelationshipKind = "relates_to"
 )
 
 // Relationship is a typed edge between two work items. Edges are stored
 // on the source item's Relationships slice; adaptors are responsible for
 // emitting the inverse if they want both directions walkable without a
-// full scan.
+// full scan. Only the three kinds above are valid core edges; adaptor
+// extensions flow through CapabilityManifest (see gm-e3.2).
 type Relationship struct {
 	Kind RelationshipKind `json:"kind"`
 	From WorkItemID       `json:"from"`

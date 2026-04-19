@@ -49,9 +49,10 @@ func TestWorkItemRoundTrip(t *testing.T) {
 	ts := time.Date(2026, 4, 18, 12, 0, 0, 0, time.UTC)
 	prio := 0
 	sprintID := "sp-2026-w16"
+	mayorID := AgentID("gemba/crew/mayor")
 
 	wi := WorkItem{
-		ID:            "bd:gm-e3.1",
+		ID:            "gemba/gemba/gm-e3.1",
 		Kind:          "task",
 		Title:         "Define core types",
 		Description:   "See gm-e3.1.",
@@ -59,16 +60,19 @@ func TestWorkItemRoundTrip(t *testing.T) {
 		StateCategory: StateStarted,
 		Priority:      &prio,
 		Owner: &AgentRef{
-			ID: "gt:gemba/crew/mike", Name: "mike", Role: "crew",
+			ID: "gemba/crew/mike", Name: "mike",
+			Kind: AgentKindHuman, Role: "crew",
 		},
 		Assignee: &AgentRef{
-			ID: "gt:gemba/polecats/jasper", Name: "jasper",
+			ID: "gemba/polecats/jasper", Name: "jasper",
+			Kind: AgentKindAgent, ParentID: &mayorID,
 			Role: "polecat", Workspace: "gemba",
 		},
 		Labels: []string{"fed:safe", "layer:core"},
 		Relationships: []Relationship{
-			{Kind: RelBlocks, From: "bd:gm-e3.1", To: "bd:gm-e3.2"},
-			{Kind: RelChildOf, From: "bd:gm-e3.1", To: "bd:gm-e3"},
+			{Kind: RelBlocks, From: "gemba/gemba/gm-e3.1", To: "gemba/gemba/gm-e3.2"},
+			{Kind: RelParentChild, From: "gemba/gemba/gm-e3", To: "gemba/gemba/gm-e3.1"},
+			{Kind: RelRelatesTo, From: "gemba/gemba/gm-e3.1", To: "gemba/gemba/gm-p65"},
 		},
 		Evidence: []Evidence{
 			{
@@ -100,6 +104,71 @@ func TestWorkItemRoundTrip(t *testing.T) {
 
 	if !reflect.DeepEqual(wi, round) {
 		t.Errorf("round trip mismatch:\n got: %+v\nwant: %+v", round, wi)
+	}
+}
+
+func TestAgentKindJSONRoundTrip(t *testing.T) {
+	parent := AgentID("gemba/crew/mayor")
+	cases := []AgentRef{
+		{
+			ID: "gemba/polecats/jasper", Name: "jasper",
+			Kind: AgentKindAgent, ParentID: &parent,
+			Role: "polecat", Workspace: "gemba",
+		},
+		{
+			ID: "gemba/crew/mike", Name: "mike",
+			Kind: AgentKindHuman, Role: "crew",
+		},
+	}
+	for _, a := range cases {
+		data, err := json.Marshal(a)
+		if err != nil {
+			t.Fatalf("marshal %v: %v", a, err)
+		}
+		var round AgentRef
+		if err := json.Unmarshal(data, &round); err != nil {
+			t.Fatalf("unmarshal %s: %v", data, err)
+		}
+		if !reflect.DeepEqual(a, round) {
+			t.Errorf("round trip mismatch:\n got: %+v\nwant: %+v", round, a)
+		}
+	}
+
+	// agent_kind must be present on the wire (not omitempty).
+	var generic map[string]any
+	data, _ := json.Marshal(AgentRef{
+		ID: "x/y/z", Name: "n", Kind: AgentKindHuman,
+	})
+	if err := json.Unmarshal(data, &generic); err != nil {
+		t.Fatalf("decode generic: %v", err)
+	}
+	if _, ok := generic["agent_kind"]; !ok {
+		t.Errorf("agent_kind missing from wire form: %s", data)
+	}
+	// parent_id is omitempty when nil.
+	if _, ok := generic["parent_id"]; ok {
+		t.Errorf("parent_id should be omitted when nil: %s", data)
+	}
+}
+
+func TestRelationshipKindsRoundTrip(t *testing.T) {
+	rels := []Relationship{
+		{Kind: RelBlocks, From: "w/r/a", To: "w/r/b"},
+		{Kind: RelParentChild, From: "w/r/epic", To: "w/r/story"},
+		{Kind: RelRelatesTo, From: "w/r/a", To: "w/r/c"},
+	}
+	for _, r := range rels {
+		data, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("marshal %v: %v", r, err)
+		}
+		var round Relationship
+		if err := json.Unmarshal(data, &round); err != nil {
+			t.Fatalf("unmarshal %s: %v", data, err)
+		}
+		if round != r {
+			t.Errorf("round trip mismatch: got %+v want %+v", round, r)
+		}
 	}
 }
 

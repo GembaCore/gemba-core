@@ -8,41 +8,29 @@
 export type WorkItemID = string;
 export type AgentID = string;
 
-export type StateCategory =
-  | "backlog"
-  | "unstarted"
-  | "started"
-  | "completed"
-  | "canceled";
+export type StateCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
 
 export const STATE_CATEGORIES: readonly StateCategory[] = [
-  "backlog",
-  "unstarted",
-  "started",
-  "completed",
-  "canceled",
+  'backlog',
+  'unstarted',
+  'started',
+  'completed',
+  'canceled',
 ] as const;
 
-export type RelationshipKind =
-  | "blocks"
-  | "depends_on"
-  | "parent_of"
-  | "child_of"
-  | "related";
+export type RelationshipKind = 'blocks' | 'parent_child' | 'relates_to';
 
-export type EvidenceKind =
-  | "commit"
-  | "log"
-  | "test_result"
-  | "url"
-  | "file"
-  | "custom";
+export type EvidenceKind = 'commit' | 'log' | 'test_result' | 'url' | 'file' | 'custom';
 
-export type BudgetTier = "inform" | "warn" | "stop";
+export type BudgetTier = 'inform' | 'warn' | 'stop';
+
+export type AgentKind = 'agent' | 'human';
 
 export interface AgentRef {
   id: AgentID;
   name: string;
+  agent_kind: AgentKind;
+  parent_id?: AgentID | null;
   role?: string;
   workspace?: string;
 }

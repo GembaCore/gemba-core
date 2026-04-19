@@ -75,7 +75,7 @@ func TestSprintRoundTrip(t *testing.T) {
 		StartsAt:  start,
 		EndsAt:    end,
 		Goal:      "Land core contracts",
-		WorkItems: []WorkItemID{"bd:gm-e3.1", "bd:gm-e3.2"},
+		WorkItems: []WorkItemID{"gemba/gemba/gm-e3.1", "gemba/gemba/gm-e3.2"},
 		Budget: &TokenBudget{
 			Limit: 10_000_000, Used: 100, Inform: 5_000_000,
 			Warn: 7_500_000, Stop: 9_000_000,

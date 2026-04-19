@@ -37,10 +37,8 @@ export const STATE_CATEGORIES: readonly StateCategory[] = [
 
 export type RelationshipKind =
   | "blocks"
-  | "depends_on"
-  | "parent_of"
-  | "child_of"
-  | "related";
+  | "parent_child"
+  | "relates_to";
 
 export type EvidenceKind =
   | "commit"
@@ -52,9 +50,13 @@ export type EvidenceKind =
 
 export type BudgetTier = "inform" | "warn" | "stop";
 
+export type AgentKind = "agent" | "human";
+
 export interface AgentRef {
   id: AgentID;
   name: string;
+  agent_kind: AgentKind;
+  parent_id?: AgentID | null;
   role?: string;
   workspace?: string;
 }

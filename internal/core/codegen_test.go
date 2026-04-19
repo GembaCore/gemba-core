@@ -54,8 +54,9 @@ func TestCoreTypesTSContainsEveryEnumString(t *testing.T) {
 		string(StateBacklog), string(StateUnstarted), string(StateStarted),
 		string(StateCompleted), string(StateCanceled),
 		// RelationshipKind
-		string(RelBlocks), string(RelDependsOn), string(RelParentOf),
-		string(RelChildOf), string(RelRelated),
+		string(RelBlocks), string(RelParentChild), string(RelRelatesTo),
+		// AgentKind
+		string(AgentKindAgent), string(AgentKindHuman),
 		// EvidenceKind
 		string(EvidenceCommit), string(EvidenceLog), string(EvidenceTestResult),
 		string(EvidenceURL), string(EvidenceFile), string(EvidenceCustom),
