@@ -9,53 +9,50 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  backend:
-    name: Go (${{ matrix.os }}, go ${{ matrix.go }})
+  build:
+    name: ${{ matrix.os }} · go ${{ matrix.go }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-22.04, macos-14, windows-2022]
         go: ['1.23', '1.24']
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
           cache: true
-      - run: go vet ./...
-      - run: go test -race -count=1 ./...
-      - run: go build -o bin/bc ./cmd/gemba
 
-  frontend:
-    name: Frontend
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
           version: 9
+
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
-      - run: cd web && pnpm install --frozen-lockfile
-      - run: cd web && pnpm lint
-      - run: cd web && pnpm build
-      - run: cd web && pnpm test --run
 
-  lint:
-    name: Go lint
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.24'
-          cache: true
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: v1.62
-          args: --timeout=5m
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" v1.62.2
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: make lint
+        run: make lint
+
+      - name: make test
+        run: make test
+
+      - name: make build
+        run: make build

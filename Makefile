@@ -42,7 +42,7 @@ build-go-only: ## build without rebuilding the frontend (fast dev iteration)
 ## --- Test / Lint ---
 
 test: ## run Go + frontend tests
-	go test ./...
+	go test -race -count=1 ./...
 	cd web && pnpm test --run
 
 lint: ## run golangci-lint and frontend lint

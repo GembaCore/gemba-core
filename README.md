@@ -1,5 +1,7 @@
 # gemba
 
+[![CI](https://github.com/MikeBengtson/gemba/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MikeBengtson/gemba/actions/workflows/ci.yml)
+
 A single-binary Go service with an embedded React SPA that pairs *exactly one* **WorkPlane adaptor** (work tracker — Beads, Jira, Linear, GitHub Projects, Azure DevOps, Shortcut, Plane, …) with *exactly one* **OrchestrationPlane adaptor** (agent runtime — Gas Town, Gas City, LangGraph, CrewAI, OpenHands, Devin, Factory, …) and renders whatever the two declare.
 
 ## Status
