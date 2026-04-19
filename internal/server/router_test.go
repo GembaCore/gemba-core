@@ -188,6 +188,29 @@ func TestTokenAuth_ValidBearer_Routes(t *testing.T) {
 	}
 }
 
+// gm-b3 DoD: "every request" spans both subrouters. /events is mounted
+// separately from /api, so it has its own auth wiring — this pins down
+// that the enforcement is not /api-only.
+func TestTokenAuth_EventsRequiresBearer_OnLoopback(t *testing.T) {
+	cfg := config.ServeConfig{Listen: "127.0.0.1", AuthMode: "token", AuthToken: "s3cret"}
+	h := NewRouter(cfg, fakeSPA())
+
+	req := httptest.NewRequest(http.MethodGet, "/events/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401 on /events/ without bearer, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/events/", nil)
+	req.Header.Set("Authorization", "Bearer s3cret")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code == http.StatusUnauthorized {
+		t.Fatalf("want non-401 on /events/ with valid bearer, got 401; body=%q", rec.Body.String())
+	}
+}
+
 // Regression guard: auth=none (default) must not accidentally start
 // rejecting unauthenticated requests.
 func TestAuthNone_NoBearerRequired(t *testing.T) {
