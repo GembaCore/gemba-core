@@ -45,6 +45,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newServeCmd(),
 		newDoctorCmd(),
 		newVersionCmd(b),
+		newAdaptorCmd(),
 	)
 
 	return root
