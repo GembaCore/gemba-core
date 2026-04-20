@@ -14,11 +14,18 @@ type ServeConfig struct {
 	Port   int
 	Open   bool
 
-	AuthMode      string
-	AuthToken     string
-	TLSCert       string
-	TLSKey        string
-	TLSSelfSigned bool
+	AuthMode string
+	// AuthToken, when non-empty, is the plaintext bearer compared against
+	// incoming requests. Set it for tests and for --auth-token overrides;
+	// production runs leave it empty and let the server verify against the
+	// hashed file at AuthTokenHashPath.
+	AuthToken string
+	// AuthTokenHashPath points at the argon2id PHC hash file written by
+	// `gemba auth token rotate`. Defaults to ~/.gemba/tokens/primary.
+	AuthTokenHashPath string
+	TLSCert           string
+	TLSKey            string
+	TLSSelfSigned     bool
 
 	// City is the path to a Gas City workspace (preferred).
 	// Town is the path to a Gas Town HQ (legacy; kept for back-compat).

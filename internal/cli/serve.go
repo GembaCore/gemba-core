@@ -79,18 +79,22 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 			"note", "mutations will not require confirmation for this session")
 	}
 
-	// Generate a token when the operator opts into token auth but hasn't
-	// supplied one. Printed once at startup so it can be copied; never
-	// re-logged on subsequent requests (gm-99g / gm-b3).
+	// Token auth: verify against the argon2id hash file on disk. If the
+	// file is missing, bootstrap it by generating a fresh token, printing
+	// it ONCE to stderr, and persisting only the hash. The plaintext
+	// token is never written anywhere else and never passes through slog
+	// (gm-e5.2 DoD).
 	if cfg.EffectiveAuthMode() == "token" && cfg.AuthToken == "" {
-		tok, err := auth.NewToken()
-		if err != nil {
-			return fmt.Errorf("generate auth token: %w", err)
+		if cfg.AuthTokenHashPath == "" {
+			p, err := auth.DefaultTokenPath()
+			if err != nil {
+				return fmt.Errorf("resolve token path: %w", err)
+			}
+			cfg.AuthTokenHashPath = p
 		}
-		cfg.AuthToken = tok
-		slog.Info("generated token auth credential",
-			"token", tok,
-			"usage", "pass header: Authorization: Bearer <token>")
+		if err := ensurePrimaryToken(cfg.AuthTokenHashPath); err != nil {
+			return err
+		}
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
@@ -139,4 +143,42 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 		context.Background(), 10*time.Second)
 	defer cancelShutdown()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// ensurePrimaryToken makes sure path contains a valid argon2id hash. When
+// the file is absent it generates a fresh token, prints the plaintext once
+// to stderr, and persists the hash with 0600 permissions. Stderr (not the
+// slog pipeline) is used deliberately so the token does not enter any
+// structured log stream.
+func ensurePrimaryToken(path string) error {
+	existing, err := auth.ReadHash(path)
+	if err != nil {
+		return fmt.Errorf("read token hash: %w", err)
+	}
+	if existing != "" {
+		return nil
+	}
+	tok, err := auth.NewToken()
+	if err != nil {
+		return fmt.Errorf("generate auth token: %w", err)
+	}
+	hash, err := auth.HashToken(tok)
+	if err != nil {
+		return fmt.Errorf("hash auth token: %w", err)
+	}
+	if err := auth.WriteHash(path, hash); err != nil {
+		return fmt.Errorf("write token hash: %w", err)
+	}
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "==============================================================")
+	fmt.Fprintln(os.Stderr, "  Gemba generated a new auth token. This is the ONLY time it")
+	fmt.Fprintln(os.Stderr, "  will be shown. Copy it now.")
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "  Token:  "+tok)
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "  Header: Authorization: Bearer <token>")
+	fmt.Fprintln(os.Stderr, "  Hash:   "+path)
+	fmt.Fprintln(os.Stderr, "==============================================================")
+	fmt.Fprintln(os.Stderr)
+	return nil
 }

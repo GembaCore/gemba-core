@@ -5,6 +5,7 @@ package server
 import (
 	"encoding/json"
 	"io/fs"
+	"log/slog"
 	"net/http"
 
 	"github.com/MikeBengtson/gemba/internal/auth"
@@ -39,8 +40,18 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 	// gm-99g): any /api/* or /events request must reject before route
 	// lookup when a missing/invalid bearer is presented.
 	var apiAuth func(http.Handler) http.Handler
-	if cfg.EffectiveAuthMode() == "token" && cfg.AuthToken != "" {
-		apiAuth = auth.BearerAuth(cfg.AuthToken)
+	var cookieSigner *auth.CookieSigner
+	if cfg.EffectiveAuthMode() == "token" {
+		if verifier := buildVerifier(cfg); verifier != nil {
+			cs, err := auth.NewCookieSigner()
+			if err != nil {
+				slog.Error("cookie signer init failed; cookie auth disabled",
+					"err", err)
+			} else {
+				cookieSigner = cs
+			}
+			apiAuth = auth.BearerOrCookieAuth(verifier, cookieSigner)
+		}
 	}
 
 	// API routes. Everything under /api/* and /events/* is explicit so the
@@ -51,6 +62,13 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 		}
 		api.NotFound(apiNotFound)
 		api.MethodNotAllowed(apiNotFound)
+
+		// Login: exchange bearer (or refresh cookie) for a signed session
+		// cookie. Mounted inside the auth-protected block — the middleware
+		// does the credential check, the handler just stamps the cookie.
+		if cookieSigner != nil {
+			api.Method(http.MethodPost, "/auth/login", auth.LoginHandler(cookieSigner))
+		}
 
 		api.Get("/health", r.health)
 		api.Get("/version", r.version)
@@ -143,6 +161,20 @@ func apiNotFound(w http.ResponseWriter, req *http.Request) {
 		"path":   req.URL.Path,
 		"method": req.Method,
 	})
+}
+
+// buildVerifier picks the right token verifier for the running config.
+// A plaintext AuthToken wins (tests and legacy flows); otherwise fall back
+// to the hash file at AuthTokenHashPath. Returns nil when neither is set,
+// meaning auth=token was requested but no credential is available.
+func buildVerifier(cfg config.ServeConfig) auth.Verifier {
+	if cfg.AuthToken != "" {
+		return auth.NewPlainVerifier(cfg.AuthToken)
+	}
+	if cfg.AuthTokenHashPath != "" {
+		return auth.NewHashVerifier(cfg.AuthTokenHashPath)
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

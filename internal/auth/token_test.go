@@ -15,7 +15,7 @@ func okHandler() http.Handler {
 }
 
 func TestBearerAuth_MissingHeader_Returns401(t *testing.T) {
-	mw := BearerAuth("s3cret")(okHandler())
+	mw := BearerAuth(NewPlainVerifier("s3cret"))(okHandler())
 	req := httptest.NewRequest(http.MethodGet, "/any", nil)
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
@@ -28,7 +28,7 @@ func TestBearerAuth_MissingHeader_Returns401(t *testing.T) {
 }
 
 func TestBearerAuth_WrongToken_Returns401(t *testing.T) {
-	mw := BearerAuth("s3cret")(okHandler())
+	mw := BearerAuth(NewPlainVerifier("s3cret"))(okHandler())
 	req := httptest.NewRequest(http.MethodGet, "/any", nil)
 	req.Header.Set("Authorization", "Bearer wrong")
 	rec := httptest.NewRecorder()
@@ -39,7 +39,7 @@ func TestBearerAuth_WrongToken_Returns401(t *testing.T) {
 }
 
 func TestBearerAuth_CorrectToken_PassesThrough(t *testing.T) {
-	mw := BearerAuth("s3cret")(okHandler())
+	mw := BearerAuth(NewPlainVerifier("s3cret"))(okHandler())
 	req := httptest.NewRequest(http.MethodGet, "/any", nil)
 	req.Header.Set("Authorization", "Bearer s3cret")
 	rec := httptest.NewRecorder()
