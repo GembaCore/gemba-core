@@ -79,6 +79,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 		// surfaces a banner when any adaptor reports healthy=false.
 		api.Get("/adaptors", adaptorsHealth)
 
+		// Capability manifests for both planes. The SPA reads these to
+		// gate adaptor-specific controls (gm-e11.4). Null manifests
+		// mean "no adaptor registered" — the SPA treats that as "hide".
+		api.Get("/capabilities", capabilitiesEndpoint)
+
 		// Stubs for the real surface. Filled in by Phase 2 work
 		// (gm-e2.6 and children). Returning 501 now makes it obvious
 		// which endpoints aren't wired yet.
