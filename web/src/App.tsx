@@ -3,7 +3,6 @@ import { AppShell } from '@/layouts/AppShell';
 import {
   BacklogPage,
   BoardPage,
-  CapabilitiesPage,
   EscalationsPage,
   GraphPage,
   HealthPage,
@@ -11,6 +10,7 @@ import {
   MailPage,
   NotFoundPage,
 } from '@/pages/placeholders';
+import { CapabilityBrowser } from '@/pages/CapabilityBrowser';
 import { features } from '@/lib/features';
 
 export default function App() {
@@ -23,7 +23,7 @@ export default function App() {
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />
         <Route path="/escalations" element={<EscalationsPage />} />
-        <Route path="/capabilities" element={<CapabilitiesPage />} />
+        <Route path="/capabilities" element={<CapabilityBrowser />} />
         {features.mail && <Route path="/mail" element={<MailPage />} />}
         <Route path="/health" element={<HealthPage />} />
         <Route path="*" element={<NotFoundPage />} />
