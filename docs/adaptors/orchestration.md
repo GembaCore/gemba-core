@@ -184,12 +184,31 @@ the transport disconnects. Event kinds include:
 
 - `session_transition` — payload: `{before, after}`
 - `cost_sample` — payload: the `CostSample`
-- `escalation_opened` / `escalation_resolved`
+- `escalation_opened` / `escalation_resolved` / `escalation_expired`
 - `potential_conflict` — two assignments touching overlapping files
-- `workspace_released`
+- `workspace_acquired` / `workspace_released`
+- `reservation_claimed` / `reservation_released`
 
 Event ordering MUST be causal within a single assignment (conformance
 E.3).
+
+#### Event emission is mandatory (DD-12 / Foolery-spike lesson)
+
+Every state-changing OrchestrationPlane call — `ClaimNextReady`,
+`ReleaseReservation`, `StartSession`, `PauseSession`, `ResumeSession`,
+`EndSession`, `AcquireWorkspace`, `ReleaseWorkspace`, and
+`ResolveEscalation` — **MUST** emit a matching `OrchestrationEvent`
+visible on `Subscribe` within the adaptor's declared latency budget
+(default 250ms for SSE/push, 5s for poll). Successful mutation with no
+event is a **hard conformance failure** (§3.8 Group E
+`mutation_without_event_is_failure`).
+
+This is a **MUST**, not a SHOULD. `event_delivery: "poll"` controls the
+adaptor's internal fetch strategy only; poll-mode adaptors MUST still
+queue and emit events on `Subscribe`. The UI's 500ms freshness bar
+(gm-e12.2 DoD) cannot be met when state updates require client-side
+polling — the exact failure mode surfaced by the Foolery spike
+(docs/prior-art/foolery.md: SSE for terminal streams, polled beats).
 
 ---
 

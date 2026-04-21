@@ -130,6 +130,24 @@ Mutation requests reach the WorkPlane only after the transport layer
 verifies the `X-GEMBA-Confirm` nonce (gm-root DD-7); adaptors can assume
 that check has already fired.
 
+### Event emission is mandatory (DD-12 / Foolery-spike lesson)
+
+Every state-changing WorkPlane call — `CreateWorkItem`, `UpdateWorkItem`,
+`AttachEvidence`, and all the future mutation methods (`transition`,
+`claim`, `unclaim`, `close`, `link`, `unlink`, sprint mutations) — **MUST**
+produce a matching `WorkPlaneEvent` visible on `Subscribe` within the
+adaptor's declared latency budget (default 250ms for SSE/push, 5s for
+poll). A mutation that returns success but emits no event is a **hard
+conformance failure** (§2.6 Group D `mutation_without_event_is_failure`).
+
+This is a **MUST**, not a SHOULD. Declaring `event_delivery: "poll"`
+controls the adaptor's *internal* fetch strategy; it does not permit the
+adaptor to push snapshot-diffing onto the UI. Poll-mode adaptors MUST
+queue and emit events on `Subscribe` after each poll tick. The UI's 500ms
+state-freshness bar (gm-e12.2 DoD) is unmeetable if state updates require
+client-side polling, which is precisely the failure mode the Foolery
+spike uncovered (docs/prior-art/foolery.md).
+
 ## Sprint + TokenBudget (DD-14)
 
 - `ListSprints` returns whatever sprints the backend declares today.
@@ -154,6 +172,9 @@ cadence and `ProtocolVersion` only when the core contract changes.
 - [ ] `Describe` returns a manifest that passes `CapabilityManifest.Validate`.
 - [ ] `StateMap` covers every native status the backend can emit.
 - [ ] Every mutation path calls the backend's **public** CLI or API.
+- [ ] Every mutation path emits a matching `WorkPlaneEvent` on `Subscribe`
+      within the declared latency budget (**MUST** — conformance Group D
+      `mutation_without_event_is_failure`).
 - [ ] `ErrNotFound` and `ErrUnsupported` are returned in the right places.
 - [ ] Extension renderers live under `web/src/extensions/<adaptor-id>/`.
 - [ ] Manifest round-trips through JSON unchanged (covered by the

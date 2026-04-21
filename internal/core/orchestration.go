@@ -496,6 +496,16 @@ type ConfirmNonce string
 //     mutating calls take a ConfirmNonce for idempotency.
 //   - Subscribe returns an async iterator of OrchestrationEvents; the
 //     adaptor closes the channel on ctx cancellation.
+//   - Every state-changing method (ClaimNextReady, ReleaseReservation,
+//     StartSession, PauseSession, ResumeSession, EndSession,
+//     AcquireWorkspace, ReleaseWorkspace, ResolveEscalation) MUST emit a
+//     matching OrchestrationEvent on Subscribe within the adaptor's
+//     declared latency budget (default 250ms for SSE/push, 5s for poll).
+//     A successful mutation with no matching event is a conformance
+//     failure (domain.md §3.8 Group E). See docs/adaptors/orchestration.md
+//     and the Foolery-spike lesson (docs/prior-art/foolery.md) — the UI's
+//     500ms freshness bar is unmeetable when state updates require client
+//     polling.
 //
 // Implementations MUST be safe for concurrent use.
 type OrchestrationPlaneAdaptor interface {
@@ -527,23 +537,28 @@ type OrchestrationPlaneAdaptor interface {
 
 	// ClaimNextReady atomically reserves the next ready work item for
 	// claimant. Returns (nil, nil) when no work is available (the
-	// caller distinguishes this from an error).
+	// caller distinguishes this from an error). On a non-nil reservation,
+	// the adaptor MUST emit a `reservation_claimed` OrchestrationEvent.
 	ClaimNextReady(ctx context.Context, f ReadyFilter, claimant AgentRef) (*Reservation, error)
 	// ReleaseReservation releases a reservation without converting it.
+	// MUST emit a `reservation_released` OrchestrationEvent on success.
 	ReleaseReservation(ctx context.Context, reservationID string) error
 
 	// StartSession starts a session against an existing assignment and
 	// returns the live Session. The adaptor MUST reject calls whose
-	// assignmentID is unknown (conformance B.3).
+	// assignmentID is unknown (conformance B.3) and MUST emit a
+	// `session_transition` event with the new session's state on success.
 	StartSession(ctx context.Context, assignmentID string, prompt SessionPrompt) (Session, error)
 	// PauseSession moves a running session to suspended. Idempotent
-	// under the same nonce.
+	// under the same nonce. MUST emit a `session_transition` event
+	// (first call only; replays under the same nonce emit nothing).
 	PauseSession(ctx context.Context, sessionID string, nonce ConfirmNonce) (Session, error)
 	// ResumeSession moves a suspended/input_required session back to
-	// running.
+	// running. MUST emit a `session_transition` event on the first call.
 	ResumeSession(ctx context.Context, sessionID string, nonce ConfirmNonce) (Session, error)
 	// EndSession terminates a session with the given mode. Idempotent
-	// under the same nonce (conformance B.4).
+	// under the same nonce (conformance B.4). MUST emit a
+	// `session_transition` event on the first call.
 	EndSession(ctx context.Context, sessionID string, mode SessionEndMode, nonce ConfirmNonce) (Session, error)
 	// PeekSession returns a snapshot of a live session. The populated
 	// fields are gated by manifest.peek_modes.
@@ -551,9 +566,11 @@ type OrchestrationPlaneAdaptor interface {
 
 	// AcquireWorkspace provisions a workspace matching req. Errors
 	// (rather than silently downgrading) if no supported kind satisfies
-	// required_isolation.
+	// required_isolation. MUST emit a `workspace_acquired` event on
+	// success.
 	AcquireWorkspace(ctx context.Context, req WorkspaceRequest) (Workspace, error)
-	// ReleaseWorkspace releases a workspace; idempotent.
+	// ReleaseWorkspace releases a workspace; idempotent. MUST emit a
+	// `workspace_released` event on the first call.
 	ReleaseWorkspace(ctx context.Context, workspaceID string) error
 	// InspectWorkspace returns the current status of a workspace.
 	InspectWorkspace(ctx context.Context, workspaceID string) (Workspace, error)
@@ -561,7 +578,10 @@ type OrchestrationPlaneAdaptor interface {
 	// ListOpenEscalations returns escalations in state=open matching f.
 	ListOpenEscalations(ctx context.Context, f EscalationFilter) ([]EscalationRequest, error)
 	// ResolveEscalation records a resolution and, for blocking
-	// escalations, unblocks the associated session.
+	// escalations, unblocks the associated session. MUST emit an
+	// `escalation_resolved` event on the first call under a given nonce;
+	// for blocking escalations that resume the session, MUST also emit a
+	// `session_transition` event.
 	ResolveEscalation(ctx context.Context, escalationID string, r EscalationResolution, nonce ConfirmNonce) (EscalationRequest, error)
 
 	// Subscribe streams OrchestrationEvents matching f. The adaptor
