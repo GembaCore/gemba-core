@@ -42,6 +42,13 @@ jobs:
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
+      # actions/setup-node@v4 with `cache: pnpm` only restores the pnpm store
+      # cache — it does NOT run `pnpm install`. Without this step, web/node_modules
+      # is empty and `pnpm lint` fails with "eslint: command not found".
+      - name: Install frontend deps
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+
       - name: Install golangci-lint
         run: |
           curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh \

@@ -44,11 +44,11 @@ build-go-only: ## build without rebuilding the frontend (fast dev iteration)
 dist-sentinel: ## ensure web/dist exists with sentinel so //go:embed all:web/dist matches on fresh clones
 	@mkdir -p web/dist && touch web/dist/.keep
 
-test: dist-sentinel ## run Go (race) + frontend tests
+test: dist-sentinel frontend-install ## run Go (race) + frontend tests
 	go test -race -count=1 ./...
 	cd web && pnpm test --run
 
-lint: dist-sentinel ## run golangci-lint and frontend lint
+lint: dist-sentinel frontend-install ## run golangci-lint and frontend lint
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "install: https://golangci-lint.run/usage/install/"; exit 1; }
 	golangci-lint run ./...
 	cd web && pnpm lint
