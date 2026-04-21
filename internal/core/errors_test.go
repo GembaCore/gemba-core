@@ -246,3 +246,80 @@ func TestAssertAdaptorErrorAgainstNoopAdaptor(t *testing.T) {
 		t.Error("Group F must reject bare ErrNotFound sentinel — adaptor should return *AdaptorError")
 	}
 }
+
+// TestValidationIssueRoundTrip — the gm-io4 structured-issue contract:
+// NewValidationError carries a ValidationIssue that survives JSON round-
+// trip and can be read back out via ValidationIssueOf. Transport
+// decoders depend on this invariant so the wire error is indistinguishable
+// from the in-process error the UI would read.
+func TestValidationIssueRoundTrip(t *testing.T) {
+	issue := ValidationIssue{
+		Path:   "end_session.mode",
+		Code:   "enum",
+		Reason: `must be one of ["completed","failed","canceled"]`,
+	}
+	ae := NewValidationError(issue)
+	if ae.Kind != KindValidation {
+		t.Fatalf("Kind=%v, want validation", ae.Kind)
+	}
+	if ae.Retryable {
+		t.Error("validation errors must not be retryable")
+	}
+	got, ok := ValidationIssueOf(ae)
+	if !ok {
+		t.Fatal("ValidationIssueOf failed on fresh error")
+	}
+	if got != issue {
+		t.Errorf("round-trip drift: got %+v", got)
+	}
+
+	// Now through the wire.
+	data, err := json.Marshal(ae)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round AdaptorError
+	if err := json.Unmarshal(data, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	got, ok = ValidationIssueOf(&round)
+	if !ok {
+		t.Fatal("ValidationIssueOf failed on round-tripped error")
+	}
+	if got.Path != issue.Path || got.Code != issue.Code || got.Reason != issue.Reason {
+		t.Errorf("wire round-trip drift: %+v", got)
+	}
+}
+
+// TestAssertBoundaryValidation enforces the gm-io4 Group F extension:
+// transport-boundary errors must be KindValidation AND carry a
+// structured ValidationIssue. Anything else is a conformance failure.
+func TestAssertBoundaryValidation(t *testing.T) {
+	// Nil err — decoder accepted bad input silently. Fails.
+	if err := AssertBoundaryValidation(nil); err == nil {
+		t.Error("Group F boundary: nil must fail (decoder ate the failure)")
+	}
+
+	// Untagged error. Fails.
+	if err := AssertBoundaryValidation(errors.New("raw")); err == nil {
+		t.Error("Group F boundary: untagged error must fail")
+	}
+
+	// Wrong kind. Fails.
+	wrong := NewAdaptorError(KindRequestFailed, "wire oops")
+	if err := AssertBoundaryValidation(wrong); err == nil {
+		t.Error("Group F boundary: kind=request_failed must fail (decoder should emit validation)")
+	}
+
+	// Validation kind but no structured issue. Fails.
+	bare := &AdaptorError{Kind: KindValidation, Message: "just a string"}
+	if err := AssertBoundaryValidation(bare); err == nil {
+		t.Error("Group F boundary: missing ValidationIssue must fail")
+	}
+
+	// Correct shape. Passes.
+	good := NewValidationError(ValidationIssue{Path: "x", Reason: "required", Code: "required"})
+	if err := AssertBoundaryValidation(good); err != nil {
+		t.Errorf("Group F boundary: well-formed validation error should pass: %v", err)
+	}
+}

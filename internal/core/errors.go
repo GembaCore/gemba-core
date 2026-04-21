@@ -286,6 +286,122 @@ func IsRetryable(err error) bool {
 	return ae != nil && ae.Retryable
 }
 
+// ValidationIssue is the structured `issue` payload a transport layer
+// attaches to a KindValidation AdaptorError (gm-io4). The transport
+// decoder — chi handler, jsonl frame pump, MCP tool-call unmarshal —
+// produces this shape so downstream adaptors never see malformed input
+// and the UI gets a stable, render-ready description of what failed.
+//
+// Path is a dotted JSON pointer ("work_item.priority") identifying the
+// field; Reason is a short human-readable cause ("missing required field",
+// "must be one of [completed failed canceled]"); Code is an optional
+// machine-friendly tag ("required", "enum", "type").
+type ValidationIssue struct {
+	Path   string `json:"path,omitempty"`
+	Reason string `json:"reason"`
+	Code   string `json:"code,omitempty"`
+}
+
+// NewValidationError builds a KindValidation *AdaptorError whose Detail
+// carries the structured ValidationIssue under the "issue" key. This is
+// the single canonical constructor transport decoders MUST use so the UI
+// can render validation failures without string-matching on Message.
+//
+//	return nil, core.NewValidationError(core.ValidationIssue{
+//	    Path: "end_session.mode", Code: "enum",
+//	    Reason: `must be one of ["completed","failed","canceled"]`,
+//	})
+func NewValidationError(issue ValidationIssue) *AdaptorError {
+	if issue.Reason == "" {
+		issue.Reason = "invalid input"
+	}
+	msg := issue.Reason
+	if issue.Path != "" {
+		msg = fmt.Sprintf("%s: %s", issue.Path, issue.Reason)
+	}
+	return &AdaptorError{
+		Kind:      KindValidation,
+		Retryable: false,
+		Message:   msg,
+		Detail:    map[string]any{"issue": issue},
+	}
+}
+
+// ValidationIssueOf extracts the ValidationIssue from err's tagged
+// AdaptorError Detail, returning the zero value and false when the
+// error is not a validation error or has no structured issue. The UI
+// and the conformance suite use this to assert that validation failures
+// surface with a structured shape — never a bare message.
+func ValidationIssueOf(err error) (ValidationIssue, bool) {
+	ae := AsAdaptorError(err)
+	if ae == nil || ae.Kind != KindValidation {
+		return ValidationIssue{}, false
+	}
+	raw, ok := ae.Detail["issue"]
+	if !ok {
+		return ValidationIssue{}, false
+	}
+	// Fast path: already typed.
+	if issue, ok := raw.(ValidationIssue); ok {
+		return issue, true
+	}
+	// Wire path: round-tripped through JSON, so Detail["issue"] is a
+	// map[string]any. Re-marshal into the typed shape so callers always
+	// get a consistent struct regardless of where the error came from.
+	m, ok := raw.(map[string]any)
+	if !ok {
+		return ValidationIssue{}, false
+	}
+	out := ValidationIssue{}
+	if v, ok := m["path"].(string); ok {
+		out.Path = v
+	}
+	if v, ok := m["reason"].(string); ok {
+		out.Reason = v
+	}
+	if v, ok := m["code"].(string); ok {
+		out.Code = v
+	}
+	return out, out.Reason != ""
+}
+
+// AssertBoundaryValidation is the Conformance Group F extension for the
+// transport-boundary decoding contract (gm-io4, t3code audit):
+//
+//  1. A malformed input passed to a transport decoder MUST surface as a
+//     KindValidation AdaptorError — not a bare json.SyntaxError, not a
+//     fmt.Errorf, not KindRequestFailed (that is for transport-level
+//     failures, not shape failures).
+//  2. The error's Detail MUST carry a ValidationIssue under "issue".
+//
+// An adaptor that decodes input itself and re-runs these checks is
+// failing the contract: decode belongs AT the boundary. Conformance
+// suites use this to assert their transport passes the boundary rule;
+// AssertAdaptorError covers the broader nine-kind contract already.
+func AssertBoundaryValidation(err error) error {
+	if err == nil {
+		return fmt.Errorf(
+			"conformance Group F (boundary): decoder accepted malformed input without error")
+	}
+	ae := AsAdaptorError(err)
+	if ae == nil {
+		return fmt.Errorf(
+			"conformance Group F (boundary): decoder returned untagged %T (%q); "+
+				"malformed input MUST surface as *AdaptorError{Kind: validation}",
+			err, err.Error())
+	}
+	if ae.Kind != KindValidation {
+		return fmt.Errorf(
+			"conformance Group F (boundary): decoder returned kind=%s, want kind=validation",
+			ae.Kind)
+	}
+	if _, ok := ValidationIssueOf(err); !ok {
+		return fmt.Errorf(
+			"conformance Group F (boundary): validation error missing structured Detail[\"issue\"] (ValidationIssue)")
+	}
+	return nil
+}
+
 // AssertAdaptorError is the Conformance Group F (error semantics) helper:
 // given an error observed from an adaptor-boundary call, it returns nil
 // when the error carries a tagged AdaptorError of a valid kind with the

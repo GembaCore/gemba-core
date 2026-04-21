@@ -281,6 +281,72 @@ adaptor that returns a bare `errors.New()` or `fmt.Errorf` without a
 tagged envelope. Run it against every non-nil error observed from a
 boundary call before accepting a new adaptor.
 
+## Boundary obligations — decode lives at the transport (gm-io4)
+
+> Resolves DD-12 + DD-15 per the t3code audit.
+
+**Adaptors MUST trust their inputs.** Every WorkPlane method receives
+typed, validated values because the transport layer has already decoded
+the wire payload and rejected every structurally-invalid request with
+`KindValidation`. Re-validating the same invariants inside an adaptor is
+the drift the t3code spike flagged: per-adaptor validation diverges over
+time, and defense-in-depth becomes offense-through-depth the moment one
+of the layers skips a check.
+
+Boundary decoders live in `internal/transport/schemas.go` with thin
+per-transport wrappers in:
+
+- `internal/transport/api/schemas.go`  (HTTP + JSON, chi handlers)
+- `internal/transport/jsonl/schemas.go` (newline-delimited JSON frames)
+- `internal/transport/mcp/schemas.go`  (MCP tool-call arguments)
+
+The decoder contract:
+
+1. Unknown JSON fields are rejected — silent drop of an unrecognised key
+   is a bug in the caller, not a feature.
+2. Required fields enforce presence at decode time
+   (`create_work_item.item.title`, `end_session.nonce`, …).
+3. Enum-valued fields (`state_category`, `session_end_mode`,
+   `evidence.kind`, `preferred_kind`, `resolution.kind`) are checked
+   against the canonical set and surface a `code: "enum"` issue when
+   invalid.
+4. Server-assigned fields (e.g. `WorkItem.ID`, `WorkItem.CreatedAt`)
+   cannot be supplied on create; the decoder rejects them with
+   `code: "server_assigned"`.
+
+Validation failures surface as the tagged error below — transport hosts
+map this straight onto the wire response (HTTP 400, MCP `isError=true`,
+jsonl error frame) without involving the adaptor:
+
+```json
+{
+  "_kind":     "validation",
+  "retryable": false,
+  "message":   "create_work_item.item.kind: missing required field",
+  "detail":    {
+    "issue": {
+      "path":   "create_work_item.item.kind",
+      "reason": "missing required field",
+      "code":   "required"
+    }
+  }
+}
+```
+
+`core.NewValidationError(core.ValidationIssue{…})` is the one canonical
+constructor; `core.ValidationIssueOf(err)` extracts the typed issue for
+UI consumption. Conformance Group F's boundary check,
+`core.AssertBoundaryValidation`, fails any decoder that accepts
+malformed input, emits an untagged error, uses the wrong kind, or drops
+the structured issue.
+
+**Adaptor authors do not re-decode.** `WorkPlane.CreateWorkItem` receives
+a `core.WorkItem` whose required fields have been validated. If your
+backend has *additional* invariants beyond the core contract (e.g. Jira
+requires `project_key` in `Custom`), enforce those in the adaptor with
+`NewAdaptorError(KindValidation, …)` — but never re-run the shared
+checks the boundary already performed.
+
 ## Version negotiation (DD-12 / gm-e3.4)
 
 `ProtocolVersion` is compared against the core's advertised
@@ -307,6 +373,11 @@ cadence and `ProtocolVersion` only when the core contract changes.
       `_kind` + explicit `retryable` (conformance Group F via
       `core.AssertAdaptorError`). Legacy `ErrNotFound`/`ErrUnsupported`
       still match via `errors.Is` once the kind is set correctly.
+- [ ] The adaptor does NOT re-validate input already checked at the
+      boundary — `CreateWorkItem`, `UpdateWorkItem`, `AttachEvidence`
+      trust their typed arguments (**MUST** — gm-io4). Adaptor-specific
+      invariants surface as `KindValidation` with a per-adaptor path;
+      cross-cutting shape checks belong in `internal/transport/schemas.go`.
 - [ ] Extension renderers live under `web/src/extensions/<adaptor-id>/`.
 - [ ] Manifest round-trips through JSON unchanged (covered by the
       conformance harness, gm-e3.5).

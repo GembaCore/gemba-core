@@ -305,6 +305,40 @@ never string-match on the message.
 
 ---
 
+## Boundary obligations — adaptors trust their inputs (gm-io4)
+
+> Resolves DD-12 + DD-15 per the t3code audit.
+
+The same rule holds for the orchestration plane: **decode happens at the
+transport boundary, not in the adaptor**. Every orchestration method
+receives values the shared decoders in `internal/transport/schemas.go`
+have already validated for shape, enum membership, and required-field
+presence. See [workplane.md §Boundary obligations](./workplane.md#boundary-obligations--decode-lives-at-the-transport-gm-io4)
+for the full mechanism — the contract is identical across both planes.
+
+Orchestration-specific decoder coverage:
+
+- `StartSession` — `assignment_id` required.
+- `PauseSession` / `ResumeSession` — `session_id` + `nonce` required.
+- `EndSession` — `session_id` + `nonce` required; `mode` must be one of
+  `completed | failed | canceled` (`code: enum`).
+- `AcquireWorkspace` — `assignment_id` + `repository` required;
+  `preferred_kind`, when supplied, must be one of the six
+  `WorkspaceKind` values.
+- `ResolveEscalation` — `escalation_id` + `nonce` required;
+  `resolution.kind` must be one of `approve | deny | modify | defer`;
+  `resolution.resolved_by` required.
+- `ReleaseWorkspace` / `ReleaseReservation` — `id` required.
+
+Validation failures surface as
+`*core.AdaptorError{Kind: validation}` with a structured
+`core.ValidationIssue` in `Detail["issue"]`. The orchestration adaptor
+MUST NOT re-run these checks — orchestration-specific invariants
+(e.g. "session belongs to this agent") still belong in the adaptor, but
+shape validation does not.
+
+---
+
 ## Minimum conformance (domain.md §3.8)
 
 The full conformance suite lands with `gm-e3.8`, but adaptors are
