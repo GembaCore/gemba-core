@@ -130,6 +130,74 @@ Mutation requests reach the WorkPlane only after the transport layer
 verifies the `X-GEMBA-Confirm` nonce (gm-root DD-7); adaptors can assume
 that check has already fired.
 
+## Capability enforcement AT THE PORT (gm-4qf / DD-12)
+
+The `CapabilityManifest` is the **contract** the adaptor publishes.
+Core — not each adaptor — is the authoritative gate: the port-level
+guard consults the manifest **before** routing a call to the adaptor.
+Adaptors MUST ALSO fail-fast on any undeclared op as defense in depth.
+
+The t3code audit found four adapters for the same `sessionModelSwitch`
+capability, each with a subtly different enforcement behavior. Central
+gating replaces that drift with a single pure function:
+
+```go
+d := core.CheckCapability(manifest, core.OpListSprints)
+if !d.Allowed {
+    return nil, core.EnforceCapability(manifest, core.OpListSprints)
+    // → *AdaptorError{Kind: KindCapabilityDenied, Retryable: false,
+    //                  Message: d.Reason, Detail: {...}}
+}
+```
+
+### Gated operations
+
+| Operation           | Manifest field(s) that gate it                            |
+| ------------------- | --------------------------------------------------------- |
+| `attach_evidence`   | `evidence_synthesis_required` — when false, core does not call AttachEvidence; the adaptor supplies its own Evidence through GetWorkItem. |
+| `list_sprints`      | `sprint_native` — when false, no sprints exist to list.    |
+| `read_budget_rollup`| `sprint_native` AND `token_budget_enforced` — rollups are per-sprint and require a real budget. |
+
+`describe`, `list_work_items`, `get_work_item`, `create_work_item`, and
+`update_work_item` are **always** allowed — they are the unconditional
+CRUD surface every WorkPlane must support.
+
+### The guard is pure
+
+`core.CheckCapability(m, op)` returns `{allowed, reason}` with no I/O
+and no state. Callers may invoke it on every request; the cost is
+bounded by a single `switch` on `Operation`.
+
+### Core-side wrapper
+
+`core.GuardedWorkPlane(inner, manifest)` wraps any `WorkPlane` with the
+port-level guard. Gated methods return `capability_denied` without
+reaching `inner` when the manifest opts out; unconditional methods
+pass through untouched. Production wiring MUST route every adaptor
+through this (or an equivalent check) — the bare `inner` should never
+be reachable from a mutation handler.
+
+### Adaptor-side fail-fast (defense in depth)
+
+Even with the port-level guard, adaptors MUST raise
+`capability_denied` on a call to an op their manifest excludes. The
+two checks MUST agree; a disagreement is a conformance failure. Reason:
+an adaptor registered out-of-band, a stale cached manifest, or a bug
+in the wrapper chain could bypass the port check; the adaptor is the
+last line.
+
+### Conformance Group E
+
+`core.AssertCapabilityDenied(err)` is the Group E acceptance helper.
+Conformance suites call the adaptor with an undeclared op and run the
+observed error through `AssertCapabilityDenied`; anything other than a
+tagged `capability_denied` AdaptorError fails the group.
+
+**Legacy `ErrUnsupported` is insufficient.** It maps to
+`KindUnsupported`, which is reserved for coarse adaptor-level opt-out;
+the guard uses `capability_denied` so the SPA can distinguish "manifest
+said no" from "adaptor chose not to".
+
 ### Event emission is mandatory (DD-12 / Foolery-spike lesson)
 
 Every state-changing WorkPlane call — `CreateWorkItem`, `UpdateWorkItem`,
@@ -229,6 +297,12 @@ cadence and `ProtocolVersion` only when the core contract changes.
 - [ ] Every mutation path emits a matching `WorkPlaneEvent` on `Subscribe`
       within the declared latency budget (**MUST** — conformance Group D
       `mutation_without_event_is_failure`).
+- [ ] Every gated op (attach_evidence, list_sprints, read_budget_rollup)
+      fails fast with `capability_denied` when the manifest opts out
+      (**MUST** — conformance Group E via
+      `core.AssertCapabilityDenied`). The port-level
+      `core.GuardedWorkPlane` is the primary gate; the adaptor-side
+      check is defense in depth.
 - [ ] Every boundary error is an `*core.AdaptorError` with a valid
       `_kind` + explicit `retryable` (conformance Group F via
       `core.AssertAdaptorError`). Legacy `ErrNotFound`/`ErrUnsupported`
