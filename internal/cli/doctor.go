@@ -2,9 +2,13 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
+	"time"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
+	eventlog "github.com/MikeBengtson/gemba/internal/events/log"
 	"github.com/spf13/cobra"
 
 	// Registers the v1 adaptors via init() side effects. Doctor relies on
@@ -15,8 +19,13 @@ import (
 	_ "github.com/MikeBengtson/gemba/internal/adapter/gt"
 )
 
+type doctorFlags struct {
+	eventLogDir string
+}
+
 func newDoctorCmd() *cobra.Command {
-	return &cobra.Command{
+	var flags doctorFlags
+	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Report which WorkPlane + OrchestrationPlane adaptors the current workspace satisfies",
 		Long: `Enumerates every adaptor compiled into this gemba binary, probes the
@@ -25,14 +34,22 @@ current workspace, and prints which can be satisfied.
 Gemba requires exactly one WorkPlane adaptor (work tracker) paired with
 exactly one OrchestrationPlane adaptor (agent runtime) to serve. If no
 such pair is detected, doctor exits non-zero so it can be used in
-preflight scripts.`,
+preflight scripts.
+
+Also reports the event log footprint (size, rotated file count, oldest
+retained event) when --eventlog-dir is supplied or ~/.gemba/events exists.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runDoctor(cmd)
+			return runDoctor(cmd, flags)
 		},
 	}
+
+	cmd.Flags().StringVar(&flags.eventLogDir, "eventlog-dir", "",
+		"directory containing the event log (default: ~/.gemba/events if present)")
+
+	return cmd
 }
 
-func runDoctor(cmd *cobra.Command) error {
+func runDoctor(cmd *cobra.Command, flags doctorFlags) error {
 	out := cmd.OutOrStdout()
 	adaptors := registry.List()
 
@@ -77,6 +94,64 @@ func runDoctor(cmd *cobra.Command) error {
 				"(need at least one of each); gemba serve would refuse to start")
 	}
 
+	// Event log footprint is informational — never gates the exit code,
+	// since the log may not exist yet on a fresh install.
+	reportEventLog(out, flags.eventLogDir)
+
 	fmt.Fprintln(out, "\npair detected — gemba serve will start")
 	return nil
+}
+
+// reportEventLog prints the event log footprint. Resolution order:
+//  1. --eventlog-dir flag (if non-empty)
+//  2. ~/.gemba/events if it exists
+//
+// If neither resolves to a real directory, the section is skipped so fresh
+// installs don't see spurious warnings.
+func reportEventLog(out interface{ Write(p []byte) (int, error) }, flag string) {
+	dir := flag
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return
+		}
+		candidate := filepath.Join(home, ".gemba", "events")
+		if _, err := os.Stat(candidate); err != nil {
+			return
+		}
+		dir = candidate
+	}
+
+	stats, err := eventlog.ScanDir(dir, eventlog.DefaultBaseName)
+	if err != nil {
+		fmt.Fprintf(out, "\nEvent log: error scanning %s: %v\n", dir, err)
+		return
+	}
+
+	fmt.Fprintf(out, "\nEvent log (%s):\n", dir)
+	fmt.Fprintf(out, "  total size:        %s\n", humanBytes(stats.TotalSizeBytes))
+	fmt.Fprintf(out, "  active file:       %s\n", humanBytes(stats.ActiveSizeBytes))
+	fmt.Fprintf(out, "  rotated files:     %d\n", stats.RotatedFileCount)
+	if stats.OldestRetainedAt.IsZero() {
+		fmt.Fprintln(out, "  oldest retained:   (none)")
+	} else {
+		age := time.Since(stats.OldestRetainedAt).Round(time.Second)
+		fmt.Fprintf(out, "  oldest retained:   %s (%s ago)\n",
+			stats.OldestRetainedAt.UTC().Format(time.RFC3339), age)
+	}
+}
+
+// humanBytes formats a byte count with a binary suffix. Keeps the doctor
+// output readable without pulling in a sizing library.
+func humanBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for x := n / unit; x >= unit; x /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "KMGTPE"[exp])
 }

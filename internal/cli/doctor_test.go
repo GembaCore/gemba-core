@@ -2,10 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
+	eventlog "github.com/MikeBengtson/gemba/internal/events/log"
 )
 
 // withRegistry swaps the process-wide adaptor registry for the duration of
@@ -88,6 +90,63 @@ func TestDoctor_PairDetected_Succeeds(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "pair detected") {
 		t.Errorf("output missing success line: %s", out.String())
+	}
+}
+
+func TestDoctor_ReportsEventLog(t *testing.T) {
+	withRegistry(t,
+		registry.Adaptor{
+			Name:   "beads",
+			Plane:  registry.WorkPlane,
+			Detect: func() registry.DetectResult { return registry.DetectResult{Ok: true} },
+		},
+		registry.Adaptor{
+			Name:   "gastown",
+			Plane:  registry.OrchestrationPlane,
+			Detect: func() registry.DetectResult { return registry.DetectResult{Ok: true} },
+		},
+	)
+
+	// Seed an event log with a couple of rotations so stats are non-zero.
+	dir := t.TempDir()
+	w, err := eventlog.Open(eventlog.Policy{
+		Dir:          dir,
+		MaxFileBytes: 40,
+		MaxFiles:     3,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		if err := w.WriteEvent([]byte(`{"ev":"test"}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := newDoctorCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--eventlog-dir", dir})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	o := out.String()
+	if !strings.Contains(o, "Event log") {
+		t.Fatalf("expected event log section, got:\n%s", o)
+	}
+	if !strings.Contains(o, "rotated files:") {
+		t.Fatalf("expected rotated files count, got:\n%s", o)
+	}
+	if !strings.Contains(o, "oldest retained:") {
+		t.Fatalf("expected oldest retained line, got:\n%s", o)
+	}
+	if !strings.Contains(o, filepath.Clean(dir)) {
+		t.Fatalf("expected doctor to echo the eventlog dir %q, got:\n%s", dir, o)
 	}
 }
 
