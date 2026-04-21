@@ -402,6 +402,17 @@ See `testing/README.md` for the full probe catalogue and fixture
 contract. The import path is the canonical entry point referenced in
 the "Writing a Gemba adaptor" guide (gm-e14.5).
 
+For a CLI-driven run (no Go test binary needed), `gemba adaptor test`
+drives the same probe set programmatically and emits per-group
+pass/fail plus an optional JUnit report (gm-e3.5):
+
+```
+gemba adaptor test --transport jsonl --target builtin:noop-work
+gemba adaptor test --transport jsonl --target builtin:noop-work --junit ./noop.xml
+```
+
+Exit code is 0 on green and non-zero when any non-skipped probe fails.
+
 ## Reference implementations
 
 - `internal/adapter/bd/` — Beads WorkPlane (gm-e6).

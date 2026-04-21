@@ -67,7 +67,7 @@ func RunWorkPlaneConformance(t *testing.T, impl core.WorkPlane, fixture *WorkPla
 	}
 }
 
-func probeDescribeManifestValid(t *testing.T, impl core.WorkPlane) {
+func probeDescribeManifestValid(t probeT, impl core.WorkPlane) {
 	t.Helper()
 	m, err := impl.Describe(context.Background())
 	if err != nil {
@@ -82,7 +82,7 @@ func probeDescribeManifestValid(t *testing.T, impl core.WorkPlane) {
 	}
 }
 
-func probeManifestJSONRoundTrip(t *testing.T, impl core.WorkPlane) {
+func probeManifestJSONRoundTrip(t probeT, impl core.WorkPlane) {
 	t.Helper()
 	m, err := impl.Describe(context.Background())
 	if err != nil {
@@ -101,7 +101,7 @@ func probeManifestJSONRoundTrip(t *testing.T, impl core.WorkPlane) {
 	}
 }
 
-func probeDescribeIdempotent(t *testing.T, impl core.WorkPlane) {
+func probeDescribeIdempotent(t probeT, impl core.WorkPlane) {
 	t.Helper()
 	ctx := context.Background()
 	first, err := impl.Describe(ctx)
@@ -124,7 +124,7 @@ func probeDescribeIdempotent(t *testing.T, impl core.WorkPlane) {
 // core.GuardedWorkPlane is the primary gate, but the adaptor is the
 // last line of defense (docs/adaptors/workplane.md §Adaptor-side
 // fail-fast).
-func probeCapabilityDenialMatchesManifest(t *testing.T, impl core.WorkPlane) {
+func probeCapabilityDenialMatchesManifest(t probeT, impl core.WorkPlane) {
 	t.Helper()
 	ctx := context.Background()
 	m, err := impl.Describe(ctx)
@@ -179,7 +179,7 @@ func probeCapabilityDenialMatchesManifest(t *testing.T, impl core.WorkPlane) {
 	}
 }
 
-func probeNotFoundIsTagged(t *testing.T, impl core.WorkPlane, missing core.WorkItemID) {
+func probeNotFoundIsTagged(t probeT, impl core.WorkPlane, missing core.WorkItemID) {
 	t.Helper()
 	_, err := impl.GetWorkItem(context.Background(), missing)
 	if err == nil {

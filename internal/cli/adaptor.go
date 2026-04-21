@@ -22,6 +22,7 @@ adaptor to a transport host; 'adaptor test' (gm-e3.5) runs the
 conformance harness against one.`,
 	}
 	cmd.AddCommand(newAdaptorRegisterCmd())
+	cmd.AddCommand(newAdaptorTestCmd())
 	return cmd
 }
 

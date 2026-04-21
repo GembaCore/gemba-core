@@ -55,6 +55,17 @@ $ go test -v -run TestBeadsConformance ./...
 
 ## Entry points
 
+Two parallel APIs — same probes, same group layout — cover the two
+contexts a conformance run happens in:
+
+- `RunWorkPlaneConformance(t, impl, fixture)` / `RunOrchestrationConformance`
+  — drive probes from a `*testing.T` (e.g., a `TestXxxConformance`
+  test in your adaptor's Go test suite).
+- `RunWorkPlaneProbes(impl, fixture)` / `RunOrchestrationProbes` —
+  programmatic, testing-free entry points returning a structured
+  `*Report`. Used by the `gemba adaptor test` CLI (gm-e3.5) and by any
+  CI system that would rather consume JSON than parse `go test` output.
+
 ### `RunWorkPlaneConformance(t, impl, fixture)`
 
 Exercises the probes in `docs/adaptors/workplane.md`:
@@ -93,6 +104,27 @@ gembatesting.RunOrchestrationConformance(t, impl, &gembatesting.OrchestrationFix
     },
 })
 ```
+
+### `RunWorkPlaneProbes(impl, fixture) *Report` / `RunOrchestrationProbes`
+
+The programmatic runner. Same probes as above, but failures accumulate
+into a `*Report` rather than failing a `*testing.T`. The CLI path:
+
+```
+gemba adaptor test --transport jsonl --target builtin:noop-work
+gemba adaptor test --transport jsonl --target builtin:noop-work --json
+gemba adaptor test --transport jsonl --target builtin:noop-work --junit out.xml
+```
+
+`--target builtin:noop-work` / `builtin:noop-orch` exercises the
+in-process reference adaptors. Remote targets (URL/socket/cmd) require
+a transport wire client (gm-e4.x) — they fail fast with a structured
+not-yet-implemented until those land.
+
+The orchestration fixture used by the CLI path supplies
+`ProgrammaticSessionStarter` (a `*testing.T`-free counterpart to
+`SessionStarter`); it is called once per Group B probe because those
+probes individually close the session they receive.
 
 ## Fixture contract
 

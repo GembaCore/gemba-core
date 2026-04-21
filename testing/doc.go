@@ -11,12 +11,22 @@
 //
 // # Entry points
 //
+// testing.T-driven (Go test binary):
+//
 //   - RunWorkPlaneConformance(t, impl, fixture)
 //   - RunOrchestrationConformance(t, impl, fixture)
 //
-// Each function runs the probe groups defined in docs/adaptors/*.md as
-// t.Run subtests. A fixture argument lets the adaptor pre-seed the data
-// the probes need (known-missing ids, a live session id) so that
+// Programmatic (gm-e3.5, powers `gemba adaptor test`):
+//
+//   - RunWorkPlaneProbes(impl, fixture) *Report
+//   - RunOrchestrationProbes(impl, fixture) *Report
+//   - WriteTextReport(w, r) / WriteJUnit(w, r)
+//
+// Both APIs exercise the same probe set. The testing.T-driven path
+// surfaces failures through t.Run subtests; the programmatic path
+// collects them into a structured *Report that the CLI renders or
+// exports to JUnit. A fixture argument lets the adaptor pre-seed the
+// data the probes need (known-missing ids, a live session id) so that
 // adaptors with no way to construct fixture state still pass the
 // fixture-independent groups.
 //

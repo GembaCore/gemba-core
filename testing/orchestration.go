@@ -23,7 +23,21 @@ type OrchestrationFixture struct {
 	// lifecycle probes. It returns the session id and a cleanup
 	// callback the harness runs after the lifecycle probes complete.
 	// Leave nil to skip the session-dependent probes.
+	//
+	// Used by the testing.T entry point (RunOrchestrationConformance).
 	SessionStarter func(t *testing.T, impl core.OrchestrationPlaneAdaptor) (sessionID string, cleanup func())
+
+	// ProgrammaticSessionStarter is the testing.T-free counterpart of
+	// SessionStarter, used by RunOrchestrationProbes (the `gemba
+	// adaptor test` CLI). It returns a fresh session id and an optional
+	// cleanup callback, or an error if provisioning failed; the error
+	// surfaces in the probe result instead of silently skipping.
+	//
+	// Each Group B probe requests its own session because most of them
+	// move the session to terminal state. Adaptor authors implementing
+	// both starters typically share a single internal helper that
+	// mints an assignment and calls StartSession.
+	ProgrammaticSessionStarter func(impl core.OrchestrationPlaneAdaptor) (sessionID string, cleanup func(), err error)
 }
 
 // RunOrchestrationConformance runs the OrchestrationPlane contract
@@ -74,7 +88,7 @@ func RunOrchestrationConformance(t *testing.T, impl core.OrchestrationPlaneAdapt
 	}
 }
 
-func probeOrchestrationDescribeValid(t *testing.T, impl core.OrchestrationPlaneAdaptor) {
+func probeOrchestrationDescribeValid(t probeT, impl core.OrchestrationPlaneAdaptor) {
 	t.Helper()
 	m := impl.Describe()
 
@@ -105,7 +119,7 @@ func probeOrchestrationDescribeValid(t *testing.T, impl core.OrchestrationPlaneA
 	}
 }
 
-func probeOrchestrationManifestJSONRoundTrip(t *testing.T, impl core.OrchestrationPlaneAdaptor) {
+func probeOrchestrationManifestJSONRoundTrip(t probeT, impl core.OrchestrationPlaneAdaptor) {
 	t.Helper()
 	m := impl.Describe()
 	data, err := json.Marshal(m)
@@ -121,7 +135,7 @@ func probeOrchestrationManifestJSONRoundTrip(t *testing.T, impl core.Orchestrati
 	}
 }
 
-func probeListPendingRequestsEmpty(t *testing.T, impl core.OrchestrationPlaneAdaptor, sessionID string) {
+func probeListPendingRequestsEmpty(t probeT, impl core.OrchestrationPlaneAdaptor, sessionID string) {
 	t.Helper()
 	reqs, err := impl.ListPendingRequests(context.Background(), sessionID)
 	if err != nil {
@@ -135,7 +149,7 @@ func probeListPendingRequestsEmpty(t *testing.T, impl core.OrchestrationPlaneAda
 	}
 }
 
-func probeListPendingRequestsUnknownTagged(t *testing.T, impl core.OrchestrationPlaneAdaptor, missing string) {
+func probeListPendingRequestsUnknownTagged(t probeT, impl core.OrchestrationPlaneAdaptor, missing string) {
 	t.Helper()
 	_, err := impl.ListPendingRequests(context.Background(), missing)
 	if err == nil {
@@ -153,7 +167,7 @@ func probeListPendingRequestsUnknownTagged(t *testing.T, impl core.Orchestration
 	}
 }
 
-func probeEndSessionCloseReason(t *testing.T, impl core.OrchestrationPlaneAdaptor, sessionID string) {
+func probeEndSessionCloseReason(t probeT, impl core.OrchestrationPlaneAdaptor, sessionID string) {
 	t.Helper()
 	nonce := core.ConfirmNonce("conformance-close-reason")
 	s, err := impl.EndSession(context.Background(), sessionID, core.SessionEndCompleted, nonce)
@@ -173,7 +187,7 @@ func probeEndSessionCloseReason(t *testing.T, impl core.OrchestrationPlaneAdapto
 	}
 }
 
-func probeEndSessionIdempotentSameNonce(t *testing.T, impl core.OrchestrationPlaneAdaptor, sessionID string) {
+func probeEndSessionIdempotentSameNonce(t probeT, impl core.OrchestrationPlaneAdaptor, sessionID string) {
 	t.Helper()
 	ctx := context.Background()
 	nonce := core.ConfirmNonce("conformance-idempotent-same-nonce")
@@ -191,7 +205,7 @@ func probeEndSessionIdempotentSameNonce(t *testing.T, impl core.OrchestrationPla
 	}
 }
 
-func probeEndSessionTerminalAbsorbing(t *testing.T, impl core.OrchestrationPlaneAdaptor, sessionID string) {
+func probeEndSessionTerminalAbsorbing(t probeT, impl core.OrchestrationPlaneAdaptor, sessionID string) {
 	t.Helper()
 	ctx := context.Background()
 	if _, err := impl.EndSession(ctx, sessionID, core.SessionEndCompleted, core.ConfirmNonce("conformance-absorb-first")); err != nil {
