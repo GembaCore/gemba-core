@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useCapabilities } from './context-internal';
-import type { CapabilityFlag } from './types';
+import { workPlaneFlags, type CapabilityFlag } from './types';
 
 // Capability is the JSX gate the rest of the SPA wraps any adaptor-
 // sensitive control in. gm-root DD-15 is categorical on this: controls for
@@ -8,9 +8,15 @@ import type { CapabilityFlag } from './types';
 // invites the operator to guess why it's disabled; a missing button says
 // "this adaptor doesn't do that" with no ambiguity.
 //
+// `has` consumes the flat Flags projection (see internal/core/manifest.go
+// and types.ts:workPlaneFlags). The gate does not read the raw manifest
+// directly — that keeps every UI consumer, including external ones like
+// Foolery-backend or VS Code, speaking the same flat-boolean vocabulary
+// (gm-cpk).
+//
 // Usage examples:
 //
-//   <Capability has="sprint_native">
+//   <Capability has="has_sprints">
 //     <SprintLane />
 //   </Capability>
 //
@@ -22,7 +28,7 @@ import type { CapabilityFlag } from './types';
 //     <BlocksIndicator />
 //   </Capability>
 //
-//   <Capability has="token_budget_enforced" fallback={<UnmeteredBadge />}>
+//   <Capability has="has_budget" fallback={<UnmeteredBadge />}>
 //     <BudgetMeter />
 //   </Capability>
 //
@@ -64,7 +70,8 @@ export function Capability({
 
   const checks: boolean[] = [];
   if (has !== undefined) {
-    checks.push(Boolean(workPlane[has]));
+    const flags = workPlaneFlags(workPlane);
+    checks.push(Boolean(flags?.[has]));
   }
   if (hasField !== undefined) {
     checks.push((workPlane.field_extensions ?? []).some((f) => f.name === hasField));
@@ -73,9 +80,7 @@ export function Capability({
     checks.push((workPlane.edge_extensions ?? []).some((e) => e.name === hasEdge));
   }
   if (hasRelField !== undefined) {
-    checks.push(
-      (workPlane.relationship_extensions ?? []).some((r) => r.name === hasRelField),
-    );
+    checks.push((workPlane.relationship_extensions ?? []).some((r) => r.name === hasRelField));
   }
 
   // No predicates means the gate is trivially false — it's a noop

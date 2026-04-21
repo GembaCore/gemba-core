@@ -21,7 +21,7 @@ function render(ui: ReactNode, initial: CapabilitiesResponse): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={client()}>
       <CapabilitiesProvider initial={initial}>{ui}</CapabilitiesProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
 }
 
@@ -62,10 +62,10 @@ describe('FieldExtensionSlot', () => {
 
   it('hides (no leak) when manifest does not declare the field', () => {
     registerFieldExtension('beads', 'bead_id', BeadId);
-    const markup = render(
-      <FieldExtensionSlot name="unknown_field" value="should-not-render" />,
-      { work_plane: BEADS, orchestration_plane: null },
-    );
+    const markup = render(<FieldExtensionSlot name="unknown_field" value="should-not-render" />, {
+      work_plane: BEADS,
+      orchestration_plane: null,
+    });
     expect(markup).toBe('');
   });
 
@@ -78,10 +78,10 @@ describe('FieldExtensionSlot', () => {
   });
 
   it('renders fallback on a miss', () => {
-    const markup = render(
-      <FieldExtensionSlot name="unknown" value="x" fallback={<em>n/a</em>} />,
-      { work_plane: BEADS, orchestration_plane: null },
-    );
+    const markup = render(<FieldExtensionSlot name="unknown" value="x" fallback={<em>n/a</em>} />, {
+      work_plane: BEADS,
+      orchestration_plane: null,
+    });
     expect(markup).toBe('<em>n/a</em>');
   });
 
@@ -100,10 +100,10 @@ describe('FieldExtensionSlot', () => {
 describe('EdgeExtensionSlot', () => {
   it('renders when both manifest and registry agree', () => {
     registerEdgeExtension('beads', 'duplicates', Duplicates);
-    const markup = render(
-      <EdgeExtensionSlot name="duplicates" payload={{ id: 'gm-42' }} />,
-      { work_plane: BEADS, orchestration_plane: null },
-    );
+    const markup = render(<EdgeExtensionSlot name="duplicates" payload={{ id: 'gm-42' }} />, {
+      work_plane: BEADS,
+      orchestration_plane: null,
+    });
     expect(markup).toBe('<span>dup:gm-42</span>');
   });
 });

@@ -23,7 +23,7 @@ function render(ui: ReactNode, initial: CapabilitiesResponse) {
   return renderToStaticMarkup(
     <QueryClientProvider client={client()}>
       <CapabilitiesProvider initial={initial}>{ui}</CapabilitiesProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
 }
 
@@ -56,32 +56,32 @@ const JIRA_WORK: WorkPlaneManifest = {
 };
 
 describe('<Capability>', () => {
-  it('hides children when the manifest opts out of sprint_native', () => {
+  it('hides children when the manifest opts out of has_sprints', () => {
     const markup = render(
-      <Capability has="sprint_native">
+      <Capability has="has_sprints">
         <span data-testid="sprint-lane">sprint</span>
       </Capability>,
-      { work_plane: BEADS_WORK, orchestration_plane: null },
+      { work_plane: BEADS_WORK, orchestration_plane: null }
     );
     expect(markup).toBe('');
   });
 
-  it('renders children when the manifest declares sprint_native', () => {
+  it('renders children when the manifest declares has_sprints', () => {
     const markup = render(
-      <Capability has="sprint_native">
+      <Capability has="has_sprints">
         <span>sprint</span>
       </Capability>,
-      { work_plane: JIRA_WORK, orchestration_plane: null },
+      { work_plane: JIRA_WORK, orchestration_plane: null }
     );
     expect(markup).toBe('<span>sprint</span>');
   });
 
   it('renders fallback on a miss', () => {
     const markup = render(
-      <Capability has="sprint_native" fallback={<em>no-sprint</em>}>
+      <Capability has="has_sprints" fallback={<em>no-sprint</em>}>
         <span>sprint</span>
       </Capability>,
-      { work_plane: BEADS_WORK, orchestration_plane: null },
+      { work_plane: BEADS_WORK, orchestration_plane: null }
     );
     expect(markup).toBe('<em>no-sprint</em>');
   });
@@ -91,13 +91,13 @@ describe('<Capability>', () => {
       <Capability hasField="story_points">
         <span>pts</span>
       </Capability>,
-      { work_plane: BEADS_WORK, orchestration_plane: null },
+      { work_plane: BEADS_WORK, orchestration_plane: null }
     );
     const miss = render(
       <Capability hasField="story_points">
         <span>pts</span>
       </Capability>,
-      { work_plane: JIRA_WORK, orchestration_plane: null },
+      { work_plane: JIRA_WORK, orchestration_plane: null }
     );
     expect(hit).toBe('<span>pts</span>');
     expect(miss).toBe('');
@@ -108,27 +108,27 @@ describe('<Capability>', () => {
       <Capability hasEdge="duplicates">
         <span>dup</span>
       </Capability>,
-      { work_plane: BEADS_WORK, orchestration_plane: null },
+      { work_plane: BEADS_WORK, orchestration_plane: null }
     );
     expect(hit).toBe('<span>dup</span>');
   });
 
   it('renders fallback when no manifest is available', () => {
     const markup = render(
-      <Capability has="sprint_native" fallback={<em>offline</em>}>
+      <Capability has="has_sprints" fallback={<em>offline</em>}>
         <span>sprint</span>
       </Capability>,
-      { work_plane: null, orchestration_plane: null },
+      { work_plane: null, orchestration_plane: null }
     );
     expect(markup).toBe('<em>offline</em>');
   });
 
   it('ANDs multiple predicates', () => {
     const markup = render(
-      <Capability has="evidence_synthesis_required" hasField="story_points">
+      <Capability has="has_evidence" hasField="story_points">
         <span>both</span>
       </Capability>,
-      { work_plane: BEADS_WORK, orchestration_plane: null },
+      { work_plane: BEADS_WORK, orchestration_plane: null }
     );
     expect(markup).toBe('<span>both</span>');
   });
@@ -141,12 +141,12 @@ describe('<Capability>', () => {
     const tree = (
       <ul>
         <li>
-          <Capability has="sprint_native" fallback={<span>no-sprint</span>}>
+          <Capability has="has_sprints" fallback={<span>no-sprint</span>}>
             <span>sprint</span>
           </Capability>
         </li>
         <li>
-          <Capability has="token_budget_enforced" fallback={<span>no-budget</span>}>
+          <Capability has="has_budget" fallback={<span>no-budget</span>}>
             <span>budget</span>
           </Capability>
         </li>
@@ -167,7 +167,7 @@ describe('<Capability>', () => {
       orchestration_plane: null,
     });
     expect(markup).toMatchInlineSnapshot(
-      `"<ul><li><span>no-sprint</span></li><li><span>no-budget</span></li><li><span>pts</span></li><li><span>no-blocks</span></li></ul>"`,
+      `"<ul><li><span>no-sprint</span></li><li><span>no-budget</span></li><li><span>pts</span></li><li><span>no-blocks</span></li></ul>"`
     );
   });
 });

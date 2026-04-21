@@ -45,9 +45,7 @@ export function workPlaneTransport(m: WorkPlaneManifest | null): TransportInfo |
   return m ? resolveTransport(m.transport) : null;
 }
 
-export function orchestrationTransport(
-  m: OrchestrationManifest | null,
-): TransportInfo | null {
+export function orchestrationTransport(m: OrchestrationManifest | null): TransportInfo | null {
   return m ? resolveTransport(m.transport) : null;
 }
 

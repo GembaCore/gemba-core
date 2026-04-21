@@ -1,9 +1,6 @@
 import { useMemo, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  CapabilitiesContext,
-  type CapabilityState,
-} from './context-internal';
+import { CapabilitiesContext, type CapabilityState } from './context-internal';
 import type { CapabilitiesResponse } from './types';
 
 // The capability manifests change rarely — once at connect, and again on

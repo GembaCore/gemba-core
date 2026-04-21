@@ -58,7 +58,7 @@ function upsert<V>(m: Map<string, Map<string, V>>, a: string, k: string, v: V) {
 export function registerFieldExtension(
   adaptor: string,
   fieldName: string,
-  component: ComponentType<FieldExtensionProps>,
+  component: ComponentType<FieldExtensionProps>
 ): void {
   upsert(fieldRegistry, adaptor, fieldName, component);
 }
@@ -66,7 +66,7 @@ export function registerFieldExtension(
 export function registerEdgeExtension(
   adaptor: string,
   edgeName: string,
-  component: ComponentType<EdgeExtensionProps>,
+  component: ComponentType<EdgeExtensionProps>
 ): void {
   upsert(edgeRegistry, adaptor, edgeName, component);
 }
@@ -74,28 +74,28 @@ export function registerEdgeExtension(
 export function registerRelFieldExtension(
   adaptor: string,
   fieldName: string,
-  component: ComponentType<RelFieldExtensionProps>,
+  component: ComponentType<RelFieldExtensionProps>
 ): void {
   upsert(relFieldRegistry, adaptor, fieldName, component);
 }
 
 export function resolveFieldExtension(
   adaptor: string,
-  fieldName: string,
+  fieldName: string
 ): ComponentType<FieldExtensionProps> | null {
   return fieldRegistry.get(adaptor)?.get(fieldName) ?? null;
 }
 
 export function resolveEdgeExtension(
   adaptor: string,
-  edgeName: string,
+  edgeName: string
 ): ComponentType<EdgeExtensionProps> | null {
   return edgeRegistry.get(adaptor)?.get(edgeName) ?? null;
 }
 
 export function resolveRelFieldExtension(
   adaptor: string,
-  fieldName: string,
+  fieldName: string
 ): ComponentType<RelFieldExtensionProps> | null {
   return relFieldRegistry.get(adaptor)?.get(fieldName) ?? null;
 }

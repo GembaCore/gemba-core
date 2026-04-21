@@ -2,7 +2,7 @@
 // for the two entry points most of the SPA uses:
 //
 //   <CapabilitiesProvider>                — app-root setup
-//   <Capability has="sprint_native" />    — JSX gate around adaptor controls
+//   <Capability has="has_sprints" />      — JSX gate around adaptor controls
 //   <FieldExtensionSlot name="..." />     — adaptor-namespaced custom fields
 //   useCapabilities()                     — imperative access to the manifest
 //   resolveTransport(manifest.transport)  — transport-aware URL building
@@ -16,11 +16,7 @@ export { useCapabilities } from './context-internal';
 export type { CapabilityState } from './context-internal';
 export { Capability } from './Capability';
 export type { CapabilityProps } from './Capability';
-export {
-  FieldExtensionSlot,
-  EdgeExtensionSlot,
-  RelFieldExtensionSlot,
-} from './Extension';
+export { FieldExtensionSlot, EdgeExtensionSlot, RelFieldExtensionSlot } from './Extension';
 export type {
   FieldExtensionSlotProps,
   EdgeExtensionSlotProps,
@@ -53,6 +49,8 @@ export type {
   WorkPlaneManifest,
   OrchestrationManifest,
   CapabilityFlag,
+  Flags,
+  FlagName,
   Transport,
   StateCategory,
   GroupMode,
@@ -67,3 +65,4 @@ export type {
   RelationshipExtension,
   IsolationCapabilities,
 } from './types';
+export { FLAG_NAMES, workPlaneFlags } from './types';

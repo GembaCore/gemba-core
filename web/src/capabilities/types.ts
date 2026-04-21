@@ -12,13 +12,7 @@ export type StateCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 
 
 export type GroupMode = 'static' | 'pool' | 'graph';
 
-export type WorkspaceKind =
-  | 'worktree'
-  | 'container'
-  | 'k8s_pod'
-  | 'vm'
-  | 'exec'
-  | 'subprocess';
+export type WorkspaceKind = 'worktree' | 'container' | 'k8s_pod' | 'vm' | 'exec' | 'subprocess';
 
 export type CostAxis = 'tokens' | 'wallclock' | 'dollars_native';
 
@@ -104,11 +98,37 @@ export interface CapabilitiesResponse {
   orchestration_plane: OrchestrationManifest | null;
 }
 
-// CapabilityFlag names the boolean feature groups on the work-plane
-// manifest that the Capability gate component accepts in its `has` prop.
-// Enumerating them here (rather than accepting any string) lets TypeScript
-// catch typos like `<Capability has="sprint_natiive">`.
-export type CapabilityFlag =
-  | 'sprint_native'
-  | 'token_budget_enforced'
-  | 'evidence_synthesis_required';
+// Re-export the generated Flags projection so the rest of the SPA can
+// import it from the capabilities barrel without reaching into
+// types/core.gen.ts directly. The Flags struct is the flat-boolean
+// projection of WorkPlaneManifest — see internal/core/manifest.go for
+// the derivation rules.
+export type { Flags, FlagName } from '../types/core.gen';
+export { FLAG_NAMES } from '../types/core.gen';
+import type { Flags } from '../types/core.gen';
+
+// CapabilityFlag is the accepted value for `<Capability has="...">`.
+// It used to be a hand-rolled union of manifest keys ("sprint_native",
+// ...), but the SPA now consumes the Flags projection from core so the
+// UI speaks one vocabulary regardless of which backend is active
+// (gm-cpk). Foolery-backend, VS Code, and other external consumers see
+// the same flat-boolean surface.
+export type CapabilityFlag = keyof Flags;
+
+// workPlaneFlags derives the flat-boolean projection from a manifest.
+// Pure and deterministic — the SPA calls it on every render rather than
+// caching, to keep parity with the Go-side (m CapabilityManifest).Flags()
+// contract.  Returns null when the manifest is null so callers can tell
+// "no adaptor connected" apart from "adaptor says no".
+export function workPlaneFlags(m: WorkPlaneManifest | null): Flags | null {
+  if (!m) return null;
+  return {
+    has_sprints: m.sprint_native,
+    has_budget: m.token_budget_enforced,
+    has_evidence: m.evidence_synthesis_required,
+    has_declared_state: Object.keys(m.state_map ?? {}).length > 0,
+    has_extension_edges: (m.edge_extensions ?? []).length > 0,
+    has_extension_fields: (m.field_extensions ?? []).length > 0,
+    has_extension_rel_fields: (m.relationship_extensions ?? []).length > 0,
+  };
+}
