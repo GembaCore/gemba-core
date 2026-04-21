@@ -62,10 +62,33 @@ func TestCoreTypesTSContainsEveryEnumString(t *testing.T) {
 		string(EvidenceURL), string(EvidenceFile), string(EvidenceCustom),
 		// BudgetTier
 		string(BudgetInform), string(BudgetWarn), string(BudgetStop),
+		// AdaptorErrorKind (gm-faz) — every canonical kind must appear
+		// as a TS literal so the SPA gets exhaustive-switch coverage.
+		string(KindValidation), string(KindSessionNotFound), string(KindSessionClosed),
+		string(KindRequestFailed), string(KindProcessFailed), string(KindRateLimited),
+		string(KindUnsupported), string(KindCapabilityDenied), string(KindAdaptorDegraded),
 	}
 	for _, v := range enums {
 		if !strings.Contains(CoreTypesTS, `"`+v+`"`) {
 			t.Errorf("TS codegen missing enum literal %q", v)
+		}
+	}
+}
+
+// TestCoreTypesTSHasAdaptorErrorShape asserts the TS emission of
+// AdaptorError carries the _kind discriminator and retryable field so
+// the SPA can branch correctly. Shape-level — checks the key fragments
+// show up somewhere in the generated output.
+func TestCoreTypesTSHasAdaptorErrorShape(t *testing.T) {
+	required := []string{
+		"AdaptorErrorKind",
+		"AdaptorError",
+		"_kind:",
+		"retryable:",
+	}
+	for _, frag := range required {
+		if !strings.Contains(CoreTypesTS, frag) {
+			t.Errorf("TS codegen missing AdaptorError fragment %q", frag)
 		}
 	}
 }

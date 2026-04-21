@@ -212,6 +212,32 @@ polling — the exact failure mode surfaced by the Foolery spike
 
 ---
 
+## Error algebra (gm-faz — Conformance Group F)
+
+Every non-nil error returned from an OrchestrationPlaneAdaptor boundary
+method MUST be an `*core.AdaptorError` (or wrap one). See
+[workplane.md §Error algebra](./workplane.md#error-algebra-gm-faz--conformance-group-f)
+for the full kind table, wire shape, and constructors — the contract is
+identical across both planes.
+
+Orchestration-specific guidance:
+
+- `StartSession` / `PauseSession` / `ResumeSession` / `EndSession` on an
+  unknown session id → `KindSessionNotFound`.
+- `PauseSession` / `ResumeSession` on a terminal session → `KindSessionClosed`.
+- `AcquireWorkspace` that cannot satisfy `required_isolation` →
+  `KindUnsupported` (this is a manifest-declared limit, not a transient
+  failure) or `KindCapabilityDenied` when isolation was withheld by
+  policy.
+- Any call during an `adaptor_degraded` window (agent-runtime supervisor
+  restarting, provider reachability lost) → `KindAdaptorDegraded` so the
+  gm-b1 banner surfaces verbatim.
+
+Retry loops in the orchestrator MUST consult `core.IsRetryable(err)` —
+never string-match on the message.
+
+---
+
 ## Minimum conformance (domain.md §3.8)
 
 The full conformance suite lands with `gm-e3.8`, but adaptors are
@@ -226,6 +252,7 @@ expected to pass at minimum:
 | C | `required_isolation_honored` | Manifest is not a lie. |
 | D | `resolve_escalation_unblocks_session` | Blocking escalation → running. |
 | E | `event_ordering_across_assignment` | Causal order preserved. |
+| F | `every_boundary_error_is_tagged` | `core.AssertAdaptorError` passes on every non-nil error from a boundary call. |
 
 ---
 

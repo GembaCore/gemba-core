@@ -159,6 +159,60 @@ spike uncovered (docs/prior-art/foolery.md).
   construct: the adaptor just reports consumption; the UI and the
   orchestration side decide what "stop" means.
 
+## Error algebra (gm-faz — Conformance Group F)
+
+Every error an adaptor surfaces from a boundary method MUST be an
+`*core.AdaptorError` (or wrap one such that `errors.As` can find it).
+The t3code spike showed that string-matching `err.Error()` to decide
+retry vs fail is the single biggest source of adaptor rot; the tagged
+envelope replaces that with structured fields the runtime can branch on.
+
+Wire shape:
+
+```json
+{
+  "_kind":     "rate_limited",
+  "retryable": true,
+  "message":   "provider throttled session sess-42",
+  "cause":     "http 429",
+  "detail":    {"retry_after_seconds": 30}
+}
+```
+
+Kinds — exactly nine, closed set:
+
+| Kind | Retryable default | Use when |
+|---|---|---|
+| `validation` | no | Input failed schema / precondition (bad `WorkItemPatch`, illegal transition). |
+| `session_not_found` | no | Referenced session / assignment / work item id doesn't exist. |
+| `session_closed` | no | Session reached a terminal state. |
+| `request_failed` | **yes** | Transport-level failure (connection refused, 5xx, timeout). |
+| `process_failed` | no | Structured failure from the backend process (bd exit 2, LG node raise). |
+| `rate_limited` | **yes** | Provider throttling (HTTP 429, quota). Populate `detail.retry_after_seconds` when known. |
+| `unsupported` | no | Manifest opted out (e.g. `ReadBudgetRollup` on a non-budget adaptor). |
+| `capability_denied` | no | Actor lacks authority — permission prompt denied, cross-agent write. |
+| `adaptor_degraded` | **yes** | Backend transiently unhealthy (Dolt hung, supervisor restarting). Surfaces to the gm-b1 SPA banner. |
+
+Construction:
+
+```go
+return nil, core.NewAdaptorError(core.KindValidation,
+    "StateMap missing native status %q", native)
+
+return nil, core.WrapAdaptorError(core.KindRequestFailed, err,
+    "bd describe failed")
+```
+
+Callers (gm-b1 mutation gate, orchestration retry loops) MUST branch on
+`core.AsAdaptorError(err)` and `.Retryable` — never on `err.Error()`.
+Legacy `errors.Is(err, core.ErrNotFound)` / `core.ErrUnsupported` keeps
+working: `AdaptorError.Is` maps kinds to sentinels transparently.
+
+The conformance harness's `core.AssertAdaptorError` (Group F) fails any
+adaptor that returns a bare `errors.New()` or `fmt.Errorf` without a
+tagged envelope. Run it against every non-nil error observed from a
+boundary call before accepting a new adaptor.
+
 ## Version negotiation (DD-12 / gm-e3.4)
 
 `ProtocolVersion` is compared against the core's advertised
@@ -175,7 +229,10 @@ cadence and `ProtocolVersion` only when the core contract changes.
 - [ ] Every mutation path emits a matching `WorkPlaneEvent` on `Subscribe`
       within the declared latency budget (**MUST** — conformance Group D
       `mutation_without_event_is_failure`).
-- [ ] `ErrNotFound` and `ErrUnsupported` are returned in the right places.
+- [ ] Every boundary error is an `*core.AdaptorError` with a valid
+      `_kind` + explicit `retryable` (conformance Group F via
+      `core.AssertAdaptorError`). Legacy `ErrNotFound`/`ErrUnsupported`
+      still match via `errors.Is` once the kind is set correctly.
 - [ ] Extension renderers live under `web/src/extensions/<adaptor-id>/`.
 - [ ] Manifest round-trips through JSON unchanged (covered by the
       conformance harness, gm-e3.5).

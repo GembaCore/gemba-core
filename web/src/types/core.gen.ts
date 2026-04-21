@@ -8,23 +8,77 @@
 export type WorkItemID = string;
 export type AgentID = string;
 
-export type StateCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+export type StateCategory =
+  | "backlog"
+  | "unstarted"
+  | "started"
+  | "completed"
+  | "canceled";
 
 export const STATE_CATEGORIES: readonly StateCategory[] = [
-  'backlog',
-  'unstarted',
-  'started',
-  'completed',
-  'canceled',
+  "backlog",
+  "unstarted",
+  "started",
+  "completed",
+  "canceled",
 ] as const;
 
-export type RelationshipKind = 'blocks' | 'parent_child' | 'relates_to';
+export type RelationshipKind =
+  | "blocks"
+  | "parent_child"
+  | "relates_to";
 
-export type EvidenceKind = 'commit' | 'log' | 'test_result' | 'url' | 'file' | 'custom';
+export type EvidenceKind =
+  | "commit"
+  | "log"
+  | "test_result"
+  | "url"
+  | "file"
+  | "custom";
 
-export type BudgetTier = 'inform' | 'warn' | 'stop';
+export type BudgetTier = "inform" | "warn" | "stop";
 
-export type AgentKind = 'agent' | 'human';
+export type AgentKind = "agent" | "human";
+
+// AdaptorErrorKind is the closed discriminator every adaptor-boundary
+// error carries (gm-faz). The SPA branches on _kind + retryable; it
+// MUST NOT parse the human-readable message.
+export type AdaptorErrorKind =
+  | "validation"
+  | "session_not_found"
+  | "session_closed"
+  | "request_failed"
+  | "process_failed"
+  | "rate_limited"
+  | "unsupported"
+  | "capability_denied"
+  | "adaptor_degraded";
+
+export const ADAPTOR_ERROR_KINDS: readonly AdaptorErrorKind[] = [
+  "validation",
+  "session_not_found",
+  "session_closed",
+  "request_failed",
+  "process_failed",
+  "rate_limited",
+  "unsupported",
+  "capability_denied",
+  "adaptor_degraded",
+] as const;
+
+// AdaptorError is the wire shape emitted by every Go adaptor-boundary
+// method on failure. The Go MarshalJSON flattens the typed Cause to a
+// plain string so the SPA never has to walk an unknown error tree.
+//
+// Consumers branch on _kind for category and retryable for retry
+// intent; all other fields are advisory.
+export interface AdaptorError {
+  _kind: AdaptorErrorKind;
+  retryable: boolean;
+  message: string;
+  cause?: string;
+  detail?: Record<string, unknown>;
+}
 
 export interface AgentRef {
   id: AgentID;
