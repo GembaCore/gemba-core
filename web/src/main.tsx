@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ThemeProvider } from '@/lib/theme';
 import { CapabilitiesProvider } from '@/capabilities';
+import { HotkeysProvider } from '@/hotkeys';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -27,7 +28,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <ThemeProvider>
         <CapabilitiesProvider>
           <BrowserRouter>
-            <App />
+            <HotkeysProvider>
+              <App />
+            </HotkeysProvider>
           </BrowserRouter>
         </CapabilitiesProvider>
       </ThemeProvider>

@@ -2,6 +2,7 @@ import { Outlet } from 'react-router-dom';
 import { AdaptorBanner } from '@/components/AdaptorBanner';
 import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
+import { AppHotkeys } from '@/hotkeys/AppHotkeys';
 
 export function AppShell() {
   return (
@@ -14,6 +15,7 @@ export function AppShell() {
           <Outlet />
         </main>
       </div>
+      <AppHotkeys />
     </div>
   );
 }

@@ -14,6 +14,7 @@ export function Topbar() {
     <header className="flex h-12 items-center gap-3 border-b border-neutral-200 bg-white px-4 dark:border-neutral-800 dark:bg-neutral-950">
       <button
         type="button"
+        data-hotkey-target="workspace-switcher"
         className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 text-sm text-neutral-700 hover:bg-neutral-100 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
       >
         <span>default</span>
@@ -22,6 +23,7 @@ export function Topbar() {
 
       <button
         type="button"
+        data-hotkey-target="command-palette"
         className={cn(
           'ml-2 inline-flex items-center gap-2 rounded-md border border-neutral-200 px-2 py-1 text-sm text-neutral-500',
           'hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-900'
