@@ -3,6 +3,8 @@ package core
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -266,17 +268,34 @@ const (
 // Session is an ephemeral run of an agent against an assignment (C10 —
 // sessions are ephemeral, identities persist). Adaptors append cost
 // samples and heartbeats; Gemba aggregates on read.
+//
+// ActiveTurnID names the in-flight turn (a model generation, a tool
+// call round-trip) the session is currently servicing. When non-empty,
+// reapers, idle-kill timers, and stop-stale sweeps MUST skip the
+// session — killing mid-turn corrupts transcripts and loses pending
+// escalations. The adaptor sets this on turn start and clears it on
+// turn completion; callers treat empty as "safe to interrupt". This
+// field is mandated by the contract (t3code audit lesson) so that
+// active-turn protection cannot be forgotten per-adaptor.
+//
+// CloseReason carries the typed reason a session reached a terminal
+// status. It is set by the adaptor at the moment the session closes
+// and MUST be present on the Session payload of any terminal
+// `session_transition` event so callers can decide resume vs restart
+// vs give-up without parsing free-form strings (DD-6 / t3code audit).
 type Session struct {
-	ID               string         `json:"id"`
-	AssignmentID     string         `json:"assignment_id"`
-	AgentID          AgentID        `json:"agent_id"`
-	Status           SessionStatus  `json:"status"`
-	StartedAt        time.Time      `json:"started_at"`
-	EndedAt          *time.Time     `json:"ended_at,omitempty"`
-	LastHeartbeat    *time.Time     `json:"last_heartbeat,omitempty"`
-	TranscriptRef    string         `json:"transcript_ref,omitempty"`
-	CostSamples      []CostSample   `json:"cost_samples,omitempty"`
-	ProviderMetadata map[string]any `json:"provider_metadata,omitempty"`
+	ID               string              `json:"id"`
+	AssignmentID     string              `json:"assignment_id"`
+	AgentID          AgentID             `json:"agent_id"`
+	Status           SessionStatus       `json:"status"`
+	ActiveTurnID     string              `json:"active_turn_id,omitempty"`
+	StartedAt        time.Time           `json:"started_at"`
+	EndedAt          *time.Time          `json:"ended_at,omitempty"`
+	LastHeartbeat    *time.Time          `json:"last_heartbeat,omitempty"`
+	TranscriptRef    string              `json:"transcript_ref,omitempty"`
+	CloseReason      *SessionCloseReason `json:"close_reason,omitempty"`
+	CostSamples      []CostSample        `json:"cost_samples,omitempty"`
+	ProviderMetadata map[string]any      `json:"provider_metadata,omitempty"`
 }
 
 // SessionStatus is the lifecycle tag on a Session.
@@ -291,6 +310,11 @@ const (
 )
 
 // SessionEndMode names the terminal intent when EndSession is called.
+// This is the *caller's request*; SessionCloseReason is the *recorded
+// cause* attached to the Session once it has closed. They often line up
+// (caller requests `canceled` → adaptor records `user_stop`), but a
+// provider-driven close (e.g. transport error during a caller's
+// `completed` request) MUST still set the true close reason.
 type SessionEndMode string
 
 const (
@@ -298,6 +322,79 @@ const (
 	SessionEndFailed    SessionEndMode = "failed"
 	SessionEndCanceled  SessionEndMode = "canceled"
 )
+
+// SessionCloseReason is the typed cause carried on a closed Session.
+// Adaptors MUST set exactly one of these values on Session.CloseReason
+// before emitting the terminal `session_transition` event. Callers
+// branch on the reason to choose resume vs restart vs give-up; without
+// a typed value each caller invents ad-hoc stderr heuristics (t3code
+// audit finding).
+type SessionCloseReason string
+
+const (
+	// CloseProviderExit — the agent-runtime provider process exited
+	// cleanly or crashed outside of Gemba's control.
+	CloseProviderExit SessionCloseReason = "provider_exit"
+	// CloseTransportError — the wire link to the adaptor dropped
+	// (socket closed, TLS error, HTTP stream reset).
+	CloseTransportError SessionCloseReason = "transport_error"
+	// CloseUserStop — a human or orchestrator issued an explicit stop.
+	// This is the companion to SessionEndCanceled / SessionEndCompleted
+	// when the caller asked for the close.
+	CloseUserStop SessionCloseReason = "user_stop"
+	// CloseIdleTimeout — idle-kill timer fired because no turn was
+	// active and the heartbeat age exceeded the adaptor's threshold.
+	CloseIdleTimeout SessionCloseReason = "idle_timeout"
+	// CloseFatalStderr — the provider emitted a stderr signature the
+	// adaptor classifies as unrecoverable (OOM, panic, assertion).
+	CloseFatalStderr SessionCloseReason = "fatal_stderr"
+	// CloseProtocolError — the provider violated the adaptor's wire
+	// contract (malformed JSONL, unknown MCP method, version mismatch).
+	CloseProtocolError SessionCloseReason = "protocol_error"
+	// CloseBudgetStop — a cost budget hit its ceiling and the budget
+	// enforcer asked the adaptor to end the session.
+	CloseBudgetStop SessionCloseReason = "budget_stop"
+	// CloseEscalationPause — a blocking escalation expired or resolved
+	// to a decision that terminates the session rather than resumes it.
+	CloseEscalationPause SessionCloseReason = "escalation_pause"
+)
+
+// validCloseReasons is the authoritative set used by Valid and
+// UnmarshalJSON so mis-typed wire values surface as parse errors.
+var validCloseReasons = map[SessionCloseReason]struct{}{
+	CloseProviderExit:    {},
+	CloseTransportError:  {},
+	CloseUserStop:        {},
+	CloseIdleTimeout:     {},
+	CloseFatalStderr:     {},
+	CloseProtocolError:   {},
+	CloseBudgetStop:      {},
+	CloseEscalationPause: {},
+}
+
+// Valid reports whether r is one of the canonical close reasons.
+func (r SessionCloseReason) Valid() bool {
+	_, ok := validCloseReasons[r]
+	return ok
+}
+
+// String satisfies fmt.Stringer and always returns the lowercase token.
+func (r SessionCloseReason) String() string { return string(r) }
+
+// UnmarshalJSON rejects unknown close reasons so adaptors can't quietly
+// expand the enum on the wire past what consumers understand.
+func (r *SessionCloseReason) UnmarshalJSON(data []byte) error {
+	var raw string
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	candidate := SessionCloseReason(raw)
+	if !candidate.Valid() {
+		return fmt.Errorf("core: unknown SessionCloseReason %q", raw)
+	}
+	*r = candidate
+	return nil
+}
 
 // CostSample is a single metered tick from an adaptor. One of Tokens,
 // WallclockSeconds, DollarsNative may be set (or all three); the axis
@@ -507,6 +604,15 @@ type ConfirmNonce string
 //     500ms freshness bar is unmeetable when state updates require client
 //     polling.
 //
+// Scope-first session lifecycle (domain.md §3.7, t3code audit): every
+// Session lifecycle MUST be bounded by an explicit acquire → use →
+// release scope owned by the caller. Adaptors MAY NOT own child
+// processes or long-lived resources outside of an active scope — per-
+// adaptor scope ownership is drift waiting to happen. Callers close the
+// scope via EndSession (or scope teardown on context cancellation) and
+// the adaptor MUST release any process, workspace lease, transport
+// socket, or pending-request queue associated with the session.
+//
 // Implementations MUST be safe for concurrent use.
 type OrchestrationPlaneAdaptor interface {
 	// Describe returns the capability manifest.
@@ -557,12 +663,39 @@ type OrchestrationPlaneAdaptor interface {
 	// running. MUST emit a `session_transition` event on the first call.
 	ResumeSession(ctx context.Context, sessionID string, nonce ConfirmNonce) (Session, error)
 	// EndSession terminates a session with the given mode. Idempotent
-	// under the same nonce (conformance B.4). MUST emit a
-	// `session_transition` event on the first call.
+	// in two reinforcing senses (conformance B.4, t3code audit):
+	//
+	//   1. Same-nonce replay is a no-op: calling EndSession twice with
+	//      the same (sessionID, nonce) MUST return the same Session and
+	//      emit zero additional events on the replay.
+	//   2. Terminal state is absorbing: calling EndSession on an already
+	//      terminal session (Status completed / failed) MUST be a no-op
+	//      even under a fresh nonce — return the terminal Session, do
+	//      not error, do not emit a second event. This protects against
+	//      multiple defensive callers (reaper, stop-stale, explicit
+	//      stop) racing without any one of them having to check status
+	//      first.
+	//
+	// On a first-time close, adaptors MUST populate Session.CloseReason
+	// with the typed SessionCloseReason cause before emitting the
+	// `session_transition` event. The caller-supplied mode is the
+	// *intent*; CloseReason is the *recorded cause* (which may
+	// disagree — e.g. mode=completed + reason=transport_error).
 	EndSession(ctx context.Context, sessionID string, mode SessionEndMode, nonce ConfirmNonce) (Session, error)
 	// PeekSession returns a snapshot of a live session. The populated
 	// fields are gated by manifest.peek_modes.
 	PeekSession(ctx context.Context, sessionID string) (SessionPeek, error)
+	// ListPendingRequests returns every open EscalationRequest
+	// (permission prompt, HITL approval, MCP elicitation,
+	// A2A input-required, orchestrator pause) currently attached to
+	// the given session, in the canonical EscalationRequest shape
+	// (DD-6). Every adaptor MUST expose this — without a common
+	// method, the UI cannot offer generic "inspect what this session
+	// is waiting on" recovery, and each adaptor re-invents its own
+	// pending-request tracking (t3code audit). Unknown sessionID
+	// returns KindSessionNotFound. Returns an empty slice (not nil)
+	// when the session is running normally with nothing pending.
+	ListPendingRequests(ctx context.Context, sessionID string) ([]EscalationRequest, error)
 
 	// AcquireWorkspace provisions a workspace matching req. Errors
 	// (rather than silently downgrading) if no supported kind satisfies

@@ -127,6 +127,9 @@ func (*FakeOrchestrationPlane) EndSession(context.Context, string, core.SessionE
 func (*FakeOrchestrationPlane) PeekSession(context.Context, string) (core.SessionPeek, error) {
 	return core.SessionPeek{}, errors.New("fake: PeekSession not implemented")
 }
+func (*FakeOrchestrationPlane) ListPendingRequests(context.Context, string) ([]core.EscalationRequest, error) {
+	return []core.EscalationRequest{}, nil
+}
 func (*FakeOrchestrationPlane) AcquireWorkspace(context.Context, core.WorkspaceRequest) (core.Workspace, error) {
 	return core.Workspace{}, errors.New("fake: AcquireWorkspace not implemented")
 }

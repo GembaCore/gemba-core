@@ -154,6 +154,113 @@ func TestEscalationRequestRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSessionCloseReasonRoundTrip exercises every canonical reason so a
+// drift in the enum (missing constant, typo in wire token) surfaces at
+// the type boundary rather than inside a specific adaptor.
+func TestSessionCloseReasonRoundTrip(t *testing.T) {
+	reasons := []SessionCloseReason{
+		CloseProviderExit,
+		CloseTransportError,
+		CloseUserStop,
+		CloseIdleTimeout,
+		CloseFatalStderr,
+		CloseProtocolError,
+		CloseBudgetStop,
+		CloseEscalationPause,
+	}
+	for _, r := range reasons {
+		if !r.Valid() {
+			t.Errorf("reason %q should be valid", r)
+		}
+		data, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("marshal %q: %v", r, err)
+		}
+		var round SessionCloseReason
+		if err := json.Unmarshal(data, &round); err != nil {
+			t.Errorf("unmarshal %q: %v", r, err)
+		}
+		if round != r {
+			t.Errorf("roundtrip %q != %q", round, r)
+		}
+	}
+}
+
+func TestSessionCloseReasonRejectsUnknown(t *testing.T) {
+	var r SessionCloseReason
+	err := json.Unmarshal([]byte(`"panic_attack"`), &r)
+	if err == nil {
+		t.Fatalf("expected error decoding unknown reason, got nil (value=%q)", r)
+	}
+}
+
+// TestSessionActiveTurnAndCloseReasonWire asserts that a Session
+// carrying an active_turn_id and a close_reason survives a JSON round
+// trip. Reapers and the UI key off these fields, so silent loss here is
+// a high-impact drift.
+func TestSessionActiveTurnAndCloseReasonWire(t *testing.T) {
+	reason := CloseIdleTimeout
+	end := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
+	s := Session{
+		ID:           "sess-1",
+		AssignmentID: "asg-1",
+		AgentID:      "gemba/polecats/obsidian",
+		Status:       SessionFailed,
+		ActiveTurnID: "turn-7",
+		StartedAt:    end.Add(-10 * time.Minute),
+		EndedAt:      &end,
+		CloseReason:  &reason,
+	}
+	data, err := json.Marshal(s)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round Session
+	if err := json.Unmarshal(data, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if round.ActiveTurnID != "turn-7" {
+		t.Errorf("active_turn_id lost: got %q", round.ActiveTurnID)
+	}
+	if round.CloseReason == nil || *round.CloseReason != CloseIdleTimeout {
+		t.Errorf("close_reason lost: got %v", round.CloseReason)
+	}
+	// An idle session with no close_reason must serialise without the
+	// key at all — consumers distinguish "closed with reason X" from
+	// "still running" by field presence.
+	open := Session{ID: "sess-2", AssignmentID: "asg-1", Status: SessionRunning, StartedAt: end}
+	openData, err := json.Marshal(open)
+	if err != nil {
+		t.Fatalf("marshal open: %v", err)
+	}
+	if got := string(openData); containsStr(got, "close_reason") || containsStr(got, "active_turn_id") {
+		t.Errorf("optional fields leaked into wire form of open session: %s", got)
+	}
+}
+
+func containsStr(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// TestOrchestrationAdaptorHasListPendingRequests is a compile-time
+// guard — removing the method from the interface breaks this test
+// before it breaks every adaptor implementation.
+func TestOrchestrationAdaptorHasListPendingRequests(t *testing.T) {
+	var a OrchestrationPlaneAdaptor = noopOrchestrator{}
+	got, err := a.ListPendingRequests(context.Background(), "sess-1")
+	if err != nil {
+		t.Fatalf("ListPendingRequests: %v", err)
+	}
+	if got == nil {
+		t.Errorf("ListPendingRequests must return non-nil slice (empty is fine)")
+	}
+}
+
 // TestOrchestrationPlaneAdaptorIsImplementable is a compile-time guard:
 // if the interface drifts in a way that makes it impossible to satisfy
 // from a zero-dep stub, the package stops compiling here rather than
@@ -212,6 +319,9 @@ func (noopOrchestrator) EndSession(context.Context, string, SessionEndMode, Conf
 }
 func (noopOrchestrator) PeekSession(context.Context, string) (SessionPeek, error) {
 	return SessionPeek{}, nil
+}
+func (noopOrchestrator) ListPendingRequests(context.Context, string) ([]EscalationRequest, error) {
+	return []EscalationRequest{}, nil
 }
 func (noopOrchestrator) AcquireWorkspace(context.Context, WorkspaceRequest) (Workspace, error) {
 	return Workspace{}, nil

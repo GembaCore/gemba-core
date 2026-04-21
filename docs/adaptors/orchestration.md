@@ -104,6 +104,7 @@ type OrchestrationPlaneAdaptor interface {
     ResumeSession(ctx, sessionID string, nonce ConfirmNonce) (Session, error)
     EndSession(ctx, sessionID string, mode SessionEndMode, nonce ConfirmNonce) (Session, error)
     PeekSession(ctx, sessionID string) (SessionPeek, error)
+    ListPendingRequests(ctx, sessionID string) ([]EscalationRequest, error)
 
     // Workspaces
     AcquireWorkspace(ctx, WorkspaceRequest) (Workspace, error)
@@ -146,15 +147,81 @@ topology with only `CapturedAt` set — don't fabricate a declaration.
 
 `push` and `hook` are supported alternatives; adaptors declare which.
 
+### Scope-first session lifecycle (DD-6 / t3code audit)
+
+Every session lifecycle MUST be bounded by an explicit
+**acquire → use → release** scope owned by the caller. Adaptors MAY
+NOT own child processes, workspace leases, transport sockets, or
+pending-request queues outside of an active scope — per-adaptor scope
+ownership is drift waiting to happen, and has caused concrete bugs in
+t3code where one adaptor's reaper leaked resources another adaptor
+believed it had released.
+
+Contract:
+
+- A session comes into existence via `StartSession` (inside a caller
+  scope) and ceases to exist via `EndSession` or context cancellation.
+- On scope teardown the adaptor MUST release every resource associated
+  with the session before the terminal `session_transition` event is
+  observable on `Subscribe`. Callers rely on "event seen ⇒ teardown
+  done" for restart logic.
+- Adaptors MAY keep transcript bytes and cost samples around for later
+  inspection; they MAY NOT keep the session's process, listener, or
+  open escalation queue alive.
+
 ### Session lifecycle + nonces
 
 Pause, resume, and end are idempotent under a `ConfirmNonce`. The same
 nonce passed twice MUST be a no-op (conformance B.4). Different nonces
-may return different results.
+may return different results — except for `EndSession` on a terminal
+session, see below.
 
 `EndSession` takes a `SessionEndMode` (`completed`, `failed`,
-`canceled`) — the adaptor records this in the session's final
-`Status`.
+`canceled`) — the *caller's intent*. The adaptor records the *true
+cause* on `Session.CloseReason` as a `SessionCloseReason` value
+(`provider_exit`, `transport_error`, `user_stop`, `idle_timeout`,
+`fatal_stderr`, `protocol_error`, `budget_stop`, `escalation_pause`).
+The two often line up (`mode=canceled` → `reason=user_stop`) but a
+provider-driven close during a caller's `completed` request MUST still
+record the true `reason=transport_error` so restart/resume logic can
+branch correctly. The terminal `session_transition` event MUST carry
+the populated `CloseReason` on its Session payload.
+
+#### EndSession is doubly idempotent (t3code audit)
+
+`EndSession` on an **already-terminal** session (Status
+`completed`/`failed`) MUST be a no-op **even under a fresh nonce** —
+return the terminal Session, do not error, do not emit a second event.
+Multiple defensive callers (the reaper, `gt stop-stale`, explicit user
+stop) race routinely; any one of them should be able to call
+`EndSession` without first checking status. An adaptor that errors the
+second call is a conformance failure under Group B.
+
+### Active-turn protection
+
+`Session.active_turn_id` names the in-flight turn (a model generation,
+a tool-call round-trip) the session is currently servicing. When
+non-empty, reapers, idle-kill timers, and stop-stale sweeps **MUST
+skip** the session — killing mid-turn corrupts transcripts and loses
+pending escalations. The adaptor sets `active_turn_id` on turn start
+and clears it on turn completion; callers treat empty as "safe to
+interrupt". Without this field in the contract, active-turn protection
+has to be re-implemented per-adaptor and is easy to forget.
+
+### ListPendingRequests
+
+Every adaptor MUST expose its pending permission prompts, HITL
+approvals, MCP elicitations, A2A input-required tasks, and
+orchestrator pauses through `ListPendingRequests(sessionID)` in the
+canonical `EscalationRequest` shape. This connects to the
+EscalationRequest pipeline (gm-e11.3) and is the hook the UI uses for
+generic "what is this session waiting on?" recovery. Without a common
+method every adaptor tracks pending requests differently and the UI
+cannot offer the same card for all of them.
+
+Return an **empty slice** (not `nil`) when the session is running
+normally with nothing pending. Unknown `sessionID` returns
+`KindSessionNotFound` per the error algebra.
 
 ### Workspaces
 
@@ -248,6 +315,11 @@ expected to pass at minimum:
 | A | `list_agents_returns_declared_capabilities` | Manifest + runtime agree. |
 | B | `claim_next_ready_reserves` | Two concurrent claims don't double-book. |
 | B | `end_session_idempotent` | Same nonce twice = no-op. |
+| B | `end_session_terminal_absorbing` | Fresh nonce on terminal session = no-op (no error, no second event). |
+| B | `end_session_populates_close_reason` | Terminal Session carries typed `CloseReason`. |
+| B | `active_turn_id_skips_reaper` | Reaper MUST NOT end a session with `active_turn_id != ""`. |
+| B | `scope_teardown_releases_resources` | No leaked process/socket/queue after EndSession emits. |
+| B | `list_pending_requests_exists` | Every adaptor exposes the common shape. |
 | C | `acquire_fs_scoped_honored` | Writes don't leak across workspaces. |
 | C | `required_isolation_honored` | Manifest is not a lie. |
 | D | `resolve_escalation_unblocks_session` | Blocking escalation → running. |
