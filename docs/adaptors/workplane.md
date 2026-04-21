@@ -382,9 +382,29 @@ cadence and `ProtocolVersion` only when the core contract changes.
 - [ ] Manifest round-trips through JSON unchanged (covered by the
       conformance harness, gm-e3.5).
 
+## Conformance harness (gm-2am)
+
+The contract tests ship as an importable Go package so third-party
+adaptor authors can run them in their own CI:
+
+```go
+import gembatesting "github.com/MikeBengtson/gemba/testing"
+
+func TestYourAdaptorConformance(t *testing.T) {
+    impl := youradaptor.New(...)
+    gembatesting.RunWorkPlaneConformance(t, impl, &gembatesting.WorkPlaneFixture{
+        KnownMissingID: core.WorkItemID("your-workspace/your-repo/does-not-exist"),
+    })
+}
+```
+
+See `testing/README.md` for the full probe catalogue and fixture
+contract. The import path is the canonical entry point referenced in
+the "Writing a Gemba adaptor" guide (gm-e14.5).
+
 ## Reference implementations
 
 - `internal/adapter/bd/` — Beads WorkPlane (gm-e6).
 - Forthcoming: Jira WorkPlane (gm-e8) as the non-Beads forcing function.
-- `internal/adapter/noop/` — in-memory adaptor used by the conformance
-  harness (gm-e3.7).
+- `internal/adapter/noop/` — in-memory adaptor that exercises the
+  exported harness (see `internal/adapter/noop/conformance_test.go`).

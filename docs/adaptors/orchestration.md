@@ -375,10 +375,35 @@ expected to pass at minimum:
 
 ---
 
+## Conformance harness (gm-2am)
+
+The orchestration contract tests ship as an importable Go package:
+
+```go
+import gembatesting "github.com/MikeBengtson/gemba/testing"
+
+func TestYourOrchestrationConformance(t *testing.T) {
+    impl := youradaptor.New(...)
+    gembatesting.RunOrchestrationConformance(t, impl, &gembatesting.OrchestrationFixture{
+        KnownMissingSessionID: "sess-does-not-exist",
+        SessionStarter: func(t *testing.T, a core.OrchestrationPlaneAdaptor) (string, func()) {
+            id := mintFixtureSession(t, impl)
+            return id, func() { /* cleanup */ }
+        },
+    })
+}
+```
+
+See `testing/README.md` for the full probe catalogue. The import path is
+the canonical entry point referenced in the "Writing a Gemba adaptor"
+guide (gm-e14.5).
+
 ## Related
 
 - `internal/core/orchestration.go` — the Go source of truth.
 - `internal/core/types.go` — `AgentRef`, `WorkItemID`, `AgentID`.
 - `docs/adaptors/workplane.md` — the paired WorkPlane contract
   (gm-e3.2).
+- `testing/` — importable conformance harness (gm-2am).
+- `internal/adapter/noop/` — minimal adaptor that passes the harness.
 - `gemba_prime/crew/mike/domain.md` §3 — full design.
