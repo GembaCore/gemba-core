@@ -6,6 +6,7 @@
 //
 //   - types.go          WorkItem, AgentRef, Relationship, Evidence (+ their enums)
 //   - state.go          StateCategory ∈ backlog|unstarted|started|completed|canceled
+//   - derived.go        DerivedSignals + Derive(item, escalations, manifest) — pure
 //   - dod.go            DefinitionOfDone (informational-only; never blocks)
 //   - budget.go         Sprint, TokenBudget (three-tier inform/warn/stop)
 //   - workplane.go      WorkPlane interface + CapabilityManifest (gm-e3.2)

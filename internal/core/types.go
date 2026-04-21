@@ -48,6 +48,12 @@ type WorkItem struct {
 	CreatedAt     time.Time         `json:"created_at"`
 	UpdatedAt     time.Time         `json:"updated_at"`
 	Custom        map[string]any    `json:"custom,omitempty"`
+	// Derived carries UI-facing booleans computed by Derive from this
+	// item plus its open escalations (gm-gsh). Servers SHOULD populate
+	// it on every read so the UI does not have to rebuild the predicate
+	// per-card; it is omitempty because the pure derivation also lets
+	// the UI recompute locally if a transport omits it.
+	Derived *DerivedSignals `json:"derived,omitempty"`
 }
 
 // AgentKind distinguishes an automated agent from a human operator.
@@ -81,6 +87,14 @@ type AgentRef struct {
 	ParentID  *AgentID  `json:"parent_id,omitempty"`
 	Role      string    `json:"role,omitempty"`
 	Workspace string    `json:"workspace,omitempty"`
+	// Dialect is the optional adaptor-declared agent-runtime dialect
+	// ("claude", "codex", "copilot", "opencode", "gemini", …) that
+	// drives per-dialect arg builders and session UI. Free-form on
+	// purpose — core does NOT enum this (gm-gsh / Foolery lesson):
+	// adaptors invent new dialects faster than a core enum can keep
+	// up, and an unknown dialect must degrade gracefully to "generic
+	// agent" rendering rather than fail a JSON decode.
+	Dialect *string `json:"dialect,omitempty"`
 }
 
 // RelationshipKind enumerates the directed edges the two planes share.

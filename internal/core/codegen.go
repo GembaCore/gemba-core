@@ -99,6 +99,10 @@ export interface AgentRef {
   parent_id?: AgentID | null;
   role?: string;
   workspace?: string;
+  // Adaptor-declared dialect ("claude", "codex", "copilot", "opencode",
+  // "gemini", …). Free-form: consumers MUST treat unknown values as
+  // "generic agent" rather than error (gm-gsh).
+  dialect?: string;
 }
 
 export interface Relationship {
@@ -141,6 +145,17 @@ export interface Sprint {
   budget?: TokenBudget | null;
 }
 
+// DerivedSignals are UI-facing booleans computed by the server from a
+// WorkItem plus its open escalations (gm-gsh). They answer the three
+// questions the Kanban / backlog / agents dashboards ask most often;
+// consumers MUST treat them as pure-derived cache values and re-derive
+// locally rather than persisting them. Emitted on WorkItem.derived.
+export interface DerivedSignals {
+  agent_claimable: boolean;
+  human_action_required: boolean;
+  review_pending: boolean;
+}
+
 export interface WorkItem {
   id: WorkItemID;
   kind: string;
@@ -159,6 +174,7 @@ export interface WorkItem {
   created_at: string;
   updated_at: string;
   custom?: Record<string, unknown>;
+  derived?: DerivedSignals | null;
 }
 
 // Flags is the flat-boolean projection of a CapabilityManifest intended
