@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -238,7 +239,7 @@ func TestAssertAdaptorErrorConformance(t *testing.T) {
 // for the new contract.
 func TestAssertAdaptorErrorAgainstNoopAdaptor(t *testing.T) {
 	plane := noopWorkPlane{}
-	_, err := plane.GetWorkItem(nil, WorkItemID("x"))
+	_, err := plane.GetWorkItem(context.Background(), WorkItemID("x"))
 	if err == nil {
 		t.Fatal("noop adaptor should return ErrNotFound")
 	}

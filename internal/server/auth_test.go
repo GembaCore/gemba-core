@@ -109,7 +109,9 @@ func TestLogin_ExchangesBearerForCookie(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login: want 200, got %d; body=%q", rec.Code, rec.Body.String())
 	}
-	cookies := rec.Result().Cookies()
+	result := rec.Result()
+	defer result.Body.Close()
+	cookies := result.Cookies()
 	var session *http.Cookie
 	for _, c := range cookies {
 		if c.Name == auth.SessionCookieName {
