@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build release release-dry gen
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -41,11 +41,14 @@ build-go-only: ## build without rebuilding the frontend (fast dev iteration)
 
 ## --- Test / Lint ---
 
-test: ## run Go (race) + frontend tests
+dist-sentinel: ## ensure web/dist exists with sentinel so //go:embed all:web/dist matches on fresh clones
+	@mkdir -p web/dist && touch web/dist/.keep
+
+test: dist-sentinel ## run Go (race) + frontend tests
 	go test -race -count=1 ./...
 	cd web && pnpm test --run
 
-lint: ## run golangci-lint and frontend lint
+lint: dist-sentinel ## run golangci-lint and frontend lint
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "install: https://golangci-lint.run/usage/install/"; exit 1; }
 	golangci-lint run ./...
 	cd web && pnpm lint
