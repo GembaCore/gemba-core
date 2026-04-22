@@ -75,16 +75,6 @@ var beadsEdgeExtensions = []core.EdgeExtension{
 	},
 }
 
-// extensionEdgeByBeadsType maps a Beads-native edge token to its
-// canonical extension name. Populated from beadsEdgeExtensions so the
-// declared manifest and the runtime mapping can't drift.
-var extensionEdgeByBeadsType = map[string]string{
-	"discovered_from":    "beads:discovered_from",
-	"waits_for":          "beads:waits_for",
-	"replies_to":         "beads:replies_to",
-	"conditional_blocks": "beads:conditional_blocks",
-}
-
 // coreEdgeForBeadsType resolves a bd edge token onto a core
 // RelationshipKind. Empty bd types default to blocks because that is
 // bd's own CLI default (see `bd dep add --help`). Unknown tokens return
@@ -97,14 +87,6 @@ func coreEdgeForBeadsType(t string) (core.RelationshipKind, bool) {
 	}
 	k, ok := coreEdgeByBeadsType[n]
 	return k, ok
-}
-
-// extensionEdgeForBeadsType resolves a bd edge token onto a declared
-// EdgeExtension name. Returns ("", false) when the token is unknown or
-// maps onto a core edge.
-func extensionEdgeForBeadsType(t string) (string, bool) {
-	name, ok := extensionEdgeByBeadsType[normalizeBeadsEdgeType(t)]
-	return name, ok
 }
 
 // relationshipsFromBead projects the bd dependencies/dependents arrays
