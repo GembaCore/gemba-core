@@ -175,6 +175,9 @@ func (f *fakeBd) handleUpdate(args []string) ([]byte, error) {
 		case "--set-labels":
 			b.Labels = strings.Split(args[i+1], ",")
 			i++
+		case "--add-label":
+			b.Labels = append(b.Labels, args[i+1])
+			i++
 		case "--json":
 			// default
 		}

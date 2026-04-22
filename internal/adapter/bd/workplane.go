@@ -262,8 +262,16 @@ func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.
 	if wi.Description != "" {
 		args = append(args, "--description", wi.Description)
 	}
-	if len(wi.Labels) > 0 {
-		args = append(args, "--labels", strings.Join(wi.Labels, ","))
+	// Agent-federation labels (gm-e6.3) ride with --labels so a single
+	// create call persists the full AgentRef. Caller-supplied labels win
+	// for non-agent keys; agent:role/parent prefixes are rewritten from
+	// wi.Assignee so the two views cannot drift at insert time.
+	labels := stripAgentLabels(wi.Labels)
+	if wi.Assignee != nil {
+		labels = append(labels, agentLabels(wi.Assignee)...)
+	}
+	if len(labels) > 0 {
+		args = append(args, "--labels", strings.Join(labels, ","))
 	}
 	if wi.Assignee != nil && wi.Assignee.ID != "" {
 		args = append(args, "--assignee", string(wi.Assignee.ID))
@@ -337,8 +345,24 @@ func (w *WorkPlane) UpdateWorkItem(
 	if patch.Assignee != nil && patch.Assignee.ID != "" {
 		args = append(args, "--assignee", string(patch.Assignee.ID))
 	}
-	if len(patch.Labels) > 0 {
-		args = append(args, "--set-labels", strings.Join(patch.Labels, ","))
+	// Agent-federation labels on the patched assignee (gm-e6.3). If the
+	// caller also supplied Labels we merge into that --set-labels value
+	// so a single bd update writes the full federated view atomically —
+	// stale agent:* labels in patch.Labels are stripped so the new
+	// AgentRef is authoritative. If only Assignee is patched we fall
+	// through to --add-label (additive) rather than --set-labels, since
+	// we don't want an Assignee-only patch to silently clear other
+	// labels the caller didn't intend to touch.
+	agentExtra := agentLabels(patch.Assignee)
+	switch {
+	case len(patch.Labels) > 0:
+		merged := stripAgentLabels(patch.Labels)
+		merged = append(merged, agentExtra...)
+		args = append(args, "--set-labels", strings.Join(merged, ","))
+	case len(agentExtra) > 0:
+		for _, l := range agentExtra {
+			args = append(args, "--add-label", l)
+		}
 	}
 
 	if _, err := w.run(ctx, args...); err != nil {

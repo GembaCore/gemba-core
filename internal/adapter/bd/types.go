@@ -136,13 +136,11 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 			Kind: core.AgentKindHuman,
 		}
 	}
-	if b.Assignee != "" {
-		wi.Assignee = &core.AgentRef{
-			ID:   core.AgentID(b.Assignee),
-			Name: b.Assignee,
-			Kind: core.AgentKindAgent,
-		}
-	}
+	// Assignee goes through agentRefFromBead so role + parent_id come
+	// off the bead's labels (gm-e6.3 / DD-1). A bare assignee with no
+	// agent:role:* / agent:parent:* labels still yields a valid AgentRef
+	// — those fields are optional.
+	wi.Assignee = agentRefFromBead(b.Assignee, b.Labels)
 	return wi
 }
 
