@@ -109,8 +109,9 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 	if len(b.Dependents) > 0 {
 		custom["beads:dependents"] = b.Dependents
 	}
+	id := buildWorkItemID(prefix, b.ID)
 	wi := core.WorkItem{
-		ID:            buildWorkItemID(prefix, b.ID),
+		ID:            id,
 		Kind:          b.IssueType,
 		Title:         b.Title,
 		Description:   b.Description,
@@ -118,6 +119,12 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 		StateCategory: category,
 		Priority:      &priority,
 		Labels:        append([]string(nil), b.Labels...),
+		// Relationships carries only the three core edges (blocks,
+		// parent_child, relates_to); the four extension edges plus the
+		// raw bd edge blob ride Custom["beads:dependencies"] /
+		// ["beads:dependents"] so the beads/ SPA extension can render
+		// them when loaded (gm-e6.2, DD-9).
+		Relationships: relationshipsFromBead(b, id, prefix),
 		CreatedAt:     b.CreatedAt,
 		UpdatedAt:     b.UpdatedAt,
 		Custom:        custom,

@@ -199,6 +199,35 @@ func TestBeadsWorkPlaneConformance(t *testing.T) {
 	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
 	gembatesting.RunWorkPlaneConformance(t, impl, &gembatesting.WorkPlaneFixture{
 		KnownMissingID: core.WorkItemID("gemba/gemba/gm-does-not-exist"),
+		// Seed a bead with every core edge type so Group C can assert
+		// the adaptor hydrates core Relationships from bd's native
+		// dependencies/dependents arrays. Extension edges are exercised
+		// separately in TestBeadsEdgeMappingRoundTripsAllSevenKinds.
+		SeedWorkItemWithEdges: func(wp core.WorkPlane) (core.WorkItemID, []core.Relationship, error) {
+			fake.mu.Lock()
+			fake.beads["gm-edges-subject"] = &bd.Bead{
+				ID:        "gm-edges-subject",
+				Title:     "edge-round-trip subject",
+				Status:    "open",
+				Priority:  2,
+				IssueType: "task",
+				Dependencies: []bd.BeadEdge{
+					{IssueID: "gm-edges-subject", DependsOnID: "gm-edges-blocker", Type: "blocks"},
+					{IssueID: "gm-edges-subject", DependsOnID: "gm-edges-parent", Type: "parent-child"},
+				},
+				Dependents: []bd.BeadEdge{
+					{ID: "gm-edges-sibling", DependencyType: "relates_to"},
+				},
+			}
+			fake.mu.Unlock()
+			id := core.WorkItemID("gemba/gemba/gm-edges-subject")
+			want := []core.Relationship{
+				{Kind: core.RelBlocks, From: "gemba/gemba/gm-edges-blocker", To: id},
+				{Kind: core.RelParentChild, From: "gemba/gemba/gm-edges-parent", To: id},
+				{Kind: core.RelRelatesTo, From: id, To: "gemba/gemba/gm-edges-sibling"},
+			}
+			return id, want, nil
+		},
 	})
 }
 
@@ -303,6 +332,125 @@ func TestBeadsGetWorkItemNotFoundIsTagged(t *testing.T) {
 	}
 	if !errors.Is(err, core.ErrNotFound) {
 		t.Errorf("errors.Is(err, core.ErrNotFound) = false; legacy sentinel must still match")
+	}
+}
+
+// TestBeadsEdgeMappingRoundTripsAllSevenKinds covers gm-e6.2's DoD: a
+// bead carrying every one of Beads's 7 native edge types (3 core + 4
+// extensions) survives a load through Gemba with every edge still
+// addressable — core edges on WorkItem.Relationships, extensions on
+// Custom["beads:dependencies"]/["beads:dependents"] in their raw shape
+// for the SPA's beads/ extension renderer.
+func TestBeadsEdgeMappingRoundTripsAllSevenKinds(t *testing.T) {
+	fake := newFakeBd(t)
+	source := &bd.Bead{
+		ID:        "gm-seven",
+		Title:     "all seven edge kinds",
+		Status:    "open",
+		Priority:  2,
+		IssueType: "task",
+		Dependencies: []bd.BeadEdge{
+			// 3 core edges inbound.
+			{IssueID: "gm-seven", DependsOnID: "gm-block", Type: "blocks"},
+			{IssueID: "gm-seven", DependsOnID: "gm-epic", Type: "parent-child"},
+			{IssueID: "gm-seven", DependsOnID: "gm-peer", Type: "relates_to"},
+			// 4 extension edges inbound. They MUST NOT land on
+			// Relationships (core does not know these kinds) and MUST
+			// survive on Custom in their original shape.
+			{IssueID: "gm-seven", DependsOnID: "gm-origin", Type: "discovered-from"},
+			{IssueID: "gm-seven", DependsOnID: "gm-gate", Type: "waits_for"},
+			{IssueID: "gm-seven", DependsOnID: "gm-thread", Type: "replies_to"},
+			{IssueID: "gm-seven", DependsOnID: "gm-cond", Type: "conditional_blocks"},
+		},
+	}
+	fake.beads[source.ID] = source
+
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	wi, err := impl.GetWorkItem(context.Background(), core.WorkItemID("gemba/gemba/gm-seven"))
+	if err != nil {
+		t.Fatalf("GetWorkItem: %v", err)
+	}
+
+	// 3 core edges populated on Relationships with the right direction
+	// (dependencies flow other -> self for every kind).
+	self := core.WorkItemID("gemba/gemba/gm-seven")
+	wantCore := []core.Relationship{
+		{Kind: core.RelBlocks, From: "gemba/gemba/gm-block", To: self},
+		{Kind: core.RelParentChild, From: "gemba/gemba/gm-epic", To: self},
+		{Kind: core.RelRelatesTo, From: "gemba/gemba/gm-peer", To: self},
+	}
+	gotCore := make(map[core.Relationship]int, len(wi.Relationships))
+	for _, r := range wi.Relationships {
+		gotCore[r]++
+	}
+	for _, r := range wantCore {
+		if gotCore[r] == 0 {
+			t.Errorf("missing core Relationship %+v in %+v", r, wi.Relationships)
+		}
+		gotCore[r]--
+	}
+	// Any leftover entries mean we accidentally surfaced extension edges
+	// (or some other artifact) on Relationships. That would be a DD-9
+	// violation: core only knows three kinds.
+	for r, n := range gotCore {
+		if n > 0 {
+			t.Errorf("unexpected core Relationship %+v (extension edges must NOT appear on Relationships)", r)
+		}
+	}
+
+	// All 7 raw edges ride through on Custom["beads:dependencies"] so the
+	// beads/ UI extension can render the 4 extension kinds without a
+	// second query. Type-assert with the compiled adaptor's BeadEdge
+	// type — the Custom slot holds the raw value, not a JSON decode.
+	raw, ok := wi.Custom["beads:dependencies"].([]bd.BeadEdge)
+	if !ok {
+		t.Fatalf("Custom[beads:dependencies] missing or wrong type: %T", wi.Custom["beads:dependencies"])
+	}
+	if len(raw) != 7 {
+		t.Errorf("Custom[beads:dependencies]: got %d edges, want 7 (all 7 native edges must survive)", len(raw))
+	}
+	seenTypes := make(map[string]bool, 7)
+	for _, e := range raw {
+		seenTypes[strings.ReplaceAll(e.Type, "-", "_")] = true
+	}
+	for _, k := range []string{
+		"blocks", "parent_child", "relates_to",
+		"discovered_from", "waits_for", "replies_to", "conditional_blocks",
+	} {
+		if !seenTypes[k] {
+			t.Errorf("raw dependency type %q not preserved on Custom", k)
+		}
+	}
+}
+
+// TestBeadsManifestDeclaresFourEdgeExtensions anchors the Outputs
+// bullet from gm-e6.2: the manifest's EdgeExtensions list names exactly
+// the four Beads-native extension kinds the UI renders when the beads/
+// extension bundle is loaded.
+func TestBeadsManifestDeclaresFourEdgeExtensions(t *testing.T) {
+	impl := bd.NewWorkPlaneWithRunner(newFakeBd(t).run, "")
+	m, err := impl.Describe(context.Background())
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	want := map[string]bool{
+		"beads:discovered_from":    false,
+		"beads:waits_for":          false,
+		"beads:replies_to":         false,
+		"beads:conditional_blocks": false,
+	}
+	for _, ext := range m.EdgeExtensions {
+		if _, ok := want[ext.Name]; ok {
+			want[ext.Name] = true
+			if !ext.Directed {
+				t.Errorf("EdgeExtension %q: Directed=false, want true", ext.Name)
+			}
+		}
+	}
+	for name, seen := range want {
+		if !seen {
+			t.Errorf("EdgeExtension %q missing from manifest", name)
+		}
 	}
 }
 

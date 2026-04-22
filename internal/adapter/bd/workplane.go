@@ -100,6 +100,13 @@ var beadsManifest = core.CapabilityManifest{
 		{Name: "beads:parent", Type: "string",
 			Description: "Parent bead id — populated for hierarchical children"},
 	},
+	// EdgeExtensions declares the four Beads-native edge types that don't
+	// map onto core's three kinds (blocks / parent_child / relates_to).
+	// The SPA renders these only when the beads/ extension bundle is
+	// loaded; other adaptors see an advisory "relates_to" fallback. The
+	// canonical table lives in edges.go so the mapping code and the
+	// manifest declaration can't drift (gm-e6.2 / DD-9).
+	EdgeExtensions:            beadsEdgeExtensions,
 	SprintNative:              false,
 	TokenBudgetEnforced:       false,
 	EvidenceSynthesisRequired: false,

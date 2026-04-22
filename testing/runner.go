@@ -126,10 +126,24 @@ func RunWorkPlaneProbes(impl core.WorkPlane, fixture *WorkPlaneFixture) *Report 
 		runProbe("B_list_returns_created", func(t probeT) { probeWorkItemList(t, impl) }),
 	}
 
-	groupC := GroupResult{
-		Name:          "C: edge / relationship round-trip",
-		NotApplicable: true,
-		Note:          "WorkPlane interface does not expose an edge/relationship API in this release",
+	groupC := GroupResult{Name: "C: edge / relationship round-trip"}
+	groupC.Probes = []ProbeResult{
+		runProbe("C_edge_extensions_are_structurally_valid", func(t probeT) {
+			probeEdgeExtensionsAreStructurallyValid(t, impl)
+		}),
+	}
+	if fixture.SeedWorkItemWithEdges != nil {
+		groupC.Probes = append(groupC.Probes,
+			runProbe("C_edge_round_trip_get_work_item", func(t probeT) {
+				probeEdgeRoundTripWorkItem(t, impl, fixture)
+			}),
+		)
+	} else {
+		groupC.Probes = append(groupC.Probes, ProbeResult{
+			Name:     "C_edge_round_trip_get_work_item",
+			Skipped:  true,
+			Messages: []string{"fixture.SeedWorkItemWithEdges not provided"},
+		})
 	}
 
 	groupD := GroupResult{

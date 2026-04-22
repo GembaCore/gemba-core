@@ -20,6 +20,14 @@ type WorkPlaneFixture struct {
 	// the error is a tagged *core.AdaptorError that also satisfies
 	// errors.Is(err, core.ErrNotFound).
 	KnownMissingID core.WorkItemID
+
+	// SeedWorkItemWithEdges is an adaptor-supplied hook that stages one
+	// WorkItem with a known-good Relationships slice inside the backend
+	// and returns its id plus the expected relationships. The Group C
+	// round-trip probe drives GetWorkItem(id) and checks the returned
+	// relationships match the declaration. Leave nil when the adaptor
+	// has no seed hook; the probe is skipped rather than failing.
+	SeedWorkItemWithEdges func(impl core.WorkPlane) (core.WorkItemID, []core.Relationship, error)
 }
 
 // RunWorkPlaneConformance runs the WorkPlane contract probes against
@@ -57,6 +65,14 @@ func RunWorkPlaneConformance(t *testing.T, impl core.WorkPlane, fixture *WorkPla
 	t.Run("A_describe_is_idempotent", func(t *testing.T) {
 		probeDescribeIdempotent(t, impl)
 	})
+	t.Run("C_edge_extensions_are_structurally_valid", func(t *testing.T) {
+		probeEdgeExtensionsAreStructurallyValid(t, impl)
+	})
+	if fixture.SeedWorkItemWithEdges != nil {
+		t.Run("C_edge_round_trip_get_work_item", func(t *testing.T) {
+			probeEdgeRoundTripWorkItem(t, impl, fixture)
+		})
+	}
 	t.Run("E_capability_denial_matches_manifest", func(t *testing.T) {
 		probeCapabilityDenialMatchesManifest(t, impl)
 	})
