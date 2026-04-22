@@ -474,9 +474,11 @@ func firstLineErr(s string) string {
 
 // --- Stubs for the rest of the OrchestrationPlaneAdaptor interface ---
 //
-// These land incrementally in gm-e7.2 (workspace), gm-e7.3 (sessions),
-// gm-e7.4 (cost), gm-e7.5 (escalations), gm-e7.6 (transport). Until then
-// they return KindUnsupported so callers can branch on a tagged error.
+// Workspace lifecycle (AcquireWorkspace / ReleaseWorkspace /
+// InspectWorkspace) is implemented in workspace.go (gm-e7.2). The
+// remaining methods land incrementally: gm-e7.3 (sessions), gm-e7.4
+// (cost), gm-e7.5 (escalations), gm-e7.6 (transport). Until then they
+// return KindUnsupported so callers can branch on a tagged error.
 
 func (o *OrchestrationPlane) DeclaredState(context.Context) (core.WorkspaceTopology, error) {
 	return core.WorkspaceTopology{CapturedAt: time.Now()}, nil
@@ -528,18 +530,6 @@ func (o *OrchestrationPlane) PeekSession(context.Context, string) (core.SessionP
 
 func (o *OrchestrationPlane) ListPendingRequests(context.Context, string) ([]core.EscalationRequest, error) {
 	return nil, unsupported("ListPendingRequests")
-}
-
-func (o *OrchestrationPlane) AcquireWorkspace(context.Context, core.WorkspaceRequest) (core.Workspace, error) {
-	return core.Workspace{}, unsupported("AcquireWorkspace")
-}
-
-func (o *OrchestrationPlane) ReleaseWorkspace(context.Context, string) error {
-	return unsupported("ReleaseWorkspace")
-}
-
-func (o *OrchestrationPlane) InspectWorkspace(context.Context, string) (core.Workspace, error) {
-	return core.Workspace{}, unsupported("InspectWorkspace")
 }
 
 func (o *OrchestrationPlane) ListOpenEscalations(context.Context, core.EscalationFilter) ([]core.EscalationRequest, error) {
