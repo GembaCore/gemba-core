@@ -1,0 +1,403 @@
+package bd
+
+import (
+	"context"
+	"encoding/json"
+	"os/exec"
+	"strconv"
+	"strings"
+
+	"github.com/MikeBengtson/gemba/internal/core"
+)
+
+// Runner is the shape of the `bd` shell the adaptor uses. Tests
+// substitute an in-memory stub to exercise CRUD round-trips without
+// spawning processes; production wiring shells to the installed `bd`
+// binary. Args mirror what the caller would type after `bd ` — flags
+// and positional args in CLI order.
+type Runner func(ctx context.Context, args ...string) ([]byte, error)
+
+// WorkPlane is the Beads-backed core.WorkPlane implementation
+// (gm-e6.1). It wraps `bd list / show / create / update` behind the
+// adaptor-agnostic interface by shelling to the CLI with --json and
+// mapping the returned Bead records onto core.WorkItem.
+//
+// The prefix field is the "<workspace>/<repo>" chunk prepended to
+// every bd id when emitting a WorkItemID (DD-6). Default is
+// "gemba/gemba" so the adaptor composes with the local gemba rig out
+// of the box; callers running multiple Beads workspaces on one gemba
+// instance override it at construction.
+type WorkPlane struct {
+	run    Runner
+	prefix string
+}
+
+// NewWorkPlane returns a WorkPlane shelling to the `bd` binary on PATH.
+// Returns a tagged AdaptorDegraded error if `bd` is not installed so
+// callers can branch on the typed envelope without probing PATH
+// themselves.
+func NewWorkPlane() (*WorkPlane, error) {
+	path, err := exec.LookPath("bd")
+	if err != nil {
+		return nil, core.WrapAdaptorError(core.KindAdaptorDegraded, err,
+			"beads: bd CLI not on PATH")
+	}
+	runner := func(ctx context.Context, args ...string) ([]byte, error) {
+		return exec.CommandContext(ctx, path, args...).Output()
+	}
+	return &WorkPlane{run: runner, prefix: defaultPrefix}, nil
+}
+
+// NewWorkPlaneWithRunner is the constructor tests use to inject a stub
+// Runner. Production callers use NewWorkPlane. A zero prefix is
+// replaced with the default so tests don't need to re-specify it.
+func NewWorkPlaneWithRunner(run Runner, prefix string) *WorkPlane {
+	if prefix == "" {
+		prefix = defaultPrefix
+	}
+	return &WorkPlane{run: run, prefix: prefix}
+}
+
+const (
+	// defaultPrefix is the <workspace>/<repo> fragment the adaptor
+	// prepends to bare bd ids. Matches the id format the conformance
+	// harness uses ("gemba/gemba/gm-..."), so the default composes with
+	// the in-repo gemba rig without extra configuration.
+	defaultPrefix = "gemba/gemba"
+
+	adaptorName    = "beads"
+	adaptorVersion = "0.1.0"
+)
+
+var _ core.WorkPlane = (*WorkPlane)(nil)
+
+// Describe returns the Beads capability manifest. SprintNative,
+// TokenBudgetEnforced, and EvidenceSynthesisRequired are all false for
+// now: sprint + budget land as a separate epic, and Evidence synthesis
+// is deferred to gm-e6.5. Group E's conformance probe asserts the
+// gated methods (AttachEvidence, ListSprints, ReadBudgetRollup) fail
+// fast with capability_denied when the manifest opts out.
+func (w *WorkPlane) Describe(context.Context) (core.CapabilityManifest, error) {
+	return beadsManifest, nil
+}
+
+var beadsManifest = core.CapabilityManifest{
+	AdaptorName:     adaptorName,
+	AdaptorVersion:  adaptorVersion,
+	ProtocolVersion: core.ProtocolVersion,
+	Transport:       core.TransportJSONL,
+	StateMap:        beadsStateMap,
+	// Beads carries an issue_type field (task|feature|bug|decision|
+	// epic|chore|molecule|…) that has no core counterpart — expose it
+	// as a Custom field so the SPA's beads extension can render the
+	// chip without needing a dedicated core field. gm-e6.2/6.3/6.4
+	// add more as the edge/evidence/DoD mappings land.
+	FieldExtensions: []core.FieldExtension{
+		{Name: "beads:issue_type", Type: "string",
+			Description: "Beads issue_type (task|feature|bug|decision|epic|chore|molecule|event)"},
+		{Name: "beads:notes", Type: "markdown",
+			Description: "Free-text notes field bd writes independently of description"},
+		{Name: "beads:parent", Type: "string",
+			Description: "Parent bead id — populated for hierarchical children"},
+	},
+	SprintNative:              false,
+	TokenBudgetEnforced:       false,
+	EvidenceSynthesisRequired: false,
+}
+
+// ListWorkItems runs `bd list --json` with filter-derived flags and
+// maps each row to a WorkItem. The bd CLI does NOT expose every
+// core.WorkItemFilter field as a flag yet; what can't be pushed down
+// (UpdatedSince, multi-value status intersections) is filtered in
+// process after the CLI call.
+func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([]core.WorkItem, error) {
+	args := []string{"list", "--json"}
+	if f.Limit > 0 {
+		args = append(args, "--limit", strconv.Itoa(f.Limit))
+	}
+	// bd list accepts a single --status; when the caller supplied more
+	// than one, we omit the flag and filter client-side. Same for
+	// labels: --label accepts comma-separated values.
+	if len(f.Statuses) == 1 {
+		args = append(args, "--status", f.Statuses[0])
+	}
+	if len(f.Labels) > 0 {
+		args = append(args, "--label", strings.Join(f.Labels, ","))
+	}
+	if f.AssigneeID != nil && *f.AssigneeID != "" {
+		args = append(args, "--assignee", string(*f.AssigneeID))
+	}
+
+	out, err := w.run(ctx, args...)
+	if err != nil {
+		return nil, wrapBdError(err, "bd list --json")
+	}
+	var beads []Bead
+	if err := json.Unmarshal(out, &beads); err != nil {
+		return nil, core.WrapAdaptorError(core.KindProcessFailed, err,
+			"beads: parse bd list --json")
+	}
+	items := make([]core.WorkItem, 0, len(beads))
+	for i := range beads {
+		wi := beads[i].toWorkItem(w.prefix)
+		if !matchesFilter(wi, f) {
+			continue
+		}
+		items = append(items, wi)
+	}
+	return items, nil
+}
+
+// matchesFilter applies the filter predicates bd couldn't push down to
+// its native query (multi-status intersections, state_category sets,
+// sprint_id, ids). Zero-value fields still behave as "no filter".
+func matchesFilter(wi core.WorkItem, f core.WorkItemFilter) bool {
+	if len(f.IDs) > 0 {
+		hit := false
+		for _, id := range f.IDs {
+			if id == wi.ID {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			return false
+		}
+	}
+	if len(f.Kinds) > 0 {
+		hit := false
+		for _, k := range f.Kinds {
+			if k == wi.Kind {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			return false
+		}
+	}
+	if len(f.Statuses) > 1 {
+		hit := false
+		for _, s := range f.Statuses {
+			if s == wi.Status {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			return false
+		}
+	}
+	if len(f.StateCategory) > 0 {
+		hit := false
+		for _, c := range f.StateCategory {
+			if c == wi.StateCategory {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			return false
+		}
+	}
+	if f.UpdatedSince != nil && wi.UpdatedAt.Before(*f.UpdatedSince) {
+		return false
+	}
+	return true
+}
+
+// GetWorkItem resolves a single bead via `bd show <id> --json`. bd's
+// show output is an array (it accepts multi-id batch lookups); we
+// expect exactly one row and surface session_not_found otherwise so
+// errors.Is(err, core.ErrNotFound) keeps working for callers.
+func (w *WorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error) {
+	native := nativeID(w.prefix, id)
+	out, err := w.run(ctx, "show", native, "--json")
+	if err != nil {
+		// bd exits non-zero with a "not found" stderr when the id is
+		// missing. We surface that as session_not_found so the legacy
+		// ErrNotFound sentinel + Group F's tagged-error assertion both
+		// match. Other non-zero exits remain adaptor_degraded (the Dolt
+		// daemon is the most common failure path here).
+		if isNotFoundError(err) {
+			return core.WorkItem{}, core.WrapAdaptorError(core.KindSessionNotFound, err,
+				"beads: bead %q not found", native)
+		}
+		return core.WorkItem{}, wrapBdError(err, "bd show "+native+" --json")
+	}
+	var beads []Bead
+	if err := json.Unmarshal(out, &beads); err != nil {
+		return core.WorkItem{}, core.WrapAdaptorError(core.KindProcessFailed, err,
+			"beads: parse bd show --json")
+	}
+	if len(beads) == 0 {
+		return core.WorkItem{}, core.NewAdaptorError(core.KindSessionNotFound,
+			"beads: bead %q not found", native)
+	}
+	return beads[0].toWorkItem(w.prefix), nil
+}
+
+// CreateWorkItem creates a new bead via `bd create --json`. Caller-
+// supplied ID is ignored — Beads assigns ids from its prefix pool —
+// and the materialized record (with backend id + timestamps) is read
+// back so the returned WorkItem reflects exactly what bd stored.
+//
+// Rule: mutations MUST go through the backend's public CLI (DD-9).
+// Writing .beads/*.db directly is a conformance failure.
+func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.WorkItem, error) {
+	args := []string{"create", wi.Title, "--json"}
+	if wi.Kind != "" {
+		args = append(args, "--type", wi.Kind)
+	}
+	if wi.Priority != nil {
+		args = append(args, "--priority", strconv.Itoa(*wi.Priority))
+	}
+	if wi.Description != "" {
+		args = append(args, "--description", wi.Description)
+	}
+	if len(wi.Labels) > 0 {
+		args = append(args, "--labels", strings.Join(wi.Labels, ","))
+	}
+	if wi.Assignee != nil && wi.Assignee.ID != "" {
+		args = append(args, "--assignee", string(wi.Assignee.ID))
+	}
+
+	out, err := w.run(ctx, args...)
+	if err != nil {
+		return core.WorkItem{}, wrapBdError(err, "bd create --json")
+	}
+	bead, err := decodeCreateOutput(out)
+	if err != nil {
+		return core.WorkItem{}, err
+	}
+	return bead.toWorkItem(w.prefix), nil
+}
+
+// decodeCreateOutput accepts both shapes bd's create command can emit
+// with --json: a single-object `{...}` and a one-element array
+// `[{...}]`. Tolerating both keeps the adaptor compatible with Beads
+// versions that differ on this detail without forcing a minimum
+// version.
+func decodeCreateOutput(out []byte) (*Bead, error) {
+	trimmed := strings.TrimSpace(string(out))
+	if strings.HasPrefix(trimmed, "[") {
+		var beads []Bead
+		if err := json.Unmarshal(out, &beads); err != nil {
+			return nil, core.WrapAdaptorError(core.KindProcessFailed, err,
+				"beads: parse bd create --json (array)")
+		}
+		if len(beads) == 0 {
+			return nil, core.NewAdaptorError(core.KindProcessFailed,
+				"beads: bd create --json returned empty array")
+		}
+		return &beads[0], nil
+	}
+	var bead Bead
+	if err := json.Unmarshal(out, &bead); err != nil {
+		return nil, core.WrapAdaptorError(core.KindProcessFailed, err,
+			"beads: parse bd create --json")
+	}
+	return &bead, nil
+}
+
+// UpdateWorkItem applies a WorkItemPatch via `bd update <id> --json`.
+// Non-nil patch fields translate to the matching bd flag; nil / empty
+// values are ignored so callers can patch a single field without
+// touching the rest (DD-9 mutation model).
+//
+// Labels have specific semantics: a non-nil slice replaces the full
+// label set (matches bd's --set-labels), so callers who want additive
+// updates must build the new slice themselves. This mirrors the
+// core.WorkItemPatch contract ("empty slice means do not touch"; a
+// populated slice is the new set).
+func (w *WorkPlane) UpdateWorkItem(
+	ctx context.Context, id core.WorkItemID, patch core.WorkItemPatch,
+) (core.WorkItem, error) {
+	native := nativeID(w.prefix, id)
+	args := []string{"update", native, "--json"}
+	if patch.Title != nil {
+		args = append(args, "--title", *patch.Title)
+	}
+	if patch.Description != nil {
+		args = append(args, "--description", *patch.Description)
+	}
+	if patch.Status != nil {
+		args = append(args, "--status", *patch.Status)
+	}
+	if patch.Priority != nil {
+		args = append(args, "--priority", strconv.Itoa(*patch.Priority))
+	}
+	if patch.Assignee != nil && patch.Assignee.ID != "" {
+		args = append(args, "--assignee", string(patch.Assignee.ID))
+	}
+	if len(patch.Labels) > 0 {
+		args = append(args, "--set-labels", strings.Join(patch.Labels, ","))
+	}
+
+	if _, err := w.run(ctx, args...); err != nil {
+		if isNotFoundError(err) {
+			return core.WorkItem{}, core.WrapAdaptorError(core.KindSessionNotFound, err,
+				"beads: bead %q not found", native)
+		}
+		return core.WorkItem{}, wrapBdError(err, "bd update "+native+" --json")
+	}
+	// bd update --json output varies by version (some emit the updated
+	// row, some emit only an ack). Re-reading through show is both the
+	// simplest path to a populated WorkItem and the safer one — the
+	// caller always sees the persisted state, not our optimistic
+	// in-memory merge.
+	return w.GetWorkItem(ctx, id)
+}
+
+// AttachEvidence is gated off until gm-e6.5 lands the synthesis
+// pipeline. The manifest's EvidenceSynthesisRequired=false makes this
+// a capability-denied op at the port; the adaptor-side check is
+// defense in depth (docs/adaptors/workplane.md §Adaptor-side fail-fast).
+func (w *WorkPlane) AttachEvidence(_ context.Context, _ core.WorkItemID, _ core.Evidence) error {
+	return core.EnforceCapability(beadsManifest, core.OpAttachEvidence)
+}
+
+// ListSprints returns capability_denied: Beads has no native sprint
+// concept. The manifest's SprintNative=false hides the UI's sprint
+// chrome, and this shim keeps the adaptor-side guarantee (Group E).
+func (w *WorkPlane) ListSprints(_ context.Context) ([]core.Sprint, error) {
+	return nil, core.EnforceCapability(beadsManifest, core.OpListSprints)
+}
+
+// ReadBudgetRollup returns capability_denied: with SprintNative=false
+// AND TokenBudgetEnforced=false there is nothing to roll up.
+func (w *WorkPlane) ReadBudgetRollup(_ context.Context, _ string) (core.BudgetRollup, error) {
+	return core.BudgetRollup{}, core.EnforceCapability(beadsManifest, core.OpReadBudgetRollup)
+}
+
+// isNotFoundError reports whether err carries bd's "not found" signal.
+// bd exits non-zero with a stderr like "issue not found: gm-abc" when
+// the id is unknown; we key off that substring so callers get a
+// properly-tagged session_not_found rather than a generic degraded.
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		msg = msg + " " + string(exitErr.Stderr)
+	}
+	lower := strings.ToLower(msg)
+	return strings.Contains(lower, "not found") || strings.Contains(lower, "no such issue")
+}
+
+// wrapBdError normalizes a bd subprocess failure into the tagged
+// adaptor_degraded envelope every boundary error MUST wear (gm-faz,
+// Group F). Dolt hangs, daemon outages, and broken pipes all flow
+// through this path so the SPA banner can surface a consistent
+// "backend degraded" signal.
+func wrapBdError(cause error, cmdline string) error {
+	msg := strings.TrimSpace(cause.Error())
+	if exitErr, ok := cause.(*exec.ExitError); ok {
+		if stderr := strings.TrimSpace(string(exitErr.Stderr)); stderr != "" {
+			msg = stderr
+		}
+	}
+	return core.WrapAdaptorError(core.KindAdaptorDegraded, cause,
+		"beads: %s: %s", cmdline, firstLine(msg))
+}
