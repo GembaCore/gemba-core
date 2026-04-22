@@ -46,7 +46,7 @@ dist-sentinel: ## ensure web/dist exists with sentinel so //go:embed all:web/dis
 
 test: dist-sentinel frontend-install ## run Go (race) + frontend tests
 	go test -race -count=1 ./...
-	cd web && pnpm test --run
+	cd web && pnpm test
 
 lint: dist-sentinel frontend-install ## run golangci-lint and frontend lint
 	@command -v golangci-lint >/dev/null 2>&1 || { echo "install: https://golangci-lint.run/usage/install/"; exit 1; }

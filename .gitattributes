@@ -1,2 +1,18 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Keep source/config files LF-only so tools that check formatting
+# (gofmt -s, prettier, golangci-lint) pass on Windows runners too.
+*.go        text eol=lf
+*.mod       text eol=lf
+*.sum       text eol=lf
+*.ts        text eol=lf
+*.tsx       text eol=lf
+*.js        text eol=lf
+*.jsx       text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.sh        text eol=lf
+Makefile    text eol=lf
