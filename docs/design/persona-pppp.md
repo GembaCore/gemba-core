@@ -74,7 +74,7 @@ two ways:
 2. **When the persona volunteers a comment** — any active persona may optionally
    contribute an inline "Perspective from Documentarian: the project summary
    you're editing has been stale for 3 weeks" note on any active conversation
-   or jam agenda, without being asked.
+   or Gemba walk agenda, without being asked.
 
 Examples:
 
@@ -158,7 +158,7 @@ reinstates.
 type PerspectiveComment struct {
     Persona      PersonaID
     Content      string
-    TriggeredBy  PerspectiveTrigger // epic_event | jam_agenda_item | on_demand
+    TriggeredBy  PerspectiveTrigger // epic_event | walk_agenda_item | on_demand
     CostDollars  float64
     RenderedAt   time.Time
 }
