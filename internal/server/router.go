@@ -85,7 +85,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// Per-adaptor runtime health. Drives the SPA's degraded-state
 		// banner (gm-b1). The SPA polls this every few seconds and
 		// surfaces a banner when any adaptor reports healthy=false.
-		api.Get("/adaptors", adaptorsHealth)
+		api.Get("/adaptors", r.adaptorsHealth)
 
 		// Capability manifests for both registered planes. The SPA reads
 		// these to gate adaptor-specific controls (gm-e11.4). When no

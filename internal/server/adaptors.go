@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
+	"github.com/MikeBengtson/gemba/internal/transport"
 )
 
 // adaptorsHealth is the /api/adaptors handler. The SPA polls this every
@@ -20,12 +21,52 @@ import (
 //	  ]
 //	}
 //
+// Only adaptors actively bound to a plane via host.Register* are
+// returned — the registry as a whole carries every adaptor that
+// self-registered in init() (used by `gemba doctor` for discovery),
+// but the banner cares about runtime, not discovery. Without this
+// filter the banner would scold users about uninstalled optional
+// orchestrators or the sibling work adaptor they didn't pick.
+//
 // The endpoint itself MUST never fail — a degraded backend is a banner,
 // not a 500.
-func adaptorsHealth(w http.ResponseWriter, _ *http.Request) {
+func (r *Router) adaptorsHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"adaptors": registry.Status(),
+		"adaptors": r.boundAdaptorStatuses(),
 	})
+}
+
+// boundAdaptorStatuses returns the registry-probed status for the
+// adaptor names actually bound on the API host. When the host is nil
+// (test setups that pre-date host wiring), falls through to the full
+// registry to keep the legacy behaviour.
+func (r *Router) boundAdaptorStatuses() []registry.AdaptorStatus {
+	all := registry.Status()
+	if r.host == nil {
+		return all
+	}
+	allowed := map[string]registry.Plane{}
+	for _, reg := range r.host.Registrations() {
+		switch reg.Plane {
+		case transport.PlaneWork:
+			allowed[reg.AdaptorName] = registry.WorkPlane
+		case transport.PlaneOrchestration:
+			allowed[reg.AdaptorName] = registry.OrchestrationPlane
+		}
+	}
+	if len(allowed) == 0 {
+		// Nothing bound yet — keep returning the whole registry so an
+		// operator who hits /api/adaptors during the bind window still
+		// sees something useful (e.g., "beads-dolt: not configured").
+		return all
+	}
+	out := make([]registry.AdaptorStatus, 0, len(allowed))
+	for _, s := range all {
+		if want, ok := allowed[s.Name]; ok && want == s.Plane {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // requireHealthyAdaptor is the mutation gate (gm-b1 output #3). Wrap any
