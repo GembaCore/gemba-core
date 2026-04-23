@@ -147,8 +147,17 @@ func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([
 	if len(f.Statuses) == 1 {
 		args = append(args, "--status", f.Statuses[0])
 	}
-	if len(f.Labels) > 0 {
-		args = append(args, "--label", strings.Join(f.Labels, ","))
+	// Gather all bd --label filters: caller-supplied Filter.Labels plus
+	// the milestone convention (type:milestone) when Kinds asks only for
+	// milestones. Multi-kind requests still post-filter client-side
+	// because bd has no native "kind set" flag we can push down without
+	// narrowing the result set incorrectly.
+	labels := append([]string(nil), f.Labels...)
+	if len(f.Kinds) == 1 && f.Kinds[0] == core.KindMilestone {
+		labels = append(labels, milestoneLabel)
+	}
+	if len(labels) > 0 {
+		args = append(args, "--label", strings.Join(labels, ","))
 	}
 	if f.AssigneeID != nil && *f.AssigneeID != "" {
 		args = append(args, "--assignee", string(*f.AssigneeID))

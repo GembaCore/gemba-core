@@ -110,9 +110,19 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 		custom["beads:dependents"] = b.Dependents
 	}
 	id := buildWorkItemID(prefix, b.ID)
+	kind := b.IssueType
+	// Milestone convention (gm-root.3): a bead tagged with the
+	// "type:milestone" label is projected onto core.KindMilestone
+	// regardless of its bd issue_type (typically "epic"). The label is
+	// authoritative — the bd type stays as-is in
+	// Custom["beads:issue_type"] so the beads/ SPA extension can still
+	// render the underlying bd chip.
+	if hasLabel(b.Labels, milestoneLabel) {
+		kind = core.KindMilestone
+	}
 	wi := core.WorkItem{
 		ID:            id,
-		Kind:          b.IssueType,
+		Kind:          kind,
 		Title:         b.Title,
 		Description:   b.Description,
 		Status:        b.Status,
@@ -142,6 +152,24 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 	// — those fields are optional.
 	wi.Assignee = agentRefFromBead(b.Assignee, b.Labels)
 	return wi
+}
+
+// milestoneLabel is the bd label Gemba uses to tag a bead as a
+// milestone (gm-root.3). The adaptor promotes Kind to KindMilestone on
+// read and pushes the label down as a bd --label filter on ListWorkItems
+// when WorkItemFilter.Kinds asks only for milestones.
+const milestoneLabel = "type:milestone"
+
+// hasLabel reports whether needle appears in haystack. Case-sensitive
+// by design: bd labels are lowercased by convention and exact match is
+// the same rule bd applies on --label filtering.
+func hasLabel(haystack []string, needle string) bool {
+	for _, l := range haystack {
+		if l == needle {
+			return true
+		}
+	}
+	return false
 }
 
 // buildWorkItemID composes a workspace-qualified WorkItemID from the

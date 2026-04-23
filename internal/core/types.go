@@ -30,6 +30,19 @@ type AgentID string
 //   - Custom is an escape hatch for adaptor-specific fields that don't
 //     map onto any cross-cutting primitive. The UI only renders them
 //     inside `web/src/extensions/<adaptor-id>/` (gm-root DD-4).
+// Canonical cross-adaptor tokens for WorkItem.Kind (and
+// WorkItemFilter.Kinds). Adaptors MAY emit additional kinds beyond
+// these constants; the set here exists so core-layer callers (filters,
+// the SPA's lane chrome) don't hard-code string literals for cross-
+// cutting concepts.
+//
+// KindMilestone is Gemba-native: there is no native "milestone" type in
+// bd. The Beads adaptor encodes a milestone as `-t epic` + label
+// "type:milestone" and projects that convention onto KindMilestone on
+// read (gm-root.3 / gm-root.3.5). Filtering WorkItemFilter.Kinds to
+// {KindMilestone} returns only the label-flagged beads.
+const KindMilestone = "milestone"
+
 type WorkItem struct {
 	ID            WorkItemID        `json:"id"`
 	Kind          string            `json:"kind"`

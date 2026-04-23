@@ -67,6 +67,7 @@ func (f *fakeBd) run(_ context.Context, args ...string) ([]byte, error) {
 func (f *fakeBd) handleList(args []string) ([]byte, error) {
 	statusFilter := ""
 	limit := 0
+	var labelFilter []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--status":
@@ -76,13 +77,34 @@ func (f *fakeBd) handleList(args []string) ([]byte, error) {
 			n, _ := strconv.Atoi(args[i+1])
 			limit = n
 			i++
+		case "--label":
+			labelFilter = strings.Split(args[i+1], ",")
+			i++
 		case "--json":
 			// default
 		}
 	}
+	hasAll := func(b *bd.Bead, need []string) bool {
+		for _, want := range need {
+			found := false
+			for _, have := range b.Labels {
+				if have == want {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	}
 	out := make([]bd.Bead, 0, len(f.beads))
 	for _, b := range f.beads {
 		if statusFilter != "" && b.Status != statusFilter {
+			continue
+		}
+		if len(labelFilter) > 0 && !hasAll(b, labelFilter) {
 			continue
 		}
 		out = append(out, *b)
@@ -484,5 +506,160 @@ func TestBeadsCreateWorkItemThenListContainsIt(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("ListWorkItems did not return just-created id %q (got %d items)", created.ID, len(items))
+	}
+}
+
+// TestBeadsMilestoneLabelProjectsToKindMilestone asserts the read-path
+// projection for the gm-root.3 Milestone convention: a bead of bd
+// type "epic" carrying the `type:milestone` label surfaces as
+// Kind=KindMilestone on core.WorkItem, while the underlying bd
+// issue_type stays addressable on Custom for the beads/ UI extension.
+func TestBeadsMilestoneLabelProjectsToKindMilestone(t *testing.T) {
+	fake := newFakeBd(t)
+	fake.beads["gm-ms-1"] = &bd.Bead{
+		ID:        "gm-ms-1",
+		Title:     "Milestone alpha",
+		Status:    "open",
+		Priority:  1,
+		IssueType: "epic",
+		Labels:    []string{"type:milestone", "area:core"},
+	}
+	fake.beads["gm-ep-1"] = &bd.Bead{
+		ID:        "gm-ep-1",
+		Title:     "Plain epic",
+		Status:    "open",
+		Priority:  2,
+		IssueType: "epic",
+		Labels:    []string{"area:core"},
+	}
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	ms, err := impl.GetWorkItem(context.Background(), core.WorkItemID("gemba/gemba/gm-ms-1"))
+	if err != nil {
+		t.Fatalf("GetWorkItem(milestone): %v", err)
+	}
+	if ms.Kind != core.KindMilestone {
+		t.Errorf("milestone Kind=%q want %q", ms.Kind, core.KindMilestone)
+	}
+	// Original bd issue_type survives on the extension channel so the
+	// beads/ SPA renderer can still show the "epic" chip.
+	if v, _ := ms.Custom["beads:issue_type"].(string); v != "epic" {
+		t.Errorf("Custom[beads:issue_type]=%q want epic", v)
+	}
+
+	ep, err := impl.GetWorkItem(context.Background(), core.WorkItemID("gemba/gemba/gm-ep-1"))
+	if err != nil {
+		t.Fatalf("GetWorkItem(epic): %v", err)
+	}
+	if ep.Kind != "epic" {
+		t.Errorf("plain epic Kind=%q want epic (label-absent must NOT promote)", ep.Kind)
+	}
+}
+
+// TestBeadsListWorkItemsFilterKindsMilestone exercises gm-root.3.5's
+// DoD end-to-end: filtering ListWorkItems by Kinds=[KindMilestone]
+// returns only beads carrying the type:milestone label. The adaptor
+// pushes --label type:milestone down to bd; fakeBd's handleList
+// honors --label, so a milestone-only filter must not return the
+// non-milestone bead even from an unfiltered store.
+func TestBeadsListWorkItemsFilterKindsMilestone(t *testing.T) {
+	fake := newFakeBd(t)
+	fake.beads["gm-ms-1"] = &bd.Bead{
+		ID: "gm-ms-1", Title: "M1", Status: "open", Priority: 1,
+		IssueType: "epic", Labels: []string{"type:milestone"},
+	}
+	fake.beads["gm-ms-2"] = &bd.Bead{
+		ID: "gm-ms-2", Title: "M2", Status: "open", Priority: 1,
+		IssueType: "epic", Labels: []string{"type:milestone", "area:spa"},
+	}
+	fake.beads["gm-tk-1"] = &bd.Bead{
+		ID: "gm-tk-1", Title: "T1", Status: "open", Priority: 2,
+		IssueType: "task",
+	}
+	fake.beads["gm-ep-1"] = &bd.Bead{
+		ID: "gm-ep-1", Title: "E1", Status: "open", Priority: 2,
+		IssueType: "epic",
+	}
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	got, err := impl.ListWorkItems(context.Background(), core.WorkItemFilter{
+		Kinds: []string{core.KindMilestone},
+	})
+	if err != nil {
+		t.Fatalf("ListWorkItems: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("milestone filter: got %d items, want 2 (%+v)", len(got), got)
+	}
+	for _, wi := range got {
+		if wi.Kind != core.KindMilestone {
+			t.Errorf("returned item Kind=%q want %q (id=%s)", wi.Kind, core.KindMilestone, wi.ID)
+		}
+	}
+}
+
+// TestBeadsListWorkItemsFilterKindsMixed covers the multi-kind case:
+// bd has no "kind set" flag, so the adaptor falls through to
+// client-side matchesFilter. Requesting {milestone, task} must return
+// both kinds and exclude the bare epic.
+func TestBeadsListWorkItemsFilterKindsMixed(t *testing.T) {
+	fake := newFakeBd(t)
+	fake.beads["gm-ms-1"] = &bd.Bead{
+		ID: "gm-ms-1", Title: "M1", Status: "open", Priority: 1,
+		IssueType: "epic", Labels: []string{"type:milestone"},
+	}
+	fake.beads["gm-tk-1"] = &bd.Bead{
+		ID: "gm-tk-1", Title: "T1", Status: "open", Priority: 2,
+		IssueType: "task",
+	}
+	fake.beads["gm-ep-1"] = &bd.Bead{
+		ID: "gm-ep-1", Title: "E1", Status: "open", Priority: 2,
+		IssueType: "epic",
+	}
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	got, err := impl.ListWorkItems(context.Background(), core.WorkItemFilter{
+		Kinds: []string{core.KindMilestone, "task"},
+	})
+	if err != nil {
+		t.Fatalf("ListWorkItems: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("mixed filter: got %d items, want 2 (milestone+task)", len(got))
+	}
+	seen := map[string]bool{}
+	for _, wi := range got {
+		seen[wi.Kind] = true
+	}
+	if !seen[core.KindMilestone] || !seen["task"] {
+		t.Errorf("mixed filter: seen=%v; want both milestone and task", seen)
+	}
+	if seen["epic"] {
+		t.Errorf("mixed filter returned plain epic — must be excluded")
+	}
+}
+
+// TestBeadsListWorkItemsFilterKindsEmpty is the regression guard: an
+// empty Kinds slice must NOT narrow the result set (zero-value fields
+// on WorkItemFilter mean "no filter on that field" per the core
+// contract), so every seeded bead is returned.
+func TestBeadsListWorkItemsFilterKindsEmpty(t *testing.T) {
+	fake := newFakeBd(t)
+	fake.beads["gm-ms-1"] = &bd.Bead{
+		ID: "gm-ms-1", Title: "M1", Status: "open", Priority: 1,
+		IssueType: "epic", Labels: []string{"type:milestone"},
+	}
+	fake.beads["gm-tk-1"] = &bd.Bead{
+		ID: "gm-tk-1", Title: "T1", Status: "open", Priority: 2,
+		IssueType: "task",
+	}
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	got, err := impl.ListWorkItems(context.Background(), core.WorkItemFilter{})
+	if err != nil {
+		t.Fatalf("ListWorkItems: %v", err)
+	}
+	if len(got) != 2 {
+		t.Errorf("empty filter: got %d items, want 2 (Kinds nil must not narrow)", len(got))
 	}
 }
