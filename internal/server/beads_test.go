@@ -364,6 +364,37 @@ func TestListBeads_NoHost_Returns503(t *testing.T) {
 // GET /api/beads/{id} — single-bead handler
 // ============================================================================
 
+// Workspace-prefixed ids arrive as percent-encoded slashes on the wire
+// (the dolt adaptor emits "gemba/gemba/gm-foo" and the SPA sends it as
+// "gemba%2Fgemba%2Fgm-foo"). The handler MUST path-unescape before
+// handing the id to the adaptor, otherwise the adaptor sees the raw
+// encoded form and reports "not found" against every prefixed lookup.
+func TestGetBead_URLEncodedSlashes_DecodedBeforeLookup(t *testing.T) {
+	var gotID core.WorkItemID
+	host := newProgrammableHost(t, func(_ context.Context, id core.WorkItemID) (core.WorkItem, error) {
+		gotID = id
+		return core.WorkItem{
+			ID:            id,
+			Kind:          "task",
+			Title:         "prefixed",
+			Status:        "open",
+			StateCategory: core.StateBacklog,
+		}, nil
+	})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/beads/gemba%2Fgemba%2Fgm-foo", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	if string(gotID) != "gemba/gemba/gm-foo" {
+		t.Fatalf("handler handed adaptor encoded id: %q", gotID)
+	}
+}
+
 // Static sibling routes must still win over the {id} param. /beads/ready
 // is mounted above the wildcard — chi prefers the literal — so it keeps
 // returning the 501 stub until M1.x replaces it, not 404-via-handler.

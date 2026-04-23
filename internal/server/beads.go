@@ -3,6 +3,7 @@ package server
 import (
 	"errors"
 	"net/http"
+	"net/url"
 
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
@@ -70,9 +71,19 @@ func (r *Router) listBeads(w http.ResponseWriter, req *http.Request) {
 // require adaptors with native edges beyond the three core kinds to
 // surface them under a well-known Custom key (for beads: "beads:dependencies").
 func (r *Router) getBead(w http.ResponseWriter, req *http.Request) {
-	id := chi.URLParam(req, "id")
-	if id == "" {
+	raw := chi.URLParam(req, "id")
+	if raw == "" {
 		httperr.Write(w, http.StatusBadRequest, "bad_request", "missing bead id")
+		return
+	}
+	// chi returns the path param verbatim; adaptors that prefix ids with
+	// a workspace segment (the dolt adaptor's "gemba/gemba/" prefix) mean
+	// the SPA sends %2F-encoded slashes. Decode here so the adaptor
+	// receives the canonical id and not the still-encoded wire form.
+	id, err := url.PathUnescape(raw)
+	if err != nil {
+		httperr.Write(w, http.StatusBadRequest, "bad_request",
+			"malformed bead id: "+err.Error())
 		return
 	}
 
