@@ -112,6 +112,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/sessions", notImplemented)
 		api.Get("/beads", notImplemented)
 		api.Get("/beads/ready", notImplemented)
+		// gm-kn2: single-bead fetch with full relationship graph. Drives
+		// the SPA drill-in drawer (M1.7c). Static sibling routes above
+		// (/beads, /beads/ready) take precedence in chi's matcher.
+		api.Get("/beads/{id}", r.getBead)
 		api.Get("/packs", notImplemented)
 		api.Get("/desired-state", notImplemented)
 		api.Get("/drift", notImplemented)
