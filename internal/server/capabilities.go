@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/internal/server/httperr"
 )
 
 // capabilitiesResponse is the envelope the SPA reads at /api/capabilities
@@ -15,21 +16,39 @@ type capabilitiesResponse struct {
 	OrchestrationPlane *core.OrchestrationCapabilityManifest `json:"orchestration_plane"`
 }
 
-// capabilitiesEndpoint is /api/capabilities. It exposes both manifests in
-// one envelope so the SPA fires a single request on connect and keeps a
-// consistent snapshot across gates.
+// capabilities is /api/capabilities. It exposes both registered plane
+// manifests in one envelope so the SPA fires a single request on connect
+// and keeps a consistent snapshot across gates (gm-e11.4).
 //
-// The registry.Adaptor type only carries Detect/Probe today (the
-// Describe() surface lands with the adaptor-runtime epics). Until those
-// adaptors implement Describe, this handler returns nulls — which is
-// still useful: the SPA's Capability gate treats null as "hide", which
-// is the safe default.
-//
-// When adaptor Describe() wires land, swap the literal nulls here for
-// the registry lookup and keep the envelope shape stable.
-func capabilitiesEndpoint(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, capabilitiesResponse{
-		WorkPlane:          nil,
-		OrchestrationPlane: nil,
-	})
+// No WorkPlane registered → 503 adaptor_not_configured. A registered
+// adaptor whose Describe() fails surfaces as 503 (when tagged
+// AdaptorDegraded) or 500 (untagged) through the shared httperr mapper
+// (gm-root.1.1). The OrchestrationPlane is optional: its manifest is
+// included when an adaptor is registered and omitted (null) otherwise,
+// since the SPA's Capability gates treat null as "hide".
+func (r *Router) capabilities(w http.ResponseWriter, req *http.Request) {
+	if r.host == nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"adaptor_not_configured", "no WorkPlane adaptor registered")
+		return
+	}
+	wp := r.host.WorkPlane()
+	if wp == nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"adaptor_not_configured", "no WorkPlane adaptor registered")
+		return
+	}
+
+	workManifest, err := wp.Describe(req.Context())
+	if err != nil {
+		httperr.WriteError(w, err)
+		return
+	}
+
+	resp := capabilitiesResponse{WorkPlane: &workManifest}
+	if op := r.host.OrchestrationPlane(); op != nil {
+		orchManifest := op.Describe()
+		resp.OrchestrationPlane = &orchManifest
+	}
+	writeJSON(w, http.StatusOK, resp)
 }

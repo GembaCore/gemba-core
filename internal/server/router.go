@@ -87,10 +87,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// surfaces a banner when any adaptor reports healthy=false.
 		api.Get("/adaptors", adaptorsHealth)
 
-		// Capability manifests for both planes. The SPA reads these to
-		// gate adaptor-specific controls (gm-e11.4). Null manifests
-		// mean "no adaptor registered" — the SPA treats that as "hide".
-		api.Get("/capabilities", capabilitiesEndpoint)
+		// Capability manifests for both registered planes. The SPA reads
+		// these to gate adaptor-specific controls (gm-e11.4). When no
+		// WorkPlane is registered the handler emits 503 adaptor_not_configured
+		// — callers treat that identically to a null manifest (hide).
+		api.Get("/capabilities", r.capabilities)
 
 		// Stubs for the real surface. Filled in by Phase 2 work
 		// (gm-e2.6 and children). Returning 501 now makes it obvious
