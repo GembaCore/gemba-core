@@ -105,6 +105,11 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 		return nil, wrapPingError(err, cfg.URL)
 	}
 
+	if err := verifySchema(context.Background(), db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
 	prefix := cfg.Prefix
 	if prefix == "" {
 		prefix = defaultPrefix
