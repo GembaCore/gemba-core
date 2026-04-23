@@ -42,7 +42,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 	}
 
 	root.AddCommand(
-		newServeCmd(),
+		newServeCmd(b),
 		newDoctorCmd(),
 		newVersionCmd(b),
 		newAdaptorCmd(),

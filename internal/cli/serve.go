@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -17,13 +18,15 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/spf13/cobra"
 )
 
-func newServeCmd() *cobra.Command {
+func newServeCmd(b BuildInfo) *cobra.Command {
 	var cfg config.ServeConfig
+	var quiet bool
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -37,7 +40,7 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 			if err := cfg.NormalizeListen(cmd.Flags().Changed("port")); err != nil {
 				return err
 			}
-			return runServe(cmd.Context(), cfg)
+			return runServe(cmd.Context(), cfg, b, quiet, cmd.OutOrStdout())
 		},
 	}
 
@@ -80,10 +83,13 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"disable mutation confirmation prompts for this server session "+
 			"(name copied from Claude Code; intentional)")
 
+	cmd.Flags().BoolVar(&quiet, "quiet", false,
+		"suppress the startup banner")
+
 	return cmd
 }
 
-func runServe(ctx context.Context, cfg config.ServeConfig) error {
+func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bool, bannerOut io.Writer) error {
 	if err := cfg.ValidateBindPolicy(); err != nil {
 		return err
 	}
@@ -126,9 +132,14 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 		}
 	}
 
-	host, err := registerWorkPlane(ctx, cfg)
+	reg, err := registerWorkPlane(ctx, cfg)
 	if err != nil {
 		return err
+	}
+	host := reg.Host
+
+	if !quiet {
+		printStartupBanner(bannerOut, b, cfg, reg)
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
@@ -192,7 +203,21 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 // ValidateWorkPlaneFlags already guaranteed they're not both set, so
 // we only have to decide between "dolt-url present" and "everything
 // else".
-func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*api.Host, error) {
+// workPlaneReg bundles the api.Host with the manifest and source metadata
+// needed by the startup banner. Register* functions populate all fields.
+type workPlaneReg struct {
+	Host     *api.Host
+	Manifest core.CapabilityManifest
+	// Mode is the adaptor path the operator selected: "bd-dir" (bd CLI)
+	// or "dolt-sql" (direct Dolt SQL).
+	Mode string
+	// SourceKind labels Source for the banner ("dir" or "url").
+	SourceKind string
+	// Source is the dir path or redacted Dolt URL.
+	Source string
+}
+
+func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*workPlaneReg, error) {
 	host := api.New()
 	if cfg.DoltURL != "" {
 		return registerDoltWorkPlane(ctx, host, cfg)
@@ -200,7 +225,7 @@ func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*api.Host, 
 	return registerBeadsWorkPlane(ctx, host, cfg)
 }
 
-func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) (*api.Host, error) {
+func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) (*workPlaneReg, error) {
 	adaptor, err := bd.NewWorkPlane(bd.Config{BeadsDir: cfg.BeadsDir})
 	if err != nil {
 		return nil, fmt.Errorf("beads workplane: %w", err)
@@ -209,16 +234,26 @@ func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.Serv
 	if err != nil {
 		return nil, fmt.Errorf("register beads workplane: %w", err)
 	}
+	manifest, err := adaptor.Describe(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("describe beads workplane: %w", err)
+	}
 	slog.Info("workplane adaptor registered",
 		"adaptor", reg.AdaptorName,
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
 		"beads_dir", cfg.BeadsDir)
-	return host, nil
+	return &workPlaneReg{
+		Host:       host,
+		Manifest:   manifest,
+		Mode:       "bd-dir",
+		SourceKind: "dir",
+		Source:     cfg.BeadsDir,
+	}, nil
 }
 
-func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) (*api.Host, error) {
+func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) (*workPlaneReg, error) {
 	adaptor, err := dolt.NewWorkPlane(dolt.Config{URL: cfg.DoltURL})
 	if err != nil {
 		return nil, fmt.Errorf("dolt workplane: %w", err)
@@ -228,14 +263,58 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 		_ = adaptor.Close()
 		return nil, fmt.Errorf("register dolt workplane: %w", err)
 	}
+	manifest, err := adaptor.Describe(ctx)
+	if err != nil {
+		_ = adaptor.Close()
+		return nil, fmt.Errorf("describe dolt workplane: %w", err)
+	}
+	redacted := redactDoltURL(cfg.DoltURL)
 	slog.Info("workplane adaptor registered",
 		"adaptor", reg.AdaptorName,
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
 		"read_only", true,
-		"dolt_url", redactDoltURL(cfg.DoltURL))
-	return host, nil
+		"dolt_url", redacted)
+	return &workPlaneReg{
+		Host:       host,
+		Manifest:   manifest,
+		Mode:       "dolt-sql",
+		SourceKind: "url",
+		Source:     redacted,
+	}, nil
+}
+
+// printStartupBanner emits the three-line operator-facing summary the gm-root.1.3
+// bead specifies: build version, effective adaptor path, and a one-line manifest
+// digest (state count, core + extension edges, feature-flag posture). Output is
+// plain text on stdout so `gemba serve | tee` captures it verbatim; the slog
+// pipeline is reserved for structured machine-readable lines.
+//
+// The banner never carries credentials: the Dolt URL is redacted upstream by
+// redactDoltURL before it lands in workPlaneReg.Source.
+func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *workPlaneReg) {
+	version := b.Version
+	if version == "" {
+		version = "dev"
+	}
+	fmt.Fprintf(w, "▶ gemba %s  listen=%s:%d  auth=%s\n",
+		version, cfg.Listen, cfg.Port, cfg.EffectiveAuthMode())
+	fmt.Fprintf(w, "▶ workplane: %s %s (mode=%s %s=%s)\n",
+		reg.Manifest.AdaptorName, reg.Manifest.AdaptorVersion,
+		reg.Mode, reg.SourceKind, reg.Source)
+	fmt.Fprintf(w, "▶ manifest: %d states, 3 core + %d extension edges, feature flags: sprint=%s budget=%s\n",
+		len(reg.Manifest.StateMap),
+		len(reg.Manifest.EdgeExtensions),
+		yesNo(reg.Manifest.SprintNative),
+		yesNo(reg.Manifest.TokenBudgetEnforced))
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 // redactDoltURL strips any password component out of the URL before

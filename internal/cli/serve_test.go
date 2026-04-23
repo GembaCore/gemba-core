@@ -11,7 +11,7 @@ import (
 // fail before the HTTP server is started. The detailed matrix lives in
 // internal/config.TestValidateBindPolicy; this test guards the CLI wiring.
 func TestServe_RejectsNonLoopbackWithoutAuth(t *testing.T) {
-	cmd := newServeCmd()
+	cmd := newServeCmd(BuildInfo{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -29,7 +29,7 @@ func TestServe_RejectsNonLoopbackWithoutAuth(t *testing.T) {
 // TestServe_ConfigFlagAccepted makes sure --config is a real flag so the
 // gm-e1.2 output spec ([--config PATH]) doesn't silently regress.
 func TestServe_ConfigFlagAccepted(t *testing.T) {
-	cmd := newServeCmd()
+	cmd := newServeCmd(BuildInfo{})
 	if cmd.Flags().Lookup("config") == nil {
 		t.Fatal("--config flag missing from serve command")
 	}
@@ -41,7 +41,7 @@ func TestServe_ConfigFlagAccepted(t *testing.T) {
 // internal/config.TestResolveBeadsDir; this test guards the CLI wiring
 // (flag → ResolveBeadsDir → startup gate).
 func TestServe_BeadsDirRejectsMissingPath(t *testing.T) {
-	cmd := newServeCmd()
+	cmd := newServeCmd(BuildInfo{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -60,7 +60,7 @@ func TestServe_BeadsDirRejectsMissingPath(t *testing.T) {
 // serve command (gm-0fd). The parse/connect matrix lives in
 // internal/adapter/dolt; this test just guards the flag surface.
 func TestServe_DoltURLFlagAccepted(t *testing.T) {
-	cmd := newServeCmd()
+	cmd := newServeCmd(BuildInfo{})
 	if cmd.Flags().Lookup("dolt-url") == nil {
 		t.Fatal("--dolt-url flag missing from serve command")
 	}
@@ -71,7 +71,7 @@ func TestServe_DoltURLFlagAccepted(t *testing.T) {
 // happen before ResolveBeadsDir / NewWorkPlane fires so the operator
 // gets a single, actionable error.
 func TestServe_RejectsBothBeadsDirAndDoltURL(t *testing.T) {
-	cmd := newServeCmd()
+	cmd := newServeCmd(BuildInfo{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
@@ -94,7 +94,7 @@ func TestServe_RejectsBothBeadsDirAndDoltURL(t *testing.T) {
 // the rejection must happen before the listener opens and must point
 // the operator at both flag names.
 func TestServe_RejectsNeitherBeadsDirNorDoltURL(t *testing.T) {
-	cmd := newServeCmd()
+	cmd := newServeCmd(BuildInfo{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
