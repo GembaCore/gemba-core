@@ -23,6 +23,10 @@ func TestCoreTypesTSContainsEveryGoJSONField(t *testing.T) {
 		Sprint{},
 		Flags{},
 		DerivedSignals{},
+		FieldExtension{},
+		EdgeExtension{},
+		RelationshipExtension{},
+		CapabilityManifest{},
 	}
 
 	missing := []string{}
