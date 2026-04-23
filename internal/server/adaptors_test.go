@@ -31,7 +31,7 @@ func TestAdaptorsEndpoint_ReportsPerAdaptorHealth(t *testing.T) {
 		Probe: func() registry.DetectResult { return registry.DetectResult{Ok: true} },
 	})
 
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/adaptors", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

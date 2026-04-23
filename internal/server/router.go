@@ -10,23 +10,31 @@ import (
 
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 // Router is the package-level entry point. cmd/gemba passes in the embedded
 // SPA filesystem so this package doesn't import the embed declaration
-// directly.
+// directly. host carries the bound transport-plane adaptors so handlers
+// can reach the WorkPlane / OrchestrationPlane without re-resolving them
+// per request.
 type Router struct {
-	cfg config.ServeConfig
-	spa fs.FS
+	cfg  config.ServeConfig
+	spa  fs.FS
+	host *api.Host
+
+	mux http.Handler
 }
 
 // NewRouter builds the chi router. spa must be a filesystem rooted at the
-// built Vite output (with an index.html at the top level). Pass nil or an
-// empty FS during development; the handler will return a helpful hint.
-func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
-	r := &Router{cfg: cfg, spa: spa}
+// built Vite output (with an index.html at the top level); pass nil or an
+// empty FS during development and the handler will return a helpful hint.
+// host may be nil during early bring-up — handlers that need a WorkPlane
+// must check Host() before dereferencing.
+func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
+	r := &Router{cfg: cfg, spa: spa, host: host}
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.RequestID)
@@ -121,8 +129,20 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS) http.Handler {
 	// SPA fallback is last and only matches non-API paths.
 	mux.NotFound(r.serveSPA)
 
-	return mux
+	r.mux = mux
+	return r
 }
+
+// ServeHTTP dispatches through the chi mux built in NewRouter. Router
+// satisfies http.Handler so callers can hand it directly to http.Server.
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	r.mux.ServeHTTP(w, req)
+}
+
+// Host returns the api.Host this router was built with, or nil if the
+// router was constructed without one. Tests and handlers use this to
+// reach the registered WorkPlane / OrchestrationPlane.
+func (r *Router) Host() *api.Host { return r.host }
 
 // --- stock handlers -------------------------------------------------------
 

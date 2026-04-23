@@ -12,9 +12,11 @@ import (
 	"time"
 
 	gemba "github.com/MikeBengtson/gemba"
+	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/server"
+	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/spf13/cobra"
 )
 
@@ -61,6 +63,10 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 	cmd.Flags().StringVar(&cfg.ConfigPath, "config", "",
 		"path to gemba.toml (default: probe cwd, then ~/.config/gemba/)")
 
+	cmd.Flags().StringVar(&cfg.BeadsDir, "beads-dir", "",
+		"path to the beads workspace the WorkPlane adaptor targets "+
+			"(default: gemba server's cwd)")
+
 	// Flag name copied verbatim from Claude Code. Do not rename or soften.
 	cmd.Flags().BoolVar(&cfg.DangerouslySkipPermissions,
 		"dangerously-skip-permissions", false,
@@ -97,6 +103,11 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 		}
 	}
 
+	host, err := registerWorkPlane(ctx, cfg)
+	if err != nil {
+		return err
+	}
+
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
 	spa := gemba.SPA()
 	if spa == nil {
@@ -104,7 +115,7 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 			"hint", "run `make build` to embed web/dist; "+
 				"non-API routes will return a 503 build hint")
 	}
-	handler := server.NewRouter(cfg, spa)
+	handler := server.NewRouter(cfg, spa, host)
 
 	srv := &http.Server{
 		Addr:              addr,
@@ -143,6 +154,30 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 		context.Background(), 10*time.Second)
 	defer cancelShutdown()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// registerWorkPlane builds the api transport host, instantiates the
+// Beads WorkPlane adaptor, and binds them. Failures here MUST abort
+// startup — a serve process with no WorkPlane has no useful surface to
+// expose, so the operator needs to see the error before the listener
+// opens.
+func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*api.Host, error) {
+	host := api.New()
+	adaptor, err := bd.NewWorkPlane(bd.Config{BeadsDir: cfg.BeadsDir})
+	if err != nil {
+		return nil, fmt.Errorf("beads workplane: %w", err)
+	}
+	reg, err := host.RegisterWorkPlane(ctx, adaptor)
+	if err != nil {
+		return nil, fmt.Errorf("register beads workplane: %w", err)
+	}
+	slog.Info("workplane adaptor registered",
+		"adaptor", reg.AdaptorName,
+		"version", reg.AdaptorVersion,
+		"protocol", reg.ProtocolVersion,
+		"transport", reg.Transport,
+		"beads_dir", cfg.BeadsDir)
+	return host, nil
 }
 
 // ensurePrimaryToken makes sure path contains a valid argon2id hash. When

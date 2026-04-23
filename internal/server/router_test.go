@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,9 @@ import (
 	"testing/fstest"
 
 	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/internal/transport/api"
+	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
 )
 
 func fakeSPA() fstest.MapFS {
@@ -20,7 +24,7 @@ func fakeSPA() fstest.MapFS {
 }
 
 func TestSPAFallback_ServesIndexForUnknownRoutes(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	// Unknown deep link — should return index.html, not 404.
 	req := httptest.NewRequest(http.MethodGet, "/convoys/gm-abc", nil)
 	rec := httptest.NewRecorder()
@@ -35,7 +39,7 @@ func TestSPAFallback_ServesIndexForUnknownRoutes(t *testing.T) {
 }
 
 func TestSPAFallback_ServesAssets(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/assets/app.js", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -51,7 +55,7 @@ func TestSPAFallback_ServesAssets(t *testing.T) {
 // text/plain body and not the SPA shell. Frontend code using fetch().then(r=>r.json())
 // will throw SyntaxError on anything else.
 func TestAPIFallbackReturnsJSON404NotSPA(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/nonexistent", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -84,7 +88,7 @@ func TestAPIFallbackReturnsJSON404NotSPA(t *testing.T) {
 
 // gm-b2 / gm-xke: /events/* unknown paths must also return the JSON envelope.
 func TestEventsFallbackReturnsJSON404(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/events/nonexistent", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -108,7 +112,7 @@ func TestEventsFallbackReturnsJSON404(t *testing.T) {
 // gm-b2 DoD: unknown non-API paths still serve the SPA shell so client-side
 // routing works.
 func TestSPAFallback_UnknownPageServesSPA(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/not-a-real-page", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -126,7 +130,7 @@ func TestSPAFallback_UnknownPageServesSPA(t *testing.T) {
 }
 
 func TestHealthEndpoint(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -144,7 +148,7 @@ func TestHealthEndpoint(t *testing.T) {
 // 404-vs-401 oracles.
 func TestTokenAuth_MissingBearer_Returns401(t *testing.T) {
 	cfg := config.ServeConfig{Listen: "127.0.0.1", AuthMode: "token", AuthToken: "s3cret"}
-	h := NewRouter(cfg, fakeSPA())
+	h := NewRouter(cfg, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/anything", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -155,7 +159,7 @@ func TestTokenAuth_MissingBearer_Returns401(t *testing.T) {
 
 func TestTokenAuth_WrongBearer_Returns401(t *testing.T) {
 	cfg := config.ServeConfig{Listen: "127.0.0.1", AuthMode: "token", AuthToken: "s3cret"}
-	h := NewRouter(cfg, fakeSPA())
+	h := NewRouter(cfg, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/anything", nil)
 	req.Header.Set("Authorization", "Bearer wrong")
 	rec := httptest.NewRecorder()
@@ -167,7 +171,7 @@ func TestTokenAuth_WrongBearer_Returns401(t *testing.T) {
 
 func TestTokenAuth_ValidBearer_Routes(t *testing.T) {
 	cfg := config.ServeConfig{Listen: "127.0.0.1", AuthMode: "token", AuthToken: "s3cret"}
-	h := NewRouter(cfg, fakeSPA())
+	h := NewRouter(cfg, fakeSPA(), nil)
 
 	// Known route: /api/health → 200 with auth.
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
@@ -193,7 +197,7 @@ func TestTokenAuth_ValidBearer_Routes(t *testing.T) {
 // that the enforcement is not /api-only.
 func TestTokenAuth_EventsRequiresBearer_OnLoopback(t *testing.T) {
 	cfg := config.ServeConfig{Listen: "127.0.0.1", AuthMode: "token", AuthToken: "s3cret"}
-	h := NewRouter(cfg, fakeSPA())
+	h := NewRouter(cfg, fakeSPA(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/events/", nil)
 	rec := httptest.NewRecorder()
@@ -214,7 +218,7 @@ func TestTokenAuth_EventsRequiresBearer_OnLoopback(t *testing.T) {
 // Regression guard: auth=none (default) must not accidentally start
 // rejecting unauthenticated requests.
 func TestAuthNone_NoBearerRequired(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
@@ -223,8 +227,29 @@ func TestAuthNone_NoBearerRequired(t *testing.T) {
 	}
 }
 
+// gm-0pc DoD: serve threads an api.Host into the router so handlers can
+// resolve the registered WorkPlane without re-walking the registry.
+// This test pins down that retrieval path so M1.3/M1.4 handlers can rely
+// on r.Host().WorkPlane() returning the same adaptor that was registered
+// at startup.
+func TestRouterExposesRegisteredWorkPlane(t *testing.T) {
+	host := api.New()
+	fake := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	if _, err := host.RegisterWorkPlane(context.Background(), fake); err != nil {
+		t.Fatalf("RegisterWorkPlane: %v", err)
+	}
+	r := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	if r.Host() == nil {
+		t.Fatal("Router.Host() returned nil; expected the host passed to NewRouter")
+	}
+	if got := r.Host().WorkPlane(); got != fake {
+		t.Fatalf("Router.Host().WorkPlane() = %v; want %v", got, fake)
+	}
+}
+
 func TestUnbuiltSPAShowsHint(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, nil)
+	h := NewRouter(config.ServeConfig{}, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

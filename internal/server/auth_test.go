@@ -32,7 +32,7 @@ func TestTokenAuth_HashFile_AcceptsMatchingBearer(t *testing.T) {
 		AuthMode:          "token",
 		AuthTokenHashPath: path,
 	}
-	h := NewRouter(cfg, fakeSPA())
+	h := NewRouter(cfg, fakeSPA(), nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/health", nil)
 	req.Header.Set("Authorization", "Bearer plaintext-token")
@@ -63,7 +63,7 @@ func TestTokenAuth_RotateWhileRunning(t *testing.T) {
 		AuthMode:          "token",
 		AuthTokenHashPath: path,
 	}
-	h := NewRouter(cfg, fakeSPA())
+	h := NewRouter(cfg, fakeSPA(), nil)
 
 	if code := doBearer(h, "old-token"); code != http.StatusOK {
 		t.Fatalf("old-token pre-rotation: want 200, got %d", code)
@@ -99,7 +99,7 @@ func TestLogin_ExchangesBearerForCookie(t *testing.T) {
 		AuthMode:  "token",
 		AuthToken: "my-bearer",
 	}
-	h := NewRouter(cfg, fakeSPA())
+	h := NewRouter(cfg, fakeSPA(), nil)
 
 	// POST /api/auth/login with bearer → 200 + Set-Cookie.
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
@@ -145,7 +145,7 @@ func TestLogin_RejectsAnonymous(t *testing.T) {
 		AuthMode:  "token",
 		AuthToken: "my-bearer",
 	}
-	h := NewRouter(cfg, fakeSPA())
+	h := NewRouter(cfg, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

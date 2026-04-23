@@ -33,6 +33,12 @@ type ServeConfig struct {
 	City string
 	Town string
 
+	// BeadsDir is the workspace directory the Beads WorkPlane adaptor
+	// targets — bd subprocesses spawn with this as their cwd. Empty
+	// means "use the gemba server's cwd," which is the right default
+	// when gemba is launched from inside a beads workspace.
+	BeadsDir string
+
 	// ConfigPath is an explicit gemba.toml override. Empty means "probe
 	// the standard locations." File loading lands with a later bead;
 	// serve threads the path through today so the flag surface is stable.

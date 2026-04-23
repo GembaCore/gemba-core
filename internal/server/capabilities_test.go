@@ -16,7 +16,7 @@ import (
 // adaptor wires Describe() — otherwise every gate would evaluate as an
 // error and the UI would degrade unnecessarily.
 func TestCapabilitiesEndpoint_ReturnsEnvelope(t *testing.T) {
-	h := NewRouter(config.ServeConfig{}, fakeSPA())
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/capabilities", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

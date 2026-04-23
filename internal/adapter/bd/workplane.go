@@ -17,6 +17,15 @@ import (
 // and positional args in CLI order.
 type Runner func(ctx context.Context, args ...string) ([]byte, error)
 
+// Config configures a production-mode WorkPlane. Tests use
+// NewWorkPlaneWithRunner instead and bypass this struct.
+type Config struct {
+	// BeadsDir is the working directory the bd subprocess inherits. When
+	// empty, bd runs in the gemba server's cwd. Mirrors the
+	// `--beads-dir` flag on `gemba serve`.
+	BeadsDir string
+}
+
 // WorkPlane is the Beads-backed core.WorkPlane implementation
 // (gm-e6.1). It wraps `bd list / show / create / update` behind the
 // adaptor-agnostic interface by shelling to the CLI with --json and
@@ -35,15 +44,22 @@ type WorkPlane struct {
 // NewWorkPlane returns a WorkPlane shelling to the `bd` binary on PATH.
 // Returns a tagged AdaptorDegraded error if `bd` is not installed so
 // callers can branch on the typed envelope without probing PATH
-// themselves.
-func NewWorkPlane() (*WorkPlane, error) {
+// themselves. cfg.BeadsDir, when non-empty, becomes the working
+// directory of every spawned bd process so a single gemba server can
+// point at any beads workspace on the host.
+func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 	path, err := exec.LookPath("bd")
 	if err != nil {
 		return nil, core.WrapAdaptorError(core.KindAdaptorDegraded, err,
 			"beads: bd CLI not on PATH")
 	}
+	beadsDir := cfg.BeadsDir
 	runner := func(ctx context.Context, args ...string) ([]byte, error) {
-		return exec.CommandContext(ctx, path, args...).Output()
+		cmd := exec.CommandContext(ctx, path, args...)
+		if beadsDir != "" {
+			cmd.Dir = beadsDir
+		}
+		return cmd.Output()
 	}
 	return &WorkPlane{run: runner, prefix: defaultPrefix}, nil
 }
@@ -85,8 +101,11 @@ var beadsManifest = core.CapabilityManifest{
 	AdaptorName:     adaptorName,
 	AdaptorVersion:  adaptorVersion,
 	ProtocolVersion: core.ProtocolVersion,
-	Transport:       core.TransportJSONL,
-	StateMap:        beadsStateMap,
+	// The bd adaptor is in-process Go reachable through gemba's HTTP+JSON
+	// surface, so the api transport host is its registration target
+	// (DD-12).
+	Transport: core.TransportAPI,
+	StateMap:  beadsStateMap,
 	// Beads carries an issue_type field (task|feature|bug|decision|
 	// epic|chore|molecule|…) that has no core counterpart — expose it
 	// as a Custom field so the SPA's beads extension can render the
