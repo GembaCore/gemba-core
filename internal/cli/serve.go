@@ -258,13 +258,21 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 	if err != nil {
 		return nil, fmt.Errorf("dolt workplane: %w", err)
 	}
+	// Hand the live pool to the registry-side probe so /api/adaptors
+	// reflects real Dolt health instead of falsely reporting
+	// "not configured (pass --dolt-url to enable)" — the dolt probe
+	// has no view of ServeConfig and only knows the pool is wired
+	// when this hook is set.
+	dolt.SetProbeDB(adaptor.DB())
 	reg, err := host.RegisterWorkPlane(ctx, adaptor)
 	if err != nil {
+		dolt.SetProbeDB(nil)
 		_ = adaptor.Close()
 		return nil, fmt.Errorf("register dolt workplane: %w", err)
 	}
 	manifest, err := adaptor.Describe(ctx)
 	if err != nil {
+		dolt.SetProbeDB(nil)
 		_ = adaptor.Close()
 		return nil, fmt.Errorf("describe dolt workplane: %w", err)
 	}

@@ -153,6 +153,18 @@ func (w *WorkPlane) Close() error {
 	return w.db.Close()
 }
 
+// DB returns the underlying *sql.DB so the registry-side health probe
+// (registry.Probe via SetProbeDB) can ping the same pool the WorkPlane
+// uses. Returning the live handle rather than dialing again means the
+// probe surfaces real pool exhaustion / circuit-breaker state, not a
+// fresh-connection coincidence.
+func (w *WorkPlane) DB() *sql.DB {
+	if w == nil {
+		return nil
+	}
+	return w.db
+}
+
 // Describe returns the capability manifest for the Dolt read-only
 // adaptor. ReadOnly=true is the semantically important bit; the
 // rest mirrors the bd sibling so the SPA does not have to special-
