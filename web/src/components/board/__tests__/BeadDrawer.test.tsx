@@ -4,7 +4,30 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { BeadDrawer } from '../BeadDrawer';
+import { CapabilitiesProvider } from '@/capabilities';
+import type { CapabilitiesResponse } from '@/capabilities';
 import type { WorkItem } from '@/types/core.gen';
+
+// Seed a minimal CapabilitiesResponse so BeadDrawer's useCapabilities()
+// has a manifest to read description_format from. Tests that care about
+// markdown rendering pass `markdown`; the default here is undefined,
+// which the renderer registry maps to the PlainDescription fallback.
+function capsWith(format?: string): CapabilitiesResponse {
+  return {
+    work_plane: {
+      adaptor_name: 'fake',
+      adaptor_version: '0.1.0',
+      protocol_version: '0.1.0',
+      transport: 'api',
+      state_map: { open: 'unstarted' },
+      sprint_native: false,
+      token_budget_enforced: false,
+      evidence_synthesis_required: false,
+      description_format: format,
+    },
+    orchestration_plane: null,
+  };
+}
 
 // Representative fixture that exercises every section the drawer
 // renders. Drawer DoD (gm-qai): every WorkItem field visible; none
@@ -83,12 +106,18 @@ const navigateTarget: WorkItem = {
   updated_at: '2026-04-22T00:00:00Z',
 };
 
-function wrapper(): (props: { children: ReactNode }) => JSX.Element {
+function wrapper(
+  caps: CapabilitiesResponse = capsWith()
+): (props: { children: ReactNode }) => JSX.Element {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return function Wrapper({ children }: { children: ReactNode }) {
-    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+    return (
+      <QueryClientProvider client={client}>
+        <CapabilitiesProvider initial={caps}>{children}</CapabilitiesProvider>
+      </QueryClientProvider>
+    );
   };
 }
 
@@ -229,5 +258,36 @@ describe('BeadDrawer', () => {
     render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
     await waitFor(() => expect(screen.getByTestId('bead-drawer-error')).toBeTruthy());
     expect(screen.getByTestId('bead-drawer-error').textContent).toMatch(/reconnecting/);
+  });
+
+  // Description renderer is chosen from the manifest. When the adaptor
+  // declares description_format="markdown", headings and lists must
+  // render as real HTML, not literal `#` / `-` characters.
+  it('renders markdown description when the adaptor declares it', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      mockJSON({
+        ...fixture,
+        description: '# Goal\n\n- first\n- second',
+      })
+    );
+    render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, {
+      wrapper: wrapper(capsWith('markdown')),
+    });
+    // Lazy markdown chunk resolves → renders the <div data-testid="description-markdown">.
+    const md = await screen.findByTestId('description-markdown');
+    expect(md.querySelector('h1')?.textContent).toBe('Goal');
+    expect(md.querySelectorAll('li')).toHaveLength(2);
+    expect(screen.queryByTestId('description-plain')).toBeNull();
+  });
+
+  it('falls back to plain description when format is missing / unknown', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      mockJSON({ ...fixture, description: '# not-a-heading' })
+    );
+    render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, {
+      wrapper: wrapper(capsWith(undefined)),
+    });
+    await waitFor(() => expect(screen.getByTestId('description-plain')).toBeTruthy());
+    expect(screen.getByTestId('description-plain').textContent).toBe('# not-a-heading');
   });
 });

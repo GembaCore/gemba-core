@@ -238,6 +238,7 @@ export interface CapabilityManifest {
   token_budget_enforced: boolean;
   evidence_synthesis_required: boolean;
   read_only: boolean;
+  description_format?: string;
 }
 
 // FLAG_NAMES is the exhaustive list of keys on Flags. Useful for

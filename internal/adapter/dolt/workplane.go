@@ -43,6 +43,12 @@ type Config struct {
 	// ConnectTimeout bounds the startup ping that verifies the Dolt
 	// server is reachable. 0 means "use the adaptor default (3s)".
 	ConnectTimeout time.Duration
+
+	// DescriptionFormat overrides the CapabilityManifest's declared
+	// description content type. Empty → defaults to
+	// core.DescriptionFormatMarkdown, matching the bd adaptor since the
+	// underlying beads database stores markdown either way.
+	DescriptionFormat string
 }
 
 // defaultPrefix mirrors the bd adaptor so the two work-planes can
@@ -59,9 +65,10 @@ const (
 // core.WorkPlane. It opens a single pooled *sql.DB against the
 // configured Dolt server; mutations fail with KindReadOnly.
 type WorkPlane struct {
-	db     *sql.DB
-	prefix string
-	dbName string
+	db                *sql.DB
+	prefix            string
+	dbName            string
+	descriptionFormat string
 }
 
 var _ core.WorkPlane = (*WorkPlane)(nil)
@@ -114,7 +121,11 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 	if prefix == "" {
 		prefix = defaultPrefix
 	}
-	return &WorkPlane{db: db, prefix: prefix, dbName: dbName}, nil
+	format := cfg.DescriptionFormat
+	if format == "" {
+		format = core.DescriptionFormatMarkdown
+	}
+	return &WorkPlane{db: db, prefix: prefix, dbName: dbName, descriptionFormat: format}, nil
 }
 
 // NewWorkPlaneFromDB is the constructor tests use to inject a
@@ -125,7 +136,12 @@ func NewWorkPlaneFromDB(db *sql.DB, prefix, dbName string) *WorkPlane {
 	if prefix == "" {
 		prefix = defaultPrefix
 	}
-	return &WorkPlane{db: db, prefix: prefix, dbName: dbName}
+	return &WorkPlane{
+		db:                db,
+		prefix:            prefix,
+		dbName:            dbName,
+		descriptionFormat: core.DescriptionFormatMarkdown,
+	}
 }
 
 // Close releases the underlying connection pool. Safe to call more
@@ -142,7 +158,9 @@ func (w *WorkPlane) Close() error {
 // rest mirrors the bd sibling so the SPA does not have to special-
 // case beads when served via SQL.
 func (w *WorkPlane) Describe(context.Context) (core.CapabilityManifest, error) {
-	return doltManifest, nil
+	m := doltManifest
+	m.DescriptionFormat = w.descriptionFormat
+	return m, nil
 }
 
 var doltManifest = core.CapabilityManifest{

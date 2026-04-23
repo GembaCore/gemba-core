@@ -24,6 +24,13 @@ type Config struct {
 	// empty, bd runs in the gemba server's cwd. Mirrors the
 	// `--beads-dir` flag on `gemba serve`.
 	BeadsDir string
+
+	// DescriptionFormat overrides the CapabilityManifest's declared
+	// description content type. Empty string → defaults to
+	// core.DescriptionFormatMarkdown, which is what `bd` edits day-to-day.
+	// Operators override this only if their beads rig stores a different
+	// format in Description (rare).
+	DescriptionFormat string
 }
 
 // WorkPlane is the Beads-backed core.WorkPlane implementation
@@ -37,8 +44,9 @@ type Config struct {
 // of the box; callers running multiple Beads workspaces on one gemba
 // instance override it at construction.
 type WorkPlane struct {
-	run    Runner
-	prefix string
+	run               Runner
+	prefix            string
+	descriptionFormat string
 }
 
 // NewWorkPlane returns a WorkPlane shelling to the `bd` binary on PATH.
@@ -61,7 +69,11 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 		}
 		return cmd.Output()
 	}
-	return &WorkPlane{run: runner, prefix: defaultPrefix}, nil
+	format := cfg.DescriptionFormat
+	if format == "" {
+		format = core.DescriptionFormatMarkdown
+	}
+	return &WorkPlane{run: runner, prefix: defaultPrefix, descriptionFormat: format}, nil
 }
 
 // NewWorkPlaneWithRunner is the constructor tests use to inject a stub
@@ -71,7 +83,7 @@ func NewWorkPlaneWithRunner(run Runner, prefix string) *WorkPlane {
 	if prefix == "" {
 		prefix = defaultPrefix
 	}
-	return &WorkPlane{run: run, prefix: prefix}
+	return &WorkPlane{run: run, prefix: prefix, descriptionFormat: core.DescriptionFormatMarkdown}
 }
 
 const (
@@ -94,7 +106,9 @@ var _ core.WorkPlane = (*WorkPlane)(nil)
 // gated methods (AttachEvidence, ListSprints, ReadBudgetRollup) fail
 // fast with capability_denied when the manifest opts out.
 func (w *WorkPlane) Describe(context.Context) (core.CapabilityManifest, error) {
-	return beadsManifest, nil
+	m := beadsManifest
+	m.DescriptionFormat = w.descriptionFormat
+	return m, nil
 }
 
 var beadsManifest = core.CapabilityManifest{

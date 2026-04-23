@@ -195,7 +195,23 @@ type CapabilityManifest struct {
 	// adapter leaves this false because it mediates mutations through
 	// bd's public API.
 	ReadOnly bool `json:"read_only"`
+
+	// DescriptionFormat declares the content type of WorkItem.Description
+	// so the SPA can pick the correct renderer ("plain" → preformatted
+	// text, "markdown" → markdown with GFM extensions). Adaptors that
+	// don't set it fall through to "plain" on the SPA side; beads-backed
+	// adaptors (bd CLI, dolt SQL) default to "markdown" since that's
+	// what `bd` edits. Unknown values MUST be treated as "plain" by the
+	// UI so a future format can ship without breaking older clients.
+	DescriptionFormat string `json:"description_format,omitempty"`
 }
+
+// Known DescriptionFormat values. Keep in lockstep with the SPA's
+// renderer registry (web/src/components/board/descriptionRenderers.tsx).
+const (
+	DescriptionFormatPlain    = "plain"
+	DescriptionFormatMarkdown = "markdown"
+)
 
 // Validate applies structural checks that every manifest must satisfy.
 // Adaptors should call this in the startup path so doctor reports a

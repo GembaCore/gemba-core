@@ -64,6 +64,12 @@ func TestDescribe_ReadOnlyManifest(t *testing.T) {
 	if err := manifest.Validate(); err != nil {
 		t.Errorf("manifest must be Validate()-clean: %v", err)
 	}
+	// Both beads adaptors must declare markdown by default so the SPA
+	// renders descriptions through the markdown renderer end-to-end.
+	if manifest.DescriptionFormat != core.DescriptionFormatMarkdown {
+		t.Errorf("DescriptionFormat: got %q want %q",
+			manifest.DescriptionFormat, core.DescriptionFormatMarkdown)
+	}
 }
 
 func TestListWorkItems_HappyPath(t *testing.T) {

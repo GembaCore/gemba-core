@@ -3,11 +3,34 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { BoardPage } from '../BoardPage';
+import { CapabilitiesProvider } from '@/capabilities';
+import type { CapabilitiesResponse } from '@/capabilities';
 import { STATE_CATEGORIES, type WorkItem } from '@/types/core.gen';
+
+// Seed a CapabilitiesProvider so BeadDrawer's useCapabilities() resolves.
+// The board itself doesn't consult the manifest, but the drawer (rendered
+// inside BoardPage) does for description_format.
+const caps: CapabilitiesResponse = {
+  work_plane: {
+    adaptor_name: 'fake',
+    adaptor_version: '0.1.0',
+    protocol_version: '0.1.0',
+    transport: 'api',
+    state_map: { open: 'unstarted' },
+    sprint_native: false,
+    token_budget_enforced: false,
+    evidence_synthesis_required: false,
+  },
+  orchestration_plane: null,
+};
 
 function wrap(ui: ReactNode) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return <QueryClientProvider client={client}>{ui}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={client}>
+      <CapabilitiesProvider initial={caps}>{ui}</CapabilitiesProvider>
+    </QueryClientProvider>
+  );
 }
 
 function bead(id: string, category: WorkItem['state_category'], extra: Partial<WorkItem> = {}): WorkItem {

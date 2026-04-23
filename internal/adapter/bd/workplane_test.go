@@ -344,6 +344,13 @@ func TestBeadsDescribeManifestIsValid(t *testing.T) {
 	if m.ProtocolVersion != core.ProtocolVersion {
 		t.Errorf("ProtocolVersion=%q want %q", m.ProtocolVersion, core.ProtocolVersion)
 	}
+	// beads descriptions ARE markdown (bd's own edit surface assumes
+	// it). Default must carry that declaration so the SPA renders
+	// headings / lists / code fences instead of flat preformatted text.
+	if m.DescriptionFormat != core.DescriptionFormatMarkdown {
+		t.Errorf("DescriptionFormat=%q want %q",
+			m.DescriptionFormat, core.DescriptionFormatMarkdown)
+	}
 }
 
 func TestBeadsGetWorkItemNotFoundIsTagged(t *testing.T) {

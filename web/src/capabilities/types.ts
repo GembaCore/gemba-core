@@ -68,6 +68,12 @@ export interface WorkPlaneManifest {
   sprint_native: boolean;
   token_budget_enforced: boolean;
   evidence_synthesis_required: boolean;
+  // description_format declares the content type of WorkItem.Description
+  // so the SPA's renderer registry can pick the right component
+  // ("plain" → preformatted, "markdown" → react-markdown + GFM).
+  // Undefined falls through to "plain" on the SPA side so an older
+  // server without the field never crashes a newer client.
+  description_format?: string;
 }
 
 export interface OrchestrationManifest {

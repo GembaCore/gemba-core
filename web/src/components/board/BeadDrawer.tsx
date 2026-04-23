@@ -24,8 +24,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ArrowLeft, Check, Copy, X } from 'lucide-react';
 import { useBead } from '@/hooks/useBeads';
+import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
 import type { Evidence, WorkItem } from '@/types/core.gen';
+import { rendererFor } from './descriptionRenderers';
 
 export interface BeadDrawerProps {
   // Bead id to show. null keeps the drawer closed. Changing this prop
@@ -203,6 +205,13 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   const timestamps = useMemo(() => extractTimestamps(item), [item]);
   const sprintBudget = useMemo(() => extractSprintBudget(item.custom), [item.custom]);
   const closeReason = useMemo(() => extractCloseReason(item.custom), [item.custom]);
+  // The adaptor declares how its Description field should be rendered
+  // (plain / markdown / …) on the CapabilityManifest. We pick the right
+  // component from the registry on every render rather than threading
+  // the format through props; the manifest changes rarely (adaptor
+  // restart) and useCapabilities memoizes.
+  const { workPlane } = useCapabilities();
+  const DescriptionRenderer = rendererFor(workPlane?.description_format);
 
   return (
     <div className="space-y-6 pt-4">
@@ -239,9 +248,7 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
 
       <Section title="Description" testid="section-description">
         {item.description ? (
-          <pre className="whitespace-pre-wrap break-words font-sans text-sm text-neutral-800 dark:text-neutral-200">
-            {item.description}
-          </pre>
+          <DescriptionRenderer source={item.description} />
         ) : (
           <Muted>No description.</Muted>
         )}
