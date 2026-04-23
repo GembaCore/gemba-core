@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,24 +18,47 @@ import (
 	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
 )
 
-// programmableWorkPlane wraps FakeWorkPlane with a GetWorkItem hook so
-// the beads handler tests can program the return value without standing
-// up a full adaptor. Every other method delegates to the embedded fake.
+// programmableWorkPlane wraps FakeWorkPlane with GetWorkItem / ListWorkItems
+// hooks so the beads handler tests can program the return value without
+// standing up a full adaptor. Every other method delegates to the embedded
+// fake. Unset hooks fall through to the fake's default (which returns an
+// error) so a test that forgets to program a call it triggers fails loudly.
 type programmableWorkPlane struct {
 	*testadaptors.FakeWorkPlane
-	getFn func(ctx context.Context, id core.WorkItemID) (core.WorkItem, error)
+	getFn  func(ctx context.Context, id core.WorkItemID) (core.WorkItem, error)
+	listFn func(ctx context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error)
 }
 
 func (p *programmableWorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error) {
+	if p.getFn == nil {
+		return p.FakeWorkPlane.GetWorkItem(ctx, id)
+	}
 	return p.getFn(ctx, id)
+}
+
+func (p *programmableWorkPlane) ListWorkItems(ctx context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error) {
+	if p.listFn == nil {
+		return p.FakeWorkPlane.ListWorkItems(ctx, filter)
+	}
+	return p.listFn(ctx, filter)
 }
 
 func newProgrammableHost(t *testing.T, fn func(ctx context.Context, id core.WorkItemID) (core.WorkItem, error)) *api.Host {
 	t.Helper()
+	return newProgrammableHostFull(t, fn, nil)
+}
+
+func newProgrammableHostFull(
+	t *testing.T,
+	getFn func(ctx context.Context, id core.WorkItemID) (core.WorkItem, error),
+	listFn func(ctx context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error),
+) *api.Host {
+	t.Helper()
 	host := api.New()
 	wp := &programmableWorkPlane{
 		FakeWorkPlane: testadaptors.NewFakeWorkPlane(core.TransportAPI),
-		getFn:         fn,
+		getFn:         getFn,
+		listFn:        listFn,
 	}
 	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
 		t.Fatalf("RegisterWorkPlane: %v", err)
@@ -215,6 +240,156 @@ func TestGetBead_NoHost_Returns503(t *testing.T) {
 		t.Fatalf("want error=adaptor_not_configured, got %v", env["error"])
 	}
 }
+
+// ============================================================================
+// GET /api/beads — list handler (gm-peg)
+// ============================================================================
+
+// Envelope type for the list handler. Kept local so the wire shape stays
+// pinned in tests rather than being reimported from a shared package.
+type listBeadsEnvelope struct {
+	Items []core.WorkItem `json:"items"`
+	Total int             `json:"total"`
+}
+
+func TestListBeads_HappyPath_ReturnsEnvelope(t *testing.T) {
+	items := []core.WorkItem{
+		{ID: "gm-1", Kind: "task", Title: "first", Status: "open", StateCategory: core.StateBacklog},
+		{ID: "gm-2", Kind: "task", Title: "second", Status: "in_progress", StateCategory: core.StateStarted},
+	}
+	var gotFilter core.WorkItemFilter
+	host := newProgrammableHostFull(t, nil,
+		func(_ context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error) {
+			gotFilter = filter
+			return items, nil
+		})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("want application/json, got %q", ct)
+	}
+	var env listBeadsEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
+	}
+	if env.Total != 2 {
+		t.Fatalf("total: want 2, got %d", env.Total)
+	}
+	if len(env.Items) != 2 {
+		t.Fatalf("items: want 2, got %d", len(env.Items))
+	}
+	if env.Items[0].ID != "gm-1" || env.Items[1].ID != "gm-2" {
+		t.Fatalf("ids: want [gm-1 gm-2], got [%s %s]", env.Items[0].ID, env.Items[1].ID)
+	}
+	// M1.3 scope: empty filter only — narrowing and pagination are future work.
+	zero := core.WorkItemFilter{}
+	if !reflect.DeepEqual(gotFilter, zero) {
+		t.Fatalf("handler should pass zero-valued filter, got %+v", gotFilter)
+	}
+}
+
+// Empty DB → `{items: [], total: 0}`. Must serialise as a JSON array, not null.
+func TestListBeads_EmptyDB_ReturnsEmptyArray(t *testing.T) {
+	host := newProgrammableHostFull(t, nil,
+		func(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
+			return nil, nil
+		})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	// Raw body check — env.Items could silently decode null into an empty
+	// slice and hide the bug. Pin the wire shape instead.
+	body := strings.TrimSpace(rec.Body.String())
+	if !strings.Contains(body, `"items":[]`) {
+		t.Fatalf("want items:[] in body, got %q", body)
+	}
+	if !strings.Contains(body, `"total":0`) {
+		t.Fatalf("want total:0 in body, got %q", body)
+	}
+}
+
+// Adaptor-tagged degraded error → 503 via shared mapper.
+func TestListBeads_AdaptorDegraded_Returns503(t *testing.T) {
+	host := newProgrammableHostFull(t, nil,
+		func(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
+			return nil, core.NewAdaptorError(core.KindAdaptorDegraded,
+				"bd probe timed out; Dolt may be hung")
+		})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var env map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
+	}
+	if env["error"] != "adaptor_degraded" {
+		t.Fatalf("want error=adaptor_degraded, got %v", env["error"])
+	}
+	if env["message"] != "bd probe timed out; Dolt may be hung" {
+		t.Fatalf("want original message, got %v", env["message"])
+	}
+}
+
+// Untagged error → 500 internal (Conformance Group F: adaptors must tag).
+func TestListBeads_UntaggedError_Returns500(t *testing.T) {
+	host := newProgrammableHostFull(t, nil,
+		func(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
+			return nil, errors.New("boom")
+		})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+// No host wired → 503 adaptor_not_configured. Mirrors the single-bead behaviour
+// so the SPA can treat both endpoints with one degraded-state handler.
+func TestListBeads_NoHost_Returns503(t *testing.T) {
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var env map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
+	}
+	if env["error"] != "adaptor_not_configured" {
+		t.Fatalf("want error=adaptor_not_configured, got %v", env["error"])
+	}
+}
+
+// ============================================================================
+// GET /api/beads/{id} — single-bead handler
+// ============================================================================
 
 // Static sibling routes must still win over the {id} param. /beads/ready
 // is mounted above the wildcard — chi prefers the literal — so it keeps

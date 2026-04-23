@@ -9,6 +9,48 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// listBeads is the GET /api/beads handler. It calls the registered
+// WorkPlane's ListWorkItems with a zero-valued filter (no narrowing —
+// filtering and pagination are deferred to later milestones) and returns
+// the envelope `{items: []WorkItem, total: N}`. The SPA's useBeads() hook
+// (gm-xgm) drives off this shape.
+//
+// Error envelopes follow the shared httperr contract (gm-root.1.1):
+//
+//	503 {"error": "adaptor_not_configured", ...} — no host/WorkPlane wired
+//	503 {"error": "adaptor_degraded", ...}       — tagged AdaptorError
+//	500 {"error": "internal", ...}               — untagged adaptor error
+//
+// An empty-but-healthy adaptor surfaces as 200 with `{items: [], total: 0}`;
+// the handler normalises nil slices so the wire shape is a JSON array, not null.
+func (r *Router) listBeads(w http.ResponseWriter, req *http.Request) {
+	if r.host == nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"adaptor_not_configured", "no WorkPlane adaptor registered")
+		return
+	}
+	wp := r.host.WorkPlane()
+	if wp == nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"adaptor_not_configured", "no WorkPlane adaptor registered")
+		return
+	}
+
+	items, err := wp.ListWorkItems(req.Context(), core.WorkItemFilter{})
+	if err != nil {
+		httperr.WriteError(w, err)
+		return
+	}
+	if items == nil {
+		items = []core.WorkItem{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"total": len(items),
+	})
+}
+
 // getBead is the GET /api/beads/{id} handler. It returns a single
 // WorkItem with its full Relationship graph (blocks / parent_child /
 // relates_to) plus any extension edges the adaptor surfaces on
