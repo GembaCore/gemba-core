@@ -282,26 +282,45 @@ func TestValidateWorkPlaneFlags(t *testing.T) {
 	cases := []struct {
 		name    string
 		cfg     ServeConfig
-		wantErr bool
+		wantErr string // substring; empty means "no error expected"
 	}{
-		{"both empty", ServeConfig{}, false},
-		{"only beads-dir", ServeConfig{BeadsDir: "/tmp/gm"}, false},
-		{"only dolt-url", ServeConfig{DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, false},
-		{"both set", ServeConfig{BeadsDir: "/tmp/gm", DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, true},
+		{"neither set", ServeConfig{}, "no WorkPlane selected"},
+		{"only beads-dir", ServeConfig{BeadsDir: "/tmp/gm"}, ""},
+		{"only dolt-url", ServeConfig{DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, ""},
+		{"both set", ServeConfig{BeadsDir: "/tmp/gm", DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, "mutually exclusive"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.cfg.ValidateWorkPlaneFlags()
-			if tc.wantErr && err == nil {
-				t.Fatalf("want error")
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
 			}
-			if !tc.wantErr && err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if err == nil {
+				t.Fatalf("want error containing %q, got nil", tc.wantErr)
 			}
-			if tc.wantErr && !strings.Contains(err.Error(), "mutually exclusive") {
-				t.Errorf("error must mention mutual exclusion; got %q", err.Error())
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error missing %q; got %q", tc.wantErr, err.Error())
 			}
 		})
+	}
+}
+
+// TestValidateWorkPlaneFlags_NeitherSetMentionsBothFlags pins the
+// shape of the "no WorkPlane selected" error: both flag names must
+// appear verbatim so the operator can copy-paste the fix without
+// digging through --help.
+func TestValidateWorkPlaneFlags_NeitherSetMentionsBothFlags(t *testing.T) {
+	err := (ServeConfig{}).ValidateWorkPlaneFlags()
+	if err == nil {
+		t.Fatalf("want error")
+	}
+	for _, want := range []string{"--beads-dir", "--dolt-url"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q; got %q", want, err.Error())
+		}
 	}
 }
 

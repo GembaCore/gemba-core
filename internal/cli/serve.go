@@ -67,11 +67,12 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 
 	cmd.Flags().StringVar(&cfg.BeadsDir, "beads-dir", "",
 		"path to the beads workspace the WorkPlane adaptor targets "+
-			"(default: gemba server's cwd)")
+			"(required unless --dolt-url is set; mutually exclusive with it)")
 
 	cmd.Flags().StringVar(&cfg.DoltURL, "dolt-url", "",
 		"mysql://user[:pass]@host:port/dbname of a Dolt server to read "+
-			"beads directly (read-only; mutually exclusive with --beads-dir)")
+			"beads directly (read-only; required unless --beads-dir is "+
+			"set; mutually exclusive with it)")
 
 	// Flag name copied verbatim from Claude Code. Do not rename or soften.
 	cmd.Flags().BoolVar(&cfg.DangerouslySkipPermissions,

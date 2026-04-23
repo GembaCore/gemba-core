@@ -119,12 +119,14 @@ func (c ServeConfig) ValidateBindPolicy() error {
 	return nil
 }
 
-// ValidateWorkPlaneFlags rejects mutually-exclusive workplane
-// configurations before serve walks any further. --beads-dir and
-// --dolt-url both select a beads backend but by different means; a
-// server asked to honor both would have to pick one and ignore the
-// other, which is a bad operator surprise — explicit failure is the
-// right move.
+// ValidateWorkPlaneFlags enforces the WorkPlane selector contract:
+// exactly one of --beads-dir and --dolt-url must be set. Both select a
+// beads backend but by different means; a server asked to honor both
+// would have to pick one and ignore the other, and a server with
+// neither has no WorkPlane to serve at all. In both error cases we
+// fail before any further startup work so the operator gets a single
+// actionable message instead of a later cryptic failure from the
+// adaptor layer.
 func (c ServeConfig) ValidateWorkPlaneFlags() error {
 	if c.BeadsDir != "" && c.DoltURL != "" {
 		return fmt.Errorf(
@@ -132,6 +134,13 @@ func (c ServeConfig) ValidateWorkPlaneFlags() error {
 				"pass one or the other\n" +
 				"  --beads-dir routes reads+writes through the bd CLI\n" +
 				"  --dolt-url opens a direct read-only SQL connection to Dolt")
+	}
+	if c.BeadsDir == "" && c.DoltURL == "" {
+		return fmt.Errorf(
+			"no WorkPlane selected; pass --beads-dir <path> or " +
+				"--dolt-url <mysql://...>\n" +
+				"  --beads-dir <path>          route through the bd CLI (reads + writes)\n" +
+				"  --dolt-url <mysql://...>    direct read-only SQL to a Dolt server")
 	}
 	return nil
 }

@@ -87,3 +87,28 @@ func TestServe_RejectsBothBeadsDirAndDoltURL(t *testing.T) {
 		t.Errorf("error must mention mutual exclusion; got %q", err.Error())
 	}
 }
+
+// TestServe_RejectsNeitherBeadsDirNorDoltURL pins the "must pick one"
+// half of the WorkPlane selector contract at the CLI layer. Running
+// `gemba serve` with no adaptor flag has no WorkPlane to expose, so
+// the rejection must happen before the listener opens and must point
+// the operator at both flag names.
+func TestServe_RejectsNeitherBeadsDirNorDoltURL(t *testing.T) {
+	cmd := newServeCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "no WorkPlane selected") {
+		t.Errorf("error must name the condition; got %q", err.Error())
+	}
+	for _, want := range []string{"--beads-dir", "--dolt-url"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q; got %q", want, err.Error())
+		}
+	}
+}
