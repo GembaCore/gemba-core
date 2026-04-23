@@ -278,6 +278,33 @@ func TestResolveBeadsDir(t *testing.T) {
 	}
 }
 
+func TestValidateWorkPlaneFlags(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     ServeConfig
+		wantErr bool
+	}{
+		{"both empty", ServeConfig{}, false},
+		{"only beads-dir", ServeConfig{BeadsDir: "/tmp/gm"}, false},
+		{"only dolt-url", ServeConfig{DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, false},
+		{"both set", ServeConfig{BeadsDir: "/tmp/gm", DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.ValidateWorkPlaneFlags()
+			if tc.wantErr && err == nil {
+				t.Fatalf("want error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantErr && !strings.Contains(err.Error(), "mutually exclusive") {
+				t.Errorf("error must mention mutual exclusion; got %q", err.Error())
+			}
+		})
+	}
+}
+
 func TestEffectiveAuthMode(t *testing.T) {
 	if got := (ServeConfig{}).EffectiveAuthMode(); got != "none" {
 		t.Fatalf("default should be none, got %q", got)

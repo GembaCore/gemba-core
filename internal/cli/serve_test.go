@@ -55,3 +55,35 @@ func TestServe_BeadsDirRejectsMissingPath(t *testing.T) {
 		t.Errorf("error missing expected text: %v", err)
 	}
 }
+
+// TestServe_DoltURLFlagAccepted locks in --dolt-url's presence on the
+// serve command (gm-0fd). The parse/connect matrix lives in
+// internal/adapter/dolt; this test just guards the flag surface.
+func TestServe_DoltURLFlagAccepted(t *testing.T) {
+	cmd := newServeCmd()
+	if cmd.Flags().Lookup("dolt-url") == nil {
+		t.Fatal("--dolt-url flag missing from serve command")
+	}
+}
+
+// TestServe_RejectsBothBeadsDirAndDoltURL pins the mutex between the
+// two workplane selectors at the CLI layer. The rejection must
+// happen before ResolveBeadsDir / NewWorkPlane fires so the operator
+// gets a single, actionable error.
+func TestServe_RejectsBothBeadsDirAndDoltURL(t *testing.T) {
+	cmd := newServeCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"--beads-dir", "/tmp",
+		"--dolt-url", "mysql://root@127.0.0.1:3307/gemba",
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error must mention mutual exclusion; got %q", err.Error())
+	}
+}

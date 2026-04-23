@@ -64,6 +64,13 @@ const (
 	// gm-b1 mutation gate surfaces this verbatim to the SPA banner.
 	// Retryable once the /api/adaptors probe reports healthy again.
 	KindAdaptorDegraded ErrorKind = "adaptor_degraded"
+	// KindReadOnly — the adaptor is operating in a read-only mode and
+	// cannot service the mutation the caller requested (the --dolt-url
+	// SQL connector is the canonical case: it opens a direct Dolt
+	// connection and deliberately refuses every write so two gemba
+	// processes can't race to mutate the same beads schema). NOT
+	// retryable: the caller must target a writable adaptor instead.
+	KindReadOnly ErrorKind = "read_only"
 )
 
 // validErrorKinds is the authoritative set used by ErrorKind.Valid and
@@ -78,6 +85,7 @@ var validErrorKinds = map[ErrorKind]struct{}{
 	KindUnsupported:      {},
 	KindCapabilityDenied: {},
 	KindAdaptorDegraded:  {},
+	KindReadOnly:         {},
 }
 
 // Valid reports whether k is one of the nine canonical error kinds.

@@ -64,7 +64,8 @@ export type AdaptorErrorKind =
   | "rate_limited"
   | "unsupported"
   | "capability_denied"
-  | "adaptor_degraded";
+  | "adaptor_degraded"
+  | "read_only";
 
 export const ADAPTOR_ERROR_KINDS: readonly AdaptorErrorKind[] = [
   "validation",
@@ -76,6 +77,7 @@ export const ADAPTOR_ERROR_KINDS: readonly AdaptorErrorKind[] = [
   "unsupported",
   "capability_denied",
   "adaptor_degraded",
+  "read_only",
 ] as const;
 
 // AdaptorError is the wire shape emitted by every Go adaptor-boundary

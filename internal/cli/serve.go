@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -13,6 +14,7 @@ import (
 
 	gemba "github.com/MikeBengtson/gemba"
 	"github.com/MikeBengtson/gemba/internal/adapter/bd"
+	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/server"
@@ -67,6 +69,10 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"path to the beads workspace the WorkPlane adaptor targets "+
 			"(default: gemba server's cwd)")
 
+	cmd.Flags().StringVar(&cfg.DoltURL, "dolt-url", "",
+		"mysql://user[:pass]@host:port/dbname of a Dolt server to read "+
+			"beads directly (read-only; mutually exclusive with --beads-dir)")
+
 	// Flag name copied verbatim from Claude Code. Do not rename or soften.
 	cmd.Flags().BoolVar(&cfg.DangerouslySkipPermissions,
 		"dangerously-skip-permissions", false,
@@ -78,6 +84,12 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 
 func runServe(ctx context.Context, cfg config.ServeConfig) error {
 	if err := cfg.ValidateBindPolicy(); err != nil {
+		return err
+	}
+	// --beads-dir and --dolt-url are mutually exclusive; catch the
+	// conflict before any further startup work so the operator gets a
+	// clean message instead of silently seeing one ignored.
+	if err := cfg.ValidateWorkPlaneFlags(); err != nil {
 		return err
 	}
 	// --beads-dir, when set, must resolve to a real rig (contains .beads/
@@ -167,12 +179,27 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 }
 
 // registerWorkPlane builds the api transport host, instantiates the
-// Beads WorkPlane adaptor, and binds them. Failures here MUST abort
-// startup — a serve process with no WorkPlane has no useful surface to
-// expose, so the operator needs to see the error before the listener
-// opens.
+// configured WorkPlane adaptor, and binds them. Failures here MUST
+// abort startup — a serve process with no WorkPlane has no useful
+// surface to expose, so the operator needs to see the error before
+// the listener opens.
+//
+// Two adaptor paths, selected by flag:
+//   - --beads-dir (or default cwd): shell to the bd CLI (writes OK)
+//   - --dolt-url: direct read-only Dolt SQL (writes return KindReadOnly)
+//
+// ValidateWorkPlaneFlags already guaranteed they're not both set, so
+// we only have to decide between "dolt-url present" and "everything
+// else".
 func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*api.Host, error) {
 	host := api.New()
+	if cfg.DoltURL != "" {
+		return registerDoltWorkPlane(ctx, host, cfg)
+	}
+	return registerBeadsWorkPlane(ctx, host, cfg)
+}
+
+func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) (*api.Host, error) {
 	adaptor, err := bd.NewWorkPlane(bd.Config{BeadsDir: cfg.BeadsDir})
 	if err != nil {
 		return nil, fmt.Errorf("beads workplane: %w", err)
@@ -188,6 +215,42 @@ func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*api.Host, 
 		"transport", reg.Transport,
 		"beads_dir", cfg.BeadsDir)
 	return host, nil
+}
+
+func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) (*api.Host, error) {
+	adaptor, err := dolt.NewWorkPlane(dolt.Config{URL: cfg.DoltURL})
+	if err != nil {
+		return nil, fmt.Errorf("dolt workplane: %w", err)
+	}
+	reg, err := host.RegisterWorkPlane(ctx, adaptor)
+	if err != nil {
+		_ = adaptor.Close()
+		return nil, fmt.Errorf("register dolt workplane: %w", err)
+	}
+	slog.Info("workplane adaptor registered",
+		"adaptor", reg.AdaptorName,
+		"version", reg.AdaptorVersion,
+		"protocol", reg.ProtocolVersion,
+		"transport", reg.Transport,
+		"read_only", true,
+		"dolt_url", redactDoltURL(cfg.DoltURL))
+	return host, nil
+}
+
+// redactDoltURL strips any password component out of the URL before
+// it hits the slog pipeline. The Dolt URL may carry a password in
+// the user-info section; logging it verbatim would leak the
+// credential to any log sink.
+func redactDoltURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	if _, ok := u.User.Password(); !ok {
+		return raw
+	}
+	u.User = url.User(u.User.Username())
+	return u.String()
 }
 
 // ensurePrimaryToken makes sure path contains a valid argon2id hash. When

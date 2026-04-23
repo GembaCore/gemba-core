@@ -41,6 +41,13 @@ type ServeConfig struct {
 	// when gemba is launched from inside a beads workspace.
 	BeadsDir string
 
+	// DoltURL is a mysql://user[:password]@host:port/dbname connection
+	// string pointing at a Dolt server that already hosts a beads
+	// database. When set, the server skips the bd CLI path and opens
+	// a direct read-only SQL connection instead (gm-0fd). Mutually
+	// exclusive with BeadsDir.
+	DoltURL string
+
 	// ConfigPath is an explicit gemba.toml override. Empty means "probe
 	// the standard locations." File loading lands with a later bead;
 	// serve threads the path through today so the flag surface is stable.
@@ -112,6 +119,23 @@ func (c ServeConfig) ValidateBindPolicy() error {
 	return nil
 }
 
+// ValidateWorkPlaneFlags rejects mutually-exclusive workplane
+// configurations before serve walks any further. --beads-dir and
+// --dolt-url both select a beads backend but by different means; a
+// server asked to honor both would have to pick one and ignore the
+// other, which is a bad operator surprise — explicit failure is the
+// right move.
+func (c ServeConfig) ValidateWorkPlaneFlags() error {
+	if c.BeadsDir != "" && c.DoltURL != "" {
+		return fmt.Errorf(
+			"--beads-dir and --dolt-url are mutually exclusive; " +
+				"pass one or the other\n" +
+				"  --beads-dir routes reads+writes through the bd CLI\n" +
+				"  --dolt-url opens a direct read-only SQL connection to Dolt")
+	}
+	return nil
+}
+
 // ResolveBeadsDir validates c.BeadsDir and returns the directory `bd`
 // should be invoked from. The bd CLI discovers its workspace by walking
 // up from cwd looking for `.beads/`, so the returned path is the rig
@@ -121,7 +145,8 @@ func (c ServeConfig) ValidateBindPolicy() error {
 // `--beads-dir ~/gt/gemba/.beads` both mean the same rig.
 //
 // An empty c.BeadsDir returns ("", nil); callers decide whether that's
-// an error (mutual exclusion with --dolt-url is handled in M1.2c).
+// an error. Mutual exclusion with --dolt-url is handled separately by
+// ValidateWorkPlaneFlags.
 func (c ServeConfig) ResolveBeadsDir() (string, error) {
 	if c.BeadsDir == "" {
 		return "", nil

@@ -14,6 +14,7 @@ func TestErrorKindValid(t *testing.T) {
 		KindValidation, KindSessionNotFound, KindSessionClosed,
 		KindRequestFailed, KindProcessFailed, KindRateLimited,
 		KindUnsupported, KindCapabilityDenied, KindAdaptorDegraded,
+		KindReadOnly,
 	}
 	if len(want) != len(validErrorKinds) {
 		t.Fatalf("kind count drift: const list=%d, validErrorKinds=%d",
@@ -40,6 +41,7 @@ func TestRetryableDefault(t *testing.T) {
 		KindUnsupported:      false,
 		KindCapabilityDenied: false,
 		KindAdaptorDegraded:  true,
+		KindReadOnly:         false,
 	}
 	for kind, want := range retryable {
 		if got := kind.RetryableDefault(); got != want {

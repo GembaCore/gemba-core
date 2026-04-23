@@ -187,6 +187,14 @@ type CapabilityManifest struct {
 	// runs) rather than receive them pre-built (gm-root DD-13). When
 	// false, the adaptor provides its own Evidence in GetWorkItem.
 	EvidenceSynthesisRequired bool `json:"evidence_synthesis_required"`
+
+	// ReadOnly — adaptor cannot service mutations. CreateWorkItem,
+	// UpdateWorkItem, and AttachEvidence all fail with KindReadOnly;
+	// the UI MUST hide write controls rather than disable them. Used
+	// by the --dolt-url direct SQL connector (gm-0fd); the bd CLI
+	// adapter leaves this false because it mediates mutations through
+	// bd's public API.
+	ReadOnly bool `json:"read_only"`
 }
 
 // Validate applies structural checks that every manifest must satisfy.

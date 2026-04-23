@@ -69,6 +69,7 @@ func TestCoreTypesTSContainsEveryEnumString(t *testing.T) {
 		string(KindValidation), string(KindSessionNotFound), string(KindSessionClosed),
 		string(KindRequestFailed), string(KindProcessFailed), string(KindRateLimited),
 		string(KindUnsupported), string(KindCapabilityDenied), string(KindAdaptorDegraded),
+		string(KindReadOnly),
 	}
 	for _, v := range enums {
 		if !strings.Contains(CoreTypesTS, `"`+v+`"`) {
