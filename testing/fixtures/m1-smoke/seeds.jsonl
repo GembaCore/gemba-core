@@ -1,0 +1,4 @@
+{"id":"smk-1","title":"Seed bead 1 - open task","description":"Smoke fixture: an open task bead.","status":"open","priority":1,"issue_type":"task","labels":["smoke","milestone:m1"]}
+{"id":"smk-2","title":"Seed bead 2 - in-progress task","description":"Smoke fixture: an in_progress task bead.","status":"in_progress","priority":2,"issue_type":"task","labels":["smoke"]}
+{"id":"smk-3","title":"Seed bead 3 - closed bug","description":"Smoke fixture: a closed bug bead.","status":"closed","priority":3,"issue_type":"bug","labels":["smoke"]}
+{"id":"smk-4","title":"Seed bead 4 - blocked feature","description":"Smoke fixture: a blocked feature bead.","status":"blocked","priority":2,"issue_type":"feature","labels":["smoke"]}
