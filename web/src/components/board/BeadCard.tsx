@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react';
 import { FileText, GitBranch, Paperclip } from 'lucide-react';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
@@ -5,6 +6,9 @@ import { relativeTime } from './relativeTime';
 
 export interface BeadCardProps {
   item: WorkItem;
+  // onSelect makes the card clickable (and keyboard-activatable). Wire
+  // it from BoardPage to open the drill-in drawer. Omitted → static card.
+  onSelect?: (id: string) => void;
 }
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -47,20 +51,41 @@ function hasEvidence(item: WorkItem): boolean {
 
 const MAX_VISIBLE_LABELS = 3;
 
-export function BeadCard({ item }: BeadCardProps) {
+export function BeadCard({ item, onSelect }: BeadCardProps) {
   const pri = priorityLabel(item.priority);
   const name = assigneeName(item);
   const labels = item.labels ?? [];
   const visibleLabels = labels.slice(0, MAX_VISIBLE_LABELS);
   const overflow = Math.max(0, labels.length - visibleLabels.length);
 
+  const interactive = !!onSelect;
+  const handleClick = onSelect ? () => onSelect(item.id) : undefined;
+  // <article> can't be a native <button> (buttons reject flow content
+  // like <h3>) so we use the ARIA role-button pattern: role, tabIndex,
+  // and a keydown handler that treats Enter / Space as activation.
+  const handleKeyDown = onSelect
+    ? (e: KeyboardEvent<HTMLElement>) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(item.id);
+        }
+      }
+    : undefined;
+
   return (
     <article
       data-bead-id={item.id}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      aria-label={interactive ? `Open bead ${item.id}` : undefined}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
       className={cn(
         'group rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm',
         'hover:border-neutral-300 hover:shadow',
-        'dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700'
+        'dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700',
+        interactive &&
+          'cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-neutral-50 dark:focus:ring-offset-neutral-950'
       )}
     >
       <header className="mb-1.5 flex items-center gap-2">

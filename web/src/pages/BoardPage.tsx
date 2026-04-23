@@ -1,8 +1,10 @@
 // Board pane (M1.7a / gm-922). Read-only: 5 StateCategory columns, rich
 // BeadCard per M1.7d. Drag, filtering, and drill-in land in later beads.
 
+import { useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import { BoardColumn } from '@/components/board/BoardColumn';
+import { BeadDrawer } from '@/components/board/BeadDrawer';
 import { useBeads } from '@/hooks/useBeads';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
@@ -113,6 +115,11 @@ function EmptyState() {
 
 export function BoardPage() {
   const { data, isLoading, isError, error, refetch } = useBeads();
+  // openId drives the drill-in drawer (gm-qai) from any BeadCard click.
+  // Kept in BoardPage so the drawer survives column / card re-renders
+  // and so a future URL-synced variant (push to ?bead=<id>) has a
+  // single place to wire up.
+  const [openId, setOpenId] = useState<string | null>(null);
 
   if (isLoading) return <SkeletonBoard />;
   if (isError) return <ErrorState message={error?.message ?? 'Unknown error.'} onRetry={() => void refetch()} />;
@@ -121,15 +128,19 @@ export function BoardPage() {
   const groups = groupByStateCategory(data);
 
   return (
-    <div data-testid="board" className="flex h-full gap-3 overflow-x-auto p-4">
-      {STATE_CATEGORIES.map((cat) => (
-        <BoardColumn
-          key={cat}
-          category={cat}
-          label={COLUMN_LABELS[cat]}
-          items={groups[cat]}
-        />
-      ))}
-    </div>
+    <>
+      <div data-testid="board" className="flex h-full gap-3 overflow-x-auto p-4">
+        {STATE_CATEGORIES.map((cat) => (
+          <BoardColumn
+            key={cat}
+            category={cat}
+            label={COLUMN_LABELS[cat]}
+            items={groups[cat]}
+            onSelect={setOpenId}
+          />
+        ))}
+      </div>
+      <BeadDrawer openId={openId} onClose={() => setOpenId(null)} />
+    </>
   );
 }

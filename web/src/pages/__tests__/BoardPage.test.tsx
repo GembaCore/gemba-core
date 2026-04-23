@@ -81,6 +81,46 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
   });
 
+  // Integration: clicking a card fires /api/beads/{id} and surfaces the
+  // BeadDrawer's loaded content (gm-qai wire-up). This pins the BoardPage
+  // ↔ BeadDrawer contract so a future refactor can't accidentally
+  // unmount one without the other.
+  it('opens the drill-in drawer when a card is clicked', async () => {
+    const listed = bead('gm-a', 'started');
+    const detail: WorkItem = {
+      ...listed,
+      description: 'Deep dive into gm-a.',
+    };
+    fetchSpy.mockImplementation((url: string) => {
+      if (url === '/api/beads') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [listed], total: 1 }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      if (url === '/api/beads/gm-a') {
+        return Promise.resolve(
+          new Response(JSON.stringify(detail), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    render(wrap(<BoardPage />));
+    const card = await waitFor(() => screen.getByRole('button', { name: /open bead gm-a/i }));
+    fireEvent.click(card);
+
+    // Drawer mounts, fetches /api/beads/gm-a, renders description.
+    await waitFor(() => expect(screen.getByTestId('bead-drawer-content')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Deep dive into gm-a.')).toBeTruthy());
+    expect(fetchSpy).toHaveBeenCalledWith('/api/beads/gm-a', expect.anything());
+  });
+
   it('shows error state with a retry button that re-fetches', async () => {
     // 503/adaptor_degraded does not auto-retry (see useBeads.retry),
     // so the error surfaces immediately and the manual retry click

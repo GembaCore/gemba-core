@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { BeadCard } from '../BeadCard';
 import { relativeTime } from '../relativeTime';
 import type { WorkItem } from '@/types/core.gen';
@@ -87,6 +87,32 @@ describe('BeadCard', () => {
     };
     render(<BeadCard item={child} />);
     expect(screen.getByTestId('glyph-parent')).toBeTruthy();
+  });
+
+  it('is not interactive when onSelect is omitted', () => {
+    render(<BeadCard item={base} />);
+    const article = screen.getByText('gm-x1').closest('article') as HTMLElement;
+    expect(article.getAttribute('role')).toBeNull();
+    expect(article.getAttribute('tabIndex')).toBeNull();
+  });
+
+  it('becomes an ARIA button when onSelect is provided and fires on click', () => {
+    const onSelect = vi.fn();
+    render(<BeadCard item={base} onSelect={onSelect} />);
+    const btn = screen.getByRole('button', { name: /open bead gm-x1/i });
+    fireEvent.click(btn);
+    expect(onSelect).toHaveBeenCalledWith('gm-x1');
+  });
+
+  it('activates on Enter and Space from the keyboard', () => {
+    const onSelect = vi.fn();
+    render(<BeadCard item={base} onSelect={onSelect} />);
+    const btn = screen.getByRole('button', { name: /open bead/i });
+    fireEvent.keyDown(btn, { key: 'Enter' });
+    fireEvent.keyDown(btn, { key: ' ' });
+    expect(onSelect).toHaveBeenCalledTimes(2);
+    expect(onSelect).toHaveBeenNthCalledWith(1, 'gm-x1');
+    expect(onSelect).toHaveBeenNthCalledWith(2, 'gm-x1');
   });
 });
 
