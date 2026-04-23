@@ -116,8 +116,8 @@ func TestGetBead_NotFound_Returns404Envelope(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
 	}
-	if env["error"] != "not_found" {
-		t.Fatalf("want error=not_found, got %q", env["error"])
+	if env["error"] != "session_not_found" {
+		t.Fatalf("want error=session_not_found, got %q", env["error"])
 	}
 	if env["message"] != "bead gm-missing not found" {
 		t.Fatalf("want specific message, got %q", env["message"])
@@ -141,9 +141,13 @@ func TestGetBead_WrappedNotFound_Returns404(t *testing.T) {
 	}
 }
 
-func TestGetBead_AdaptorError_Returns503(t *testing.T) {
+// Adaptor-tagged degraded error surfaces as 503 via httperr.WriteError.
+// Conformance Group F requires adaptors to return tagged *AdaptorError;
+// the shared mapper picks up the kind and emits the canonical envelope.
+func TestGetBead_AdaptorDegraded_Returns503(t *testing.T) {
 	host := newProgrammableHost(t, func(_ context.Context, _ core.WorkItemID) (core.WorkItem, error) {
-		return core.WorkItem{}, errors.New("bd probe timed out; Dolt may be hung")
+		return core.WorkItem{}, core.NewAdaptorError(core.KindAdaptorDegraded,
+			"bd probe timed out; Dolt may be hung")
 	})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
@@ -158,11 +162,36 @@ func TestGetBead_AdaptorError_Returns503(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
 	}
-	if env["error"] != "adaptor_error" {
-		t.Fatalf("want error=adaptor_error, got %v", env["error"])
+	if env["error"] != "adaptor_degraded" {
+		t.Fatalf("want error=adaptor_degraded, got %v", env["error"])
 	}
-	if env["plane"] != "work" {
-		t.Fatalf("want plane=work, got %v", env["plane"])
+	if env["message"] != "bd probe timed out; Dolt may be hung" {
+		t.Fatalf("want original message, got %v", env["message"])
+	}
+}
+
+// An untagged error from an adaptor violates Conformance Group F and
+// surfaces as 500 internal — the mapper's signal that the adaptor is
+// non-conformant rather than pretending to know what went wrong.
+func TestGetBead_UntaggedError_Returns500(t *testing.T) {
+	host := newProgrammableHost(t, func(_ context.Context, _ core.WorkItemID) (core.WorkItem, error) {
+		return core.WorkItem{}, errors.New("boom")
+	})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/beads/gm-foo", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var env map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
+	}
+	if env["error"] != "internal" {
+		t.Fatalf("want error=internal, got %v", env["error"])
 	}
 }
 
