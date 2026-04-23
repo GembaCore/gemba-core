@@ -80,6 +80,16 @@ func runServe(ctx context.Context, cfg config.ServeConfig) error {
 	if err := cfg.ValidateBindPolicy(); err != nil {
 		return err
 	}
+	// --beads-dir, when set, must resolve to a real rig (contains .beads/
+	// or IS .beads/). Validating here — before any other startup work —
+	// gives the operator an actionable error instead of a later cryptic
+	// "bd: no .beads/ found" from a spawned subprocess. The resolved path
+	// is what bd's subprocess will use as cwd (see registerWorkPlane).
+	resolvedBeadsDir, err := cfg.ResolveBeadsDir()
+	if err != nil {
+		return err
+	}
+	cfg.BeadsDir = resolvedBeadsDir
 	if cfg.DangerouslySkipPermissions {
 		slog.Warn("DANGEROUSLY-SKIP-PERMISSIONS IS ACTIVE",
 			"note", "mutations will not require confirmation for this session")

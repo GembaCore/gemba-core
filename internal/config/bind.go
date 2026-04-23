@@ -4,6 +4,8 @@ package config
 import (
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 )
 
@@ -108,6 +110,51 @@ func (c ServeConfig) ValidateBindPolicy() error {
 			c.listenDisplay())
 	}
 	return nil
+}
+
+// ResolveBeadsDir validates c.BeadsDir and returns the directory `bd`
+// should be invoked from. The bd CLI discovers its workspace by walking
+// up from cwd looking for `.beads/`, so the returned path is the rig
+// root: either c.BeadsDir itself (when it contains `.beads/`) or its
+// parent (when c.BeadsDir *is* `.beads/`). Accepting both forms matches
+// how users talk about rigs in practice — `--beads-dir ~/gt/gemba` and
+// `--beads-dir ~/gt/gemba/.beads` both mean the same rig.
+//
+// An empty c.BeadsDir returns ("", nil); callers decide whether that's
+// an error (mutual exclusion with --dolt-url is handled in M1.2c).
+func (c ServeConfig) ResolveBeadsDir() (string, error) {
+	if c.BeadsDir == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(c.BeadsDir)
+	if err != nil {
+		return "", fmt.Errorf("--beads-dir %q: %w", c.BeadsDir, err)
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf(
+				"--beads-dir %q: path does not exist", c.BeadsDir)
+		}
+		return "", fmt.Errorf("--beads-dir %q: %w", c.BeadsDir, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf(
+			"--beads-dir %q: not a directory", c.BeadsDir)
+	}
+	// Accept the rig root (contains .beads/) or the .beads/ dir itself.
+	if filepath.Base(abs) == ".beads" {
+		return filepath.Dir(abs), nil
+	}
+	beads := filepath.Join(abs, ".beads")
+	binfo, err := os.Stat(beads)
+	if err != nil || !binfo.IsDir() {
+		return "", fmt.Errorf(
+			"--beads-dir %q: no .beads/ directory found at %s\n"+
+				"  Pass the rig root (containing .beads/) or the "+
+				".beads/ directory itself.", c.BeadsDir, beads)
+	}
+	return abs, nil
 }
 
 // listenDisplay formats Listen+Port the way it would appear on the command

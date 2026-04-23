@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -210,6 +212,67 @@ func TestNormalizeListen(t *testing.T) {
 			}
 			if cfg.Port != tc.wantPort {
 				t.Fatalf("Port: got %d, want %d", cfg.Port, tc.wantPort)
+			}
+		})
+	}
+}
+
+func TestResolveBeadsDir(t *testing.T) {
+	// Build a realistic rig layout: tmp/rig/.beads/, a plain dir with no
+	// .beads/, and a regular file. EvalSymlinks because macOS TempDir
+	// resolves through /private/var and filepath.Abs does not collapse
+	// that, which would defeat the exact-match assertion below.
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	rig := filepath.Join(root, "rig")
+	beads := filepath.Join(rig, ".beads")
+	if err := os.MkdirAll(beads, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	plainDir := filepath.Join(root, "plain")
+	if err := os.MkdirAll(plainDir, 0o755); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	regularFile := filepath.Join(root, "not-a-dir.txt")
+	if err := os.WriteFile(regularFile, []byte("x"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		in      string
+		wantOut string
+		wantErr string // substring; empty means "no error expected"
+	}{
+		{name: "empty passes through", in: "", wantOut: ""},
+		{name: "rig root with .beads", in: rig, wantOut: rig},
+		{name: "dir IS .beads", in: beads, wantOut: rig},
+		{name: "missing path", in: filepath.Join(root, "nope"),
+			wantErr: "does not exist"},
+		{name: "regular file", in: regularFile,
+			wantErr: "not a directory"},
+		{name: "dir without .beads", in: plainDir,
+			wantErr: "no .beads/ directory found"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ServeConfig{BeadsDir: tc.in}.ResolveBeadsDir()
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatalf("expected error, got nil (result=%q)", got)
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("error %q missing %q", err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.wantOut {
+				t.Fatalf("resolved dir: got %q, want %q", got, tc.wantOut)
 			}
 		})
 	}
