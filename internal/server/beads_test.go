@@ -18,31 +18,6 @@ import (
 	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
 )
 
-// programmableWorkPlane wraps FakeWorkPlane with GetWorkItem / ListWorkItems
-// hooks so the beads handler tests can program the return value without
-// standing up a full adaptor. Every other method delegates to the embedded
-// fake. Unset hooks fall through to the fake's default (which returns an
-// error) so a test that forgets to program a call it triggers fails loudly.
-type programmableWorkPlane struct {
-	*testadaptors.FakeWorkPlane
-	getFn  func(ctx context.Context, id core.WorkItemID) (core.WorkItem, error)
-	listFn func(ctx context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error)
-}
-
-func (p *programmableWorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error) {
-	if p.getFn == nil {
-		return p.FakeWorkPlane.GetWorkItem(ctx, id)
-	}
-	return p.getFn(ctx, id)
-}
-
-func (p *programmableWorkPlane) ListWorkItems(ctx context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error) {
-	if p.listFn == nil {
-		return p.FakeWorkPlane.ListWorkItems(ctx, filter)
-	}
-	return p.listFn(ctx, filter)
-}
-
 func newProgrammableHost(t *testing.T, fn func(ctx context.Context, id core.WorkItemID) (core.WorkItem, error)) *api.Host {
 	t.Helper()
 	return newProgrammableHostFull(t, fn, nil)
@@ -55,11 +30,9 @@ func newProgrammableHostFull(
 ) *api.Host {
 	t.Helper()
 	host := api.New()
-	wp := &programmableWorkPlane{
-		FakeWorkPlane: testadaptors.NewFakeWorkPlane(core.TransportAPI),
-		getFn:         getFn,
-		listFn:        listFn,
-	}
+	wp := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	wp.GetFn = getFn
+	wp.ListFn = listFn
 	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
 		t.Fatalf("RegisterWorkPlane: %v", err)
 	}

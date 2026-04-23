@@ -8,21 +8,60 @@ package testadaptors
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/MikeBengtson/gemba/internal/core"
 )
 
-// FakeWorkPlane is a WorkPlane whose Describe result the test fully
-// controls. Every query method returns ErrUnsupported so a fake is never
-// mistaken for a usable backend.
+// FakeWorkPlane is a programmable core.WorkPlane for handler / transport
+// tests (gm-root.1.2). The manifest is exposed directly so Describe tests
+// can control the wire shape; each query / mutation method delegates to
+// an optional hook (GetFn, ListFn, …). When a hook is nil the method
+// returns a sentinel error instead of silently succeeding — that way a
+// test that exercises a path it forgot to program fails loudly.
+//
+// Every call is recorded under a mutex so a test can assert "the handler
+// called ListWorkItems once with filter={}" without the fake having to
+// wire up custom counters per test.
 type FakeWorkPlane struct {
-	Manifest core.CapabilityManifest
-	// DescribeErr, when non-nil, is returned instead of Manifest.
-	DescribeErr error
+	Manifest    core.CapabilityManifest
+	DescribeErr error // when non-nil, Describe returns this instead of Manifest
+
+	// Programmable hooks. Nil → the sentinel-error default path fires.
+	GetFn        func(ctx context.Context, id core.WorkItemID) (core.WorkItem, error)
+	ListFn       func(ctx context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error)
+	CreateFn     func(ctx context.Context, wi core.WorkItem) (core.WorkItem, error)
+	UpdateFn     func(ctx context.Context, id core.WorkItemID, patch core.WorkItemPatch) (core.WorkItem, error)
+	AttachFn     func(ctx context.Context, id core.WorkItemID, ev core.Evidence) error
+	SprintsFn    func(ctx context.Context) ([]core.Sprint, error)
+	BudgetRollFn func(ctx context.Context, sprintID string) (core.BudgetRollup, error)
+
+	mu          sync.Mutex
+	describeN   int
+	getCalls    []core.WorkItemID
+	listCalls   []core.WorkItemFilter
+	attachCalls []FakeAttachCall
+	updateCalls []FakeUpdateCall
+	createCalls []core.WorkItem
+	budgetCalls []string
+	sprintsN    int
+}
+
+// FakeAttachCall captures an AttachEvidence invocation.
+type FakeAttachCall struct {
+	ID       core.WorkItemID
+	Evidence core.Evidence
+}
+
+// FakeUpdateCall captures an UpdateWorkItem invocation.
+type FakeUpdateCall struct {
+	ID    core.WorkItemID
+	Patch core.WorkItemPatch
 }
 
 // NewFakeWorkPlane returns a FakeWorkPlane with a conformant manifest for
-// the given transport. Callers override fields as needed for mismatch tests.
+// the given transport. Callers override fields (Manifest, DescribeErr,
+// any *Fn hook) as needed.
 func NewFakeWorkPlane(transport core.Transport) *FakeWorkPlane {
 	return &FakeWorkPlane{
 		Manifest: core.CapabilityManifest{
@@ -38,31 +77,140 @@ func NewFakeWorkPlane(transport core.Transport) *FakeWorkPlane {
 	}
 }
 
+// DescribeCalls returns the number of times Describe has been invoked.
+func (f *FakeWorkPlane) DescribeCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.describeN
+}
+
+// GetCalls returns a copy of every GetWorkItem id observed.
+func (f *FakeWorkPlane) GetCalls() []core.WorkItemID {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]core.WorkItemID(nil), f.getCalls...)
+}
+
+// ListCalls returns a copy of every ListWorkItems filter observed.
+func (f *FakeWorkPlane) ListCalls() []core.WorkItemFilter {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]core.WorkItemFilter(nil), f.listCalls...)
+}
+
+// CreateCalls returns a copy of every CreateWorkItem payload observed.
+func (f *FakeWorkPlane) CreateCalls() []core.WorkItem {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]core.WorkItem(nil), f.createCalls...)
+}
+
+// UpdateCalls returns a copy of every UpdateWorkItem invocation.
+func (f *FakeWorkPlane) UpdateCalls() []FakeUpdateCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]FakeUpdateCall(nil), f.updateCalls...)
+}
+
+// AttachCalls returns a copy of every AttachEvidence invocation.
+func (f *FakeWorkPlane) AttachCalls() []FakeAttachCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]FakeAttachCall(nil), f.attachCalls...)
+}
+
+// BudgetCalls returns a copy of every ReadBudgetRollup sprint id observed.
+func (f *FakeWorkPlane) BudgetCalls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.budgetCalls...)
+}
+
+// SprintsCalls returns the number of times ListSprints has been invoked.
+func (f *FakeWorkPlane) SprintsCalls() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sprintsN
+}
+
 func (f *FakeWorkPlane) Describe(_ context.Context) (core.CapabilityManifest, error) {
+	f.mu.Lock()
+	f.describeN++
+	f.mu.Unlock()
 	if f.DescribeErr != nil {
 		return core.CapabilityManifest{}, f.DescribeErr
 	}
 	return f.Manifest, nil
 }
 
-func (*FakeWorkPlane) ListWorkItems(context.Context, core.WorkItemFilter) ([]core.WorkItem, error) {
-	return nil, errors.New("fake: ListWorkItems not implemented")
+func (f *FakeWorkPlane) ListWorkItems(ctx context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error) {
+	f.mu.Lock()
+	f.listCalls = append(f.listCalls, filter)
+	f.mu.Unlock()
+	if f.ListFn == nil {
+		return nil, errors.New("fake: ListWorkItems not programmed")
+	}
+	return f.ListFn(ctx, filter)
 }
-func (*FakeWorkPlane) GetWorkItem(context.Context, core.WorkItemID) (core.WorkItem, error) {
-	return core.WorkItem{}, core.ErrNotFound
+
+func (f *FakeWorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error) {
+	f.mu.Lock()
+	f.getCalls = append(f.getCalls, id)
+	f.mu.Unlock()
+	if f.GetFn == nil {
+		return core.WorkItem{}, core.ErrNotFound
+	}
+	return f.GetFn(ctx, id)
 }
-func (*FakeWorkPlane) CreateWorkItem(context.Context, core.WorkItem) (core.WorkItem, error) {
-	return core.WorkItem{}, errors.New("fake: CreateWorkItem not implemented")
+
+func (f *FakeWorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.WorkItem, error) {
+	f.mu.Lock()
+	f.createCalls = append(f.createCalls, wi)
+	f.mu.Unlock()
+	if f.CreateFn == nil {
+		return core.WorkItem{}, errors.New("fake: CreateWorkItem not programmed")
+	}
+	return f.CreateFn(ctx, wi)
 }
-func (*FakeWorkPlane) UpdateWorkItem(context.Context, core.WorkItemID, core.WorkItemPatch) (core.WorkItem, error) {
-	return core.WorkItem{}, errors.New("fake: UpdateWorkItem not implemented")
+
+func (f *FakeWorkPlane) UpdateWorkItem(ctx context.Context, id core.WorkItemID, patch core.WorkItemPatch) (core.WorkItem, error) {
+	f.mu.Lock()
+	f.updateCalls = append(f.updateCalls, FakeUpdateCall{ID: id, Patch: patch})
+	f.mu.Unlock()
+	if f.UpdateFn == nil {
+		return core.WorkItem{}, errors.New("fake: UpdateWorkItem not programmed")
+	}
+	return f.UpdateFn(ctx, id, patch)
 }
-func (*FakeWorkPlane) AttachEvidence(context.Context, core.WorkItemID, core.Evidence) error {
-	return core.ErrUnsupported
+
+func (f *FakeWorkPlane) AttachEvidence(ctx context.Context, id core.WorkItemID, ev core.Evidence) error {
+	f.mu.Lock()
+	f.attachCalls = append(f.attachCalls, FakeAttachCall{ID: id, Evidence: ev})
+	f.mu.Unlock()
+	if f.AttachFn == nil {
+		return core.ErrUnsupported
+	}
+	return f.AttachFn(ctx, id, ev)
 }
-func (*FakeWorkPlane) ListSprints(context.Context) ([]core.Sprint, error) { return nil, nil }
-func (*FakeWorkPlane) ReadBudgetRollup(context.Context, string) (core.BudgetRollup, error) {
-	return core.BudgetRollup{}, core.ErrUnsupported
+
+func (f *FakeWorkPlane) ListSprints(ctx context.Context) ([]core.Sprint, error) {
+	f.mu.Lock()
+	f.sprintsN++
+	f.mu.Unlock()
+	if f.SprintsFn == nil {
+		return nil, nil
+	}
+	return f.SprintsFn(ctx)
+}
+
+func (f *FakeWorkPlane) ReadBudgetRollup(ctx context.Context, sprintID string) (core.BudgetRollup, error) {
+	f.mu.Lock()
+	f.budgetCalls = append(f.budgetCalls, sprintID)
+	f.mu.Unlock()
+	if f.BudgetRollFn == nil {
+		return core.BudgetRollup{}, core.ErrUnsupported
+	}
+	return f.BudgetRollFn(ctx, sprintID)
 }
 
 // FakeOrchestrationPlane is the OrchestrationPlaneAdaptor analogue.
