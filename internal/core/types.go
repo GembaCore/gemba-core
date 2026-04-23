@@ -30,6 +30,7 @@ type AgentID string
 //   - Custom is an escape hatch for adaptor-specific fields that don't
 //     map onto any cross-cutting primitive. The UI only renders them
 //     inside `web/src/extensions/<adaptor-id>/` (gm-root DD-4).
+//
 // Canonical cross-adaptor tokens for WorkItem.Kind (and
 // WorkItemFilter.Kinds). Adaptors MAY emit additional kinds beyond
 // these constants; the set here exists so core-layer callers (filters,
