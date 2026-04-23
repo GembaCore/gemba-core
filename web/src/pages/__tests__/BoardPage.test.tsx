@@ -42,6 +42,11 @@ describe('BoardPage', () => {
     expect(screen.getAllByTestId('board-skeleton-card').length).toBeGreaterThan(0);
   });
 
+  // Mocks emit the real server wire shape — {items,total} — so the
+  // test exercises listBeads' envelope unwrap (gm-root.1.8). Iterating
+  // the envelope object directly would throw "TypeError: i is not
+  // iterable" on line 26 of BoardPage; this is the integration test
+  // called out in the bug's Definition of Done.
   it('renders 5 columns with beads grouped by state_category', async () => {
     const data: WorkItem[] = [
       bead('gm-a', 'started'),
@@ -50,7 +55,7 @@ describe('BoardPage', () => {
       bead('gm-d', 'completed'),
     ];
     fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify(data), {
+      new Response(JSON.stringify({ items: data, total: data.length }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
@@ -67,7 +72,10 @@ describe('BoardPage', () => {
 
   it('shows empty state when the adaptor returns zero beads', async () => {
     fetchSpy.mockResolvedValueOnce(
-      new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })
+      new Response(JSON.stringify({ items: [], total: 0 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
     );
     render(wrap(<BoardPage />));
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
@@ -85,7 +93,10 @@ describe('BoardPage', () => {
         })
       )
       .mockResolvedValueOnce(
-        new Response('[]', { status: 200, headers: { 'Content-Type': 'application/json' } })
+        new Response(JSON.stringify({ items: [], total: 0 }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
       );
     render(wrap(<BoardPage />));
     await waitFor(() => expect(screen.getByTestId('board-error')).toBeTruthy());

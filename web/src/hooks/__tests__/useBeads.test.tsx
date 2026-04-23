@@ -39,9 +39,12 @@ describe('useBeads', () => {
     fetchSpy.mockReset();
   });
 
+  // Mock emits the real server wire shape — the {items,total} envelope
+  // (gm-peg) — so useBeads exercises the listBeads unwrap path (gm-root.1.8).
+  // A bare-array mock would hide the envelope regression.
   it('returns data on success', async () => {
     fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify([sampleItem]), {
+      new Response(JSON.stringify({ items: [sampleItem], total: 1 }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
