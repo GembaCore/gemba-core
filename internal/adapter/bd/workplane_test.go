@@ -157,6 +157,9 @@ func (f *fakeBd) handleCreate(args []string) ([]byte, error) {
 		case "--assignee":
 			b.Assignee = args[i+1]
 			i++
+		case "--parent":
+			b.Parent = args[i+1]
+			i++
 		case "--json":
 			// default
 		}
@@ -590,6 +593,53 @@ func TestBeadsCreateWorkItemThenListContainsIt(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("ListWorkItems did not return just-created id %q (got %d items)", created.ID, len(items))
+	}
+}
+
+// TestBeadsCreateWorkItemPassesParent asserts the parent_child
+// Relationship with To="" on CreateWorkItem maps to `bd create
+// --parent <id>`. The epic-drawer create flow (gm-e12.10) carries the
+// parent epic through this shape so the new bead lands in the right
+// hierarchy without an extra round-trip.
+func TestBeadsCreateWorkItemPassesParent(t *testing.T) {
+	impl := bd.NewWorkPlaneWithRunner(newFakeBd(t).run, "")
+	ctx := context.Background()
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title:  "child of an epic",
+		Kind:   "task",
+		Status: "open",
+		Relationships: []core.Relationship{
+			{Kind: core.RelParentChild, From: core.WorkItemID("gm-epic-a"), To: ""},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	if got := created.Custom["beads:parent"]; got != "gm-epic-a" {
+		t.Errorf("beads:parent custom=%v, want gm-epic-a", got)
+	}
+}
+
+// TestBeadsCreateWorkItemStripsPrefixOnParent verifies rig-prefixed
+// parent ids ("gemba/gm-epic-a") get stripped to the bare bd id before
+// the CLI call. Callers routinely pass the prefixed form because that's
+// what the read path returns.
+func TestBeadsCreateWorkItemStripsPrefixOnParent(t *testing.T) {
+	impl := bd.NewWorkPlaneWithRunner(newFakeBd(t).run, "gemba")
+	ctx := context.Background()
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title:  "prefixed parent child",
+		Kind:   "task",
+		Status: "open",
+		Relationships: []core.Relationship{
+			{Kind: core.RelParentChild, From: core.WorkItemID("gemba/gm-epic-a"), To: ""},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	if got := created.Custom["beads:parent"]; got != "gm-epic-a" {
+		t.Errorf("beads:parent custom=%v, want gm-epic-a (prefix stripped)", got)
 	}
 }
 

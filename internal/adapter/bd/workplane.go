@@ -386,6 +386,14 @@ func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.
 	if wi.Assignee != nil && wi.Assignee.ID != "" {
 		args = append(args, "--assignee", string(wi.Assignee.ID))
 	}
+	// Parent is carried as a Relationship{Kind: parent_child, From: parent, To: ""}.
+	// `To` is empty on create because the new bead's id isn't known yet.
+	// bd's CLI accepts the raw id (with or without prefix); nativeID
+	// strips the rig-prefix so a caller passing "gemba/gm-a3" ends up
+	// invoking `--parent gm-a3`, matching how bd names beads internally.
+	if parent := parentOnCreate(wi.Relationships); parent != "" {
+		args = append(args, "--parent", nativeID(w.prefix, parent))
+	}
 
 	out, err := w.run(ctx, args...)
 	if err != nil {

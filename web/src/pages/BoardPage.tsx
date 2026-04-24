@@ -12,17 +12,18 @@
 //   /board/:epicId?bead=X        → Epic drawer + WorkItemDrawer stacked
 //                                  (child drill-down, deep-linkable)
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   useNavigate,
   useParams,
   useSearchParams,
 } from 'react-router-dom';
-import { LayoutGrid, ListChecks, RotateCcw } from 'lucide-react';
+import { LayoutGrid, ListChecks, Plus, RotateCcw } from 'lucide-react';
 import { BoardColumn } from '@/components/board/BoardColumn';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
 import { EpicDrawer } from '@/components/board/EpicDrawer';
 import { EpicView } from '@/components/board/EpicView';
+import { NewWorkItemDialog } from '@/components/board/NewWorkItemDialog';
 import {
   DEFAULT_SWIMLANE_MODE,
   parseSwimlaneMode,
@@ -135,10 +136,11 @@ export function BoardPage() {
     navigate({ pathname: '/board', search: search ? `?${search}` : '' });
   }, [navigate, params]);
 
+  const [newItemOpen, setNewItemOpen] = useState(false);
+
   if (isLoading) return <SkeletonBoard />;
   if (isError)
     return <ErrorState message={error?.message ?? 'Unknown error.'} onRetry={() => void refetch()} />;
-  if (!data || data.length === 0) return <EmptyState />;
 
   return (
     <>
@@ -147,8 +149,11 @@ export function BoardPage() {
         onChangeView={setView}
         swimlane={swimlane}
         onChangeSwimlane={setSwimlane}
+        onNewWorkItem={() => setNewItemOpen(true)}
       />
-      {view === 'epic' ? (
+      {!data || data.length === 0 ? (
+        <EmptyState onCreate={() => setNewItemOpen(true)} />
+      ) : view === 'epic' ? (
         <EpicView items={data} onSelectEpic={openEpic} mode={swimlane} />
       ) : (
         <WorkItemBoard data={data} onSelectWorkItem={setOpenWorkItemId} />
@@ -159,6 +164,11 @@ export function BoardPage() {
         onOpenChild={(id) => setOpenWorkItemId(id)}
       />
       <WorkItemDrawer openId={openWorkItemId} onClose={() => setOpenWorkItemId(null)} />
+      <NewWorkItemDialog
+        open={newItemOpen}
+        onClose={() => setNewItemOpen(false)}
+        onCreated={(item) => setOpenWorkItemId(item.id)}
+      />
     </>
   );
 }
@@ -172,8 +182,15 @@ interface BoardHeaderProps {
   onChangeView: (v: BoardView) => void;
   swimlane: SwimlaneMode;
   onChangeSwimlane: (s: SwimlaneMode) => void;
+  onNewWorkItem: () => void;
 }
-function BoardHeader({ view, onChangeView, swimlane, onChangeSwimlane }: BoardHeaderProps) {
+function BoardHeader({
+  view,
+  onChangeView,
+  swimlane,
+  onChangeSwimlane,
+  onNewWorkItem,
+}: BoardHeaderProps) {
   return (
     <div
       data-testid="board-view-toggle"
@@ -183,6 +200,16 @@ function BoardHeader({ view, onChangeView, swimlane, onChangeSwimlane }: BoardHe
         <SwimlaneSwitcher value={swimlane} onChange={onChangeSwimlane} />
       ) : null}
       <div className="ml-auto flex items-center gap-1">
+        <button
+          type="button"
+          data-testid="board-new-workitem"
+          onClick={onNewWorkItem}
+          className="inline-flex items-center gap-1 rounded bg-neutral-900 px-2 py-1 text-xs text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+        >
+          <Plus className="h-3 w-3" />
+          New
+        </button>
+        <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
         <ToggleButton
           active={view === 'epic'}
           onClick={() => onChangeView('epic')}
@@ -345,17 +372,24 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
   );
 }
 
-function EmptyState() {
+function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div
       data-testid="board-empty"
-      className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center"
+      className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center"
     >
       <p className="text-sm text-neutral-600 dark:text-neutral-300">No beads yet.</p>
       <p className="max-w-md text-xs text-neutral-500 dark:text-neutral-400">
-        Create a bead with <code className="font-mono">bd create</code> or point{' '}
-        <code className="font-mono">gemba serve</code> at a populated beads database.
+        Create one below, or use <code className="font-mono">bd create</code> from your terminal.
       </p>
+      <button
+        type="button"
+        onClick={onCreate}
+        className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        New work item
+      </button>
     </div>
   );
 }

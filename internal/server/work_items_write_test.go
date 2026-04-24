@@ -72,6 +72,153 @@ func patchReq(t *testing.T, id, nonce string, body any) *http.Request {
 	return req
 }
 
+// ---------------------------------------------------------------------
+// POST /api/work-items (gm-e12.10)
+// ---------------------------------------------------------------------
+
+func newCreateHost(t *testing.T) (*api.Host, *[]core.WorkItem) {
+	t.Helper()
+	host := api.New()
+	wp := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	calls := []core.WorkItem{}
+	wp.CreateFn = func(_ context.Context, wi core.WorkItem) (core.WorkItem, error) {
+		calls = append(calls, wi)
+		// Echo back a materialized item with a server-assigned id so the
+		// handler's 201 envelope is exercised end-to-end.
+		out := wi
+		out.ID = "gm-new"
+		return out, nil
+	}
+	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
+		t.Fatalf("RegisterWorkPlane: %v", err)
+	}
+	return host, &calls
+}
+
+func postCreateReq(t *testing.T, nonce string, body any) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			t.Fatalf("encode body: %v", err)
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/work-items", &buf)
+	req.Header.Set("Content-Type", "application/json")
+	if nonce != "" {
+		req.Header.Set(ConfirmHeader, nonce)
+	}
+	return req
+}
+
+// Happy path: valid body + nonce returns 201 + the materialized item.
+func TestCreateWorkItem_HappyPath(t *testing.T) {
+	host, calls := newCreateHost(t)
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	body := map[string]any{
+		"item": map[string]any{
+			"title":          "new task",
+			"kind":           "task",
+			"status":         "open",
+			"state_category": "backlog",
+		},
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, postCreateReq(t, "nonce-C", body))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d; body=%q", w.Code, w.Body.String())
+	}
+	var got core.WorkItem
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v; body=%q", err, w.Body.String())
+	}
+	if got.ID != "gm-new" || got.Title != "new task" {
+		t.Fatalf("returned item mismatch: %+v", got)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("adaptor saw %d create calls, want 1", len(*calls))
+	}
+}
+
+// Missing nonce → 400.
+func TestCreateWorkItem_MissingNonce_Returns400(t *testing.T) {
+	host, calls := newCreateHost(t)
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	body := map[string]any{
+		"item": map[string]any{
+			"title": "x", "kind": "task",
+			"status": "open", "state_category": "backlog",
+		},
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, postCreateReq(t, "", body))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("handler must not run without nonce; saw %d calls", len(*calls))
+	}
+}
+
+// Empty title → 400 validation envelope from the boundary decoder.
+func TestCreateWorkItem_ValidationError(t *testing.T) {
+	host, calls := newCreateHost(t)
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	body := map[string]any{
+		"item": map[string]any{
+			"title": "", "kind": "task",
+			"status": "open", "state_category": "backlog",
+		},
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, postCreateReq(t, "nonce-V", body))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("adaptor must not see invalid input; saw %d calls", len(*calls))
+	}
+}
+
+// Parent carried as a parent_child Relationship with To="" round-trips
+// to the adaptor so the bd layer can translate it to `--parent`.
+func TestCreateWorkItem_ParentRelationshipReachesAdaptor(t *testing.T) {
+	host, calls := newCreateHost(t)
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	body := map[string]any{
+		"item": map[string]any{
+			"title":          "child",
+			"kind":           "task",
+			"status":         "open",
+			"state_category": "backlog",
+			"relationships": []map[string]any{
+				{"kind": "parent_child", "from": "gm-epic-a", "to": ""},
+			},
+		},
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, postCreateReq(t, "nonce-P", body))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("want 1 adaptor call, got %d", len(*calls))
+	}
+	rels := (*calls)[0].Relationships
+	if len(rels) != 1 || rels[0].Kind != core.RelParentChild ||
+		rels[0].From != "gm-epic-a" || rels[0].To != "" {
+		t.Fatalf("parent relationship did not reach adaptor: %+v", rels)
+	}
+}
+
 // Happy path: PATCH with a valid nonce updates the item and returns
 // the materialized WorkItem.
 func TestPatchWorkItem_HappyPath(t *testing.T) {

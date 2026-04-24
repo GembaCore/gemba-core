@@ -176,6 +176,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/work-items/{id}", r.getWorkItem)
 		// Mutations gated by the X-GEMBA-Confirm nonce so SPA
 		// double-clicks / React re-mounts can't double-apply.
+		// gm-e12.10: POST creates a new work item with optional parent
+		// (carried as a parent_child Relationship with To="").
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/work-items", r.createWorkItem)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Patch("/work-items/{id}", r.patchWorkItem)
 		// gm-root.11: WorkPlane sprints — drives the SPA's SprintPicker.

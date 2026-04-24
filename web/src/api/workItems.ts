@@ -109,6 +109,53 @@ export interface WorkItemPatch {
 // without duplicating the literal across hooks.
 export const CONFIRM_HEADER = 'X-GEMBA-Confirm';
 
+// CreateWorkItemInput is the caller-facing shape for createWorkItem.
+// Mirrors the fields the boundary decoder (transport.DecodeCreateWorkItem)
+// accepts: required kind/title/status/state_category + optional
+// description, priority, labels, assignee, relationships. Server-assigned
+// fields (id, timestamps) are not accepted here — the decoder rejects
+// them if sent.
+export interface CreateWorkItemInput {
+  kind: string;
+  title: string;
+  status: string;
+  state_category: WorkItem['state_category'];
+  description?: string;
+  priority?: number | null;
+  labels?: string[];
+  assignee?: AgentRef | null;
+  // Parent is encoded as a parent_child Relationship with To="" because
+  // the new bead's id isn't known until the adaptor assigns it. The bd
+  // adaptor translates this to `bd create --parent <id>`; adaptors that
+  // set parent differently will receive the same relationship and can
+  // translate as they see fit.
+  relationships?: { kind: string; from: string; to: string }[];
+}
+
+// createWorkItem — POST /api/work-items (gm-e12.10). Nonce-gated like
+// updateWorkItem; a caller passing the same nonce twice gets the same
+// cached 201 envelope back, not a duplicate bead.
+//
+// Server response is the materialized WorkItem with its backend-assigned
+// id and timestamps. Callers should pipe the return value into the
+// react-query cache (the useCreateWorkItem hook does this).
+export async function createWorkItem(
+  input: CreateWorkItemInput,
+  opts: { nonce?: string } = {}
+): Promise<WorkItem> {
+  if (!input.title) {
+    throw new Error('createWorkItem: title is required');
+  }
+  return apiFetch<WorkItem>('/work-items', {
+    method: 'POST',
+    body: JSON.stringify({ item: input }),
+    headers: {
+      'Content-Type': 'application/json',
+      [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+    },
+  });
+}
+
 // updateWorkItem — PATCH /api/work-items/{id}. Generates a fresh UUID nonce
 // per call so a SPA double-click can't double-apply (the server
 // caches replays per nonce and returns the cached envelope verbatim).

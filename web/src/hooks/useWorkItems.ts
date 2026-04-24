@@ -21,9 +21,11 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import {
+  createWorkItem,
   getWorkItem,
   listWorkItems,
   updateWorkItem,
+  type CreateWorkItemInput,
   type WorkItemListFilter,
   type WorkItemPatch,
 } from '@/api/workItems';
@@ -178,6 +180,35 @@ export function useUpdateWorkItem(): UseMutationResult<
       // (timestamps, derived signals).
       qc.invalidateQueries({ queryKey: workItemsKeys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: workItemsKeys.list() });
+    },
+  });
+}
+
+// useCreateWorkItem drives POST /api/work-items (gm-e12.10). On
+// success invalidates ['beads'] so the board + grid + drawer all pick
+// up the new item on their next refetch; the mutation does NOT write
+// to the cache optimistically because creation assigns the server-side
+// id (the cache key) only on completion.
+export interface CreateWorkItemVars {
+  input: CreateWorkItemInput;
+  nonce?: string;
+}
+
+export function useCreateWorkItem(): UseMutationResult<
+  WorkItem,
+  ApiError,
+  CreateWorkItemVars,
+  unknown
+> {
+  const qc = useQueryClient();
+  return useMutation<WorkItem, ApiError, CreateWorkItemVars, unknown>({
+    mutationFn: ({ input, nonce }) => createWorkItem(input, { nonce }),
+    onSuccess: (created) => {
+      // Seed the detail cache so an immediate navigate-to-drawer on the
+      // new id doesn't round-trip; invalidate the list so every board /
+      // grid watcher refetches on next interaction.
+      qc.setQueryData(workItemsKeys.detail(created.id), created);
+      qc.invalidateQueries({ queryKey: workItemsKeys.all });
     },
   });
 }

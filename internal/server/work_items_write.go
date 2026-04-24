@@ -1,9 +1,9 @@
 // Mutation handlers for /api/work-items (gm-root.8 slice 1, renamed
 // in gm-root.9).
 //
-// Today: PATCH /api/work-items/{id}. Future: POST /api/work-items
-// (create) and possibly DELETE /api/work-items/{id} (close), though
-// closing is just a PATCH to state_category=completed in our model.
+// Today: POST /api/work-items + PATCH /api/work-items/{id}. DELETE
+// is intentionally absent — closing is a PATCH to
+// state_category=completed in our model.
 
 package server
 
@@ -15,8 +15,46 @@ import (
 
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/go-chi/chi/v5"
 )
+
+// createWorkItem is POST /api/work-items. Body MUST be the boundary
+// shape accepted by transport.DecodeCreateWorkItem: `{"item": {...}}`
+// with title, kind, status, state_category all non-empty and id +
+// timestamps unset. Server-side fields land on the response.
+//
+// Response: 201 Created + the materialized core.WorkItem. SPA drops
+// it straight into the react-query cache.
+//
+// Adaptor errors flow through the shared httperr mapper with the same
+// kind→status mapping patchWorkItem uses.
+func (r *Router) createWorkItem(w http.ResponseWriter, req *http.Request) {
+	if r.host == nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"adaptor_not_configured", "no WorkPlane adaptor registered")
+		return
+	}
+	wp := r.host.WorkPlane()
+	if wp == nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"adaptor_not_configured", "no WorkPlane adaptor registered")
+		return
+	}
+
+	wi, err := api.DecodeCreateWorkItem(req)
+	if err != nil {
+		httperr.WriteError(w, err)
+		return
+	}
+
+	out, err := wp.CreateWorkItem(req.Context(), wi)
+	if err != nil {
+		httperr.WriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, out)
+}
 
 // patchWorkItem is PATCH /api/work-items/{id}. Body MUST be a
 // core.WorkItemPatch JSON object; an empty object is a no-op (the

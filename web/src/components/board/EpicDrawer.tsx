@@ -10,10 +10,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useNavigate } from 'react-router-dom';
-import { Check, Copy, Play, Send, Terminal, X } from 'lucide-react';
+import { Check, Copy, Play, Plus, Send, Terminal, X } from 'lucide-react';
 import { useUpdateWorkItem, useWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
+import { NewWorkItemDialog } from '@/components/board/NewWorkItemDialog';
 import { cn } from '@/lib/utils';
 import {
   STATE_CATEGORIES,
@@ -178,10 +179,17 @@ function EpicActions({ epic }: { epic: WorkItem }) {
   const navigate = useNavigate();
   const { orchestrationPlane } = useCapabilities();
   const [dispatchOpen, setDispatchOpen] = useState(false);
+  const [newChildOpen, setNewChildOpen] = useState(false);
   const agentClaimable = epic.derived?.agent_claimable === true;
   const isStaged = epic.state_category === 'staged';
   const isStarted = epic.state_category === 'started';
   const isTerminal = epic.state_category === 'completed' || epic.state_category === 'canceled';
+
+  // New-child is a pure create; the only hard gate is terminal state
+  // (adding children to a closed epic is almost always a mistake).
+  const newChildDisabledReason = isTerminal
+    ? 'Epic is closed; reopen before adding children.'
+    : null;
 
   // Dispatch is independent of Stage/Start: starting a session for a
   // bead is the operator's call regardless of whether the epic itself
@@ -246,12 +254,27 @@ function EpicActions({ epic }: { epic: WorkItem }) {
         disabledReason={dispatchDisabledReason}
         testid="epic-drawer-dispatch"
       />
+      <ActionButton
+        label="New child"
+        icon={<Plus className="h-3 w-3" />}
+        onClick={() => setNewChildOpen(true)}
+        disabledReason={newChildDisabledReason}
+        testid="epic-drawer-new-child"
+      />
       {dispatchOpen ? (
         <NewSessionDialog
           open={dispatchOpen}
           onClose={() => setDispatchOpen(false)}
           prefilledBeadId={epic.id}
           onStarted={() => navigate('/sessions')}
+        />
+      ) : null}
+      {newChildOpen ? (
+        <NewWorkItemDialog
+          open={newChildOpen}
+          onClose={() => setNewChildOpen(false)}
+          parentId={epic.id}
+          parentTitle={epic.title}
         />
       ) : null}
     </div>

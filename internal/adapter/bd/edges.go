@@ -157,3 +157,17 @@ func (e BeadEdge) linkedID() string {
 	}
 	return e.ID
 }
+
+// parentOnCreate extracts the parent id the caller passed on
+// CreateWorkItem. Convention: a Relationship{Kind: parent_child,
+// From: parent, To: ""} carries the parent. `To` is empty because the
+// new bead's id isn't minted yet; multiple parent_child edges with
+// non-empty `To` are read-side only and ignored here. First match wins.
+func parentOnCreate(rels []core.Relationship) core.WorkItemID {
+	for _, r := range rels {
+		if r.Kind == core.RelParentChild && r.From != "" && r.To == "" {
+			return r.From
+		}
+	}
+	return ""
+}
