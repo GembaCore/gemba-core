@@ -64,7 +64,7 @@ func patchReq(t *testing.T, id, nonce string, body any) *http.Request {
 			t.Fatalf("encode body: %v", err)
 		}
 	}
-	req := httptest.NewRequest(http.MethodPatch, "/api/beads/"+id, &buf)
+	req := httptest.NewRequest(http.MethodPatch, "/api/work-items/"+id, &buf)
 	req.Header.Set("Content-Type", "application/json")
 	if nonce != "" {
 		req.Header.Set(ConfirmHeader, nonce)
@@ -74,7 +74,7 @@ func patchReq(t *testing.T, id, nonce string, body any) *http.Request {
 
 // Happy path: PATCH with a valid nonce updates the item and returns
 // the materialized WorkItem.
-func TestPatchBead_HappyPath(t *testing.T) {
+func TestPatchWorkItem_HappyPath(t *testing.T) {
 	host, rec := newPatchHost(t)
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
@@ -101,7 +101,7 @@ func TestPatchBead_HappyPath(t *testing.T) {
 
 // Missing nonce → 400 missing_confirm_nonce. The handler MUST NOT have
 // run (rec.patches stays empty).
-func TestPatchBead_MissingNonce_Returns400(t *testing.T) {
+func TestPatchWorkItem_MissingNonce_Returns400(t *testing.T) {
 	host, rec := newPatchHost(t)
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
@@ -125,7 +125,7 @@ func TestPatchBead_MissingNonce_Returns400(t *testing.T) {
 // Replay: same nonce, second PATCH returns the cached response and the
 // adaptor sees only one update. Verbatim status and body so a client
 // retry is genuinely idempotent.
-func TestPatchBead_ReplayReturnsCached(t *testing.T) {
+func TestPatchWorkItem_ReplayReturnsCached(t *testing.T) {
 	host, rec := newPatchHost(t)
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
@@ -156,7 +156,7 @@ func TestPatchBead_ReplayReturnsCached(t *testing.T) {
 
 // Adaptor returns KindReadOnly (the dolt-url path) → 405. The shared
 // httperr mapper handles the conversion; this test pins the gate.
-func TestPatchBead_ReadOnlyAdaptor_Returns405(t *testing.T) {
+func TestPatchWorkItem_ReadOnlyAdaptor_Returns405(t *testing.T) {
 	host, rec := newPatchHost(t)
 	rec.updateRet = func(_ core.WorkItemID, _ core.WorkItemPatch) (core.WorkItem, error) {
 		return core.WorkItem{}, core.NewAdaptorError(core.KindReadOnly,
@@ -172,7 +172,7 @@ func TestPatchBead_ReadOnlyAdaptor_Returns405(t *testing.T) {
 }
 
 // Adaptor returns KindAdaptorDegraded → 503.
-func TestPatchBead_AdaptorDegraded_Returns503(t *testing.T) {
+func TestPatchWorkItem_AdaptorDegraded_Returns503(t *testing.T) {
 	host, rec := newPatchHost(t)
 	rec.updateRet = func(_ core.WorkItemID, _ core.WorkItemPatch) (core.WorkItem, error) {
 		return core.WorkItem{}, core.NewAdaptorError(core.KindAdaptorDegraded,
@@ -189,7 +189,7 @@ func TestPatchBead_AdaptorDegraded_Returns503(t *testing.T) {
 
 // Wrapped ErrNotFound is tagged in-handler so the envelope is
 // self-describing — mirrors the GET handler's behaviour.
-func TestPatchBead_NotFoundIsTagged(t *testing.T) {
+func TestPatchWorkItem_NotFoundIsTagged(t *testing.T) {
 	host, rec := newPatchHost(t)
 	rec.updateRet = func(id core.WorkItemID, _ core.WorkItemPatch) (core.WorkItem, error) {
 		return core.WorkItem{}, core.ErrNotFound
@@ -214,12 +214,12 @@ func TestPatchBead_NotFoundIsTagged(t *testing.T) {
 
 // Body with unknown fields → 400. Keeps the wire schema honest so a
 // typo in the patch payload can't be silently dropped.
-func TestPatchBead_UnknownField_Returns400(t *testing.T) {
+func TestPatchWorkItem_UnknownField_Returns400(t *testing.T) {
 	host, _ := newPatchHost(t)
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
 	body := bytes.NewBufferString(`{"not_a_real_field":"x"}`)
-	req := httptest.NewRequest(http.MethodPatch, "/api/beads/gm-1", body)
+	req := httptest.NewRequest(http.MethodPatch, "/api/work-items/gm-1", body)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(ConfirmHeader, "nonce-bad")
 	w := httptest.NewRecorder()
@@ -232,7 +232,7 @@ func TestPatchBead_UnknownField_Returns400(t *testing.T) {
 
 // Workspace-prefixed ids ("gemba/gemba/gm-foo") MUST be path-decoded
 // before reaching the adaptor — same contract as the GET handler.
-func TestPatchBead_URLEncodedSlashes_DecodedBeforeUpdate(t *testing.T) {
+func TestPatchWorkItem_URLEncodedSlashes_DecodedBeforeUpdate(t *testing.T) {
 	host, rec := newPatchHost(t)
 	var got core.WorkItemID
 	rec.updateRet = func(id core.WorkItemID, patch core.WorkItemPatch) (core.WorkItem, error) {
@@ -243,7 +243,7 @@ func TestPatchBead_URLEncodedSlashes_DecodedBeforeUpdate(t *testing.T) {
 
 	body, _ := json.Marshal(core.WorkItemPatch{Title: ptr("ok")})
 	req := httptest.NewRequest(http.MethodPatch,
-		"/api/beads/gemba%2Fgemba%2Fgm-foo", bytes.NewReader(body))
+		"/api/work-items/gemba%2Fgemba%2Fgm-foo", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(ConfirmHeader, "nonce-prefix")
 	w := httptest.NewRecorder()
@@ -258,7 +258,7 @@ func TestPatchBead_URLEncodedSlashes_DecodedBeforeUpdate(t *testing.T) {
 }
 
 // No host wired → 503 adaptor_not_configured. Mirrors the GET handler.
-func TestPatchBead_NoHost_Returns503(t *testing.T) {
+func TestPatchWorkItem_NoHost_Returns503(t *testing.T) {
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 
 	w := httptest.NewRecorder()

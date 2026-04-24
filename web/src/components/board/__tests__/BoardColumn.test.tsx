@@ -40,7 +40,7 @@ describe('BoardColumn', () => {
     );
     const list = container.querySelector('ol') as HTMLElement;
     const cards = within(list).getAllByRole('listitem');
-    const ids = cards.map((li) => li.querySelector('[data-bead-id]')?.getAttribute('data-bead-id'));
+    const ids = cards.map((li) => li.querySelector('[data-work-item-id]')?.getAttribute('data-work-item-id'));
     expect(ids).toEqual(['gm-p0-fresh', 'gm-p0', 'gm-p2', 'gm-none']);
   });
 

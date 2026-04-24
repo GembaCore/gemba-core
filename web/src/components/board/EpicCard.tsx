@@ -1,5 +1,5 @@
 // EpicCard (gm-root.6 / ui-spec §4.2): the primary card on the board's
-// default Epic-primary view. Differences from BeadCard:
+// default Epic-primary view. Differences from WorkItemCard:
 //   - kind chip ("EPIC") replaces the implicit-task look
 //   - child progress bar replaces the assignee/glyphs row
 //   - clicking opens the EpicDrawer, not the WorkItem drawer
@@ -79,7 +79,7 @@ export function EpicCard({ item, childCounts, onSelect }: EpicCardProps) {
 
   return (
     <article
-      data-bead-id={item.id}
+      data-work-item-id={item.id}
       data-epic-card="true"
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}

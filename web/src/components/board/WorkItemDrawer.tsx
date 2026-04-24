@@ -1,5 +1,5 @@
-// BeadDrawer (gm-qai / M1.7c): right-side drill-in that renders every
-// attribute of a WorkItem returned by useBead(id).
+// WorkItemDrawer (gm-qai / M1.7c): right-side drill-in that renders every
+// attribute of a WorkItem returned by useWorkItem(id).
 //
 // Controlled by the parent via (openId, onClose). Internally maintains a
 // small nav stack so clicking a Relationship swaps the drawer to the
@@ -23,7 +23,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ArrowLeft, Check, Copy, Pencil, X } from 'lucide-react';
-import { useBead, useUpdateBead } from '@/hooks/useBeads';
+import { useWorkItem, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
@@ -31,17 +31,17 @@ import type { Evidence } from '@/types/core.gen';
 import { rendererFor } from './descriptionRenderers';
 import { canEdit } from './canEdit';
 
-export interface BeadDrawerProps {
+export interface WorkItemDrawerProps {
   // Bead id to show. null keeps the drawer closed. Changing this prop
   // resets the internal nav stack (treat it as parent-initiated open).
   openId: string | null;
   onClose: () => void;
 }
 
-export function BeadDrawer({ openId, onClose }: BeadDrawerProps) {
+export function WorkItemDrawer({ openId, onClose }: WorkItemDrawerProps) {
   // Seed from openId so the first render already has a currentId —
   // otherwise Radix briefly mounts <Dialog.Content> without a
-  // <Dialog.Title> (rendered by BeadDrawerBody) and logs an a11y
+  // <Dialog.Title> (rendered by WorkItemDrawerBody) and logs an a11y
   // warning before the effect runs.
   const [stack, setStack] = useState<string[]>(() => (openId ? [openId] : []));
 
@@ -79,15 +79,15 @@ export function BeadDrawer({ openId, onClose }: BeadDrawerProps) {
       <Dialog.Portal>
         <Dialog.Overlay
           className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0"
-          data-testid="bead-drawer-overlay"
+          data-testid="work-item-drawer-overlay"
         />
         <Dialog.Content
           aria-describedby={undefined}
           className="fixed right-0 top-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-neutral-200 bg-white shadow-xl outline-none dark:border-neutral-800 dark:bg-neutral-950 data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right"
-          data-testid="bead-drawer-content"
+          data-testid="work-item-drawer-content"
         >
           {currentId ? (
-            <BeadDrawerBody
+            <WorkItemDrawerBody
               id={currentId}
               canGoBack={canGoBack}
               onBack={goBack}
@@ -100,28 +100,28 @@ export function BeadDrawer({ openId, onClose }: BeadDrawerProps) {
   );
 }
 
-interface BeadDrawerBodyProps {
+interface WorkItemDrawerBodyProps {
   id: string;
   canGoBack: boolean;
   onBack: () => void;
   onNavigate: (id: string) => void;
 }
 
-function BeadDrawerBody({ id, canGoBack, onBack, onNavigate }: BeadDrawerBodyProps) {
-  const { data, isLoading, error } = useBead(id);
+function WorkItemDrawerBody({ id, canGoBack, onBack, onNavigate }: WorkItemDrawerBodyProps) {
+  const { data, isLoading, error } = useWorkItem(id);
 
   return (
     <>
       <DrawerHeader id={id} title={data?.title ?? ''} canGoBack={canGoBack} onBack={onBack} />
-      <div className="flex-1 overflow-y-auto px-6 pb-10" data-testid="bead-drawer-scroll">
+      <div className="flex-1 overflow-y-auto px-6 pb-10" data-testid="work-item-drawer-scroll">
         {isLoading ? (
-          <div className="py-8 text-sm text-neutral-500" data-testid="bead-drawer-loading">
+          <div className="py-8 text-sm text-neutral-500" data-testid="work-item-drawer-loading">
             Loading bead…
           </div>
         ) : error ? (
           <div
             className="py-8 text-sm text-red-600 dark:text-red-400"
-            data-testid="bead-drawer-error"
+            data-testid="work-item-drawer-error"
           >
             {error.message}
           </div>
@@ -166,7 +166,7 @@ function DrawerHeader({
           onClick={onBack}
           className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
           aria-label="Back"
-          data-testid="bead-drawer-back"
+          data-testid="work-item-drawer-back"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
@@ -176,7 +176,7 @@ function DrawerHeader({
           {title || id}
         </Dialog.Title>
         <div className="mt-1 flex items-center gap-1 text-xs text-neutral-500">
-          <span className="font-mono" data-testid="bead-drawer-id">
+          <span className="font-mono" data-testid="work-item-drawer-id">
             {id}
           </span>
           <button
@@ -184,7 +184,7 @@ function DrawerHeader({
             onClick={copyId}
             className="rounded p-0.5 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
             aria-label="Copy bead ID"
-            data-testid="bead-drawer-copy"
+            data-testid="work-item-drawer-copy"
           >
             {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           </button>
@@ -193,7 +193,7 @@ function DrawerHeader({
       <Dialog.Close
         className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
         aria-label="Close"
-        data-testid="bead-drawer-close"
+        data-testid="work-item-drawer-close"
       >
         <X className="h-4 w-4" />
       </Dialog.Close>
@@ -216,7 +216,7 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   const DescriptionRenderer = rendererFor(workPlane?.description_format);
   const adaptorReadOnly = workPlane?.read_only === true;
   const editCtx = { item, adaptorReadOnly };
-  const update = useUpdateBead();
+  const update = useUpdateWorkItem();
 
   return (
     <div className="space-y-6 pt-4">
@@ -258,7 +258,7 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
           />
         </div>
         {update.isError ? (
-          <div className="mt-2 text-xs text-rose-600 dark:text-rose-400" data-testid="bead-edit-error">
+          <div className="mt-2 text-xs text-rose-600 dark:text-rose-400" data-testid="work-item-edit-error">
             {update.error?.message ?? 'Update failed.'}
           </div>
         ) : null}
@@ -434,7 +434,7 @@ function TitleEditor({
 
   if (editing) {
     return (
-      <div className="space-y-2" data-testid="bead-title-editing">
+      <div className="space-y-2" data-testid="work-item-title-editing">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -464,7 +464,7 @@ function TitleEditor({
             }}
             disabled={saving}
             className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
-            data-testid="bead-title-save"
+            data-testid="work-item-title-save"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -484,7 +484,7 @@ function TitleEditor({
           onClick={() => setEditing(true)}
           className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
           aria-label="Edit title"
-          data-testid="bead-title-edit"
+          data-testid="work-item-title-edit"
         >
           <Pencil className="h-3 w-3" />
         </button>
@@ -513,7 +513,7 @@ function PriorityEditor({
   }
   const value = item.priority ?? '';
   return (
-    <label className="inline-flex items-center gap-1 text-xs" data-testid="bead-priority-editor">
+    <label className="inline-flex items-center gap-1 text-xs" data-testid="work-item-priority-editor">
       <span className="text-neutral-500">P</span>
       <select
         value={value}
@@ -563,7 +563,7 @@ function LabelsEditor({
 
   if (editing) {
     return (
-      <div className="space-y-2" data-testid="bead-labels-editing">
+      <div className="space-y-2" data-testid="work-item-labels-editing">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -595,7 +595,7 @@ function LabelsEditor({
             }}
             disabled={saving}
             className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
-            data-testid="bead-labels-save"
+            data-testid="work-item-labels-save"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -628,7 +628,7 @@ function LabelsEditor({
           onClick={() => setEditing(true)}
           className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
           aria-label="Edit labels"
-          data-testid="bead-labels-edit"
+          data-testid="work-item-labels-edit"
         >
           <Pencil className="h-3 w-3" />
         </button>
@@ -663,7 +663,7 @@ function StatusEditor({
     );
   }
   return (
-    <label className="inline-flex items-center gap-1 text-xs" data-testid="bead-status-editor">
+    <label className="inline-flex items-center gap-1 text-xs" data-testid="work-item-status-editor">
       <span className="text-neutral-500">status</span>
       <select
         value={item.status}
@@ -724,7 +724,7 @@ function CloseButton({
         'dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900',
         disabled && 'opacity-60'
       )}
-      data-testid="bead-close-button"
+      data-testid="work-item-close-button"
     >
       Close
     </button>
@@ -760,7 +760,7 @@ function DescriptionEditor({
 
   if (editing) {
     return (
-      <div className="space-y-2" data-testid="bead-description-editing">
+      <div className="space-y-2" data-testid="work-item-description-editing">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -788,7 +788,7 @@ function DescriptionEditor({
             }}
             disabled={saving}
             className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
-            data-testid="bead-description-save"
+            data-testid="work-item-description-save"
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -809,7 +809,7 @@ function DescriptionEditor({
           type="button"
           onClick={() => setEditing(true)}
           className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
-          data-testid="bead-description-edit"
+          data-testid="work-item-description-edit"
         >
           <Pencil className="h-3 w-3" />
           {item.description ? 'Edit' : 'Add description'}

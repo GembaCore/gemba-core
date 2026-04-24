@@ -20,10 +20,10 @@ describe('apiFetch', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    const body = await apiFetch<{ ok: boolean }>('/beads');
+    const body = await apiFetch<{ ok: boolean }>('/work-items');
     expect(body).toEqual({ ok: true });
     expect(fetchSpy).toHaveBeenCalledWith(
-      `${API_BASE}/beads`,
+      `${API_BASE}/work-items`,
       expect.objectContaining({
         headers: expect.objectContaining({ Accept: 'application/json' }),
       })
@@ -37,7 +37,7 @@ describe('apiFetch', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    await expect(apiFetch('/beads/gm-x')).rejects.toMatchObject({
+    await expect(apiFetch('/work-items/gm-x')).rejects.toMatchObject({
       name: 'ApiError',
       status: 404,
       code: 'session_not_found',
@@ -53,7 +53,7 @@ describe('apiFetch', () => {
       })
     );
     try {
-      await apiFetch('/beads');
+      await apiFetch('/work-items');
       expect.fail('expected ApiError');
     } catch (e) {
       expect(e).toBeInstanceOf(ApiError);
@@ -71,7 +71,7 @@ describe('apiFetch', () => {
       })
     );
     try {
-      await apiFetch('/beads');
+      await apiFetch('/work-items');
       expect.fail('expected ApiError');
     } catch (e) {
       expect((e as ApiError).isAdaptorDegraded).toBe(true);
@@ -85,7 +85,7 @@ describe('apiFetch', () => {
         statusText: 'Bad Gateway',
       })
     );
-    await expect(apiFetch('/beads')).rejects.toMatchObject({
+    await expect(apiFetch('/work-items')).rejects.toMatchObject({
       status: 502,
       code: 'bad_envelope',
     });
@@ -93,7 +93,7 @@ describe('apiFetch', () => {
 
   it('synthesizes a network error when fetch rejects', async () => {
     fetchSpy.mockRejectedValueOnce(new TypeError('Failed to fetch'));
-    await expect(apiFetch('/beads')).rejects.toMatchObject({
+    await expect(apiFetch('/work-items')).rejects.toMatchObject({
       status: 0,
       code: 'network',
     });

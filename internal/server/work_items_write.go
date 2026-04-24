@@ -1,8 +1,9 @@
-// Mutation handlers for /api/beads (gm-root.8 slice 1).
+// Mutation handlers for /api/work-items (gm-root.8 slice 1, renamed
+// in gm-root.9).
 //
-// Today: PATCH /api/beads/{id}. Future: POST /api/beads (create) and
-// possibly DELETE /api/beads/{id} (close), though closing is just a
-// PATCH to state_category=completed in our model.
+// Today: PATCH /api/work-items/{id}. Future: POST /api/work-items
+// (create) and possibly DELETE /api/work-items/{id} (close), though
+// closing is just a PATCH to state_category=completed in our model.
 
 package server
 
@@ -17,12 +18,13 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// patchBead is PATCH /api/beads/{id}. Body MUST be a core.WorkItemPatch
-// JSON object; an empty object is a no-op (the underlying adaptor still
-// returns the current item, useful for round-tripping a state probe).
+// patchWorkItem is PATCH /api/work-items/{id}. Body MUST be a
+// core.WorkItemPatch JSON object; an empty object is a no-op (the
+// underlying adaptor still returns the current item, useful for
+// round-tripping a state probe).
 //
-// Response shape: 200 + the materialized core.WorkItem (so the SPA can
-// drop the result straight into its react-query cache).
+// Response shape: 200 + the materialized core.WorkItem (so the SPA
+// can drop the result straight into its react-query cache).
 //
 // Adaptor errors flow through the shared httperr mapper:
 //
@@ -31,16 +33,16 @@ import (
 //	core.KindAdaptorDegraded → 503 adaptor_degraded
 //	core.KindSessionNotFound → 404 session_not_found
 //	(untagged)               → 500 internal             (Conformance Group F violation)
-func (r *Router) patchBead(w http.ResponseWriter, req *http.Request) {
+func (r *Router) patchWorkItem(w http.ResponseWriter, req *http.Request) {
 	raw := chi.URLParam(req, "id")
 	if raw == "" {
-		httperr.Write(w, http.StatusBadRequest, "bad_request", "missing bead id")
+		httperr.Write(w, http.StatusBadRequest, "bad_request", "missing work item id")
 		return
 	}
 	id, err := url.PathUnescape(raw)
 	if err != nil {
 		httperr.Write(w, http.StatusBadRequest, "bad_request",
-			"malformed bead id: "+err.Error())
+			"malformed work item id: "+err.Error())
 		return
 	}
 
@@ -67,7 +69,7 @@ func (r *Router) patchBead(w http.ResponseWriter, req *http.Request) {
 		// Tag bare ErrNotFound the same way the GET handler does so the
 		// envelope is self-describing.
 		if errors.Is(err, core.ErrNotFound) && core.AsAdaptorError(err) == nil {
-			err = core.NewAdaptorError(core.KindSessionNotFound, "bead %s not found", id)
+			err = core.NewAdaptorError(core.KindSessionNotFound, "work item %s not found", id)
 		}
 		httperr.WriteError(w, err)
 		return

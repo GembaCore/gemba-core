@@ -9,7 +9,7 @@ import type { CapabilitiesResponse } from '@/capabilities';
 import { HotkeyRegistry, HotkeysContext } from '@/hotkeys';
 import { STATE_CATEGORIES, type WorkItem } from '@/types/core.gen';
 
-// Seed a CapabilitiesProvider so BeadDrawer / EpicDrawer's
+// Seed a CapabilitiesProvider so WorkItemDrawer / EpicDrawer's
 // useCapabilities() resolves. The board itself doesn't consult the
 // manifest, but the drawers (rendered inside BoardPage) do.
 const caps: CapabilitiesResponse = {
@@ -148,7 +148,7 @@ describe('BoardPage', () => {
       expect(screen.getByTestId(`board-column-${cat}`)).toBeTruthy();
     }
     const unstartedCol = screen.getByTestId('board-column-unstarted');
-    expect(unstartedCol.querySelectorAll('[data-bead-id]')).toHaveLength(2);
+    expect(unstartedCol.querySelectorAll('[data-work-item-id]')).toHaveLength(2);
     // Epic view is not mounted on the alternate.
     expect(screen.queryByTestId('board-epic')).toBeNull();
   });
@@ -171,7 +171,7 @@ describe('BoardPage', () => {
       epic('e1', 'root', { description: 'Epic e1 detail.' }),
     ];
     fetchSpy.mockImplementation((url: string) => {
-      if (url === '/api/beads') {
+      if (url === '/api/work-items') {
         return Promise.resolve(
           new Response(JSON.stringify({ items: data, total: data.length }), {
             status: 200,
@@ -179,7 +179,7 @@ describe('BoardPage', () => {
           })
         );
       }
-      if (url === '/api/beads/e1') {
+      if (url === '/api/work-items/e1') {
         return Promise.resolve(
           new Response(JSON.stringify(data[1]), {
             status: 200,
@@ -205,7 +205,7 @@ describe('BoardPage', () => {
       epic('gemba/gemba/gm-e1', 'gemba/gemba/gm-root', { description: 'Prefixed.' }),
     ];
     fetchSpy.mockImplementation((url: string) => {
-      if (url === '/api/beads') {
+      if (url === '/api/work-items') {
         return Promise.resolve(
           new Response(JSON.stringify({ items: data, total: data.length }), {
             status: 200,
@@ -213,7 +213,7 @@ describe('BoardPage', () => {
           })
         );
       }
-      if (url === '/api/beads/gemba%2Fgemba%2Fgm-e1') {
+      if (url === '/api/work-items/gemba%2Fgemba%2Fgm-e1') {
         return Promise.resolve(
           new Response(JSON.stringify(data[1]), {
             status: 200,
@@ -233,7 +233,7 @@ describe('BoardPage', () => {
     const listed = bead('gm-a', 'started');
     const detail: WorkItem = { ...listed, description: 'Deep dive into gm-a.' };
     fetchSpy.mockImplementation((url: string) => {
-      if (url === '/api/beads') {
+      if (url === '/api/work-items') {
         return Promise.resolve(
           new Response(JSON.stringify({ items: [listed], total: 1 }), {
             status: 200,
@@ -241,7 +241,7 @@ describe('BoardPage', () => {
           })
         );
       }
-      if (url === '/api/beads/gm-a') {
+      if (url === '/api/work-items/gm-a') {
         return Promise.resolve(
           new Response(JSON.stringify(detail), {
             status: 200,
@@ -255,7 +255,7 @@ describe('BoardPage', () => {
     render(wrap(<BoardPage />, '/board?view=workitem'));
     const card = await waitFor(() => screen.getByRole('button', { name: /open bead gm-a/i }));
     fireEvent.click(card);
-    await waitFor(() => expect(screen.getByTestId('bead-drawer-content')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('work-item-drawer-content')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Deep dive into gm-a.')).toBeTruthy());
   });
 
@@ -279,7 +279,7 @@ describe('BoardPage', () => {
   });
 
   it('shows error state with a retry button that re-fetches', async () => {
-    // 503/adaptor_degraded does not auto-retry (see useBeads.retry),
+    // 503/adaptor_degraded does not auto-retry (see useWorkItems.retry),
     // so the error surfaces immediately and the manual retry click
     // triggers exactly one additional fetch.
     fetchSpy

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { beadsKeys, useBead, useBeads, useUpdateBead } from '../useBeads';
-import { CONFIRM_HEADER } from '@/api/beads';
+import { workItemsKeys, useWorkItem, useWorkItems, useUpdateWorkItem } from '../useWorkItems';
+import { CONFIRM_HEADER } from '@/api/workItems';
 import type { WorkItem } from '@/types/core.gen';
 
 const sampleItem: WorkItem = {
@@ -28,7 +28,7 @@ function wrapper() {
   };
 }
 
-describe('useBeads', () => {
+describe('useWorkItems', () => {
   const fetchSpy = vi.fn();
 
   beforeEach(() => {
@@ -41,7 +41,7 @@ describe('useBeads', () => {
   });
 
   // Mock emits the real server wire shape — the {items,total} envelope
-  // (gm-peg) — so useBeads exercises the listBeads unwrap path (gm-root.1.8).
+  // (gm-peg) — so useWorkItems exercises the listWorkItems unwrap path (gm-root.1.8).
   // A bare-array mock would hide the envelope regression.
   it('returns data on success', async () => {
     fetchSpy.mockResolvedValueOnce(
@@ -50,7 +50,7 @@ describe('useBeads', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    const { result } = renderHook(() => useBeads(), { wrapper: wrapper() });
+    const { result } = renderHook(() => useWorkItems(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual([sampleItem]);
   });
@@ -62,7 +62,7 @@ describe('useBeads', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    const { result } = renderHook(() => useBeads(), { wrapper: wrapper() });
+    const { result } = renderHook(() => useWorkItems(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error?.code).toBe('adaptor_degraded');
     expect(result.current.error?.isAdaptorDegraded).toBe(true);
@@ -71,7 +71,7 @@ describe('useBeads', () => {
   });
 });
 
-describe('useBead', () => {
+describe('useWorkItem', () => {
   const fetchSpy = vi.fn();
 
   beforeEach(() => {
@@ -90,14 +90,14 @@ describe('useBead', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    const { result } = renderHook(() => useBead('gm-foo'), { wrapper: wrapper() });
+    const { result } = renderHook(() => useWorkItem('gm-foo'), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(sampleItem);
-    expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/beads/gm-foo');
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/work-items/gm-foo');
   });
 
   it('is disabled when id is empty', async () => {
-    const { result } = renderHook(() => useBead(undefined), { wrapper: wrapper() });
+    const { result } = renderHook(() => useWorkItem(undefined), { wrapper: wrapper() });
     // Disabled queries stay in pending+fetchStatus=idle; they never fire.
     expect(result.current.fetchStatus).toBe('idle');
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -110,16 +110,16 @@ describe('useBead', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    const { result } = renderHook(() => useBead('gm-x'), { wrapper: wrapper() });
+    const { result } = renderHook(() => useWorkItem('gm-x'), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error?.isNotFound).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 
-// gm-root.8 slice 2: useUpdateBead must wire the X-GEMBA-Confirm
+// gm-root.8 slice 2: useUpdateWorkItem must wire the X-GEMBA-Confirm
 // header, optimistically update the cache, and roll back on error.
-describe('useUpdateBead', () => {
+describe('useUpdateWorkItem', () => {
   const fetchSpy = vi.fn();
   beforeEach(() => vi.stubGlobal('fetch', fetchSpy));
   afterEach(() => {
@@ -135,7 +135,7 @@ describe('useUpdateBead', () => {
     };
   }
 
-  it('PATCHes /api/beads/:id with X-GEMBA-Confirm and returns the updated item', async () => {
+  it('PATCHes /api/work-items/:id with X-GEMBA-Confirm and returns the updated item', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(JSON.stringify({ ...sampleItem, status: 'closed' }), {
         status: 200,
@@ -143,12 +143,12 @@ describe('useUpdateBead', () => {
       })
     );
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    const { result } = renderHook(() => useUpdateBead(), { wrapper: withClient(client) });
+    const { result } = renderHook(() => useUpdateWorkItem(), { wrapper: withClient(client) });
     result.current.mutate({ id: 'gm-foo', patch: { status: 'closed' } });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('/api/beads/gm-foo');
+    expect(url).toBe('/api/work-items/gm-foo');
     expect(init.method).toBe('PATCH');
     const headers = new Headers(init.headers as HeadersInit);
     expect(headers.get(CONFIRM_HEADER)).toBeTruthy();
@@ -160,7 +160,7 @@ describe('useUpdateBead', () => {
     const client = new QueryClient({
       defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
     });
-    client.setQueryData(beadsKeys.detail('gm-foo'), sampleItem);
+    client.setQueryData(workItemsKeys.detail('gm-foo'), sampleItem);
 
     fetchSpy.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'read_only', message: 'adaptor is read-only' }), {
@@ -168,19 +168,19 @@ describe('useUpdateBead', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    const { result } = renderHook(() => useUpdateBead(), { wrapper: withClient(client) });
+    const { result } = renderHook(() => useUpdateWorkItem(), { wrapper: withClient(client) });
 
     result.current.mutate({ id: 'gm-foo', patch: { status: 'closed' } });
     // Within a tick the optimistic write is visible.
     await waitFor(() => {
-      const cur = client.getQueryData<WorkItem>(beadsKeys.detail('gm-foo'));
+      const cur = client.getQueryData<WorkItem>(workItemsKeys.detail('gm-foo'));
       // The optimistic write either lands as 'closed' or has already
       // rolled back; assert via the mutation state instead.
       expect(cur?.id).toBe('gm-foo');
     });
     await waitFor(() => expect(result.current.isError).toBe(true));
     // After the error settles, the cache must be back to the original.
-    const after = client.getQueryData<WorkItem>(beadsKeys.detail('gm-foo'));
+    const after = client.getQueryData<WorkItem>(workItemsKeys.detail('gm-foo'));
     expect(after?.status).toBe(sampleItem.status);
   });
 });

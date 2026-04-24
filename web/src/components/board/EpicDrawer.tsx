@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { Check, Copy, X } from 'lucide-react';
-import { useBead, useBeads } from '@/hooks/useBeads';
+import { useWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
 import {
@@ -31,13 +31,13 @@ export interface EpicDrawerProps {
   openId: string | null;
   onClose: () => void;
   // onOpenChild lets the parent route a child WorkItem click into the
-  // existing single-WorkItem drawer (BeadDrawer). Optional — when
+  // existing single-WorkItem drawer (WorkItemDrawer). Optional — when
   // omitted, child rows are inert.
   onOpenChild?: (id: string) => void;
 }
 
 export function EpicDrawer({ openId, onClose, onOpenChild }: EpicDrawerProps) {
-  // Mirror BeadDrawer's nav-stack pattern in a slimmed-down form: the
+  // Mirror WorkItemDrawer's nav-stack pattern in a slimmed-down form: the
   // drawer doesn't navigate between Epics here, but parent-initiated
   // openId changes still need the safe reset.
   const [currentId, setCurrentId] = useState<string | null>(openId);
@@ -75,11 +75,11 @@ interface EpicDrawerBodyProps {
 }
 
 function EpicDrawerBody({ id, onOpenChild }: EpicDrawerBodyProps) {
-  const { data: epicItem, isLoading, error } = useBead(id);
+  const { data: epicItem, isLoading, error } = useWorkItem(id);
   // Children come from the list payload (populated by gm-peg) so we
   // avoid an N+1 Get per child. The relationships graph on the list
   // result is enough to pick out the direct children of this Epic.
-  const { data: allItems } = useBeads();
+  const { data: allItems } = useWorkItems();
   const children = useMemo(
     () => (allItems ? epicChildren(allItems, id) : []),
     [allItems, id]

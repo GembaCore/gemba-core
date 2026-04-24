@@ -4,7 +4,7 @@ import type { StateCategory, WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './relativeTime';
 
-export interface BeadCardProps {
+export interface WorkItemCardProps {
   item: WorkItem;
   // onSelect makes the card clickable (and keyboard-activatable). Wire
   // it from BoardPage to open the drill-in drawer. Omitted → static card.
@@ -51,7 +51,7 @@ function hasEvidence(item: WorkItem): boolean {
 
 const MAX_VISIBLE_LABELS = 3;
 
-export function BeadCard({ item, onSelect }: BeadCardProps) {
+export function WorkItemCard({ item, onSelect }: WorkItemCardProps) {
   const pri = priorityLabel(item.priority);
   const name = assigneeName(item);
   const labels = item.labels ?? [];
@@ -74,7 +74,7 @@ export function BeadCard({ item, onSelect }: BeadCardProps) {
 
   return (
     <article
-      data-bead-id={item.id}
+      data-work-item-id={item.id}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? `Open bead ${item.id}` : undefined}

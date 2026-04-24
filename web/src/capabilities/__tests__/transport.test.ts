@@ -56,10 +56,10 @@ describe('workPlaneTransport / orchestrationTransport', () => {
 
 describe('routePath', () => {
   it('joins base + path', () => {
-    expect(routePath(resolveTransport('api'), '/beads')).toBe('/api/beads');
+    expect(routePath(resolveTransport('api'), '/work-items')).toBe('/api/work-items');
   });
 
   it('rejects relative paths', () => {
-    expect(() => routePath(resolveTransport('api'), 'beads')).toThrow();
+    expect(() => routePath(resolveTransport('api'), 'work-items')).toThrow();
   });
 });

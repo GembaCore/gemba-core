@@ -39,7 +39,7 @@ func newProgrammableHostFull(
 	return host
 }
 
-func TestGetBead_Found_ReturnsFullWorkItem(t *testing.T) {
+func TestGetWorkItem_Found_ReturnsFullWorkItem(t *testing.T) {
 	want := core.WorkItem{
 		ID:            "gm-foo",
 		Kind:          "task",
@@ -68,7 +68,7 @@ func TestGetBead_Found_ReturnsFullWorkItem(t *testing.T) {
 	})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads/gm-foo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items/gm-foo", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -97,13 +97,13 @@ func TestGetBead_Found_ReturnsFullWorkItem(t *testing.T) {
 	}
 }
 
-func TestGetBead_NotFound_Returns404Envelope(t *testing.T) {
+func TestGetWorkItem_NotFound_Returns404Envelope(t *testing.T) {
 	host := newProgrammableHost(t, func(_ context.Context, _ core.WorkItemID) (core.WorkItem, error) {
 		return core.WorkItem{}, core.ErrNotFound
 	})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads/gm-missing", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items/gm-missing", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -117,20 +117,20 @@ func TestGetBead_NotFound_Returns404Envelope(t *testing.T) {
 	if env["error"] != "session_not_found" {
 		t.Fatalf("want error=session_not_found, got %q", env["error"])
 	}
-	if env["message"] != "bead gm-missing not found" {
+	if env["message"] != "work item gm-missing not found" {
 		t.Fatalf("want specific message, got %q", env["message"])
 	}
 }
 
 // Wrapped ErrNotFound (errors.Is still holds) must also hit the 404 path.
 // Adaptors regularly wrap with fmt.Errorf("…: %w", core.ErrNotFound).
-func TestGetBead_WrappedNotFound_Returns404(t *testing.T) {
+func TestGetWorkItem_WrappedNotFound_Returns404(t *testing.T) {
 	host := newProgrammableHost(t, func(_ context.Context, id core.WorkItemID) (core.WorkItem, error) {
 		return core.WorkItem{}, fmt.Errorf("bd: lookup %s: %w", id, core.ErrNotFound)
 	})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads/gm-x", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items/gm-x", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -142,14 +142,14 @@ func TestGetBead_WrappedNotFound_Returns404(t *testing.T) {
 // Adaptor-tagged degraded error surfaces as 503 via httperr.WriteError.
 // Conformance Group F requires adaptors to return tagged *AdaptorError;
 // the shared mapper picks up the kind and emits the canonical envelope.
-func TestGetBead_AdaptorDegraded_Returns503(t *testing.T) {
+func TestGetWorkItem_AdaptorDegraded_Returns503(t *testing.T) {
 	host := newProgrammableHost(t, func(_ context.Context, _ core.WorkItemID) (core.WorkItem, error) {
 		return core.WorkItem{}, core.NewAdaptorError(core.KindAdaptorDegraded,
 			"bd probe timed out; Dolt may be hung")
 	})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads/gm-foo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items/gm-foo", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -171,13 +171,13 @@ func TestGetBead_AdaptorDegraded_Returns503(t *testing.T) {
 // An untagged error from an adaptor violates Conformance Group F and
 // surfaces as 500 internal — the mapper's signal that the adaptor is
 // non-conformant rather than pretending to know what went wrong.
-func TestGetBead_UntaggedError_Returns500(t *testing.T) {
+func TestGetWorkItem_UntaggedError_Returns500(t *testing.T) {
 	host := newProgrammableHost(t, func(_ context.Context, _ core.WorkItemID) (core.WorkItem, error) {
 		return core.WorkItem{}, errors.New("boom")
 	})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads/gm-foo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items/gm-foo", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -195,10 +195,10 @@ func TestGetBead_UntaggedError_Returns500(t *testing.T) {
 
 // With no host wired, the handler must report adaptor_not_configured (503)
 // rather than panic or hang. Matches the requireHealthyAdaptor envelope.
-func TestGetBead_NoHost_Returns503(t *testing.T) {
+func TestGetWorkItem_NoHost_Returns503(t *testing.T) {
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads/gm-foo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items/gm-foo", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -215,17 +215,17 @@ func TestGetBead_NoHost_Returns503(t *testing.T) {
 }
 
 // ============================================================================
-// GET /api/beads — list handler (gm-peg)
+// GET /api/work-items — list handler (gm-peg)
 // ============================================================================
 
 // Envelope type for the list handler. Kept local so the wire shape stays
 // pinned in tests rather than being reimported from a shared package.
-type listBeadsEnvelope struct {
+type listWorkItemsEnvelope struct {
 	Items []core.WorkItem `json:"items"`
 	Total int             `json:"total"`
 }
 
-func TestListBeads_HappyPath_ReturnsEnvelope(t *testing.T) {
+func TestListWorkItems_HappyPath_ReturnsEnvelope(t *testing.T) {
 	items := []core.WorkItem{
 		{ID: "gm-1", Kind: "task", Title: "first", Status: "open", StateCategory: core.StateBacklog},
 		{ID: "gm-2", Kind: "task", Title: "second", Status: "in_progress", StateCategory: core.StateStarted},
@@ -238,7 +238,7 @@ func TestListBeads_HappyPath_ReturnsEnvelope(t *testing.T) {
 		})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -248,7 +248,7 @@ func TestListBeads_HappyPath_ReturnsEnvelope(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("want application/json, got %q", ct)
 	}
-	var env listBeadsEnvelope
+	var env listWorkItemsEnvelope
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
 	}
@@ -269,14 +269,14 @@ func TestListBeads_HappyPath_ReturnsEnvelope(t *testing.T) {
 }
 
 // Empty DB → `{items: [], total: 0}`. Must serialise as a JSON array, not null.
-func TestListBeads_EmptyDB_ReturnsEmptyArray(t *testing.T) {
+func TestListWorkItems_EmptyDB_ReturnsEmptyArray(t *testing.T) {
 	host := newProgrammableHostFull(t, nil,
 		func(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
 			return nil, nil
 		})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -295,7 +295,7 @@ func TestListBeads_EmptyDB_ReturnsEmptyArray(t *testing.T) {
 }
 
 // Adaptor-tagged degraded error → 503 via shared mapper.
-func TestListBeads_AdaptorDegraded_Returns503(t *testing.T) {
+func TestListWorkItems_AdaptorDegraded_Returns503(t *testing.T) {
 	host := newProgrammableHostFull(t, nil,
 		func(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
 			return nil, core.NewAdaptorError(core.KindAdaptorDegraded,
@@ -303,7 +303,7 @@ func TestListBeads_AdaptorDegraded_Returns503(t *testing.T) {
 		})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -323,14 +323,14 @@ func TestListBeads_AdaptorDegraded_Returns503(t *testing.T) {
 }
 
 // Untagged error → 500 internal (Conformance Group F: adaptors must tag).
-func TestListBeads_UntaggedError_Returns500(t *testing.T) {
+func TestListWorkItems_UntaggedError_Returns500(t *testing.T) {
 	host := newProgrammableHostFull(t, nil,
 		func(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
 			return nil, errors.New("boom")
 		})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -341,10 +341,10 @@ func TestListBeads_UntaggedError_Returns500(t *testing.T) {
 
 // No host wired → 503 adaptor_not_configured. Mirrors the single-bead behaviour
 // so the SPA can treat both endpoints with one degraded-state handler.
-func TestListBeads_NoHost_Returns503(t *testing.T) {
+func TestListWorkItems_NoHost_Returns503(t *testing.T) {
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -361,7 +361,7 @@ func TestListBeads_NoHost_Returns503(t *testing.T) {
 }
 
 // ============================================================================
-// GET /api/beads/{id} — single-bead handler
+// GET /api/work-items/{id} — single-work-item handler
 // ============================================================================
 
 // Workspace-prefixed ids arrive as percent-encoded slashes on the wire
@@ -369,7 +369,7 @@ func TestListBeads_NoHost_Returns503(t *testing.T) {
 // "gemba%2Fgemba%2Fgm-foo"). The handler MUST path-unescape before
 // handing the id to the adaptor, otherwise the adaptor sees the raw
 // encoded form and reports "not found" against every prefixed lookup.
-func TestGetBead_URLEncodedSlashes_DecodedBeforeLookup(t *testing.T) {
+func TestGetWorkItem_URLEncodedSlashes_DecodedBeforeLookup(t *testing.T) {
 	var gotID core.WorkItemID
 	host := newProgrammableHost(t, func(_ context.Context, id core.WorkItemID) (core.WorkItem, error) {
 		gotID = id
@@ -383,7 +383,7 @@ func TestGetBead_URLEncodedSlashes_DecodedBeforeLookup(t *testing.T) {
 	})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads/gemba%2Fgemba%2Fgm-foo", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items/gemba%2Fgemba%2Fgm-foo", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
@@ -398,18 +398,18 @@ func TestGetBead_URLEncodedSlashes_DecodedBeforeLookup(t *testing.T) {
 // Static sibling routes must still win over the {id} param. /beads/ready
 // is mounted above the wildcard — chi prefers the literal — so it keeps
 // returning the 501 stub until M1.x replaces it, not 404-via-handler.
-func TestGetBead_StaticSiblingRoutesWin(t *testing.T) {
+func TestGetWorkItem_StaticSiblingRoutesWin(t *testing.T) {
 	host := newProgrammableHost(t, func(_ context.Context, id core.WorkItemID) (core.WorkItem, error) {
-		t.Fatalf("getBead should not be called for /beads/ready; got id=%q", id)
+		t.Fatalf("getWorkItem should not be called for /work-items/ready; got id=%q", id)
 		return core.WorkItem{}, nil
 	})
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/beads/ready", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items/ready", nil)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotImplemented {
-		t.Fatalf("/api/beads/ready: want 501 (stub), got %d; body=%q", rec.Code, rec.Body.String())
+		t.Fatalf("/api/work-items/ready: want 501 (stub), got %d; body=%q", rec.Code, rec.Body.String())
 	}
 }

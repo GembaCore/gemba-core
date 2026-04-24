@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { BeadCard } from '../BeadCard';
+import { WorkItemCard } from '../WorkItemCard';
 import { relativeTime } from '../relativeTime';
 import type { WorkItem } from '@/types/core.gen';
 
@@ -15,9 +15,9 @@ const base: WorkItem = {
   updated_at: '2026-04-22T00:00:00Z',
 };
 
-describe('BeadCard', () => {
+describe('WorkItemCard', () => {
   it('renders id, title, priority chip, and state dot', () => {
-    render(<BeadCard item={base} />);
+    render(<WorkItemCard item={base} />);
     expect(screen.getByText('gm-x1')).toBeTruthy();
     expect(screen.getByText('Render the board pane')).toBeTruthy();
     expect(screen.getByText('P0')).toBeTruthy();
@@ -26,7 +26,7 @@ describe('BeadCard', () => {
   });
 
   it('omits priority chip when priority is null', () => {
-    render(<BeadCard item={{ ...base, priority: null }} />);
+    render(<WorkItemCard item={{ ...base, priority: null }} />);
     expect(screen.queryByText('P0')).toBeNull();
     expect(screen.queryByText(/^P[0-4]$/)).toBeNull();
   });
@@ -37,14 +37,14 @@ describe('BeadCard', () => {
       assignee: { id: 'a1', name: 'quartz', agent_kind: 'agent' },
       owner: { id: 'o1', name: 'mike', agent_kind: 'human' },
     };
-    render(<BeadCard item={withAssignee} />);
+    render(<WorkItemCard item={withAssignee} />);
     expect(screen.getByText('quartz')).toBeTruthy();
 
     const ownerOnly: WorkItem = {
       ...base,
       owner: { id: 'o1', name: 'mike', agent_kind: 'human' },
     };
-    render(<BeadCard item={ownerOnly} />);
+    render(<WorkItemCard item={ownerOnly} />);
     expect(screen.getByText('mike')).toBeTruthy();
   });
 
@@ -53,7 +53,7 @@ describe('BeadCard', () => {
       ...base,
       labels: ['layer:ui', 'milestone:m1', 'risk:medium', 'surface:frontend', 'fed:safe'],
     };
-    const { container } = render(<BeadCard item={many} />);
+    const { container } = render(<WorkItemCard item={many} />);
     const list = container.querySelector('ul');
     expect(list).toBeTruthy();
     const chips = within(list as HTMLElement).getAllByRole('listitem');
@@ -63,14 +63,14 @@ describe('BeadCard', () => {
   });
 
   it('shows notes glyph when description is non-empty', () => {
-    render(<BeadCard item={{ ...base, description: 'hello' }} />);
+    render(<WorkItemCard item={{ ...base, description: 'hello' }} />);
     expect(screen.getByTestId('glyph-notes')).toBeTruthy();
     expect(screen.queryByTestId('glyph-evidence')).toBeNull();
   });
 
   it('shows evidence glyph when evidence array is non-empty', () => {
     render(
-      <BeadCard
+      <WorkItemCard
         item={{
           ...base,
           evidence: [{ id: 'e1', kind: 'commit', source: 'git', captured_at: '2026-04-22T00:00:00Z' }],
@@ -85,12 +85,12 @@ describe('BeadCard', () => {
       ...base,
       relationships: [{ kind: 'parent_child', from: 'gm-x1', to: 'gm-parent' }],
     };
-    render(<BeadCard item={child} />);
+    render(<WorkItemCard item={child} />);
     expect(screen.getByTestId('glyph-parent')).toBeTruthy();
   });
 
   it('is not interactive when onSelect is omitted', () => {
-    render(<BeadCard item={base} />);
+    render(<WorkItemCard item={base} />);
     const article = screen.getByText('gm-x1').closest('article') as HTMLElement;
     expect(article.getAttribute('role')).toBeNull();
     expect(article.getAttribute('tabIndex')).toBeNull();
@@ -98,7 +98,7 @@ describe('BeadCard', () => {
 
   it('becomes an ARIA button when onSelect is provided and fires on click', () => {
     const onSelect = vi.fn();
-    render(<BeadCard item={base} onSelect={onSelect} />);
+    render(<WorkItemCard item={base} onSelect={onSelect} />);
     const btn = screen.getByRole('button', { name: /open bead gm-x1/i });
     fireEvent.click(btn);
     expect(onSelect).toHaveBeenCalledWith('gm-x1');
@@ -106,7 +106,7 @@ describe('BeadCard', () => {
 
   it('activates on Enter and Space from the keyboard', () => {
     const onSelect = vi.fn();
-    render(<BeadCard item={base} onSelect={onSelect} />);
+    render(<WorkItemCard item={base} onSelect={onSelect} />);
     const btn = screen.getByRole('button', { name: /open bead/i });
     fireEvent.keyDown(btn, { key: 'Enter' });
     fireEvent.keyDown(btn, { key: ' ' });

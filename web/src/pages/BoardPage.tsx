@@ -18,10 +18,10 @@ import {
 } from 'react-router-dom';
 import { LayoutGrid, ListChecks, RotateCcw } from 'lucide-react';
 import { BoardColumn } from '@/components/board/BoardColumn';
-import { BeadDrawer } from '@/components/board/BeadDrawer';
+import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
 import { EpicDrawer } from '@/components/board/EpicDrawer';
 import { EpicView } from '@/components/board/EpicView';
-import { useBeads } from '@/hooks/useBeads';
+import { useWorkItems } from '@/hooks/useWorkItems';
 import { useHotkey } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
@@ -55,7 +55,7 @@ function groupByStateCategory(items: WorkItem[]): Record<StateCategory, WorkItem
 }
 
 export function BoardPage() {
-  const { data, isLoading, isError, error, refetch } = useBeads();
+  const { data, isLoading, isError, error, refetch } = useWorkItems();
   const [params, setParams] = useSearchParams();
   const view = viewFromQuery(params);
   // The route is /board/* so the matched suffix lands under the splat
@@ -115,7 +115,7 @@ export function BoardPage() {
         onClose={closeEpic}
         onOpenChild={(id) => setOpenWorkItemId(id)}
       />
-      <BeadDrawer openId={openWorkItemId} onClose={() => setOpenWorkItemId(null)} />
+      <WorkItemDrawer openId={openWorkItemId} onClose={() => setOpenWorkItemId(null)} />
     </>
   );
 }

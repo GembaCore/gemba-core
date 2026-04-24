@@ -91,9 +91,9 @@ gemba serve
 
 Until then, the orchestrator (Mayor in Gas Town terms) decomposes work from `bd ready` against the imported `issues.jsonl`.
 
-### M1 quickstart — run it against your beads
+### M1 quickstart — run it against your work items
 
-Gemba at M1 ships the Beads WorkPlane adaptor in two modes (`--beads-dir` via the `bd` CLI, or `--dolt-url` for a direct Dolt SQL connection). End-to-end instructions, expected banner output, and troubleshooting live in [`docs/getting-started/running-against-your-beads.md`](docs/getting-started/running-against-your-beads.md).
+Gemba at M1 ships the Beads WorkPlane adaptor in two modes (`--beads-dir` via the `bd` CLI, or `--dolt-url` for a direct Dolt SQL connection). End-to-end instructions, expected banner output, and troubleshooting live in [`docs/getting-started/running-against-your-work-items.md`](docs/getting-started/running-against-your-work-items.md).
 
 ## Development
 

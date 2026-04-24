@@ -1,11 +1,11 @@
 import type { StateCategory, WorkItem } from '@/types/core.gen';
-import { BeadCard } from './BeadCard';
+import { WorkItemCard } from './WorkItemCard';
 
 export interface BoardColumnProps {
   category: StateCategory;
   label: string;
   items: WorkItem[];
-  // Forwarded to each BeadCard. Clicking a card fires this with the id.
+  // Forwarded to each WorkItemCard. Clicking a card fires this with the id.
   onSelect?: (id: string) => void;
 }
 
@@ -39,7 +39,7 @@ export function BoardColumn({ category, label, items, onSelect }: BoardColumnPro
       <ol className="flex-1 space-y-2 overflow-y-auto p-2">
         {sorted.map((item) => (
           <li key={item.id}>
-            <BeadCard item={item} onSelect={onSelect} />
+            <WorkItemCard item={item} onSelect={onSelect} />
           </li>
         ))}
       </ol>

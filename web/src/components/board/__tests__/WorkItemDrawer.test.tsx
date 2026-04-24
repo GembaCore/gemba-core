@@ -3,12 +3,12 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { BeadDrawer } from '../BeadDrawer';
+import { WorkItemDrawer } from '../WorkItemDrawer';
 import { CapabilitiesProvider } from '@/capabilities';
 import type { CapabilitiesResponse } from '@/capabilities';
 import type { WorkItem } from '@/types/core.gen';
 
-// Seed a minimal CapabilitiesResponse so BeadDrawer's useCapabilities()
+// Seed a minimal CapabilitiesResponse so WorkItemDrawer's useCapabilities()
 // has a manifest to read description_format from. Tests that care about
 // markdown rendering pass `markdown`; the default here is undefined,
 // which the renderer registry maps to the PlainDescription fallback.
@@ -128,7 +128,7 @@ function mockJSON(body: unknown, status = 200): Response {
   });
 }
 
-describe('BeadDrawer', () => {
+describe('WorkItemDrawer', () => {
   const fetchSpy = vi.fn();
 
   beforeEach(() => {
@@ -143,7 +143,7 @@ describe('BeadDrawer', () => {
   it('renders every section for a fixture bead', async () => {
     fetchSpy.mockResolvedValueOnce(mockJSON(fixture));
 
-    render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
+    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
 
     await waitFor(() => expect(screen.getByTestId('section-overview')).toBeTruthy());
 
@@ -151,8 +151,8 @@ describe('BeadDrawer', () => {
     // Dialog header and the editable TitleEditor (gm-root.8 slice 3),
     // so getAllByText is the correct shape.
     expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('bead-drawer-id').textContent).toBe('gm-foo');
-    expect(screen.getByTestId('bead-drawer-copy')).toBeTruthy();
+    expect(screen.getByTestId('work-item-drawer-id').textContent).toBe('gm-foo');
+    expect(screen.getByTestId('work-item-drawer-copy')).toBeTruthy();
 
     // All top-level sections render
     expect(screen.getByTestId('section-overview')).toBeTruthy();
@@ -198,12 +198,12 @@ describe('BeadDrawer', () => {
   it('relationship click navigates to target bead and back', async () => {
     fetchSpy.mockImplementation((input: RequestInfo) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.endsWith('/beads/gm-foo')) return Promise.resolve(mockJSON(fixture));
-      if (url.endsWith('/beads/gm-child')) return Promise.resolve(mockJSON(navigateTarget));
+      if (url.endsWith('/work-items/gm-foo')) return Promise.resolve(mockJSON(fixture));
+      if (url.endsWith('/work-items/gm-child')) return Promise.resolve(mockJSON(navigateTarget));
       return Promise.resolve(mockJSON({ error: 'session_not_found', message: '' }, 404));
     });
 
-    render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
+    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
     await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
 
     // Click a relationship link — gm-child appears under "blocks".
@@ -214,7 +214,7 @@ describe('BeadDrawer', () => {
 
     await waitFor(() => expect(screen.getAllByText('Navigated child').length).toBeGreaterThan(0));
     // Back button now exists (stack length > 1).
-    const back = screen.getByTestId('bead-drawer-back');
+    const back = screen.getByTestId('work-item-drawer-back');
     act(() => {
       back.click();
     });
@@ -228,7 +228,7 @@ describe('BeadDrawer', () => {
     function Harness() {
       const [id, setId] = useState<string | null>('gm-foo');
       return (
-        <BeadDrawer
+        <WorkItemDrawer
           openId={id}
           onClose={() => {
             setId(null);
@@ -242,14 +242,14 @@ describe('BeadDrawer', () => {
     await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
 
     act(() => {
-      screen.getByTestId('bead-drawer-close').click();
+      screen.getByTestId('work-item-drawer-close').click();
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it('renders nothing while closed', () => {
-    render(<BeadDrawer openId={null} onClose={() => {}} />, { wrapper: wrapper() });
-    expect(screen.queryByTestId('bead-drawer-content')).toBeNull();
+    render(<WorkItemDrawer openId={null} onClose={() => {}} />, { wrapper: wrapper() });
+    expect(screen.queryByTestId('work-item-drawer-content')).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -257,9 +257,9 @@ describe('BeadDrawer', () => {
     fetchSpy.mockResolvedValueOnce(
       mockJSON({ error: 'adaptor_degraded', message: 'reconnecting' }, 503)
     );
-    render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
-    await waitFor(() => expect(screen.getByTestId('bead-drawer-error')).toBeTruthy());
-    expect(screen.getByTestId('bead-drawer-error').textContent).toMatch(/reconnecting/);
+    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
+    await waitFor(() => expect(screen.getByTestId('work-item-drawer-error')).toBeTruthy());
+    expect(screen.getByTestId('work-item-drawer-error').textContent).toMatch(/reconnecting/);
   });
 
   // Description renderer is chosen from the manifest. When the adaptor
@@ -272,7 +272,7 @@ describe('BeadDrawer', () => {
         description: '# Goal\n\n- first\n- second',
       })
     );
-    render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, {
+    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, {
       wrapper: wrapper(capsWith('markdown')),
     });
     // Lazy markdown chunk resolves → renders the <div data-testid="description-markdown">.
@@ -286,7 +286,7 @@ describe('BeadDrawer', () => {
     fetchSpy.mockResolvedValueOnce(
       mockJSON({ ...fixture, description: '# not-a-heading' })
     );
-    render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, {
+    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, {
       wrapper: wrapper(capsWith(undefined)),
     });
     await waitFor(() => expect(screen.getByTestId('description-plain')).toBeTruthy());

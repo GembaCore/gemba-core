@@ -1,6 +1,6 @@
-// React Query hooks for the /api/beads surface (gm-xgm / M1.6).
+// React Query hooks for the /api/work-items surface (gm-xgm / M1.6).
 //
-// These wrap the thin async functions in src/api/beads.ts so consumers
+// These wrap the thin async functions in src/api/work-items.ts so consumers
 // get a uniform {data, isLoading, error} tuple without each call site
 // wiring up its own useQuery. The board pane (M1.7a) and drawer
 // (M1.7c) are the primary callers; SSE invalidation (gm-e2.5) will
@@ -10,8 +10,8 @@
 //   ['beads']            — list
 //   ['beads', id]        — single bead with full relationship graph
 //
-// beadsKeys is exported so callers can invalidate surgically:
-//   queryClient.invalidateQueries({ queryKey: beadsKeys.detail(id) })
+// workItemsKeys is exported so callers can invalidate surgically:
+//   queryClient.invalidateQueries({ queryKey: workItemsKeys.detail(id) })
 
 import {
   useMutation,
@@ -20,14 +20,14 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import { getBead, listBeads, updateBead, type WorkItemPatch } from '@/api/beads';
+import { getWorkItem, listWorkItems, updateWorkItem, type WorkItemPatch } from '@/api/workItems';
 import { ApiError } from '@/api/client';
 import type { WorkItem } from '@/types/core.gen';
 
-export const beadsKeys = {
+export const workItemsKeys = {
   all: ['beads'] as const,
-  list: () => [...beadsKeys.all] as const,
-  detail: (id: string) => [...beadsKeys.all, id] as const,
+  list: () => [...workItemsKeys.all] as const,
+  detail: (id: string) => [...workItemsKeys.all, id] as const,
 };
 
 // Adaptor-degraded failures are expected while the adaptor is
@@ -43,26 +43,26 @@ function retry(failureCount: number, error: unknown): boolean {
   return failureCount < 1;
 }
 
-export function useBeads(): UseQueryResult<WorkItem[], ApiError> {
+export function useWorkItems(): UseQueryResult<WorkItem[], ApiError> {
   return useQuery<WorkItem[], ApiError>({
-    queryKey: beadsKeys.list(),
-    queryFn: listBeads,
+    queryKey: workItemsKeys.list(),
+    queryFn: listWorkItems,
     retry,
   });
 }
 
-// useBead skips the query when id is empty — callers can pass "" to
+// useWorkItem skips the query when id is empty — callers can pass "" to
 // keep hook order stable when no row is selected.
-export function useBead(id: string | undefined): UseQueryResult<WorkItem, ApiError> {
+export function useWorkItem(id: string | undefined): UseQueryResult<WorkItem, ApiError> {
   return useQuery<WorkItem, ApiError>({
-    queryKey: beadsKeys.detail(id ?? ''),
-    queryFn: () => getBead(id as string),
+    queryKey: workItemsKeys.detail(id ?? ''),
+    queryFn: () => getWorkItem(id as string),
     enabled: !!id,
     retry,
   });
 }
 
-// useUpdateBead drives PATCH /api/beads/{id} (gm-root.8 slice 2).
+// useUpdateWorkItem drives PATCH /api/work-items/{id} (gm-root.8 slice 2).
 // Optimistically writes the patch into the react-query cache so the
 // drawer reflects the change immediately; rolls back on error so a
 // 405 / 503 / 422 from the server doesn't leave the UI desynced.
@@ -75,7 +75,7 @@ export function useBead(id: string | undefined): UseQueryResult<WorkItem, ApiErr
 // over which drawer/menu fired the mutation. Pass `nonce` only when
 // retrying an in-flight request; the api layer mints fresh tokens
 // otherwise.
-export interface UpdateBeadVars {
+export interface UpdateWorkItemVars {
   id: string;
   patch: WorkItemPatch;
   nonce?: string;
@@ -86,32 +86,32 @@ interface UpdateRollback {
   prevList: WorkItem[] | undefined;
 }
 
-export function useUpdateBead(): UseMutationResult<
+export function useUpdateWorkItem(): UseMutationResult<
   WorkItem,
   ApiError,
-  UpdateBeadVars,
+  UpdateWorkItemVars,
   UpdateRollback
 > {
   const qc = useQueryClient();
-  return useMutation<WorkItem, ApiError, UpdateBeadVars, UpdateRollback>({
-    mutationFn: ({ id, patch, nonce }) => updateBead(id, patch, { nonce }),
+  return useMutation<WorkItem, ApiError, UpdateWorkItemVars, UpdateRollback>({
+    mutationFn: ({ id, patch, nonce }) => updateWorkItem(id, patch, { nonce }),
     onMutate: async ({ id, patch }) => {
       // Cancel in-flight queries so an optimistic write isn't trampled
       // by a slow background refetch landing after our mutation.
-      await qc.cancelQueries({ queryKey: beadsKeys.all });
+      await qc.cancelQueries({ queryKey: workItemsKeys.all });
 
-      const prevDetail = qc.getQueryData<WorkItem>(beadsKeys.detail(id));
-      const prevList = qc.getQueryData<WorkItem[]>(beadsKeys.list());
+      const prevDetail = qc.getQueryData<WorkItem>(workItemsKeys.detail(id));
+      const prevList = qc.getQueryData<WorkItem[]>(workItemsKeys.list());
 
       if (prevDetail) {
-        qc.setQueryData<WorkItem>(beadsKeys.detail(id), {
+        qc.setQueryData<WorkItem>(workItemsKeys.detail(id), {
           ...prevDetail,
           ...applyPatch(patch),
         });
       }
       if (prevList) {
         qc.setQueryData<WorkItem[]>(
-          beadsKeys.list(),
+          workItemsKeys.list(),
           prevList.map((it) => (it.id === id ? { ...it, ...applyPatch(patch) } : it))
         );
       }
@@ -120,18 +120,18 @@ export function useUpdateBead(): UseMutationResult<
     onError: (_err, vars, ctx) => {
       if (!ctx) return;
       if (ctx.prevDetail !== undefined) {
-        qc.setQueryData(beadsKeys.detail(vars.id), ctx.prevDetail);
+        qc.setQueryData(workItemsKeys.detail(vars.id), ctx.prevDetail);
       }
       if (ctx.prevList !== undefined) {
-        qc.setQueryData(beadsKeys.list(), ctx.prevList);
+        qc.setQueryData(workItemsKeys.list(), ctx.prevList);
       }
     },
     onSettled: (_data, _err, vars) => {
       // Whether success or rollback, refetch from authoritative source
       // — the server may have applied additional adaptor-side mutations
       // (timestamps, derived signals).
-      qc.invalidateQueries({ queryKey: beadsKeys.detail(vars.id) });
-      qc.invalidateQueries({ queryKey: beadsKeys.list() });
+      qc.invalidateQueries({ queryKey: workItemsKeys.detail(vars.id) });
+      qc.invalidateQueries({ queryKey: workItemsKeys.list() });
     },
   });
 }

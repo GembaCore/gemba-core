@@ -1,6 +1,6 @@
-# Running Gemba against your beads
+# Running Gemba against your work items
 
-Gemba is a single-binary Go service that reads a WorkPlane (a work tracker) and renders a Kanban board in your browser. At M1 the only WorkPlane adaptor is **beads** (`bd`). You can point it at a beads rig two ways:
+Gemba is a single-binary Go service that reads a WorkPlane (a work tracker) and renders a Kanban board in your browser. At M1 the only WorkPlane adaptor is **beads** (`bd`) — the work items themselves are bd issues. You can point Gemba at a beads rig two ways:
 
 - **Mode A — `--beads-dir`**: Gemba shells out to the `bd` CLI for every read. Slower but portable; works anywhere you can run `bd`.
 - **Mode B — `--dolt-url`**: Gemba opens a direct read-only SQL connection to your Dolt server. Faster and no `bd` dependency, but needs a reachable Dolt instance.

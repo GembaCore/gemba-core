@@ -1,5 +1,5 @@
 // Editability matrix (gm-root.8). Single source of truth for "should
-// this drawer field render an edit affordance?" so the BeadDrawer
+// this drawer field render an edit affordance?" so the WorkItemDrawer
 // doesn't sprinkle ad-hoc rules across components and the test suite
 // can pin every cell of the matrix in one place.
 //

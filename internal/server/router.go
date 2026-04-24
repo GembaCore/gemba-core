@@ -112,27 +112,33 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		//   /rigs          — registered rigs and their pack assignments
 		//   /agents        — running agent sessions (provider-agnostic)
 		//   /sessions      — raw session metadata (tmux/k8s/subproc/exec)
-		//   /beads         — work items across all rigs
-		//   /beads/ready   — unblocked work (bd ready)
+		//   /work-items         — every WorkItem the bound adaptor exposes
+		//   /work-items/ready   — unblocked work (bd ready, equivalents elsewhere)
 		//   /packs         — available packs, loaded packs
 		//   /desired-state — parsed city.toml (desired)
 		//   /drift         — desired vs actual reconciliation status
+		//
+		// gm-root.9: HTTP surface speaks Gemba's vocabulary, not the
+		// bd adaptor's. Routes used to live under /api/beads — that
+		// name leaked the bd identity into the contract.
 		api.Get("/city", notImplemented)
 		api.Get("/rigs", notImplemented)
 		api.Get("/agents", notImplemented)
 		api.Get("/sessions", notImplemented)
-		// gm-peg: list work items across the registered WorkPlane. Empty
-		// filter today — filtering / pagination land in later milestones.
-		api.Get("/beads", r.listBeads)
-		api.Get("/beads/ready", notImplemented)
-		// gm-kn2: single-bead fetch with full relationship graph. Drives
-		// the SPA drill-in drawer (M1.7c). Static sibling routes above
-		// (/beads, /beads/ready) take precedence in chi's matcher.
-		api.Get("/beads/{id}", r.getBead)
+		// gm-peg: list work items across the registered WorkPlane.
+		// Empty filter today — filtering / pagination land in later
+		// milestones.
+		api.Get("/work-items", r.listWorkItems)
+		api.Get("/work-items/ready", notImplemented)
+		// gm-kn2: single-work-item fetch with full relationship graph.
+		// Drives the SPA drill-in drawer. Static sibling routes above
+		// (/work-items, /work-items/ready) take precedence in chi's
+		// matcher.
+		api.Get("/work-items/{id}", r.getWorkItem)
 		// Mutations gated by the X-GEMBA-Confirm nonce so SPA
 		// double-clicks / React re-mounts can't double-apply.
 		api.With(requireConfirmNonce(r.nonceCache)).
-			Patch("/beads/{id}", r.patchBead)
+			Patch("/work-items/{id}", r.patchWorkItem)
 		api.Get("/packs", notImplemented)
 		api.Get("/desired-state", notImplemented)
 		api.Get("/drift", notImplemented)
