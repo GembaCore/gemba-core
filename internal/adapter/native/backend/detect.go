@@ -58,3 +58,18 @@ func ResolveKind(override Kind) (Kind, error) {
 		return KindUnknown, fmt.Errorf("native/backend: unknown terminal kind %q", override)
 	}
 }
+
+// Select constructs the Backend for the resolved Kind. Used by the
+// native adaptor so it never directly names a backend constructor.
+func Select(kind Kind) (Backend, error) {
+	switch kind {
+	case KindTmux:
+		return NewTmux()
+	case KindITerm:
+		return NewITerm(), nil
+	case KindTerminal:
+		return NewTerminalApp(), nil
+	default:
+		return nil, fmt.Errorf("native/backend: cannot construct backend for kind %q", kind)
+	}
+}
