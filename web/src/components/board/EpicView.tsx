@@ -51,6 +51,7 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
     }
   }, [items, mode]);
   const childCountsByEpic = useMemo(() => buildChildCounts(items), [items]);
+  const rootEpics = useMemo(() => findRootEpics(items), [items]);
 
   if (swimlanes.length === 0) {
     return (
@@ -71,6 +72,7 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
       data-testid="board-epic"
       className="flex h-full flex-col overflow-y-auto"
     >
+      <RootEpicBanner roots={rootEpics} onSelectEpic={onSelectEpic} />
       <ColumnHeader />
       <div className="flex flex-col">
         {swimlanes.map((s) => (
@@ -86,13 +88,62 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
   );
 }
 
+// findRootEpics returns Epics that have no parent_child edge pointing to
+// them from another Epic — i.e., the top of the hierarchy. Used for the
+// board's top banner so the operator sees product-level context once,
+// not repeated in every swimlane gutter.
+function findRootEpics(items: WorkItem[]): WorkItem[] {
+  const epics = items.filter((i) => i.kind === 'epic');
+  const epicIDs = new Set(epics.map((e) => e.id));
+  return epics.filter((e) => {
+    return !(e.relationships ?? []).some(
+      (r) => r.kind === 'parent_child' && r.to === e.id && epicIDs.has(r.from)
+    );
+  });
+}
+
+interface RootEpicBannerProps {
+  roots: WorkItem[];
+  onSelectEpic: (id: string) => void;
+}
+
+// RootEpicBanner renders the board's top-level roots as a thin strip so
+// operators keep product-level context without the per-swimlane gutter
+// eating horizontal space.
+function RootEpicBanner({ roots, onSelectEpic }: RootEpicBannerProps) {
+  if (roots.length === 0) return null;
+  return (
+    <div
+      data-testid="board-root-epic-banner"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
+    >
+      {roots.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          data-testid={`board-root-epic-${r.id}`}
+          onClick={() => onSelectEpic(r.id)}
+          className="inline-flex items-baseline gap-2 text-left hover:underline focus:outline-none focus:ring-1 focus:ring-sky-500 rounded"
+        >
+          <span className="font-mono text-[11px] text-neutral-500">{r.id}</span>
+          <span className="font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
+            {r.title}
+          </span>
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
+            {r.status}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ColumnHeader() {
   return (
     <div
       data-testid="board-epic-header"
       className="sticky top-0 z-10 flex border-b border-neutral-200 bg-white/95 px-4 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95"
     >
-      <div className="w-48 shrink-0" /> {/* swimlane label gutter */}
       <div className="flex flex-1 gap-3">
         {STATE_CATEGORIES.map((cat) => (
           <div
@@ -116,8 +167,8 @@ interface SwimlaneRowProps {
 function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowProps) {
   const isOrphan = swimlane.root.id === ORPHAN_ROOT_ID;
   // The "none" mode returns a single synthetic swimlane labelled
-  // "All epics" — render the row gutter blank so the layout reads as
-  // a flat board rather than an awkwardly-labelled single lane.
+  // "All epics" — suppress the row header so the layout reads as a
+  // flat board rather than an awkwardly-labelled single lane.
   const isSingleLane = swimlane.root.id === SINGLE_LANE_ID;
   // Bucket members by state so each column renders only its slice.
   const byState: Record<StateCategory, WorkItem[]> = {
@@ -133,33 +184,26 @@ function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowP
   return (
     <section
       data-testid={`board-epic-swimlane-${swimlane.root.id}`}
-      className="flex border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"
+      className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"
     >
-      <div className="w-48 shrink-0 pr-3">
-        {isSingleLane ? null : (
-          <>
-            <div
-              className={
-                'text-xs font-semibold uppercase tracking-wide ' +
-                (isOrphan
-                  ? 'text-neutral-400 dark:text-neutral-500'
-                  : 'text-neutral-700 dark:text-neutral-300')
-              }
-            >
-              {swimlane.root.title}
-            </div>
-            {!isOrphan && (
-              <div className="mt-0.5 font-mono text-[11px] text-neutral-500">
-                {swimlane.root.id}
-              </div>
-            )}
-            <div className="mt-1 text-[11px] text-neutral-500">
-              {swimlane.members.length} {swimlane.members.length === 1 ? 'epic' : 'epics'}
-            </div>
-          </>
-        )}
-      </div>
-      <div className="flex flex-1 gap-3">
+      {!isSingleLane && (
+        <div className="mb-2 flex items-baseline gap-2 text-[11px] text-neutral-500">
+          <span
+            className={
+              isOrphan
+                ? 'italic text-neutral-400 dark:text-neutral-500'
+                : 'font-mono text-neutral-600 dark:text-neutral-400'
+            }
+          >
+            {isOrphan ? 'Orphan epics' : swimlane.root.id}
+          </span>
+          <span aria-hidden>·</span>
+          <span>
+            {swimlane.members.length} {swimlane.members.length === 1 ? 'epic' : 'epics'}
+          </span>
+        </div>
+      )}
+      <div className="flex gap-3">
         {STATE_CATEGORIES.map((cat) => (
           <div
             key={cat}
