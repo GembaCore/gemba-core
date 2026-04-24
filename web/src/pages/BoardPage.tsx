@@ -168,14 +168,14 @@ function BoardHeader({ view, onChangeView, swimlane, onChangeSwimlane }: BoardHe
         <ToggleButton
           active={view === 'epic'}
           onClick={() => onChangeView('epic')}
-          label="Epics"
+          label="Epic"
           icon={<LayoutGrid className="h-3 w-3" />}
           testid="view-toggle-epic"
         />
         <ToggleButton
           active={view === 'workitem'}
           onClick={() => onChangeView('workitem')}
-          label="Work items"
+          label="Item"
           icon={<ListChecks className="h-3 w-3" />}
           testid="view-toggle-workitem"
         />
