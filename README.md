@@ -95,6 +95,19 @@ Until then, the orchestrator (Mayor in Gas Town terms) decomposes work from `bd 
 
 Gemba at M1 ships the Beads WorkPlane adaptor in two modes (`--beads-dir` via the `bd` CLI, or `--dolt-url` for a direct Dolt SQL connection). End-to-end instructions, expected banner output, and troubleshooting live in [`docs/getting-started/running-against-your-work-items.md`](docs/getting-started/running-against-your-work-items.md).
 
+### Shader interop smoke (gm-root.5)
+
+`scripts/shader-interop.sh` exercises the full **encode → bd-store → decode** round-trip against a live `gemba serve` + `bd` backend. It boots gemba on a sandbox port (`:17666` by default) with the gastown shader from `fixtures/gastown.json`, creates a probe bead via `bd create`, PATCHes the title through the running gemba (firing the encoder), asserts `bd show` carries the encoded prefix, then asserts gemba's GET strips it back off. Probe bead is closed in the EXIT trap.
+
+```bash
+make build
+bash scripts/shader-interop.sh
+
+# Optional — also fire `gt sling` and watch for the polecat to hook.
+# Skipped by default because the sling pipeline is flaky on this rig.
+SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
+```
+
 ## Development
 
 The repo ships a single `Makefile` covering the full dev/build/release loop. From a fresh clone:
