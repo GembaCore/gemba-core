@@ -28,6 +28,15 @@ import (
 // run can detect "already installed" without re-parsing our stanza.
 const SentinelKey = "_gemba_bridge"
 
+// SentinelVersion is bumped whenever the stanza shape changes. The
+// installer skips its own work only when the on-disk sentinel version
+// matches — older versions get re-merged so the upgrade path picks up
+// new fields (e.g. mcpServers for gm-native.19) without operator
+// intervention. Hooks + mcpServers payloads are themselves
+// deterministic, so re-writing them is a no-op on the byte level when
+// already current.
+const SentinelVersion = "3"
+
 // MarkerStart / MarkerEnd bracket the gemba-owned region of CLAUDE.md.
 // Anything between these lines is owned by gemba and replaced on
 // install; anything outside is operator-owned and preserved.
@@ -91,14 +100,16 @@ func installSettingsJSON(opts Options) (Action, error) {
 				Reason: "existing JSON unparseable; left untouched"}, fmt.Errorf("parse %s: %w", path, err)
 		}
 	}
-	if _, alreadyOurs := existing[SentinelKey]; alreadyOurs {
-		return Action{Path: path, Kind: "skipped", Reason: "sentinel present; already installed"}, nil
+	if sentinelAtCurrentVersion(existing) {
+		return Action{Path: path, Kind: "skipped",
+			Reason: "sentinel v" + SentinelVersion + " present; already installed"}, nil
 	}
 	preexisting := len(existing) > 0
 	existing["hooks"] = claudeHookStanza()
+	mergeMcpServers(existing)
 	existing[SentinelKey] = map[string]interface{}{
 		"profile": "claude",
-		"version": "2",
+		"version": SentinelVersion,
 	}
 	if opts.DryRun {
 		kind := "created"
@@ -122,6 +133,62 @@ func installSettingsJSON(opts Options) (Action, error) {
 			Reason: "added hooks + sentinel; preserved operator keys"}, nil
 	}
 	return Action{Path: path, Kind: "created", Reason: "fresh install"}, nil
+}
+
+// sentinelAtCurrentVersion returns true when the settings map already
+// carries a gemba sentinel whose version matches the current binary.
+// Older (or malformed) sentinels fall through so the installer can
+// upgrade the stanza shape in place.
+func sentinelAtCurrentVersion(settings map[string]interface{}) bool {
+	raw, ok := settings[SentinelKey]
+	if !ok {
+		return false
+	}
+	obj, ok := raw.(map[string]interface{})
+	if !ok {
+		return false
+	}
+	v, _ := obj["version"].(string)
+	return v == SentinelVersion
+}
+
+// mergeMcpServers registers the gemba-mcp server under the
+// "mcpServers" key of settings.local.json (gm-native.19). Operator-
+// authored entries under other keys are preserved; only the "gemba"
+// slot is owned by us. Safe to call on every install — it replaces
+// the gemba slot deterministically so re-running converges to the
+// same bytes.
+func mergeMcpServers(settings map[string]interface{}) {
+	raw, ok := settings["mcpServers"]
+	if !ok {
+		settings["mcpServers"] = map[string]interface{}{
+			"gemba": gembaMcpEntry(),
+		}
+		return
+	}
+	obj, ok := raw.(map[string]interface{})
+	if !ok {
+		// Operator has a mis-shaped mcpServers value (not an object).
+		// Overwriting would destroy their data; leave it and log.
+		// The installer's invariant is "never clobber operator bytes
+		// outside a gemba-owned block" — an mcpServers that isn't an
+		// object is entirely operator-owned. Skip the merge silently.
+		return
+	}
+	obj["gemba"] = gembaMcpEntry()
+	settings["mcpServers"] = obj
+}
+
+// gembaMcpEntry is the MCP server spec for gemba-mcp. Format matches
+// Claude Code's .mcp.json / settings.local.json mcpServers schema:
+// {command, args?, env?}. GEMBA_SESSION_ID / GEMBA_AGENT_TYPE /
+// GEMBA_INTERACTION_MODE are inherited from the Claude process, which
+// inherits them from the pane the adaptor spawned — no explicit env
+// needed here.
+func gembaMcpEntry() map[string]interface{} {
+	return map[string]interface{}{
+		"command": "gemba-mcp",
+	}
 }
 
 func claudeHookStanza() map[string]interface{} {

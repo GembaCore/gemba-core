@@ -300,6 +300,192 @@ func TestShellOnlySecondRunSkipsWhenCurrent(t *testing.T) {
 	}
 }
 
+// gm-native.19: pristine worktree install registers gemba-mcp under
+// mcpServers in settings.local.json alongside the hooks stanza.
+func TestClaudeFreshInstallRegistersGembaMcpServer(t *testing.T) {
+	withSkillsFS(t, fixtureSkillsFS())
+	dir := t.TempDir()
+	if _, err := NewClaude().Install(context.Background(), Options{Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, ".claude", "settings.local.json"))
+	var got map[string]interface{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	servers, ok := got["mcpServers"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("mcpServers missing or wrong shape: %+v", got["mcpServers"])
+	}
+	gemba, ok := servers["gemba"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("mcpServers.gemba missing: %+v", servers)
+	}
+	if gemba["command"] != "gemba-mcp" {
+		t.Errorf("gemba.command=%v want gemba-mcp", gemba["command"])
+	}
+}
+
+// gm-native.19: operator's other mcpServers entries survive the merge.
+func TestClaudeMergePreservesOperatorMcpServers(t *testing.T) {
+	withSkillsFS(t, fixtureSkillsFS())
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(dir, ".claude", "settings.local.json")
+	// Operator pre-registered a puppeteer MCP server. Our merge must
+	// leave their entry alone while adding the gemba entry.
+	prior := map[string]interface{}{
+		"mcpServers": map[string]interface{}{
+			"puppeteer": map[string]interface{}{
+				"command": "npx",
+				"args":    []string{"-y", "@modelcontextprotocol/server-puppeteer"},
+			},
+		},
+	}
+	raw, _ := json.Marshal(prior)
+	if err := os.WriteFile(settingsPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewClaude().Install(context.Background(), Options{Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+
+	b, _ := os.ReadFile(settingsPath)
+	var got map[string]interface{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	servers := got["mcpServers"].(map[string]interface{})
+	if _, ok := servers["puppeteer"]; !ok {
+		t.Errorf("operator's puppeteer server wiped: %+v", servers)
+	}
+	if _, ok := servers["gemba"]; !ok {
+		t.Errorf("gemba server not added: %+v", servers)
+	}
+	pup := servers["puppeteer"].(map[string]interface{})
+	if pup["command"] != "npx" {
+		t.Errorf("operator's puppeteer command mutated: %v", pup["command"])
+	}
+}
+
+// gm-native.19: running the installer twice produces identical bytes
+// on the second run (idempotent), because the sentinel v3 skip path
+// fires.
+func TestClaudeMcpServersInstallIsIdempotent(t *testing.T) {
+	withSkillsFS(t, fixtureSkillsFS())
+	dir := t.TempDir()
+	if _, err := NewClaude().Install(context.Background(), Options{Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(dir, ".claude", "settings.local.json")
+	before, _ := os.ReadFile(settingsPath)
+
+	rep, err := NewClaude().Install(context.Background(), Options{Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(settingsPath)
+	if string(before) != string(after) {
+		t.Errorf("second run rewrote settings:\nbefore=%s\nafter=%s", before, after)
+	}
+	for _, a := range rep.Actions {
+		if strings.HasSuffix(a.Path, "settings.local.json") {
+			if a.Kind != "skipped" {
+				t.Errorf("second run should have skipped settings; kind=%q", a.Kind)
+			}
+		}
+	}
+}
+
+// gm-native.19 upgrade path: a worktree installed with an older
+// sentinel version must pick up the new mcpServers block on the next
+// install run. Simulates users who installed before gm-native.19.
+func TestClaudeUpgradesOlderSentinelAddsMcpServers(t *testing.T) {
+	withSkillsFS(t, fixtureSkillsFS())
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(dir, ".claude", "settings.local.json")
+	// Simulate the pre-v3 shape: sentinel present with version "2" and
+	// hooks, but no mcpServers key.
+	legacy := map[string]interface{}{
+		"hooks": claudeHookStanza(),
+		SentinelKey: map[string]interface{}{
+			"profile": "claude",
+			"version": "2",
+		},
+	}
+	raw, _ := json.Marshal(legacy)
+	if err := os.WriteFile(settingsPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewClaude().Install(context.Background(), Options{Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+
+	b, _ := os.ReadFile(settingsPath)
+	var got map[string]interface{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	servers, ok := got["mcpServers"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("mcpServers should have been added on upgrade; got=%+v", got)
+	}
+	if _, ok := servers["gemba"]; !ok {
+		t.Error("gemba server missing after upgrade")
+	}
+	// Sentinel version should now be v3.
+	sent := got[SentinelKey].(map[string]interface{})
+	if sent["version"] != SentinelVersion {
+		t.Errorf("sentinel version: got %v want %q", sent["version"], SentinelVersion)
+	}
+}
+
+// gm-native.19: if the operator has a mis-shaped mcpServers value
+// (e.g. an array), the installer leaves it untouched rather than
+// clobbering operator data. This is a "never clobber operator bytes"
+// invariant.
+func TestClaudeMcpServersMalformedIsPreserved(t *testing.T) {
+	withSkillsFS(t, fixtureSkillsFS())
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".claude"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	settingsPath := filepath.Join(dir, ".claude", "settings.local.json")
+	// Operator set mcpServers to an array for some reason.
+	weird := map[string]interface{}{
+		"mcpServers": []interface{}{"not", "an", "object"},
+	}
+	raw, _ := json.Marshal(weird)
+	if err := os.WriteFile(settingsPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewClaude().Install(context.Background(), Options{Dir: dir}); err != nil {
+		t.Fatal(err)
+	}
+
+	b, _ := os.ReadFile(settingsPath)
+	var got map[string]interface{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	arr, ok := got["mcpServers"].([]interface{})
+	if !ok {
+		t.Fatalf("operator's malformed mcpServers mutated: %T %+v",
+			got["mcpServers"], got["mcpServers"])
+	}
+	if len(arr) != 3 {
+		t.Errorf("operator array length changed: %v", arr)
+	}
+}
+
 func TestInstallerMissingDirErrors(t *testing.T) {
 	if _, err := NewClaude().Install(context.Background(), Options{}); err == nil {
 		t.Error("claude: want error for missing Dir")
