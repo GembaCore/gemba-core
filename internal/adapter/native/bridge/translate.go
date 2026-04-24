@@ -56,6 +56,13 @@ func translateClaude(f Frame) []core.OrchestrationEvent {
 		Payload:   rawPayload(f),
 	}
 	switch f.Hook {
+	case "GembaState":
+		// Deterministic state-transition signal written by the
+		// gemba-state CLI (gm-cdph). Payload carries {state, bead_id,
+		// note}. The native OrchestrationPlane subscribes to this
+		// event kind to mutate Session.Status.
+		base.Kind = "session_state_reported"
+		return []core.OrchestrationEvent{base}
 	case "SessionStart":
 		base.Kind = "session_transition"
 		base.Payload["status"] = "running"
@@ -111,8 +118,8 @@ func translateShell(f Frame) []core.OrchestrationEvent {
 }
 
 // translatePassthrough is the fallback for unknown agent types. Only
-// SessionStart/Stop produce events; everything else is dropped
-// (logged by caller).
+// SessionStart/Stop + GembaState produce events; everything else is
+// dropped (logged by caller).
 func translatePassthrough(f Frame) []core.OrchestrationEvent {
 	base := core.OrchestrationEvent{
 		ID:        f.EventID,
@@ -121,6 +128,11 @@ func translatePassthrough(f Frame) []core.OrchestrationEvent {
 		Payload:   rawPayload(f),
 	}
 	switch f.Hook {
+	case "GembaState":
+		// gemba-state CLI is agent-type agnostic — fire for shell-only
+		// and any future agent that hasn't been explicitly wired.
+		base.Kind = "session_state_reported"
+		return []core.OrchestrationEvent{base}
 	case "SessionStart":
 		base.Kind = "session_transition"
 		base.Payload["status"] = "running"

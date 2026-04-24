@@ -55,10 +55,13 @@ func NewWithConfig(cfg Config) *OrchestrationPlane {
 		nonces:      make(map[string]string),
 		escalations: newEscalationIndex(),
 	}
-	// Wire the escalation index as the Fanout observer so every
-	// bridge frame updates the in-memory state before broadcast to
-	// SPA subscribers.
-	fo.SetObserver(p.escalations.handleEvent)
+	// Wire the observer chain: escalation index first, then the
+	// session-state handler. Fanout supports a single observer; we
+	// fan out here so each handler is independent and testable.
+	fo.SetObserver(func(ev core.OrchestrationEvent) {
+		p.escalations.handleEvent(ev)
+		p.handleStateEvent(ev)
+	})
 	return p
 }
 

@@ -87,6 +87,35 @@ func TestTranslateClaudeNotificationDefaultsPermissionPrompt(t *testing.T) {
 	}
 }
 
+func TestTranslateClaudeGembaStateEmitsSessionStateReported(t *testing.T) {
+	payload, _ := json.Marshal(map[string]string{"state": "working", "bead_id": "gm-42"})
+	evs := translateClaude(Frame{
+		SessionID: "s1", Hook: "GembaState", EventID: "e-gs-1", Payload: payload,
+	})
+	if len(evs) != 1 {
+		t.Fatalf("want 1 event, got %d", len(evs))
+	}
+	if evs[0].Kind != "session_state_reported" {
+		t.Errorf("kind: got %q, want session_state_reported", evs[0].Kind)
+	}
+	if evs[0].Payload["state"] != "working" {
+		t.Errorf("state payload: got %v", evs[0].Payload["state"])
+	}
+	if evs[0].Payload["bead_id"] != "gm-42" {
+		t.Errorf("bead_id payload: got %v", evs[0].Payload["bead_id"])
+	}
+}
+
+func TestTranslatePassthroughGembaStateEmitsSessionStateReported(t *testing.T) {
+	payload, _ := json.Marshal(map[string]string{"state": "ready"})
+	evs := translatePassthrough(Frame{
+		SessionID: "s1", Hook: "GembaState", Payload: payload,
+	})
+	if len(evs) != 1 || evs[0].Kind != "session_state_reported" {
+		t.Errorf("passthrough translator dropped GembaState: %+v", evs)
+	}
+}
+
 func TestTailEmitsEventsWhenFileAppearsLater(t *testing.T) {
 	home := t.TempDir()
 	sessionID := "s1"
