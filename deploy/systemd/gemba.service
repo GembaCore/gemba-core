@@ -1,0 +1,30 @@
+[Unit]
+Description=Gemba — WorkPlane + OrchestrationPlane UI
+Documentation=https://github.com/MikeBengtson/gemba
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gemba
+Group=gemba
+WorkingDirectory=/var/lib/gemba
+EnvironmentFile=-/etc/gemba/gemba.env
+ExecStart=/usr/bin/gemba serve
+Restart=on-failure
+RestartSec=5s
+
+# Hardening — tighten as your deployment requires.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/gemba /etc/gemba
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target

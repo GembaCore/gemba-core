@@ -5,9 +5,9 @@ before:
     - go mod tidy
 
 builds:
-  - id: bc
+  - id: gemba
     main: ./cmd/gemba
-    binary: bc
+    binary: gemba
     env:
       - CGO_ENABLED=0
     goos:
@@ -30,7 +30,7 @@ builds:
       - -X main.date={{.Date}}
 
 archives:
-  - id: bc
+  - id: gemba
     formats: [tar.gz]
     name_template: >-
       {{ .ProjectName }}_
