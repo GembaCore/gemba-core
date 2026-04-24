@@ -16,7 +16,14 @@ const (
 	KindTmux     Kind = "tmux"
 	KindITerm    Kind = "iterm"
 	KindTerminal Kind = "terminal"
-	KindUnknown  Kind = "unknown"
+	// KindContainer — Docker container backend. See
+	// docs/design/containerized-sessions.md §3.
+	KindContainer Kind = "container"
+	// KindSSH — remote shell reached via the ssh CLI. Parallel wire
+	// protocol to KindContainer when we don't have docker daemon
+	// access.
+	KindSSH     Kind = "ssh"
+	KindUnknown Kind = "unknown"
 )
 
 // Detect inspects the running process's environment and picks the
@@ -52,7 +59,7 @@ func ResolveKind(override Kind) (Kind, error) {
 				"(TMUX and TERM_PROGRAM are both unset); set --terminal=tmux|iterm|terminal explicitly")
 		}
 		return k, nil
-	case KindTmux, KindITerm, KindTerminal:
+	case KindTmux, KindITerm, KindTerminal, KindContainer, KindSSH:
 		return override, nil
 	default:
 		return KindUnknown, fmt.Errorf("native/backend: unknown terminal kind %q", override)
@@ -69,6 +76,8 @@ func Select(kind Kind) (Backend, error) {
 		return NewITerm(), nil
 	case KindTerminal:
 		return NewTerminalApp(), nil
+	case KindContainer:
+		return NewDocker()
 	default:
 		return nil, fmt.Errorf("native/backend: cannot construct backend for kind %q", kind)
 	}

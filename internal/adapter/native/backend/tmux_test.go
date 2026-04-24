@@ -17,8 +17,8 @@ func TestParsePanes(t *testing.T) {
 		t.Fatalf("parsePanes: %v", err)
 	}
 	want := []Pane{
-		{ID: "%5", Cwd: "/home/mike/repo", Command: "zsh", Title: "my title", Pid: 12345},
-		{ID: "%6", Cwd: "/tmp", Command: "claude", Title: "", Pid: 67890},
+		{Kind: KindTmux, ID: "%5", Cwd: "/home/mike/repo", Command: "zsh", Title: "my title", Pid: 12345},
+		{Kind: KindTmux, ID: "%6", Cwd: "/tmp", Command: "claude", Title: "", Pid: 67890},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("parsePanes mismatch:\n got  %+v\n want %+v", got, want)

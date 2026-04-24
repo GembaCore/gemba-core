@@ -68,6 +68,7 @@ func parsePanes(out string) ([]Pane, error) {
 		}
 		pid, _ := strconv.Atoi(parts[4])
 		panes = append(panes, Pane{
+			Kind:    KindTmux,
 			ID:      parts[0],
 			Cwd:     parts[1],
 			Command: parts[2],
@@ -134,7 +135,7 @@ func (t *Tmux) SpawnPane(ctx context.Context, spec SpawnSpec) (Pane, error) {
 		}
 	}
 	// Fallback: return what we know.
-	return Pane{ID: paneID, Cwd: spec.Cwd, Title: spec.Title}, nil
+	return Pane{Kind: KindTmux, ID: paneID, Cwd: spec.Cwd, Title: spec.Title}, nil
 }
 
 // SendKeys injects keystrokes. A trailing literal "Enter" is
