@@ -9,7 +9,7 @@ import (
 
 func TestStateCategoryValid(t *testing.T) {
 	for _, s := range []StateCategory{
-		StateBacklog, StateUnstarted, StateStarted, StateCompleted, StateCanceled,
+		StateBacklog, StateUnstarted, StateStaged, StateStarted, StateCompleted, StateCanceled,
 	} {
 		if !s.Valid() {
 			t.Errorf("%q expected Valid()=true", s)
@@ -23,7 +23,7 @@ func TestStateCategoryValid(t *testing.T) {
 func TestStateCategoryJSON(t *testing.T) {
 	// Accept the five known strings.
 	for _, s := range []StateCategory{
-		StateBacklog, StateUnstarted, StateStarted, StateCompleted, StateCanceled,
+		StateBacklog, StateUnstarted, StateStaged, StateStarted, StateCompleted, StateCanceled,
 	} {
 		data, err := json.Marshal(s)
 		if err != nil {

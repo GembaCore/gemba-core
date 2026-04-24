@@ -34,11 +34,15 @@ import { useHotkey } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 
+// Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
+// Progress → Done → Canceled). The internal core enum keeps its
+// camel-but-not-quite names; only the labels match the spec.
 const COLUMN_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
-  unstarted: 'Unstarted',
-  started: 'Started',
-  completed: 'Completed',
+  unstarted: 'Next Up',
+  staged: 'Staged',
+  started: 'In Progress',
+  completed: 'Done',
   canceled: 'Canceled',
 };
 
@@ -52,6 +56,7 @@ function groupByStateCategory(items: WorkItem[]): Record<StateCategory, WorkItem
   const out: Record<StateCategory, WorkItem[]> = {
     backlog: [],
     unstarted: [],
+    staged: [],
     started: [],
     completed: [],
     canceled: [],

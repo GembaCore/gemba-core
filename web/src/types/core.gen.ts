@@ -12,6 +12,7 @@ export type AgentID = string;
 export type StateCategory =
   | "backlog"
   | "unstarted"
+  | "staged"
   | "started"
   | "completed"
   | "canceled";
@@ -19,6 +20,7 @@ export type StateCategory =
 export const STATE_CATEGORIES: readonly StateCategory[] = [
   "backlog",
   "unstarted",
+  "staged",
   "started",
   "completed",
   "canceled",

@@ -57,8 +57,8 @@ func TestCoreTypesTSContainsEveryGoJSONField(t *testing.T) {
 func TestCoreTypesTSContainsEveryEnumString(t *testing.T) {
 	enums := []string{
 		// StateCategory
-		string(StateBacklog), string(StateUnstarted), string(StateStarted),
-		string(StateCompleted), string(StateCanceled),
+		string(StateBacklog), string(StateUnstarted), string(StateStaged),
+		string(StateStarted), string(StateCompleted), string(StateCanceled),
 		// RelationshipKind
 		string(RelBlocks), string(RelParentChild), string(RelRelatesTo),
 		// AgentKind

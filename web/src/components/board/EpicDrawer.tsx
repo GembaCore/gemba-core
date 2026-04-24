@@ -21,9 +21,10 @@ import { epicChildren } from './epicHierarchy';
 
 const STATE_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
-  unstarted: 'Unstarted',
-  started: 'Started',
-  completed: 'Completed',
+  unstarted: 'Next Up',
+  staged: 'Staged',
+  started: 'In Progress',
+  completed: 'Done',
   canceled: 'Canceled',
 };
 
@@ -168,6 +169,7 @@ function Body({ epic, children, onOpenChild }: BodyProps) {
   const byState: Record<StateCategory, WorkItem[]> = {
     backlog: [],
     unstarted: [],
+    staged: [],
     started: [],
     completed: [],
     canceled: [],

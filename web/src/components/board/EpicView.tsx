@@ -21,11 +21,15 @@ import {
 } from './epicHierarchy';
 import { DEFAULT_SWIMLANE_MODE, type SwimlaneMode } from './swimlaneMode';
 
+// Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
+// Progress → Done → Canceled). The STATE_CATEGORIES order from
+// core.gen.ts already matches.
 const COLUMN_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
-  unstarted: 'Unstarted',
-  started: 'Started',
-  completed: 'Completed',
+  unstarted: 'Next Up',
+  staged: 'Staged',
+  started: 'In Progress',
+  completed: 'Done',
   canceled: 'Canceled',
 };
 
@@ -174,6 +178,7 @@ function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowP
   const byState: Record<StateCategory, WorkItem[]> = {
     backlog: [],
     unstarted: [],
+    staged: [],
     started: [],
     completed: [],
     canceled: [],
@@ -254,6 +259,6 @@ function buildChildCounts(items: WorkItem[]): Map<string, EpicChildCounts> {
 function emptyCounts(): EpicChildCounts {
   return {
     total: 0,
-    byState: { backlog: 0, unstarted: 0, started: 0, completed: 0, canceled: 0 },
+    byState: { backlog: 0, unstarted: 0, staged: 0, started: 0, completed: 0, canceled: 0 },
   };
 }

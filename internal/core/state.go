@@ -9,11 +9,15 @@ import (
 // StateCategory is the adaptor-agnostic normalization of a work item's
 // lifecycle position. Every adaptor maps its native statuses
 // ("open", "in_progress", "done", "To Do", "In Review", ...) onto one of
-// these five buckets so the UI can render a consistent Kanban board
+// these six buckets so the UI can render a consistent Kanban board
 // without knowing Beads-specific or Jira-specific vocabulary.
 //
 // The native status string is preserved on WorkItem.Status; StateCategory
 // is strictly a secondary, normalized view of it.
+//
+// Canonical column order (ui-spec §4.3):
+//
+//	Backlog → Next Up (Unstarted) → Staged → In Progress (Started) → Done (Completed) → Canceled
 type StateCategory string
 
 const (
@@ -22,14 +26,25 @@ const (
 	StateBacklog StateCategory = "backlog"
 
 	// StateUnstarted — triaged and ready to pick up, but no one is working
-	// on it yet. "open", "ready", "To Do".
+	// on it yet. "open", "ready", "To Do". Renders as "Next Up" in the
+	// UI per ui-spec §4.3.
 	StateUnstarted StateCategory = "unstarted"
 
+	// StateStaged — explicitly staged for execution this cycle. The
+	// operator has decided "yes, work this next" but no one has started
+	// yet. Distinct from StateUnstarted (a passive ready-pile) — Staged
+	// is an active commitment. ui-spec §4.3 calls this column "Staged".
+	// Adaptors map to it via convention (bd: a `staged:true` label or
+	// equivalent) — backends without a native staging concept may simply
+	// never emit this value.
+	StateStaged StateCategory = "staged"
+
 	// StateStarted — actively in progress. "in_progress", "In Review",
-	// "Doing", "hooked", "pinned".
+	// "Doing", "hooked", "pinned". Renders as "In Progress" per ui-spec.
 	StateStarted StateCategory = "started"
 
 	// StateCompleted — finished successfully. "closed", "done", "merged".
+	// Renders as "Done" per ui-spec.
 	StateCompleted StateCategory = "completed"
 
 	// StateCanceled — terminally closed without completion. "won't fix",
@@ -42,6 +57,7 @@ const (
 var validStates = map[StateCategory]struct{}{
 	StateBacklog:   {},
 	StateUnstarted: {},
+	StateStaged:    {},
 	StateStarted:   {},
 	StateCompleted: {},
 	StateCanceled:  {},

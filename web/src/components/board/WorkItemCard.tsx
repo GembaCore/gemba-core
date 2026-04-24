@@ -22,6 +22,7 @@ const PRIORITY_STYLES: Record<string, string> = {
 const STATE_DOT: Record<StateCategory, string> = {
   backlog: 'bg-neutral-400 dark:bg-neutral-500',
   unstarted: 'bg-sky-500',
+  staged: 'bg-violet-500',
   started: 'bg-amber-500',
   completed: 'bg-emerald-500',
   canceled: 'bg-rose-500',
