@@ -1,13 +1,15 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
-// AdaptorBanner — gm-b1. Polls /api/adaptors and surfaces a banner when
-// any adaptor is reporting degraded. The backend shape is stable (see
+// AdaptorBanner — gm-b1 / gm-root.7. Subscribes to the server-pushed
+// /api/adaptors/stream SSE feed so transitions surface in <1 s of the
+// next probe tick. The backend shape is stable (see
 // internal/server/adaptors.go); keep this type in sync with
 // registry.AdaptorStatus on the Go side.
 //
 // DoD (gm-b1): killing the bd daemon mid-session produces a clear
 // banner. Readonly views keep working — this component MUST NOT block
-// rendering of the rest of the app on a failed poll.
+// rendering of the rest of the app on a failed stream.
 
 type AdaptorStatus = {
   name: string;
@@ -20,32 +22,88 @@ type AdaptorsResponse = {
   adaptors: AdaptorStatus[];
 };
 
-// Poll cadence is a compromise: fast enough that a daemon death surfaces
-// within a few seconds, slow enough that we don't hammer a degraded
-// backend. 5s matches the typical Dolt probe timeout budget.
-const POLL_MS = 5_000;
+const STREAM_URL = '/api/adaptors/stream';
+const SNAPSHOT_URL = '/api/adaptors';
 
-async function fetchAdaptors(): Promise<AdaptorsResponse> {
-  const r = await fetch('/api/adaptors');
-  if (!r.ok) {
-    // Deliberately fall through to an empty result — the banner should
-    // not add noise when the health endpoint itself is reachable but
-    // unexpected. The bigger outage (whole backend down) will be
-    // communicated by whatever route is currently rendering.
-    throw new Error(`/api/adaptors: ${r.status}`);
-  }
-  return r.json();
+// useAdaptorsStream keeps the react-query cache fed from an
+// EventSource. Other parts of the SPA can still do
+// useQuery(['adaptors']) to read the current value — they don't own
+// the subscription, they just read the cache. The query is kept
+// disabled so react-query never runs a queryFn of its own; the SSE
+// callback is the single writer.
+function useAdaptorsStream(): void {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    let closed = false;
+    let snapshotFallbackFired = false;
+    let es: EventSource | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      if (closed) return;
+      // Guard against environments without EventSource (older jsdom
+      // runs); fall back to a single snapshot fetch so the banner at
+      // least renders once.
+      if (typeof EventSource === 'undefined') {
+        void fetchSnapshot();
+        return;
+      }
+      es = new EventSource(STREAM_URL);
+      es.onmessage = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.data) as AdaptorsResponse;
+          qc.setQueryData<AdaptorsResponse>(['adaptors'], parsed);
+        } catch {
+          // Ignore malformed frames — the next transition will
+          // supersede them. A non-JSON `: keepalive` heartbeat never
+          // reaches onmessage (EventSource treats it as a comment).
+        }
+      };
+      es.onerror = () => {
+        // First-error fallback: if we never got a frame, pull the
+        // snapshot so the banner has *something* to render while the
+        // browser auto-reconnects the EventSource. Subsequent errors
+        // are no-ops; EventSource retries on its own.
+        if (!snapshotFallbackFired && qc.getQueryData(['adaptors']) === undefined) {
+          snapshotFallbackFired = true;
+          void fetchSnapshot();
+        }
+      };
+    };
+
+    const fetchSnapshot = async () => {
+      try {
+        const r = await fetch(SNAPSHOT_URL);
+        if (!r.ok) return;
+        const data = (await r.json()) as AdaptorsResponse;
+        if (!closed) qc.setQueryData<AdaptorsResponse>(['adaptors'], data);
+      } catch {
+        // Same philosophy as the original poll — the banner silently
+        // stays absent when the health surface itself is unreachable.
+      }
+    };
+
+    connect();
+
+    return () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      es?.close();
+    };
+  }, [qc]);
 }
 
 export function AdaptorBanner() {
-  const { data } = useQuery({
+  useAdaptorsStream();
+
+  // useQuery with enabled:false still reads the cache populated by
+  // the SSE subscription, giving us the same subscribe-to-updates
+  // surface the rest of the SPA already uses.
+  const { data } = useQuery<AdaptorsResponse>({
     queryKey: ['adaptors'],
-    queryFn: fetchAdaptors,
-    refetchInterval: POLL_MS,
-    // Keep polling even when the tab is in the background — a silent
-    // banner on return is worse than a noisy one.
-    refetchIntervalInBackground: true,
-    staleTime: 0,
+    queryFn: async () => ({ adaptors: [] }),
+    enabled: false,
   });
 
   const degraded = (data?.adaptors ?? []).filter((a) => !a.healthy);

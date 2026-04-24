@@ -7,13 +7,21 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"time"
 
+	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
+
+// healthBusInterval is the ticker cadence for the registry HealthBus
+// started by NewRouter. 5s matches the old poll rate — the difference
+// is that we probe once per *process* instead of once per *tab*, and
+// client-side rendering becomes event-driven (see adaptorsStream).
+const healthBusInterval = 5 * time.Second
 
 // Router is the package-level entry point. cmd/gemba passes in the embedded
 // SPA filesystem so this package doesn't import the embed declaration
@@ -30,6 +38,13 @@ type Router struct {
 	// gemba serve will need a shared store.
 	nonceCache *NonceCache
 
+	// healthBus caches adaptor status and fans out transitions over
+	// /api/adaptors/stream. NewRouter creates it but does NOT start
+	// the ticker — cmd/gemba serve does via StartHealthBus so tests
+	// that never exercise the stream don't leak a goroutine per
+	// construction. gm-root.7.
+	healthBus *registry.HealthBus
+
 	mux http.Handler
 }
 
@@ -45,6 +60,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		host:       host,
 		nonceCache: NewNonceCache(0, 0), // defaults: 1024 entries / 5min TTL
 	}
+	r.healthBus = registry.NewHealthBus(healthBusInterval, r.boundAdaptorStatuses)
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.RequestID)
@@ -93,9 +109,12 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/config", r.config)
 
 		// Per-adaptor runtime health. Drives the SPA's degraded-state
-		// banner (gm-b1). The SPA polls this every few seconds and
-		// surfaces a banner when any adaptor reports healthy=false.
+		// banner (gm-b1 / gm-root.7). The SPA subscribes to the SSE
+		// stream; the JSON endpoint is the snapshot fallback used by
+		// `gemba doctor` and the initial-load bootstrap when the
+		// EventSource errors before the first frame lands.
 		api.Get("/adaptors", r.adaptorsHealth)
+		api.Get("/adaptors/stream", r.adaptorsStream)
 
 		// Capability manifests for both registered planes. The SPA reads
 		// these to gate adaptor-specific controls (gm-e11.4). When no
@@ -177,6 +196,26 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // router was constructed without one. Tests and handlers use this to
 // reach the registered WorkPlane / OrchestrationPlane.
 func (r *Router) Host() *api.Host { return r.host }
+
+// StartHealthBus starts the background probe ticker that feeds the
+// /api/adaptors snapshot and the /api/adaptors/stream SSE endpoint.
+// cmd/gemba serve calls this once after NewRouter; tests that don't
+// need the stream can skip it and still get correct /api/adaptors
+// responses (the handler falls through to a synchronous probe).
+// gm-root.7.
+func (r *Router) StartHealthBus() {
+	if r.healthBus != nil {
+		r.healthBus.Start()
+	}
+}
+
+// Close stops the HealthBus ticker. Safe to call when StartHealthBus
+// was never invoked.
+func (r *Router) Close() {
+	if r.healthBus != nil {
+		r.healthBus.Stop()
+	}
+}
 
 // --- stock handlers -------------------------------------------------------
 

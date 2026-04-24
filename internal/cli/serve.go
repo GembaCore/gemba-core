@@ -150,6 +150,11 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 				"non-API routes will return a 503 build hint")
 	}
 	handler := server.NewRouter(cfg, spa, host)
+	// Start the adaptor HealthBus ticker so /api/adaptors and
+	// /api/adaptors/stream read from a shared cache instead of
+	// probing once per client request (gm-root.7).
+	handler.StartHealthBus()
+	defer handler.Close()
 
 	srv := &http.Server{
 		Addr:              addr,

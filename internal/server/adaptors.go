@@ -30,10 +30,28 @@ import (
 //
 // The endpoint itself MUST never fail — a degraded backend is a banner,
 // not a 500.
+//
+// gm-root.7: reads from the HealthBus cache when the bus has been
+// started (the common production path); falls through to a live probe
+// otherwise so unit tests that skip StartHealthBus still get the
+// expected wire shape.
 func (r *Router) adaptorsHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"adaptors": r.boundAdaptorStatuses(),
+		"adaptors": r.snapshotAdaptorStatuses(),
 	})
+}
+
+// snapshotAdaptorStatuses returns the current cached status if the bus
+// is running; otherwise runs the bound-adaptor probe directly. The bus
+// itself also falls back to source() when its cache is empty, so this
+// helper could just be r.healthBus.Snapshot() — the explicit nil check
+// exists because some test harnesses construct Router with a zeroed
+// struct bypassing NewRouter.
+func (r *Router) snapshotAdaptorStatuses() []registry.AdaptorStatus {
+	if r.healthBus != nil {
+		return r.healthBus.Snapshot()
+	}
+	return r.boundAdaptorStatuses()
 }
 
 // boundAdaptorStatuses returns the registry-probed status for the
