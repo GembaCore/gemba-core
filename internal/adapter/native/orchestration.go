@@ -91,10 +91,25 @@ func (*OrchestrationPlane) ObservedState(context.Context) (core.WorkspaceTopolog
 	return core.WorkspaceTopology{CapturedAt: time.Now()}, nil
 }
 
-func (*OrchestrationPlane) ListAgents(context.Context, core.AgentFilter) ([]core.AgentRef, error) {
-	// Contract: empty slice (not nil) is valid for "no agents visible".
-	// The real impl (gm-native.4) replaces this with a backend poll.
-	return []core.AgentRef{}, nil
+func (o *OrchestrationPlane) ListAgents(context.Context, core.AgentFilter) ([]core.AgentRef, error) {
+	// Surface the agents.toml roster as AgentRefs so the SPA's agent-
+	// type picker (NewSessionDialog, drag-to-In-Progress auto-dispatch)
+	// has something to render. One AgentRef per registered type; the
+	// adaptor doesn't track live human/agent membership yet, so Kind is
+	// always AgentKindAgent and Dialect mirrors the type name — the SPA
+	// uses Dialect as the token it posts back in StartSession.
+	types := o.cfg.Registry.Agents
+	out := make([]core.AgentRef, 0, len(types))
+	for _, a := range types {
+		dialect := a.Name
+		out = append(out, core.AgentRef{
+			ID:      core.AgentID(a.Name),
+			Name:    a.Name,
+			Kind:    core.AgentKindAgent,
+			Dialect: &dialect,
+		})
+	}
+	return out, nil
 }
 
 func (*OrchestrationPlane) ReadAgent(_ context.Context, _ core.AgentID) (*core.AgentRef, error) {

@@ -105,8 +105,8 @@ func installSettingsJSON(opts Options) (Action, error) {
 			Reason: "sentinel v" + SentinelVersion + " present; already installed"}, nil
 	}
 	preexisting := len(existing) > 0
-	existing["hooks"] = claudeHookStanza()
-	mergeMcpServers(existing)
+	existing["hooks"] = claudeHookStanza(opts.BridgeCommand)
+	mergeMcpServers(existing, opts.McpCommand)
 	existing[SentinelKey] = map[string]interface{}{
 		"profile": "claude",
 		"version": SentinelVersion,
@@ -158,11 +158,11 @@ func sentinelAtCurrentVersion(settings map[string]interface{}) bool {
 // slot is owned by us. Safe to call on every install — it replaces
 // the gemba slot deterministically so re-running converges to the
 // same bytes.
-func mergeMcpServers(settings map[string]interface{}) {
+func mergeMcpServers(settings map[string]interface{}, mcpCmd string) {
 	raw, ok := settings["mcpServers"]
 	if !ok {
 		settings["mcpServers"] = map[string]interface{}{
-			"gemba": gembaMcpEntry(),
+			"gemba": gembaMcpEntry(mcpCmd),
 		}
 		return
 	}
@@ -175,7 +175,7 @@ func mergeMcpServers(settings map[string]interface{}) {
 		// object is entirely operator-owned. Skip the merge silently.
 		return
 	}
-	obj["gemba"] = gembaMcpEntry()
+	obj["gemba"] = gembaMcpEntry(mcpCmd)
 	settings["mcpServers"] = obj
 }
 
@@ -185,17 +185,23 @@ func mergeMcpServers(settings map[string]interface{}) {
 // GEMBA_INTERACTION_MODE are inherited from the Claude process, which
 // inherits them from the pane the adaptor spawned — no explicit env
 // needed here.
-func gembaMcpEntry() map[string]interface{} {
+func gembaMcpEntry(command string) map[string]interface{} {
+	if command == "" {
+		command = "gemba-mcp"
+	}
 	return map[string]interface{}{
-		"command": "gemba-mcp",
+		"command": command,
 	}
 }
 
-func claudeHookStanza() map[string]interface{} {
+func claudeHookStanza(bridgeCmd string) map[string]interface{} {
+	if bridgeCmd == "" {
+		bridgeCmd = "gemba-bridge"
+	}
 	entry := func() map[string]interface{} {
 		return map[string]interface{}{
 			"hooks": []map[string]interface{}{
-				{"type": "command", "command": "gemba-bridge"},
+				{"type": "command", "command": bridgeCmd},
 			},
 		}
 	}

@@ -413,7 +413,7 @@ func TestClaudeUpgradesOlderSentinelAddsMcpServers(t *testing.T) {
 	// Simulate the pre-v3 shape: sentinel present with version "2" and
 	// hooks, but no mcpServers key.
 	legacy := map[string]interface{}{
-		"hooks": claudeHookStanza(),
+		"hooks": claudeHookStanza(""),
 		SentinelKey: map[string]interface{}{
 			"profile": "claude",
 			"version": "2",

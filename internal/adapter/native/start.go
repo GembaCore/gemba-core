@@ -3,6 +3,9 @@ package native
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
@@ -247,8 +250,32 @@ func installBridgeForAgent(ctx context.Context, workspace string, a agents.Agent
 	if err != nil {
 		return err
 	}
-	_, err = inst.Install(ctx, install.Options{Dir: workspace})
+	_, err = inst.Install(ctx, install.Options{
+		Dir:           workspace,
+		BridgeCommand: resolveSiblingBinary("gemba-bridge"),
+		McpCommand:    resolveSiblingBinary("gemba-mcp"),
+	})
 	return err
+}
+
+// resolveSiblingBinary returns an absolute path to the named companion
+// binary (gemba-bridge, gemba-mcp) sitting next to the running gemba
+// server, falling back to PATH lookup, and finally to the bare name.
+// Spawned Claude panes inherit the operator's shell PATH; our build-
+// local bin/ directory is rarely on it, which made hooks fail with
+// "command not found" right after a fresh StartSession. Embedding the
+// absolute path in the hook stanza sidesteps the PATH dependency.
+func resolveSiblingBinary(name string) string {
+	if exe, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(exe), name)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	if p, err := exec.LookPath(name); err == nil {
+		return p
+	}
+	return name
 }
 
 // installerNameForHook maps an agents.HookProfile to its installer

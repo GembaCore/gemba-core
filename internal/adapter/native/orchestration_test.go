@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/internal/core"
 )
 
@@ -68,6 +69,33 @@ func TestListAgentsReturnsEmptySliceNotNil(t *testing.T) {
 	}
 	if got == nil {
 		t.Error("ListAgents must return an empty slice, not nil")
+	}
+}
+
+// TestListAgentsSurfacesRegistry asserts the native plane surfaces its
+// loaded agents.toml roster as AgentRefs so the SPA's agent-type picker
+// (and the Board's drag-to-In-Progress auto-dispatch) populates.
+func TestListAgentsSurfacesRegistry(t *testing.T) {
+	reg := agents.Registry{Agents: []agents.AgentType{
+		{Name: "claude", Binary: "claude", Preamble: agents.PreambleClaudeMD, Hooks: agents.HookClaudeCode},
+		{Name: "shell-only", Binary: "zsh", Preamble: agents.PreambleStdoutBanner, Hooks: agents.HookPromptCommand},
+	}}
+	p := NewWithConfig(Config{Registry: reg})
+	got, err := p.ListAgents(context.Background(), core.AgentFilter{})
+	if err != nil {
+		t.Fatalf("ListAgents: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 agents, got %d", len(got))
+	}
+	if got[0].Name != "claude" || got[0].Kind != core.AgentKindAgent {
+		t.Errorf("agent[0]: %+v", got[0])
+	}
+	if got[0].Dialect == nil || *got[0].Dialect != "claude" {
+		t.Errorf("agent[0].Dialect: want 'claude', got %v", got[0].Dialect)
+	}
+	if got[1].Name != "shell-only" {
+		t.Errorf("agent[1]: %+v", got[1])
 	}
 }
 

@@ -58,6 +58,15 @@ type Options struct {
 	// DryRun, when true, makes Install describe what it would do
 	// without touching the filesystem. Every Action is still recorded.
 	DryRun bool
+	// BridgeCommand is the absolute path (or bare name) to gemba-bridge
+	// written into hook stanzas. Empty string defaults to the bare
+	// name "gemba-bridge" — fine for operators who have bin/ on PATH,
+	// but spawned Claude panes inherit the calling shell's PATH which
+	// often does not include the binary dir. StartSession resolves an
+	// absolute path via os.Executable() so hooks fire regardless.
+	BridgeCommand string
+	// McpCommand mirrors BridgeCommand for gemba-mcp. Same rationale.
+	McpCommand string
 }
 
 // Installer is the per-agent strategy. One implementation per supported

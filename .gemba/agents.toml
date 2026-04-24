@@ -1,0 +1,12 @@
+# Gemba agent-type registry (local).
+# Copy of internal/adapter/native/agents/testdata/agents.toml with binary
+# pointed at the claude on PATH. Not committed by default — each workspace
+# registers its own roster.
+
+[[agent]]
+name     = "claude"
+binary   = "claude"
+args     = []
+model    = "claude-opus-4-7"
+preamble = "claude_md"
+hooks    = "claude_code"
