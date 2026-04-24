@@ -104,8 +104,9 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	spec := backend.SpawnSpec{
 		Cwd: workspace,
 		Env: map[string]string{
-			"GEMBA_SESSION_ID": sessionID,
-			"GEMBA_AGENT_TYPE": agentType,
+			"GEMBA_SESSION_ID":      sessionID,
+			"GEMBA_AGENT_TYPE":      agentType,
+			"GEMBA_INTERACTION_MODE": string(agent.ResolvedInteractionMode()),
 		},
 		Command: buildAgentCommand(agent),
 	}

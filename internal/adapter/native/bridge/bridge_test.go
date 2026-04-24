@@ -106,6 +106,102 @@ func TestTranslateClaudeGembaStateEmitsSessionStateReported(t *testing.T) {
 	}
 }
 
+// gm-97w7.1: gemba-ask CLI frames translate to a fully-stamped
+// escalation_opened event.
+func TestTranslateClaudeGembaAskQuestionBalanced(t *testing.T) {
+	payload, _ := json.Marshal(map[string]string{
+		"kind":    "question",
+		"role":    "coach",
+		"text":    "Default to test key or fail hard?",
+		"mode":    "balanced",
+		"bead_id": "gm-42",
+	})
+	evs := translateClaude(Frame{
+		SessionID: "s1", Hook: "GembaAsk", EventID: "e-ask-1", Payload: payload,
+	})
+	if len(evs) != 1 {
+		t.Fatalf("want 1 event, got %d: %+v", len(evs), evs)
+	}
+	ev := evs[0]
+	if ev.Kind != "escalation_opened" {
+		t.Errorf("kind: %q want escalation_opened", ev.Kind)
+	}
+	if ev.Payload["escalation_kind"] != string(core.EscalationQuestion) {
+		t.Errorf("escalation_kind: %v", ev.Payload["escalation_kind"])
+	}
+	if ev.Payload["channel"] != string(core.ChannelToolCall) {
+		t.Errorf("channel: %v", ev.Payload["channel"])
+	}
+	if ev.Payload["urgency"] != string(core.UrgencyAdvisory) {
+		t.Errorf("urgency: %v want advisory (balanced/question)", ev.Payload["urgency"])
+	}
+	if ev.Payload["role"] != "coach" {
+		t.Errorf("role: %v", ev.Payload["role"])
+	}
+	if ev.Payload["bead_id"] != "gm-42" {
+		t.Errorf("bead_id: %v", ev.Payload["bead_id"])
+	}
+}
+
+// Manager blocker in balanced mode → blocking.
+func TestTranslateClaudeGembaAskBlockerBalanced(t *testing.T) {
+	payload, _ := json.Marshal(map[string]string{
+		"kind": "blocker",
+		"role": "manager",
+		"text": "Need STRIPE_SECRET_KEY.",
+		"mode": "balanced",
+	})
+	evs := translateClaude(Frame{
+		SessionID: "s1", Hook: "GembaAsk", EventID: "e-ask-2", Payload: payload,
+	})
+	if len(evs) != 1 {
+		t.Fatalf("want 1 event, got %d", len(evs))
+	}
+	if evs[0].Payload["urgency"] != string(core.UrgencyBlocking) {
+		t.Errorf("urgency: %v want blocking", evs[0].Payload["urgency"])
+	}
+	if evs[0].Payload["escalation_kind"] != string(core.EscalationBlocker) {
+		t.Errorf("escalation_kind: %v", evs[0].Payload["escalation_kind"])
+	}
+}
+
+// Dangerous mode drops the event — the profile forbids surfacing.
+func TestTranslateClaudeGembaAskDangerousModeDrops(t *testing.T) {
+	payload, _ := json.Marshal(map[string]string{
+		"kind": "question", "role": "coach",
+		"text": "x", "mode": "dangerous",
+	})
+	evs := translateClaude(Frame{SessionID: "s1", Hook: "GembaAsk", Payload: payload})
+	if len(evs) != 0 {
+		t.Fatalf("dangerous-mode ask must not surface; got %+v", evs)
+	}
+}
+
+// Coach cannot raise blockers — even if a hand-crafted frame
+// claims it did, the translator drops.
+func TestTranslateClaudeGembaAskCoachBlockerDropped(t *testing.T) {
+	payload, _ := json.Marshal(map[string]string{
+		"kind": "blocker", "role": "coach",
+		"text": "x", "mode": "balanced",
+	})
+	evs := translateClaude(Frame{SessionID: "s1", Hook: "GembaAsk", Payload: payload})
+	if len(evs) != 0 {
+		t.Fatalf("coach-blocker must be dropped; got %+v", evs)
+	}
+}
+
+// Passthrough translator picks up GembaAsk too (shell-only agents).
+func TestTranslatePassthroughGembaAsk(t *testing.T) {
+	payload, _ := json.Marshal(map[string]string{
+		"kind": "question", "role": "coach",
+		"text": "x", "mode": "balanced",
+	})
+	evs := translatePassthrough(Frame{SessionID: "s1", Hook: "GembaAsk", Payload: payload})
+	if len(evs) != 1 || evs[0].Kind != "escalation_opened" {
+		t.Errorf("passthrough dropped GembaAsk: %+v", evs)
+	}
+}
+
 func TestTranslatePassthroughGembaStateEmitsSessionStateReported(t *testing.T) {
 	payload, _ := json.Marshal(map[string]string{"state": "ready"})
 	evs := translatePassthrough(Frame{

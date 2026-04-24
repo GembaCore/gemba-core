@@ -7,25 +7,41 @@
 
 Every skill that ships with Gemba — bundled defaults under
 `cmd/gemba-bridge/skills/` and operator-authored skills that land in
-`.gemba/skills/` — routes its operator-facing output through two and
-only two markdown sections:
+`.gemba/skills/` — routes operator-facing attention through a single
+structured surface:
 
-- **`## Questions`** — things the skill would like the operator to
-  answer.
-- **`## Blockers`** — things the skill cannot proceed past without
-  operator action.
+**The `gemba-ask` CLI.**
 
-The transcript scanner (gm-97w7.1) reads those sections off the
-assistant's last turn on every Stop hook, stamps them as typed
-escalations (`kind=question` or `kind=blocker`), and surfaces them
-through `/api/escalations`. The operator answers either in the pane
-(the agent sees it as a new `UserPromptSubmit`) or in the SPA (the
-server replays the reply via `POST /api/escalations/{id}/respond`).
+A skill instructs the agent to call `gemba-ask` once per question or
+blocker:
 
-Whether a given emission **blocks** the agent is computed by the
-scanner from `(kind, interaction_mode)` — see the matrix in
-[`.gemba/interaction_profile.md`](../../.gemba/interaction_profile.md).
-Skills do not decide whether to block; they decide whether to emit.
+```bash
+gemba-ask --kind question --role coach   --text "Default to test key or fail hard?"
+gemba-ask --kind blocker  --role manager --text "Need STRIPE_SECRET_KEY to finish webhook path."
+```
+
+The binary writes a typed `GembaAsk` frame to the session log. The
+bridge translator turns that into an `escalation_opened` event with
+the kind (`question` / `blocker`), channel (`tool_call`), and
+urgency (`advisory` / `blocking`) already stamped. The native
+OrchestrationPlane stores it in the escalation index and surfaces it
+via `/api/escalations`.
+
+The operator responds either in the pane (the agent sees the reply as
+a `UserPromptSubmit`) or via the SPA (the server replays the reply
+through `POST /api/escalations/{id}/respond`).
+
+### Why a CLI — not markdown scraping, not an MCP tool today
+
+| Option                               | Pros                                         | Cons                             |
+|--------------------------------------|----------------------------------------------|----------------------------------|
+| `gemba-ask` CLI (this contract)      | Matches `gemba-state` precedent. Typed capture. Zero parsing. Works for any agent with shell access. | None vs scraping. Requires agent to run shell. |
+| Transcript scraping `## Questions`   | Human-readable inline.                        | Fragile; agent-specific; lossy. Format drift drops escalations. |
+| MCP `ask_question` / `raise_blocker` | Native tool use for MCP clients. Schema-validated args. | Heavier; requires MCP server impl. Lands as follow-up. |
+
+The CLI form is the primary surface today; the MCP variant is a
+future enhancement that will reuse the same `(kind, channel=tool_call,
+urgency)` shape.
 
 ## Role authority
 
@@ -33,79 +49,94 @@ Each skill declares a `variety` in its front matter: `coach` or
 `manager`. This aligns with the Persona Purview model in
 [`persona-pppp.md`](persona-pppp.md) / gm-2yg.
 
-| variety | May emit `## Questions` | May emit `## Blockers` |
-|---------|-------------------------|------------------------|
-| coach   | yes                     | **no**                 |
-| manager | yes                     | yes                    |
+| variety | May emit `--kind question` | May emit `--kind blocker` |
+|---------|----------------------------|---------------------------|
+| coach   | yes                        | **no**                    |
+| manager | yes                        | yes                       |
 
-**Coaches never block.** A Coach skill that emits a `## Blockers`
-section is a skill-authoring bug — the scanner will log it and
-suppress the section rather than open an escalation.
+**Coaches never block.** The `gemba-ask` CLI rejects
+`--role coach --kind blocker` at the process boundary; the bridge
+translator also drops any `GembaAsk` frame with that combination, so
+a hand-crafted frame can't bypass the rule.
 
-Manager skills may emit either kind independently. A single response
-may carry both `## Questions` and `## Blockers`.
+## Blocking policy — mode, not skill
 
-## What the skill writes
+The skill decides **whether to emit**. The `interaction_mode`
+(`dangerous | balanced | cautious` from `.gemba/agents.toml`) decides
+**whether it blocks**. `gemba-ask` captures the active mode in the
+frame payload and the translator computes urgency from `(kind, mode)`
+via the matrix in `.gemba/interaction_profile.md`:
 
-The skill's prompt instructs the agent to use these exact section
-headings and numbered-list formatting. The scanner matches on the
-literal heading text.
+| mode      | kind=question  | kind=blocker |
+|-----------|----------------|--------------|
+| dangerous | drop (CLI rejects) | drop (CLI rejects) |
+| balanced  | advisory       | blocking     |
+| cautious  | blocking       | blocking     |
 
-```markdown
-## Questions
+Skills do not branch on mode. They emit; the stack decides.
 
-1. Should I default to the Stripe test key or fail if it is missing?
-2. Does the webhook path need to be idempotent on retry?
+## What the skill instructs the agent to do
 
-## Blockers
+A well-formed Coach skill tells the agent:
 
-1. I need the prod Stripe key to finish the webhook path. Please set
-   STRIPE_SECRET_KEY in the worktree env and resume.
-```
+> Call `gemba-ask --kind question --role coach --text "<your question>"`
+> whenever you would like operator judgment on a decision. In
+> `balanced` mode keep working with your best guess; in `cautious`
+> mode the CLI's side effect will halt you — wait for the reply.
 
-Rules the scanner enforces:
+A well-formed Manager skill tells the agent:
 
-- Heading is exactly `## Questions` or `## Blockers` (case-sensitive,
-  two hash marks, single space, no trailing punctuation).
-- Items are an ordered list (`1. `, `2. `, …). Bullet lists
-  (`- `, `* `) are ignored so the scanner doesn't gobble narrative
-  prose that happens to follow a Questions heading.
-- One-line-per-item is the intent; multi-line items with
-  continuation indentation are allowed but the scanner folds them
-  into a single string.
-- Sections may appear in any order; only the last occurrence of each
-  heading within the final assistant turn is scanned, so drafts
-  earlier in the turn are harmless.
+> For questions, call `gemba-ask --kind question --role manager
+> --text "…"`. For blockers, call
+> `gemba-ask --kind blocker --role manager --text "…"` and then
+> `gemba-state prompting` before waiting. Coaches cannot raise
+> blockers; Manager skills escalating a guardrail violation MUST
+> use blocker kind.
+
+Skills MAY additionally print a `## Questions` / `## Blockers`
+markdown section mirroring the captured items so operators watching
+the pane see them inline. Gemba does not parse this echo —
+`gemba-ask` is authoritative — but matching text helps operators who
+respond directly at the terminal.
 
 ## What the skill must NOT do
 
-- Do not invent alternative headings (`### Questions`, `## Asks`,
-  `## TODO`). Only `## Questions` and `## Blockers` are recognised.
-- Do not emit either section from a Coach skill if it would be a
-  blocker-shaped ask. If you need to block, the skill is a Manager
-  skill — update its front matter instead of bypassing the contract.
-- Do not write `## Questions` in `dangerous` mode. The profile
-  instructs the agent to record an assumption and proceed instead.
-  Emitting anyway counts as a skill-authoring bug; the scanner
-  suppresses it and logs.
-- Do not use `## Questions` / `## Blockers` as conversational
-  scaffolding. The scanner is greedy — anything under those headings
-  becomes an escalation.
+- Do not emit blockers from a Coach skill. If you need to block, the
+  skill is a Manager skill — update its front matter instead of
+  bypassing the contract.
+- Do not issue `gemba-ask` calls in `dangerous` mode. The CLI rejects
+  this; the profile instructs the agent to record an assumption and
+  proceed.
+- Do not hand-roll the session log JSON. Always go through the CLI —
+  it stamps `ts`, `event_id`, mode, and session id consistently.
+- Do not build your own question-capture surface (an HTTP POST, a
+  custom file write, a third-party tool). The goal of this contract
+  is one surface; contributing to it is cheap, forking it is not.
 
 ## Interaction with `gemba-state`
 
 The interaction profile tells the agent when to call
-`gemba-state prompting` around a surfaced section. Skills
-themselves do not call `gemba-state`; the agent orchestrates that
-based on the profile injected into its preamble.
+`gemba-state prompting` around a surfaced item:
 
-The scanner uses the session's `interaction_mode` (not the
-gemba-state call) to decide `blocking`. This means an agent that
-forgets to call `gemba-state prompting` still gets the correct
-`blocking` flag stamped on the escalation — the two signals are
-complementary, not redundant.
+- In `balanced` mode: `gemba-state prompting` only around blockers.
+  Questions surface without halting the agent.
+- In `cautious` mode: `gemba-state prompting` around anything
+  surfaced.
 
-## Front-matter shape
+The two signals are complementary:
+
+- `gemba-ask` writes the escalation content (what the operator sees
+  and responds to).
+- `gemba-state prompting` communicates "the agent is currently
+  blocked on operator input" so the session dashboard renders the
+  right badge.
+
+An agent that forgets to call `gemba-state prompting` still gets the
+correct `blocking` flag on the escalation — the CLI's payload is
+authoritative for urgency. The gemba-state call is for the session
+badge, not the escalation.
+
+## Front-matter shape for bundled skills
 
 Bundled skills live as markdown files with a YAML front-matter
 block:
@@ -115,11 +146,20 @@ block:
 skill_id: "pm.stage_epics"
 variety: "manager"      # coach | manager
 description: >
-  Reviews the unstaged-epic queue, proposes a staging order,
-  and raises ## Blockers for any dependency conflicts.
+  Reviews the unstaged-epic queue, proposes a staging order, and
+  raises blockers for any dependency conflicts.
 ---
 
-You are the Project Manager for this workspace. …
+You are the Project Manager for this workspace.
+
+When you identify a dependency conflict that prevents a clean
+staging order, call:
+
+    gemba-ask --kind blocker --role manager \
+              --bead <epic_id> \
+              --text "<one-line description of the conflict>"
+
+Then call `gemba-state prompting` and wait for the operator.
 
 <body of the skill prompt>
 ```
@@ -127,11 +167,10 @@ You are the Project Manager for this workspace. …
 The authoring lint (gm-97w7.1 follow-up) asserts:
 
 - `variety` is `coach` or `manager`.
-- If `variety == "coach"`, the body does not instruct the agent to
-  emit `## Blockers`.
-- The body references `## Questions` and/or `## Blockers` verbatim
-  (so the scanner's regex matches against the wording the skill
-  author intended).
+- If `variety == "coach"`, the body does not contain
+  `gemba-ask --kind blocker`.
+- The body references `gemba-ask` at least once, so a skill that
+  surfaces anything goes through the structured surface.
 
 ## Response pathway
 
@@ -139,25 +178,28 @@ Operators resolve escalations in one of two places:
 
 - **In the pane**: operator types a reply at the agent's prompt.
   Claude sees it as the next `UserPromptSubmit`; the correlator
-  (gm-native.13) resolves the oldest open escalation for the session.
+  (gm-native.13) resolves the oldest open escalation for the
+  session.
 - **In the SPA**: operator uses the escalation inbox. The server
   calls `ResolveEscalation` which routes by `channel`:
-  - `channel=notification` → `Backend.SendKeys` with a "yes"/"no"/
-    modify reply (existing path from gm-native.13).
-  - `channel=transcript` → `Backend.SendKeys` writes the operator's
+  - `channel=notification` → `Backend.SendKeys` with a
+    "yes"/"no"/modify reply (from gm-native.13).
+  - `channel=tool_call` → `Backend.SendKeys` writes the operator's
     reply as the next user prompt. No yes/no framing; the body is
     the reply.
 
-Skill authors do not need to handle either pathway — the adaptor
-does. The contract only asks the skill to produce a well-formed
-`## Questions` / `## Blockers` section.
+Skill authors don't handle either pathway — the adaptor does. The
+contract only asks the skill to call `gemba-ask` with a well-formed
+request.
 
 ## References
 
 - [`interaction_profile.md`](../../.gemba/interaction_profile.md)
-  — mode semantics and formatting contract.
+  — mode semantics.
 - [`persona-pppp.md`](persona-pppp.md) — Coach / Manager authority
   model (PPPP, gm-9rv).
+- `cmd/gemba-ask/` — the sentinel CLI binary.
+- `cmd/gemba-state/` — the sibling session-status sentinel.
 - Bead: gm-97w7.1 — Coach/Manager skill contract + unified
   escalations surface (Option C).
 - Parent epic: gm-97w7 — Session state machine + interaction_profile.

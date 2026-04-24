@@ -130,32 +130,70 @@ func (x *escalationIndex) lookup(id string) string {
 
 // escalationFromEvent reconstructs an EscalationRequest from the
 // bridge's escalation_opened payload. Falls back to sensible
-// defaults when Claude's hook payload omits fields.
+// defaults when the hook payload omits fields.
+//
+// Two payload shapes land here today:
+//
+//   - Notification channel (gm-native.13): Claude's hook payload —
+//     carries `escalation_kind` (permission_prompt | hitl_approval)
+//     and possibly `title` / `prompt` / `message`. Channel
+//     defaults to ChannelNotification.
+//   - Tool-call channel (gm-97w7.1): the bridge's GembaAsk
+//     translator — carries `escalation_kind` (question | blocker),
+//     `channel`, `urgency`, `role`, `text`, optional `bead_id` /
+//     `title`.
 func escalationFromEvent(ev core.OrchestrationEvent) core.EscalationRequest {
 	id := ev.ID
 	source := core.EscalationPermissionPrompt
 	if k, ok := ev.Payload["escalation_kind"].(string); ok && k != "" {
 		source = core.EscalationKind(k)
 	}
+	channel := core.ChannelNotification
+	if c, ok := ev.Payload["channel"].(string); ok && c != "" {
+		channel = core.EscalationChannel(c)
+	}
 	title, _ := ev.Payload["title"].(string)
 	if title == "" {
-		title = "Permission prompt"
+		// Pick a defaulted title that matches the kind so the UI
+		// row isn't empty when the upstream channel omits one.
+		switch source {
+		case core.EscalationQuestion:
+			title = "Question"
+		case core.EscalationBlocker:
+			title = "Blocker"
+		default:
+			title = "Permission prompt"
+		}
 	}
 	prompt, _ := ev.Payload["prompt"].(string)
+	if prompt == "" {
+		if s, ok := ev.Payload["text"].(string); ok && s != "" {
+			prompt = s
+		}
+	}
 	if prompt == "" {
 		if s, ok := ev.Payload["message"].(string); ok {
 			prompt = s
 		}
 	}
 	urgency := core.UrgencyBlocking
+	if u, ok := ev.Payload["urgency"].(string); ok && u != "" {
+		urgency = core.EscalationUrgency(u)
+	}
+	var workItemID core.WorkItemID
+	if b, ok := ev.Payload["bead_id"].(string); ok && b != "" {
+		workItemID = core.WorkItemID(b)
+	}
 	return core.EscalationRequest{
-		ID:        id,
-		Source:    source,
-		Urgency:   urgency,
-		Title:     title,
-		Prompt:    prompt,
-		State:     core.EscalationOpen,
-		CreatedAt: ev.At,
+		ID:         id,
+		Source:     source,
+		Channel:    channel,
+		WorkItemID: workItemID,
+		Urgency:    urgency,
+		Title:      title,
+		Prompt:     prompt,
+		State:      core.EscalationOpen,
+		CreatedAt:  ev.At,
 	}
 }
 

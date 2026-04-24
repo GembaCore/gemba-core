@@ -63,6 +63,14 @@ func translateClaude(f Frame) []core.OrchestrationEvent {
 		// event kind to mutate Session.Status.
 		base.Kind = "session_state_reported"
 		return []core.OrchestrationEvent{base}
+	case "GembaAsk":
+		// Coach/Manager skill called the gemba-ask CLI (gm-97w7.1).
+		// Payload carries {kind, role, text, mode, bead_id?, title?}.
+		// Translate into an escalation_opened event with the kind,
+		// channel, urgency, and body fields already stamped so the
+		// escalation index can insert without re-classifying.
+		return translateGembaAsk(f, base)
+
 	case "SessionStart":
 		base.Kind = "session_transition"
 		base.Payload["status"] = "running"
@@ -133,6 +141,9 @@ func translatePassthrough(f Frame) []core.OrchestrationEvent {
 		// and any future agent that hasn't been explicitly wired.
 		base.Kind = "session_state_reported"
 		return []core.OrchestrationEvent{base}
+	case "GembaAsk":
+		// gemba-ask is likewise agent-type agnostic.
+		return translateGembaAsk(f, base)
 	case "SessionStart":
 		base.Kind = "session_transition"
 		base.Payload["status"] = "running"
@@ -144,6 +155,67 @@ func translatePassthrough(f Frame) []core.OrchestrationEvent {
 		return []core.OrchestrationEvent{base}
 	}
 	return nil
+}
+
+// translateGembaAsk converts a GembaAsk frame (written by the
+// gemba-ask CLI) into a fully-stamped escalation_opened event. The
+// CLI is authoritative about kind + role + text + mode; the
+// translator calls Classify to turn (kind, mode) into urgency, and
+// drops the event when the mode forbids surfacing (dangerous mode —
+// the CLI rejects this too, but a second check here keeps the
+// pipeline safe against stale / hand-crafted frames).
+func translateGembaAsk(f Frame, base core.OrchestrationEvent) []core.OrchestrationEvent {
+	var p struct {
+		Kind   string `json:"kind"`
+		Role   string `json:"role"`
+		Text   string `json:"text"`
+		Mode   string `json:"mode"`
+		BeadID string `json:"bead_id"`
+		Title  string `json:"title"`
+	}
+	if len(f.Payload) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(f.Payload, &p); err != nil {
+		return nil
+	}
+	if p.Kind == "" || p.Text == "" {
+		return nil
+	}
+
+	var kind core.EscalationKind
+	switch p.Kind {
+	case "question":
+		kind = core.EscalationQuestion
+	case "blocker":
+		kind = core.EscalationBlocker
+	default:
+		return nil
+	}
+	if p.Role == "coach" && kind == core.EscalationBlocker {
+		// Coaches never block. The CLI already rejects this; drop the
+		// frame if somehow it got through (e.g. crafted by hand).
+		return nil
+	}
+
+	urgency, emit := Classify(kind, InteractionMode(p.Mode))
+	if !emit {
+		return nil
+	}
+
+	base.Kind = "escalation_opened"
+	base.Payload["escalation_kind"] = string(kind)
+	base.Payload["channel"] = string(core.ChannelToolCall)
+	base.Payload["urgency"] = string(urgency)
+	base.Payload["role"] = p.Role
+	base.Payload["text"] = p.Text
+	if p.BeadID != "" {
+		base.Payload["bead_id"] = p.BeadID
+	}
+	if p.Title != "" {
+		base.Payload["title"] = p.Title
+	}
+	return []core.OrchestrationEvent{base}
 }
 
 // rawPayload decodes the structured payload field into a map so the

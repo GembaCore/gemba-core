@@ -99,7 +99,7 @@ const (
 // EscalationChannel identifies how an EscalationRequest reached Gemba.
 // The response path branches on this: ChannelNotification escalations
 // answer back via the agent's Notification reply (SendKeys yes/no/
-// free-text); ChannelTranscript escalations answer back by writing the
+// free-text); ChannelToolCall escalations answer back by writing the
 // operator's reply as the next UserPromptSubmit (gm-97w7.1).
 type EscalationChannel string
 
@@ -107,10 +107,11 @@ const (
 	// ChannelNotification — surfaced via an agent-infra hook
 	// (Claude Notification, MCP elicitation, A2A input-required).
 	ChannelNotification EscalationChannel = "notification"
-	// ChannelTranscript — extracted by the transcript scanner from
-	// a "## Questions" or "## Blockers" section in the assistant's
-	// last turn (gm-97w7.1).
-	ChannelTranscript EscalationChannel = "transcript"
+	// ChannelToolCall — surfaced via an explicit tool call the skill
+	// instructed the agent to make. Today's primary path is the
+	// `gemba-ask` CLI binary (gm-97w7.1); the MCP-tool variant lands
+	// in a follow-up and uses the same channel token.
+	ChannelToolCall EscalationChannel = "tool_call"
 )
 
 // PeekMode names a live-introspection mode an orchestrator supports for
