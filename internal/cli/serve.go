@@ -226,10 +226,6 @@ type workPlaneReg struct {
 	SourceKind string
 	// Source is the dir path or redacted Dolt URL.
 	Source string
-	// Shader is the orchestrator shader's manifest ("nop" when none
-	// configured). Surfaced in the startup banner so the operator
-	// sees which transform is active.
-	Shader core.ShaderManifest
 }
 
 func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*workPlaneReg, error) {
@@ -300,21 +296,18 @@ func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.Serv
 	if err != nil {
 		return nil, fmt.Errorf("describe beads workplane: %w", err)
 	}
-	shManifest := sh.Describe()
 	slog.Info("workplane adaptor registered",
 		"adaptor", reg.AdaptorName,
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
-		"beads_dir", cfg.BeadsDir,
-		"shader", shManifest.Name)
+		"beads_dir", cfg.BeadsDir)
 	return &workPlaneReg{
 		Host:       host,
 		Manifest:   manifest,
 		Mode:       "bd-dir",
 		SourceKind: "dir",
 		Source:     cfg.BeadsDir,
-		Shader:     shManifest,
 	}, nil
 }
 
@@ -343,22 +336,19 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 		return nil, fmt.Errorf("describe dolt workplane: %w", err)
 	}
 	redacted := redactDoltURL(cfg.DoltURL)
-	shManifest := sh.Describe()
 	slog.Info("workplane adaptor registered",
 		"adaptor", reg.AdaptorName,
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
 		"read_only", true,
-		"dolt_url", redacted,
-		"shader", shManifest.Name)
+		"dolt_url", redacted)
 	return &workPlaneReg{
 		Host:       host,
 		Manifest:   manifest,
 		Mode:       "dolt-sql",
 		SourceKind: "url",
 		Source:     redacted,
-		Shader:     shManifest,
 	}, nil
 }
 
@@ -385,7 +375,6 @@ func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *w
 		len(reg.Manifest.EdgeExtensions),
 		yesNo(reg.Manifest.SprintNative),
 		yesNo(reg.Manifest.TokenBudgetEnforced))
-	fmt.Fprintf(w, "▶ shader: %s\n", reg.Shader.Name)
 }
 
 func yesNo(b bool) string {

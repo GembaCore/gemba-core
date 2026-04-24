@@ -30,10 +30,13 @@ func bannerManifest() core.CapabilityManifest {
 }
 
 // TestPrintStartupBanner_BdDirShape pins the operator-facing banner shape for
-// the bd-dir path: four lines now (gm-root.4 added the shader line) — version
-// + listen + auth on line 1, workplane adaptor + mode + dir on line 2,
-// manifest digest on line 3, shader on line 4. Shape regressions break the
-// gm-root.1.8 manual smoke, so this is a tripwire.
+// the bd-dir path: three lines, version + listen + auth on line 1, workplane
+// adaptor + mode + dir on line 2, manifest state/edge/flag digest on line 3.
+// Shape regressions break gm-root.1.8 manual smoke, so this is a tripwire.
+//
+// Shader identity is intentionally NOT in the banner — it's implied by
+// the orchestration adaptor configuration, so reporting it would be
+// redundant noise.
 func TestPrintStartupBanner_BdDirShape(t *testing.T) {
 	var buf bytes.Buffer
 	b := BuildInfo{Version: "v0.3.1"}
@@ -43,7 +46,6 @@ func TestPrintStartupBanner_BdDirShape(t *testing.T) {
 		Mode:       "bd-dir",
 		SourceKind: "dir",
 		Source:     "/Users/x/gt/gemba",
-		Shader:     core.ShaderManifest{Name: "nop"},
 	}
 	printStartupBanner(&buf, b, cfg, reg)
 
@@ -52,15 +54,14 @@ func TestPrintStartupBanner_BdDirShape(t *testing.T) {
 		"▶ gemba v0.3.1  listen=127.0.0.1:7666  auth=none",
 		"▶ workplane: beads 0.1.0 (mode=bd-dir dir=/Users/x/gt/gemba)",
 		"▶ manifest: 5 states, 3 core + 4 extension edges, feature flags: sprint=no budget=no",
-		"▶ shader: nop",
 	}
 	for _, w := range wants {
 		if !strings.Contains(got, w) {
 			t.Errorf("banner missing line %q\nfull output:\n%s", w, got)
 		}
 	}
-	if lines := strings.Count(strings.TrimSpace(got), "\n"); lines != 3 {
-		t.Errorf("banner should be exactly four lines; got %d newlines\noutput:\n%s",
+	if lines := strings.Count(strings.TrimSpace(got), "\n"); lines != 2 {
+		t.Errorf("banner should be exactly three lines; got %d newlines\noutput:\n%s",
 			lines, got)
 	}
 }
