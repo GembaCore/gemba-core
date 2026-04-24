@@ -6,11 +6,13 @@
 // URL is the source of truth:
 //   /board                       → Epic view, no drawer
 //   /board?view=workitem         → flat WorkItem view (M1.7a behaviour)
+//   /board?bead=X                → any view + WorkItemDrawer open on X
+//                                  (drawer deep link — gm-e12.5)
 //   /board/:epicId               → Epic view + EpicDrawer auto-open
-//   /board/:epicId?bead=X        → reserved for future deep-links into
-//                                  a child WorkItem from an Epic context
+//   /board/:epicId?bead=X        → Epic drawer + WorkItemDrawer stacked
+//                                  (child drill-down, deep-linkable)
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import {
   useNavigate,
   useParams,
@@ -72,9 +74,20 @@ export function BoardPage() {
   const epicId = splatRaw.length > 0 ? splatRaw : null;
   const navigate = useNavigate();
 
-  // workitem-view drawer is local SPA state; epic-view drawer is
-  // URL-routed (/board/:epicId) per spec L116.
-  const [openWorkItemId, setOpenWorkItemId] = useState<string | null>(null);
+  // Both drawers are URL-routed now (gm-e12.5 DoD: "Opens from grid,
+  // board, palette, deep link"). Epic id lives in the path; work-item
+  // id lives in ?bead=X so an Epic + WorkItem drawer can both be open
+  // (drill-down from an Epic card → child) and the pair is deep-linkable.
+  const openWorkItemId = params.get('bead');
+  const setOpenWorkItemId = useCallback(
+    (id: string | null) => {
+      const p = new URLSearchParams(params);
+      if (id) p.set('bead', id);
+      else p.delete('bead');
+      setParams(p, { replace: true });
+    },
+    [params, setParams]
+  );
 
   const setView = useCallback(
     (next: BoardView) => {

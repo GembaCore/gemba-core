@@ -259,6 +259,42 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByText('Deep dive into gm-a.')).toBeTruthy());
   });
 
+  // gm-e12.5 DoD: "Opens from grid, board, palette, deep link". Deep
+  // link is ?bead=X — rendering the page with that query param alone
+  // should mount the WorkItemDrawer and fetch the detail. Closing the
+  // drawer strips ?bead from the URL so the Back button is coherent.
+  it('?bead=X deep-links straight into the WorkItemDrawer', async () => {
+    const listed = bead('gm-a', 'started');
+    const detail: WorkItem = { ...listed, description: 'Deep dive into gm-a.' };
+    fetchSpy.mockImplementation((url: string) => {
+      if (url === '/api/work-items') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [listed], total: 1 }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      if (url === '/api/work-items/gm-a') {
+        return Promise.resolve(
+          new Response(JSON.stringify(detail), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    render(wrap(<BoardPage />, '/board?bead=gm-a'));
+    await waitFor(() => expect(screen.getByTestId('work-item-drawer-content')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Deep dive into gm-a.')).toBeTruthy());
+
+    // Close → drawer unmounts (?bead removed).
+    fireEvent.click(screen.getByTestId('work-item-drawer-close'));
+    await waitFor(() => expect(screen.queryByTestId('work-item-drawer-content')).toBeNull());
+  });
+
   // The in-page view toggle flips ?view=workitem on/off without a reload.
   it('view toggle switches between Epic and WorkItem boards', async () => {
     const data: WorkItem[] = [epic('root'), bead('t1', 'started')];
