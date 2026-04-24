@@ -4,6 +4,8 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
@@ -37,7 +39,13 @@ func (r *Router) listWorkItems(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	items, err := wp.ListWorkItems(req.Context(), core.WorkItemFilter{})
+	filter, err := parseWorkItemFilter(req.URL.Query())
+	if err != nil {
+		httperr.Write(w, http.StatusBadRequest, "bad_request", err.Error())
+		return
+	}
+
+	items, err := wp.ListWorkItems(req.Context(), filter)
 	if err != nil {
 		httperr.WriteError(w, err)
 		return
@@ -51,6 +59,83 @@ func (r *Router) listWorkItems(w http.ResponseWriter, req *http.Request) {
 		"total": len(items),
 	})
 }
+
+// parseWorkItemFilter turns the request query string into a
+// core.WorkItemFilter (gm-e12.9.1). Multi-value fields accept either
+// repeated params (?state_category=backlog&state_category=unstarted)
+// or comma-separated lists (?state_category=backlog,unstarted) — pick
+// whichever reads better at the call site.
+//
+// Invalid state_category / kind values return an error so typos
+// surface as 400 rather than silently returning an empty list.
+func parseWorkItemFilter(q url.Values) (core.WorkItemFilter, error) {
+	var f core.WorkItemFilter
+	f.Kinds = csvList(q["kind"])
+	f.Statuses = csvList(q["status"])
+	f.Labels = csvList(q["label"])
+	f.IDs = toWorkItemIDs(csvList(q["id"]))
+
+	for _, raw := range csvList(q["state_category"]) {
+		sc := core.StateCategory(raw)
+		if !sc.Valid() {
+			return core.WorkItemFilter{}, &badRequestError{
+				msg: "unknown state_category: " + raw,
+			}
+		}
+		f.StateCategory = append(f.StateCategory, sc)
+	}
+
+	if v := strings.TrimSpace(q.Get("assignee_id")); v != "" {
+		id := core.AgentID(v)
+		f.AssigneeID = &id
+	}
+	if v := strings.TrimSpace(q.Get("sprint_id")); v != "" {
+		s := v
+		f.SprintID = &s
+	}
+	if v := strings.TrimSpace(q.Get("limit")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return core.WorkItemFilter{}, &badRequestError{
+				msg: "limit must be a non-negative integer",
+			}
+		}
+		f.Limit = n
+	}
+	return f, nil
+}
+
+// csvList flattens a slice of query values where each element may
+// itself be a comma-separated list. Empty entries are dropped.
+func csvList(in []string) []string {
+	var out []string
+	for _, raw := range in {
+		for _, part := range strings.Split(raw, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				out = append(out, part)
+			}
+		}
+	}
+	return out
+}
+
+func toWorkItemIDs(in []string) []core.WorkItemID {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]core.WorkItemID, 0, len(in))
+	for _, s := range in {
+		out = append(out, core.WorkItemID(s))
+	}
+	return out
+}
+
+// badRequestError is a typed wrapper so parseWorkItemFilter returns a
+// single error shape the handler maps to 400.
+type badRequestError struct{ msg string }
+
+func (e *badRequestError) Error() string { return e.msg }
 
 // getWorkItem is the GET /api/work-items/{id} handler. Returns a single
 // WorkItem with its full Relationship graph (blocks / parent_child /

@@ -20,7 +20,13 @@ import {
   type UseMutationResult,
   type UseQueryResult,
 } from '@tanstack/react-query';
-import { getWorkItem, listWorkItems, updateWorkItem, type WorkItemPatch } from '@/api/workItems';
+import {
+  getWorkItem,
+  listWorkItems,
+  updateWorkItem,
+  type WorkItemListFilter,
+  type WorkItemPatch,
+} from '@/api/workItems';
 import { ApiError } from '@/api/client';
 import type { WorkItem } from '@/types/core.gen';
 
@@ -28,7 +34,32 @@ export const workItemsKeys = {
   all: ['beads'] as const,
   list: () => [...workItemsKeys.all] as const,
   detail: (id: string) => [...workItemsKeys.all, id] as const,
+  // filtered is a sibling cache keyed by the filter payload so
+  // different filter shapes don't collide with the unfiltered list.
+  filtered: (filter: WorkItemListFilter) =>
+    [...workItemsKeys.all, 'filtered', normalizeFilter(filter)] as const,
 };
+
+// normalizeFilter produces a stable key from a filter object — sorted
+// arrays, empty fields stripped — so equivalent filters share a cache
+// entry regardless of how the caller constructed them.
+function normalizeFilter(filter: WorkItemListFilter): WorkItemListFilter {
+  const out: WorkItemListFilter = {};
+  const sortCopy = (xs: string[] | undefined) =>
+    xs && xs.length > 0 ? [...xs].sort() : undefined;
+  const states = sortCopy(filter.state_category);
+  if (states) out.state_category = states as WorkItemListFilter['state_category'];
+  const kind = sortCopy(filter.kind);
+  if (kind) out.kind = kind;
+  const label = sortCopy(filter.label);
+  if (label) out.label = label;
+  const status = sortCopy(filter.status);
+  if (status) out.status = status;
+  if (filter.assignee_id) out.assignee_id = filter.assignee_id;
+  if (filter.sprint_id) out.sprint_id = filter.sprint_id;
+  if (filter.limit != null) out.limit = filter.limit;
+  return out;
+}
 
 // Adaptor-degraded failures are expected while the adaptor is
 // reconnecting; retrying at React Query's default cadence produces
@@ -46,7 +77,22 @@ function retry(failureCount: number, error: unknown): boolean {
 export function useWorkItems(): UseQueryResult<WorkItem[], ApiError> {
   return useQuery<WorkItem[], ApiError>({
     queryKey: workItemsKeys.list(),
-    queryFn: listWorkItems,
+    queryFn: () => listWorkItems(),
+    retry,
+  });
+}
+
+// useFilteredWorkItems drives GET /api/work-items with a non-empty
+// filter (gm-e12.9.1). Callers pass the canonical filter shape from
+// api/workItems.ts; the hook memoises into a filter-keyed cache so
+// filter changes cause a refetch only when the normalised payload
+// differs.
+export function useFilteredWorkItems(
+  filter: WorkItemListFilter
+): UseQueryResult<WorkItem[], ApiError> {
+  return useQuery<WorkItem[], ApiError>({
+    queryKey: workItemsKeys.filtered(filter),
+    queryFn: () => listWorkItems(filter),
     retry,
   });
 }

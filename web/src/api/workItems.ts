@@ -18,19 +18,54 @@ export interface ListWorkItemsEnvelope {
   total: number;
 }
 
+// WorkItemListFilter mirrors core.WorkItemFilter on the Go side.
+// All fields optional; empty values are omitted from the query string
+// so the server sees the canonical "no filter" shape.
+export interface WorkItemListFilter {
+  state_category?: WorkItem['state_category'][];
+  kind?: string[];
+  label?: string[];
+  status?: string[];
+  assignee_id?: string;
+  sprint_id?: string;
+  limit?: number;
+}
+
+// buildListQuery turns the filter into a URLSearchParams. Multi-valued
+// fields are emitted as repeated params (`?kind=task&kind=epic`) —
+// the server accepts both repeated and CSV, but repeated is the
+// canonical wire shape since it round-trips cleanly through URL
+// builders without ambiguous comma handling.
+function buildListQuery(filter?: WorkItemListFilter): string {
+  if (!filter) return '';
+  const p = new URLSearchParams();
+  for (const v of filter.state_category ?? []) p.append('state_category', v);
+  for (const v of filter.kind ?? []) p.append('kind', v);
+  for (const v of filter.label ?? []) p.append('label', v);
+  for (const v of filter.status ?? []) p.append('status', v);
+  if (filter.assignee_id) p.set('assignee_id', filter.assignee_id);
+  if (filter.sprint_id) p.set('sprint_id', filter.sprint_id);
+  if (filter.limit != null) p.set('limit', String(filter.limit));
+  const qs = p.toString();
+  return qs ? `?${qs}` : '';
+}
+
 // listWorkItems — GET /api/work-items. The handler returns the {items,total}
 // envelope (gm-peg); this helper unwraps to a bare array so callers
-// can treat listWorkItems like a query. Use listWorkItemsEnvelope() below when
-// the caller also needs `total`.
-export async function listWorkItems(): Promise<WorkItem[]> {
-  const env = await apiFetch<ListWorkItemsEnvelope>('/work-items');
+// can treat listWorkItems like a query. Accepts an optional filter
+// (gm-e12.9.1); omit for the unfiltered list. Use
+// listWorkItemsEnvelope() below when the caller also needs `total`.
+export async function listWorkItems(filter?: WorkItemListFilter): Promise<WorkItem[]> {
+  const env = await apiFetch<ListWorkItemsEnvelope>(`/work-items${buildListQuery(filter)}`);
   return env.items ?? [];
 }
 
 // listWorkItemsEnvelope — same fetch, but surfaces the full envelope for
 // callers that need `total` (pagination counts, empty-state copy).
-export async function listWorkItemsEnvelope(): Promise<ListWorkItemsEnvelope> {
-  const env = await apiFetch<ListWorkItemsEnvelope>('/work-items');
+export async function listWorkItemsEnvelope(
+  filter?: WorkItemListFilter
+): Promise<ListWorkItemsEnvelope> {
+  const env = await apiFetch<ListWorkItemsEnvelope>(`/work-items${buildListQuery(filter)}`);
   return { items: env.items ?? [], total: env.total ?? 0 };
 }
 

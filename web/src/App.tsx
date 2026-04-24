@@ -1,8 +1,8 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/layouts/AppShell';
 import { BoardPage } from '@/pages/BoardPage';
+import { BacklogPage } from '@/pages/BacklogPage';
 import {
-  BacklogPage,
   CapabilitiesPage,
   EscalationsPage,
   GraphPage,

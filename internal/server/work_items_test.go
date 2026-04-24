@@ -261,10 +261,106 @@ func TestListWorkItems_HappyPath_ReturnsEnvelope(t *testing.T) {
 	if env.Items[0].ID != "gm-1" || env.Items[1].ID != "gm-2" {
 		t.Fatalf("ids: want [gm-1 gm-2], got [%s %s]", env.Items[0].ID, env.Items[1].ID)
 	}
-	// M1.3 scope: empty filter only — narrowing and pagination are future work.
+	// No query string → zero-valued filter reaches the adaptor.
 	zero := core.WorkItemFilter{}
 	if !reflect.DeepEqual(gotFilter, zero) {
-		t.Fatalf("handler should pass zero-valued filter, got %+v", gotFilter)
+		t.Fatalf("handler should pass zero-valued filter when no query params; got %+v", gotFilter)
+	}
+}
+
+// gm-e12.9.1: query-string filters populate WorkItemFilter. Exercises
+// both repeated-param and CSV shapes for multi-valued fields.
+func TestListWorkItems_QueryFiltersPopulateWorkItemFilter(t *testing.T) {
+	var gotFilter core.WorkItemFilter
+	host := newProgrammableHostFull(t, nil,
+		func(_ context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error) {
+			gotFilter = filter
+			return []core.WorkItem{}, nil
+		})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	url := "/api/work-items?" +
+		"state_category=backlog&state_category=unstarted" +
+		"&kind=task,epic" +
+		"&label=milestone:m1&label=surface:frontend" +
+		"&status=open" +
+		"&assignee_id=agent/a" +
+		"&sprint_id=sprint-1" +
+		"&limit=50"
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+
+	wantStates := []core.StateCategory{core.StateBacklog, core.StateUnstarted}
+	if !reflect.DeepEqual(gotFilter.StateCategory, wantStates) {
+		t.Errorf("state_category: want %v, got %v", wantStates, gotFilter.StateCategory)
+	}
+	wantKinds := []string{"task", "epic"}
+	if !reflect.DeepEqual(gotFilter.Kinds, wantKinds) {
+		t.Errorf("kinds: want %v, got %v", wantKinds, gotFilter.Kinds)
+	}
+	wantLabels := []string{"milestone:m1", "surface:frontend"}
+	if !reflect.DeepEqual(gotFilter.Labels, wantLabels) {
+		t.Errorf("labels: want %v, got %v", wantLabels, gotFilter.Labels)
+	}
+	if !reflect.DeepEqual(gotFilter.Statuses, []string{"open"}) {
+		t.Errorf("statuses: want [open], got %v", gotFilter.Statuses)
+	}
+	if gotFilter.AssigneeID == nil || string(*gotFilter.AssigneeID) != "agent/a" {
+		t.Errorf("assignee_id: got %+v", gotFilter.AssigneeID)
+	}
+	if gotFilter.SprintID == nil || *gotFilter.SprintID != "sprint-1" {
+		t.Errorf("sprint_id: got %+v", gotFilter.SprintID)
+	}
+	if gotFilter.Limit != 50 {
+		t.Errorf("limit: want 50, got %d", gotFilter.Limit)
+	}
+}
+
+// Unknown state_category → 400; typos shouldn't silently succeed.
+func TestListWorkItems_UnknownStateCategoryReturns400(t *testing.T) {
+	host := newProgrammableHostFull(t, nil,
+		func(context.Context, core.WorkItemFilter) ([]core.WorkItem, error) {
+			t.Fatalf("adaptor must not be called when filter parse fails")
+			return nil, nil
+		})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items?state_category=bogus", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var env map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body must parse: %v", err)
+	}
+	if env["error"] != "bad_request" {
+		t.Errorf("want error=bad_request, got %v", env["error"])
+	}
+}
+
+// Non-integer limit → 400 (without touching the adaptor).
+func TestListWorkItems_BadLimitReturns400(t *testing.T) {
+	host := newProgrammableHostFull(t, nil,
+		func(context.Context, core.WorkItemFilter) ([]core.WorkItem, error) {
+			t.Fatalf("adaptor must not be called when filter parse fails")
+			return nil, nil
+		})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items?limit=banana", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", rec.Code)
 	}
 }
 

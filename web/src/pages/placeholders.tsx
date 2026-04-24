@@ -13,9 +13,6 @@ function Page({ title, children }: { title: string; children?: ReactNode }) {
   );
 }
 
-export function BacklogPage() {
-  return <Page title="Backlog" />;
-}
 export function GraphPage() {
   return <Page title="Graph" />;
 }
