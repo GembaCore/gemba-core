@@ -143,6 +143,46 @@ var beadsManifest = core.CapabilityManifest{
 	SprintNative:              false,
 	TokenBudgetEnforced:       false,
 	EvidenceSynthesisRequired: false,
+
+	// --- R1–R8 projection (gm-zdx) ------------------------------------
+	//
+	// bd is backed by a Dolt SQL store with first-class edges, a native
+	// ready-set query (`bd ready`), and an in-process CLI that agents
+	// drive directly. This mapping is audited in the conformance suite
+	// and any drift surfaces as a failing Group A probe.
+
+	// R1 — Dolt enforces columns + types at write time.
+	SchemaEnforcement: core.SchemaNative,
+	// R2 — agents use the WorkItemFilter surface; operators can also
+	// drop into Dolt SQL for ad-hoc analytics.
+	QueryLanguages: []core.QueryLanguage{core.QueryFilterOnly, core.QuerySQLSubset},
+	// R3 — dep graph is native (bd's edge table), ready-set is a
+	// first-class query.
+	DependencyGraphNative: true,
+	ReadySetQuery:         true,
+	// R4 — bd data is a git repo of Dolt rows; jsonl export is the
+	// interchange form every other adaptor reads.
+	VersioningTransport: []core.VersioningTransport{
+		core.VersioningGit, core.VersioningDolt, core.VersioningJSONL,
+	},
+	// R5 — Dolt three-way merges resolve concurrent writers
+	// row-by-row. Above optimistic and above plain git-merge.
+	ConcurrencyModel: core.ConcurrencyDoltMerge,
+	// R6 — bd's state lives in Dolt, not a per-agent session. Kill the
+	// agent, the next one picks up from the same rows.
+	AgentSessionDecoupling: true,
+	// R7 — the bd CLI is the agent-native entry point. Gemba's
+	// json-api layer projects it over HTTP for SPA consumers.
+	AgentNativeAPI: core.AgentAPICLI,
+	// R8 — bd supplies ready-set subscribe, atomic claim, escalation
+	// ingest, and work-complete ack. pool-bulk-dispatch isn't wired
+	// yet — file as a gap under gm-e6 if the audit flags it.
+	OrchestratorHooks: []core.OrchestratorHook{
+		core.HookReadySetSubscribe,
+		core.HookClaimAtomic,
+		core.HookEscalationIngest,
+		core.HookWorkCompleteAck,
+	},
 }
 
 // ListWorkItems runs `bd list --json` with filter-derived flags and

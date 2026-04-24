@@ -275,6 +275,15 @@ export interface CapabilityManifest {
   evidence_synthesis_required: boolean;
   read_only: boolean;
   description_format?: string;
+  schema_enforcement?: SchemaEnforcement;
+  query_languages?: QueryLanguage[];
+  dependency_graph_native?: boolean;
+  ready_set_query?: boolean;
+  versioning_transport?: VersioningTransport[];
+  concurrency_model?: ConcurrencyModel;
+  agent_session_decoupling?: boolean;
+  agent_native_api?: AgentNativeAPI;
+  orchestrator_hooks?: OrchestratorHook[];
 }
 
 // FLAG_NAMES is the exhaustive list of keys on Flags. Useful for

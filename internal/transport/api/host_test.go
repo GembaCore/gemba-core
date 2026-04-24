@@ -54,6 +54,48 @@ func TestHost_RegisterWorkPlane_TransportMismatch(t *testing.T) {
 	}
 }
 
+// gm-ekr: an adaptor missing AgentSessionDecoupling registers
+// successfully but with ReducedCapability=true so orchestrators that
+// refuse below-bar binders can notice. FakeWorkPlane's default
+// manifest doesn't set the R1-R8 fields, so it's below-bar.
+func TestHost_RegisterWorkPlane_ReducedCapabilityBelowBar(t *testing.T) {
+	h := New()
+	a := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	reg, err := h.RegisterWorkPlane(context.Background(), a)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if !reg.ReducedCapability {
+		t.Error("expected ReducedCapability=true for manifest missing R1-R8")
+	}
+	if len(reg.ReducedCapabilityReasons) == 0 {
+		t.Error("expected ReducedCapabilityReasons to be populated")
+	}
+	if h.WorkPlane() == nil {
+		t.Error("below-bar adaptors still register (reduced-capability mode)")
+	}
+}
+
+// gm-ekr: an adaptor that sets AgentSessionDecoupling=true and
+// declares an agent-native API registers at full capability.
+func TestHost_RegisterWorkPlane_AtBarFullCapability(t *testing.T) {
+	h := New()
+	a := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	a.Manifest.AgentSessionDecoupling = true
+	a.Manifest.AgentNativeAPI = core.AgentAPICLI
+	reg, err := h.RegisterWorkPlane(context.Background(), a)
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if reg.ReducedCapability {
+		t.Errorf("expected at-bar; got reasons=%v", reg.ReducedCapabilityReasons)
+	}
+	if len(reg.ReducedCapabilityReasons) != 0 {
+		t.Errorf("at-bar registration should have no reasons; got %v",
+			reg.ReducedCapabilityReasons)
+	}
+}
+
 func TestHost_RegisterWorkPlane_RejectsNil(t *testing.T) {
 	h := New()
 	_, err := h.RegisterWorkPlane(context.Background(), nil)

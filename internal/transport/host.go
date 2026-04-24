@@ -33,6 +33,20 @@ type Registration struct {
 	AdaptorVersion  string         `json:"adaptor_version"`
 	ProtocolVersion string         `json:"protocol_version"`
 	CoreVersion     string         `json:"core_version"`
+	// ReducedCapability reports that the adaptor registered successfully
+	// but failed CapabilityManifest.MinimumBar (gm-ekr). Callers that
+	// refuse to bind below-bar adaptors (high-autonomy orchestrators
+	// like Gastown / Metaswarm) inspect this flag and bail; the SPA
+	// and doctor inspect it to show a "below-bar" badge.
+	//
+	// OrchestrationPlane registrations never set this — the bar is a
+	// WorkPlane invariant today.
+	ReducedCapability bool `json:"reduced_capability,omitempty"`
+	// ReducedCapabilityReasons carries the human-readable list returned
+	// by MinimumBar so doctor / `gemba adaptor register` can show why
+	// without re-running the check. Empty when ReducedCapability is
+	// false.
+	ReducedCapabilityReasons []string `json:"reduced_capability_reasons,omitempty"`
 }
 
 // VersionMismatchError is returned when an adaptor's declared protocol

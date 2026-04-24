@@ -353,6 +353,83 @@ func TestBeadsDescribeManifestIsValid(t *testing.T) {
 	}
 }
 
+// gm-ekr / gm-zdx: the bd adaptor projects the R1-R8 agentic-data-
+// plane shape declared in the gmp-phc audit. Any drift here is a
+// conformance gap — the audit bead files a follow-up when one lands.
+func TestBeadsManifestProjectsR1ThroughR8(t *testing.T) {
+	impl := bd.NewWorkPlaneWithRunner(newFakeBd(t).run, "")
+	m, err := impl.Describe(context.Background())
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+
+	if m.SchemaEnforcement != core.SchemaNative {
+		t.Errorf("R1 schema_enforcement: got %q, want %q",
+			m.SchemaEnforcement, core.SchemaNative)
+	}
+
+	hasQL := map[core.QueryLanguage]bool{}
+	for _, q := range m.QueryLanguages {
+		hasQL[q] = true
+	}
+	for _, want := range []core.QueryLanguage{core.QueryFilterOnly, core.QuerySQLSubset} {
+		if !hasQL[want] {
+			t.Errorf("R2 query_languages missing %q; got %v", want, m.QueryLanguages)
+		}
+	}
+
+	if !m.DependencyGraphNative {
+		t.Error("R3 dependency_graph_native should be true for Beads")
+	}
+	if !m.ReadySetQuery {
+		t.Error("R3 ready_set_query should be true for Beads (bd ready)")
+	}
+
+	hasVT := map[core.VersioningTransport]bool{}
+	for _, v := range m.VersioningTransport {
+		hasVT[v] = true
+	}
+	for _, want := range []core.VersioningTransport{
+		core.VersioningGit, core.VersioningDolt, core.VersioningJSONL,
+	} {
+		if !hasVT[want] {
+			t.Errorf("R4 versioning_transport missing %q; got %v",
+				want, m.VersioningTransport)
+		}
+	}
+
+	if m.ConcurrencyModel != core.ConcurrencyDoltMerge {
+		t.Errorf("R5 concurrency_model: got %q, want %q",
+			m.ConcurrencyModel, core.ConcurrencyDoltMerge)
+	}
+	if !m.AgentSessionDecoupling {
+		t.Error("R6 agent_session_decoupling must be true")
+	}
+	if m.AgentNativeAPI != core.AgentAPICLI {
+		t.Errorf("R7 agent_native_api: got %q, want %q",
+			m.AgentNativeAPI, core.AgentAPICLI)
+	}
+
+	hasHook := map[core.OrchestratorHook]bool{}
+	for _, h := range m.OrchestratorHooks {
+		hasHook[h] = true
+	}
+	for _, want := range []core.OrchestratorHook{
+		core.HookReadySetSubscribe, core.HookClaimAtomic,
+		core.HookEscalationIngest, core.HookWorkCompleteAck,
+	} {
+		if !hasHook[want] {
+			t.Errorf("R8 orchestrator_hooks missing %q; got %v",
+				want, m.OrchestratorHooks)
+		}
+	}
+
+	// End-to-end: the manifest must clear the minimum bar.
+	if ok, reasons := m.MinimumBar(); !ok {
+		t.Errorf("Beads manifest below bar: %v", reasons)
+	}
+}
+
 func TestBeadsGetWorkItemNotFoundIsTagged(t *testing.T) {
 	impl := bd.NewWorkPlaneWithRunner(newFakeBd(t).run, "")
 	_, err := impl.GetWorkItem(context.Background(), core.WorkItemID("gemba/gemba/gm-missing"))

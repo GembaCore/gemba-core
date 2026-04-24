@@ -165,3 +165,121 @@ func TestFlagsJSONTagsSnakeCase(t *testing.T) {
 		}
 	}
 }
+
+// gm-ekr: MinimumBar classifies a conforming manifest as at-bar.
+func TestMinimumBar_ConformingAdaptor(t *testing.T) {
+	m := baseManifest()
+	m.AgentSessionDecoupling = true
+	m.AgentNativeAPI = AgentAPICLI
+	ok, reasons := m.MinimumBar()
+	if !ok {
+		t.Fatalf("want at-bar; got reasons=%v", reasons)
+	}
+	if len(reasons) != 0 {
+		t.Errorf("at-bar manifest should produce no reasons; got %v", reasons)
+	}
+}
+
+// gm-ekr: agent_session_decoupling=false is the canonical below-bar
+// reason. Without it, the adaptor isn't an agentic data plane.
+func TestMinimumBar_MissingSessionDecoupling(t *testing.T) {
+	m := baseManifest() // AgentSessionDecoupling defaults to false
+	ok, reasons := m.MinimumBar()
+	if ok {
+		t.Fatal("want below-bar when AgentSessionDecoupling is false")
+	}
+	joined := strings.Join(reasons, "|")
+	if !strings.Contains(joined, "agent_session_decoupling") {
+		t.Errorf("reasons should mention agent_session_decoupling; got %v", reasons)
+	}
+}
+
+// gm-ekr: agent_native_api="rest-only" is below bar — no agent-native
+// entry point.
+func TestMinimumBar_RESTOnlyAPI(t *testing.T) {
+	m := baseManifest()
+	m.AgentSessionDecoupling = true
+	m.AgentNativeAPI = AgentAPIRESTOnly
+	ok, reasons := m.MinimumBar()
+	if ok {
+		t.Fatal("want below-bar when AgentNativeAPI is rest-only")
+	}
+	joined := strings.Join(reasons, "|")
+	if !strings.Contains(joined, "rest-only") {
+		t.Errorf("reasons should mention rest-only; got %v", reasons)
+	}
+}
+
+// gm-ekr: Validate accepts manifests that leave the new R1–R8 fields
+// empty (older adaptors pre-gm-ekr).
+func TestValidate_AcceptsEmptyR1R8(t *testing.T) {
+	m := baseManifest()
+	if err := m.Validate(); err != nil {
+		t.Errorf("Validate should accept empty R1-R8: %v", err)
+	}
+}
+
+// gm-ekr: Validate rejects unknown enum values — a malformed token
+// would silently mishandle downstream consumers.
+func TestValidate_RejectsUnknownEnums(t *testing.T) {
+	cases := []struct {
+		name  string
+		mutate func(*CapabilityManifest)
+	}{
+		{"schema_enforcement", func(m *CapabilityManifest) {
+			m.SchemaEnforcement = SchemaEnforcement("wobble")
+		}},
+		{"query_languages", func(m *CapabilityManifest) {
+			m.QueryLanguages = []QueryLanguage{QueryFilterOnly, "nonsense"}
+		}},
+		{"versioning_transport", func(m *CapabilityManifest) {
+			m.VersioningTransport = []VersioningTransport{"carrier-pigeon"}
+		}},
+		{"concurrency_model", func(m *CapabilityManifest) {
+			m.ConcurrencyModel = ConcurrencyModel("vibes")
+		}},
+		{"agent_native_api", func(m *CapabilityManifest) {
+			m.AgentNativeAPI = AgentNativeAPI("telepathy")
+		}},
+		{"orchestrator_hooks", func(m *CapabilityManifest) {
+			m.OrchestratorHooks = []OrchestratorHook{HookClaimAtomic, "sneaky"}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := baseManifest()
+			c.mutate(&m)
+			err := m.Validate()
+			if err == nil {
+				t.Fatalf("%s: want validation error for unknown enum; got nil", c.name)
+			}
+			if !strings.Contains(err.Error(), c.name) && !strings.Contains(err.Error(), "not recognised") && !strings.Contains(err.Error(), "unknown") {
+				t.Errorf("%s: error should mention the field or 'unknown'; got %q", c.name, err.Error())
+			}
+		})
+	}
+}
+
+// gm-ekr: Validate accepts a fully populated manifest matching the
+// projected Beads shape.
+func TestValidate_AcceptsConformingR1R8(t *testing.T) {
+	m := baseManifest()
+	m.SchemaEnforcement = SchemaNative
+	m.QueryLanguages = []QueryLanguage{QueryFilterOnly, QuerySQLSubset}
+	m.DependencyGraphNative = true
+	m.ReadySetQuery = true
+	m.VersioningTransport = []VersioningTransport{VersioningGit, VersioningDolt, VersioningJSONL}
+	m.ConcurrencyModel = ConcurrencyDoltMerge
+	m.AgentSessionDecoupling = true
+	m.AgentNativeAPI = AgentAPICLI
+	m.OrchestratorHooks = []OrchestratorHook{
+		HookReadySetSubscribe, HookClaimAtomic,
+		HookEscalationIngest, HookWorkCompleteAck,
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("conforming manifest rejected: %v", err)
+	}
+	if ok, reasons := m.MinimumBar(); !ok {
+		t.Errorf("conforming manifest should clear the bar; got reasons %v", reasons)
+	}
+}

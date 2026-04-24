@@ -46,13 +46,16 @@ func (h *Host) RegisterWorkPlane(ctx context.Context, a core.WorkPlane) (transpo
 	if err := transport.Negotiate(m.AdaptorName, m.AdaptorVersion, m.ProtocolVersion, m.Transport, h.Transport()); err != nil {
 		return transport.Registration{}, err
 	}
+	barOK, barReasons := m.MinimumBar()
 	reg := transport.Registration{
-		Plane:           transport.PlaneWork,
-		Transport:       h.Transport(),
-		AdaptorName:     m.AdaptorName,
-		AdaptorVersion:  m.AdaptorVersion,
-		ProtocolVersion: m.ProtocolVersion,
-		CoreVersion:     core.ProtocolVersion,
+		Plane:                    transport.PlaneWork,
+		Transport:                h.Transport(),
+		AdaptorName:              m.AdaptorName,
+		AdaptorVersion:           m.AdaptorVersion,
+		ProtocolVersion:          m.ProtocolVersion,
+		CoreVersion:              core.ProtocolVersion,
+		ReducedCapability:        !barOK,
+		ReducedCapabilityReasons: barReasons,
 	}
 	h.mu.Lock()
 	h.work = a
