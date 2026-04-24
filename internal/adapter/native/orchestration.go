@@ -25,6 +25,10 @@ type OrchestrationPlane struct {
 	// nonces dedupes StartSession retries by assignment id. Value is
 	// the session id we returned the first time so replays echo it.
 	nonces map[string]string
+	// escalations is the in-memory index populated by the Fanout
+	// observer (gm-native.13). nil when Backend is nil (zero-config
+	// adaptor still has no escalation surface).
+	escalations *escalationIndex
 }
 
 // New constructs the native OrchestrationPlane with zero config.
@@ -43,13 +47,19 @@ func NewWithConfig(cfg Config) *OrchestrationPlane {
 	if fo == nil {
 		fo = bridge.NewFanout()
 	}
-	return &OrchestrationPlane{
-		cfg:        cfg,
-		fanout:     fo,
-		sessions:   make(map[string]*core.Session),
-		paneActive: make(map[string]string),
-		nonces:     make(map[string]string),
+	p := &OrchestrationPlane{
+		cfg:         cfg,
+		fanout:      fo,
+		sessions:    make(map[string]*core.Session),
+		paneActive:  make(map[string]string),
+		nonces:      make(map[string]string),
+		escalations: newEscalationIndex(),
 	}
+	// Wire the escalation index as the Fanout observer so every
+	// bridge frame updates the in-memory state before broadcast to
+	// SPA subscribers.
+	fo.SetObserver(p.escalations.handleEvent)
+	return p
 }
 
 // Fanout exposes the bridge fanout so the server can register new
@@ -126,9 +136,8 @@ func (*OrchestrationPlane) PeekSession(context.Context, string) (core.SessionPee
 	return core.SessionPeek{}, unsupported("PeekSession")
 }
 
-func (*OrchestrationPlane) ListPendingRequests(context.Context, string) ([]core.EscalationRequest, error) {
-	return nil, unsupported("ListPendingRequests")
-}
+// ListPendingRequests / ListOpenEscalations / ResolveEscalation are
+// implemented in escalations.go (gm-native.13).
 
 func (*OrchestrationPlane) AcquireWorkspace(context.Context, core.WorkspaceRequest) (core.Workspace, error) {
 	return core.Workspace{}, unsupported("AcquireWorkspace")
@@ -142,37 +151,8 @@ func (*OrchestrationPlane) InspectWorkspace(context.Context, string) (core.Works
 	return core.Workspace{}, unsupported("InspectWorkspace")
 }
 
-func (*OrchestrationPlane) ListOpenEscalations(context.Context, core.EscalationFilter) ([]core.EscalationRequest, error) {
-	return []core.EscalationRequest{}, nil
-}
-
-func (*OrchestrationPlane) ResolveEscalation(context.Context, string, core.EscalationResolution, core.ConfirmNonce) (core.EscalationRequest, error) {
-	return core.EscalationRequest{}, unsupported("ResolveEscalation")
-}
-
 func (o *OrchestrationPlane) Subscribe(ctx context.Context, _ core.SubscribeFilter) (<-chan core.OrchestrationEvent, error) {
-	// Spawn a ctx-scoped relay from the adaptor-wide fanout so the
-	// subscriber doesn't receive events after its ctx is canceled.
-	// Draining the fanout directly would couple one caller's
-	// lifetime to every live session.
-	out := make(chan core.OrchestrationEvent, 64)
-	go func() {
-		defer close(out)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case ev, ok := <-o.fanout.Events():
-				if !ok {
-					return
-				}
-				select {
-				case out <- ev:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-	return out, nil
+	// Delegate to the Fanout's broadcast subscribe; caller cancels
+	// their ctx to unregister.
+	return o.fanout.Subscribe(ctx), nil
 }

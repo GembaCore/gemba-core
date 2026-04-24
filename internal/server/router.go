@@ -168,6 +168,15 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/packs", notImplemented)
 		api.Get("/desired-state", notImplemented)
 		api.Get("/drift", notImplemented)
+
+		// gm-native.13: escalation surfacing + answer-back.
+		// GET /api/escalations returns the open set from the
+		// bound OrchestrationPlane. POST /api/escalations/{id}/respond
+		// routes the operator's answer back into the terminal via
+		// the adaptor's ResolveEscalation.
+		api.Get("/escalations", r.listEscalations)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/escalations/{id}/respond", r.respondEscalation)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

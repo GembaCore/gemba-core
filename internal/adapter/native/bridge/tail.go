@@ -155,27 +155,112 @@ func (t *Tail) handle(ctx context.Context, line []byte) {
 	}
 }
 
-// Fanout multiplexes one output channel from N per-session Tails.
-// The adaptor's Subscribe() returns Fanout.Events(); Register/
-// Unregister are called when StartSession/EndSession land.
+// Fanout multiplexes events from N per-session Tails and broadcasts
+// to every registered subscriber plus an optional observer callback.
+// Register/Unregister manage per-session tails; Subscribe / SetObserver
+// manage consumers.
+//
+// Why broadcast (not single-queue): the adaptor has TWO consumers
+// in the default wiring — the SPA's SSE relay AND the in-adaptor
+// escalation index. A single-consumer queue would force one of
+// them to miss events.
 type Fanout struct {
-	mu    sync.Mutex
-	tails map[string]context.CancelFunc
-	out   chan core.OrchestrationEvent
+	mu       sync.Mutex
+	tails    map[string]context.CancelFunc
+	subs     map[chan core.OrchestrationEvent]struct{}
+	input    chan core.OrchestrationEvent
+	observer func(core.OrchestrationEvent)
+
+	// out is the single shared channel historical callers expect
+	// (kept for backward compatibility — it drains the input too).
+	// Deprecated in favor of Subscribe(); Events() still works but
+	// uses it.
+	out chan core.OrchestrationEvent
+
+	pumpDone chan struct{}
 }
 
-// NewFanout returns a Fanout with a buffered output channel. Buffer
-// size of 256 is generous — hooks fire at single-digit hertz under
-// load, and the SSE consumer drains well below that.
+// NewFanout returns a running Fanout. A goroutine pumps events from
+// the shared input channel out to all subscribers + the observer.
 func NewFanout() *Fanout {
-	return &Fanout{
-		tails: make(map[string]context.CancelFunc),
-		out:   make(chan core.OrchestrationEvent, 256),
+	f := &Fanout{
+		tails:    make(map[string]context.CancelFunc),
+		subs:     make(map[chan core.OrchestrationEvent]struct{}),
+		input:    make(chan core.OrchestrationEvent, 256),
+		out:      make(chan core.OrchestrationEvent, 256),
+		pumpDone: make(chan struct{}),
 	}
+	go f.pump()
+	return f
+}
+
+// SetObserver registers an in-process callback fired synchronously
+// for every event. Pass nil to clear. Used by the adaptor to update
+// its escalation index without standing up a goroutine that races
+// the SPA's subscribers.
+func (f *Fanout) SetObserver(fn func(core.OrchestrationEvent)) {
+	f.mu.Lock()
+	f.observer = fn
+	f.mu.Unlock()
+}
+
+// Subscribe returns a per-caller channel that receives every event
+// until ctx is canceled. Slow subscribers drop events to keep the
+// pump from stalling — callers that care about every event must
+// consume promptly (the SPA relay does).
+func (f *Fanout) Subscribe(ctx context.Context) <-chan core.OrchestrationEvent {
+	ch := make(chan core.OrchestrationEvent, 64)
+	f.mu.Lock()
+	f.subs[ch] = struct{}{}
+	f.mu.Unlock()
+	go func() {
+		<-ctx.Done()
+		f.mu.Lock()
+		delete(f.subs, ch)
+		f.mu.Unlock()
+		close(ch)
+	}()
+	return ch
+}
+
+func (f *Fanout) pump() {
+	defer close(f.pumpDone)
+	for ev := range f.input {
+		f.mu.Lock()
+		obs := f.observer
+		subs := make([]chan core.OrchestrationEvent, 0, len(f.subs))
+		for ch := range f.subs {
+			subs = append(subs, ch)
+		}
+		f.mu.Unlock()
+
+		if obs != nil {
+			obs(ev)
+		}
+		for _, ch := range subs {
+			select {
+			case ch <- ev:
+			default:
+				// Drop for this subscriber — its ctx cancellation
+				// will clean it up soon.
+			}
+		}
+		// Best-effort legacy drain so callers of Events() still
+		// see frames. Non-blocking so a stalled reader doesn't
+		// back up the pump.
+		select {
+		case f.out <- ev:
+		default:
+		}
+	}
+	// No more input → close legacy out so Events() consumers drain.
+	close(f.out)
 }
 
 // Register starts a tailer for the given session. Calling Register
-// twice for the same sessionID cancels the first.
+// twice for the same sessionID cancels the first. Events flow
+// through the Fanout's input channel, then to the pump, then to
+// every subscriber + observer.
 func (f *Fanout) Register(ctx context.Context, sessionID, agentType string) error {
 	path, err := LogPath(sessionID)
 	if err != nil {
@@ -193,7 +278,7 @@ func (f *Fanout) Register(ctx context.Context, sessionID, agentType string) erro
 	f.tails[sessionID] = cancel
 	f.mu.Unlock()
 
-	go NewTail(path, agentType, f.out).Run(tailCtx)
+	go NewTail(path, agentType, f.input).Run(tailCtx)
 	return nil
 }
 
@@ -212,8 +297,8 @@ func (f *Fanout) Unregister(sessionID string) {
 // context to stop.
 func (f *Fanout) Events() <-chan core.OrchestrationEvent { return f.out }
 
-// Close stops every tailer and closes the output channel. After
-// Close the Fanout must not be reused.
+// Close stops every tailer and the pump. After Close the Fanout
+// must not be reused.
 func (f *Fanout) Close() {
 	f.mu.Lock()
 	for _, cancel := range f.tails {
@@ -221,5 +306,6 @@ func (f *Fanout) Close() {
 	}
 	f.tails = map[string]context.CancelFunc{}
 	f.mu.Unlock()
-	close(f.out)
+	close(f.input)
+	<-f.pumpDone
 }
