@@ -17,6 +17,8 @@ import (
 	gemba "github.com/MikeBengtson/gemba"
 	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
+	"github.com/MikeBengtson/gemba/internal/adapter/native"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/core"
@@ -73,6 +75,12 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 
 	cmd.Flags().StringVar(&cfg.OrchestratorConfigPath, "orchestrator-config", "",
 		"path to .gemba/orchestrator.json (default: probe cwd; missing → no shader)")
+
+	cmd.Flags().StringVar(&cfg.Orchestration, "orchestration", "",
+		"orchestration plane adaptor to bind (empty = none, 'native' = direct-to-shell)")
+
+	cmd.Flags().StringVar(&cfg.TerminalBackend, "terminal", "auto",
+		"terminal backend when --orchestration=native: auto|tmux|iterm|terminal")
 
 	cmd.Flags().StringVar(&cfg.BeadsDir, "beads-dir", "",
 		"path to the beads workspace the WorkPlane adaptor targets "+
@@ -143,6 +151,10 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		return err
 	}
 	host := reg.Host
+
+	if err := registerOrchestrationPlane(ctx, host, cfg); err != nil {
+		return err
+	}
 
 	if !quiet {
 		printStartupBanner(bannerOut, b, cfg, reg)
@@ -350,6 +362,44 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 		SourceKind: "url",
 		Source:     redacted,
 	}, nil
+}
+
+// registerOrchestrationPlane binds the operator-selected
+// OrchestrationPlaneAdaptor onto the api Host. A single-slot
+// invariant (gm-native.1) lives in the Host itself: Register will
+// refuse a second call with KindValidation. Empty Orchestration is
+// a no-op (today's default) — the SPA will reflect an absent
+// orchestration manifest.
+func registerOrchestrationPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) error {
+	switch cfg.Orchestration {
+	case "":
+		return nil
+	case "native":
+		// Resolve the backend eagerly so the operator sees a clear
+		// error before the listener opens. The real backend impls
+		// (gm-native.4 tmux, gm-native.5 AppleScript) aren't wired in
+		// yet — detection still happens so the manifest shows the
+		// resolved kind once the implementations land.
+		kind, err := backend.ResolveKind(backend.Kind(cfg.TerminalBackend))
+		if err != nil {
+			return fmt.Errorf("orchestration=native: %w", err)
+		}
+		slog.Info("native orchestration plane selected",
+			"backend", string(kind),
+			"scaffold_only", true)
+		reg, err := host.RegisterOrchestrationPlane(ctx, native.New())
+		if err != nil {
+			return fmt.Errorf("register native orchestration: %w", err)
+		}
+		slog.Info("orchestration plane registered",
+			"adaptor", reg.AdaptorName,
+			"version", reg.AdaptorVersion,
+			"protocol", reg.ProtocolVersion,
+			"transport", reg.Transport)
+		return nil
+	default:
+		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native' or empty)", cfg.Orchestration)
+	}
 }
 
 // printStartupBanner emits the three-line operator-facing summary the gm-root.1.3

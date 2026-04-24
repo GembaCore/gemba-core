@@ -86,6 +86,31 @@ func TestHost_RegisterOrchestrationPlane_VersionMismatch(t *testing.T) {
 	}
 }
 
+// gm-native.1: single-slot invariant. A second RegisterOrchestrationPlane
+// call after the first succeeds must return core.AdaptorError{KindValidation},
+// not silently overwrite the prior adaptor.
+func TestHost_RegisterOrchestrationPlane_RejectsDoubleRegister(t *testing.T) {
+	h := New()
+	first := testadaptors.NewFakeOrchestrationPlane(core.TransportAPI)
+	if _, err := h.RegisterOrchestrationPlane(context.Background(), first); err != nil {
+		t.Fatalf("first register: %v", err)
+	}
+	second := testadaptors.NewFakeOrchestrationPlane(core.TransportAPI)
+	_, err := h.RegisterOrchestrationPlane(context.Background(), second)
+	if err == nil {
+		t.Fatal("want error on second register; got nil")
+	}
+	var aerr *core.AdaptorError
+	if !errors.As(err, &aerr) || aerr.Kind != core.KindValidation {
+		t.Fatalf("want AdaptorError{KindValidation}, got %T: %v", err, err)
+	}
+	// The first adaptor must still be bound — a failed second register
+	// is not allowed to detach the successful one.
+	if h.OrchestrationPlane() == nil {
+		t.Fatal("first adaptor must remain bound after rejected double-register")
+	}
+}
+
 func TestHost_Registrations(t *testing.T) {
 	h := New()
 	if got := h.Registrations(); len(got) != 0 {

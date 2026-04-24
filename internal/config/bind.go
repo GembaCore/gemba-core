@@ -59,6 +59,20 @@ type ServeConfig struct {
 	// takes over. Set explicitly via --orchestrator-config.
 	OrchestratorConfigPath string
 
+	// Orchestration selects which OrchestrationPlaneAdaptor to bind at
+	// server startup (gm-native.2). Empty means no orchestration plane
+	// is registered — the SPA will reflect an absent orchestration
+	// manifest and agent-management surfaces are hidden. Supported:
+	//   "native" — direct-to-shell adaptor (gm-native)
+	// Future values may include "gt" (gastown) etc.; the single-slot
+	// invariant (gm-native.1) means only one may be active at a time.
+	Orchestration string
+
+	// TerminalBackend picks the shell multiplexer backend when
+	// Orchestration=="native". Empty or "auto" detects via env
+	// (TMUX / TERM_PROGRAM). Accepted: auto | tmux | iterm | terminal.
+	TerminalBackend string
+
 	DangerouslySkipPermissions bool
 }
 

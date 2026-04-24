@@ -1,0 +1,19 @@
+# Default gemba agent-type registry (gm-native.6 fixture). Copy into
+# your workspace as .gemba/agents.toml and edit the binary / model
+# fields to match your install.
+
+[[agent]]
+name     = "claude"
+binary   = "claude"
+args     = []
+model    = "claude-opus-4-7"
+preamble = "claude_md"
+hooks    = "claude_code"
+
+[[agent]]
+name     = "shell-only"
+binary   = "zsh"
+args     = ["-l"]
+model    = ""
+preamble = "stdout_banner"
+hooks    = "prompt_command"

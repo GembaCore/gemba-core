@@ -68,10 +68,23 @@ func (h *Host) RegisterWorkPlane(ctx context.Context, a core.WorkPlane) (transpo
 
 // RegisterOrchestrationPlane binds an OrchestrationPlaneAdaptor. Same
 // contract as RegisterWorkPlane, but consults the orchestration manifest.
+// Single-slot invariant (gm-native.1): only one OrchestrationPlaneAdaptor
+// may be registered at a time. A second Register call while one is
+// already bound returns a typed core.AdaptorError{KindValidation} —
+// routing and event fan-out assume a single plane.
 func (h *Host) RegisterOrchestrationPlane(_ context.Context, a core.OrchestrationPlaneAdaptor) (transport.Registration, error) {
 	if a == nil {
 		return transport.Registration{}, fmt.Errorf("api: OrchestrationPlaneAdaptor is nil")
 	}
+	h.mu.Lock()
+	if h.orchestration != nil {
+		prior := h.orchReg
+		h.mu.Unlock()
+		return transport.Registration{}, core.NewAdaptorError(core.KindValidation,
+			"api: orchestration plane already registered (adaptor=%q version=%q)",
+			prior.AdaptorName, prior.AdaptorVersion)
+	}
+	h.mu.Unlock()
 	m := a.Describe()
 	if err := transport.Negotiate(m.AdaptorID, m.AdaptorVersion, m.OrchestrationAPIVersion, m.Transport, h.Transport()); err != nil {
 		return transport.Registration{}, err
@@ -85,6 +98,15 @@ func (h *Host) RegisterOrchestrationPlane(_ context.Context, a core.Orchestratio
 		CoreVersion:     core.ProtocolVersion,
 	}
 	h.mu.Lock()
+	// Re-check under the write lock in case two goroutines raced past
+	// the initial non-nil check.
+	if h.orchestration != nil {
+		prior := h.orchReg
+		h.mu.Unlock()
+		return transport.Registration{}, core.NewAdaptorError(core.KindValidation,
+			"api: orchestration plane already registered (adaptor=%q version=%q)",
+			prior.AdaptorName, prior.AdaptorVersion)
+	}
 	h.orchestration = a
 	h.orchReg = &reg
 	h.mu.Unlock()

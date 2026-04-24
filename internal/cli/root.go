@@ -47,6 +47,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newVersionCmd(b),
 		newAdaptorCmd(),
 		newAuthCmd(),
+		newInstallBridgeCmd(),
 	)
 
 	return root
