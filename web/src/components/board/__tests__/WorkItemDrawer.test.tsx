@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { WorkItemDrawer } from '../WorkItemDrawer';
@@ -114,9 +115,11 @@ function wrapper(
   });
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <QueryClientProvider client={client}>
-        <CapabilitiesProvider initial={caps}>{children}</CapabilitiesProvider>
-      </QueryClientProvider>
+      <MemoryRouter>
+        <QueryClientProvider client={client}>
+          <CapabilitiesProvider initial={caps}>{children}</CapabilitiesProvider>
+        </QueryClientProvider>
+      </MemoryRouter>
     );
   };
 }

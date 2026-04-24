@@ -9,9 +9,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Check, Copy, Play, Send, X } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Check, Copy, Play, Send, Terminal, X } from 'lucide-react';
 import { useUpdateWorkItem, useWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
+import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
 import { cn } from '@/lib/utils';
 import {
   STATE_CATEGORIES,
@@ -173,9 +175,24 @@ function DrawerHeader({ id, epic }: { id: string; epic: WorkItem | undefined }) 
 //     workflow violation, not a UX shortcut.
 function EpicActions({ epic }: { epic: WorkItem }) {
   const mutation = useUpdateWorkItem();
+  const navigate = useNavigate();
+  const { orchestrationPlane } = useCapabilities();
+  const [dispatchOpen, setDispatchOpen] = useState(false);
   const agentClaimable = epic.derived?.agent_claimable === true;
   const isStaged = epic.state_category === 'staged';
   const isStarted = epic.state_category === 'started';
+  const isTerminal = epic.state_category === 'completed' || epic.state_category === 'canceled';
+
+  // Dispatch is independent of Stage/Start: starting a session for a
+  // bead is the operator's call regardless of whether the epic itself
+  // is marked staged. Hard gates: terminal state (closed bead has
+  // nothing meaningful to dispatch against) and no OrchestrationPlane
+  // bound (nothing would accept the dispatch).
+  const dispatchDisabledReason = isTerminal
+    ? 'Bead is closed; cannot dispatch a session.'
+    : !orchestrationPlane
+      ? 'No orchestration plane bound; cannot dispatch a session.'
+      : null;
 
   // Disabled reasons drive both the `disabled` attr and the `title`
   // tooltip so operators understand why a button won't fire.
@@ -222,6 +239,21 @@ function EpicActions({ epic }: { epic: WorkItem }) {
         disabledReason={startDisabledReason}
         testid="epic-drawer-start"
       />
+      <ActionButton
+        label="Dispatch"
+        icon={<Terminal className="h-3 w-3" />}
+        onClick={() => setDispatchOpen(true)}
+        disabledReason={dispatchDisabledReason}
+        testid="epic-drawer-dispatch"
+      />
+      {dispatchOpen ? (
+        <NewSessionDialog
+          open={dispatchOpen}
+          onClose={() => setDispatchOpen(false)}
+          prefilledBeadId={epic.id}
+          onStarted={() => navigate('/sessions')}
+        />
+      ) : null}
     </div>
   );
 }

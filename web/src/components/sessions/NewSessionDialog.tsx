@@ -9,15 +9,25 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAgents } from '@/hooks/useAgents';
 import { useWorkItems } from '@/hooks/useWorkItems';
 import { useStartSession } from '@/hooks/useSessions';
+import type { Session } from '@/api/sessions';
 import type { WorkItem } from '@/types/core.gen';
 
 export interface NewSessionDialogProps {
   open: boolean;
   onClose: () => void;
+  // prefilledBeadId, when set, locks the bead to that id and hides
+  // the searchable picker. Used by the board drawer's Start session
+  // button (gm-native.21) so the operator doesn't have to re-search
+  // for a bead they already had open.
+  prefilledBeadId?: string;
+  // onStarted fires after a successful start, before onClose. The
+  // board drawer uses it to navigate the operator to /sessions so
+  // they can see the new pane immediately (gm-native.21 scope).
+  onStarted?: (session: Session) => void;
 }
 
-export function NewSessionDialog({ open, onClose }: NewSessionDialogProps) {
-  const [beadId, setBeadId] = useState('');
+export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: NewSessionDialogProps) {
+  const [beadId, setBeadId] = useState(prefilledBeadId ?? '');
   const [agentType, setAgentType] = useState('');
   const [search, setSearch] = useState('');
   const { data: agents = [] } = useAgents();
@@ -25,15 +35,18 @@ export function NewSessionDialog({ open, onClose }: NewSessionDialogProps) {
   const start = useStartSession();
 
   // Reset local state when the dialog opens / closes — operators
-  // expect a blank slate on each invocation.
+  // expect a blank slate on each invocation. When a prefilledBeadId
+  // is given, hydrate that on open instead of clearing.
   useEffect(() => {
     if (!open) {
       setBeadId('');
       setAgentType('');
       setSearch('');
       start.reset();
+    } else if (prefilledBeadId) {
+      setBeadId(prefilledBeadId);
     }
-  }, [open, start]);
+  }, [open, prefilledBeadId, start]);
 
   const beadOptions = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -64,7 +77,10 @@ export function NewSessionDialog({ open, onClose }: NewSessionDialogProps) {
     start.mutate(
       { bead_id: beadId, agent_type: agentType },
       {
-        onSuccess: () => onClose(),
+        onSuccess: (session) => {
+          onStarted?.(session);
+          onClose();
+        },
       }
     );
   };
@@ -85,34 +101,50 @@ export function NewSessionDialog({ open, onClose }: NewSessionDialogProps) {
       >
         <h2 className="mb-4 text-lg font-semibold">New session</h2>
 
-        <label className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400">
-          Bead
-        </label>
-        <input
-          type="text"
-          autoFocus
-          placeholder="Search by id or title…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="mb-2 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800"
-        />
-        <select
-          value={beadId}
-          onChange={(e) => setBeadId(e.target.value)}
-          size={6}
-          className="mb-4 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800"
-        >
-          {beadOptions.length === 0 && (
-            <option value="" disabled>
-              No matching beads
-            </option>
-          )}
-          {beadOptions.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.id} — {b.title}
-            </option>
-          ))}
-        </select>
+        {prefilledBeadId ? (
+          // Pre-filled mode (board drawer dispatch): show the bead as a
+          // read-only chip so the operator sees what they're about to
+          // dispatch but can't accidentally swap it out.
+          <div className="mb-4">
+            <label className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400">
+              Bead
+            </label>
+            <div className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 font-mono text-xs text-neutral-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300">
+              {prefilledBeadId}
+            </div>
+          </div>
+        ) : (
+          <>
+            <label className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400">
+              Bead
+            </label>
+            <input
+              type="text"
+              autoFocus
+              placeholder="Search by id or title…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="mb-2 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+            />
+            <select
+              value={beadId}
+              onChange={(e) => setBeadId(e.target.value)}
+              size={6}
+              className="mb-4 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800"
+            >
+              {beadOptions.length === 0 && (
+                <option value="" disabled>
+                  No matching beads
+                </option>
+              )}
+              {beadOptions.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.id} — {b.title}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
 
         <label className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400">
           Agent type

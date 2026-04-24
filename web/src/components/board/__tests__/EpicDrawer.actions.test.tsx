@@ -14,6 +14,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { EpicDrawer } from '../EpicDrawer';
 import { workItemsKeys } from '@/hooks/useWorkItems';
@@ -57,11 +58,13 @@ function mount(epic: WorkItem) {
   client.setQueryData(workItemsKeys.detail(epic.id), epic);
   client.setQueryData(workItemsKeys.list(), [epic]);
   const ui: ReactNode = (
-    <QueryClientProvider client={client}>
-      <CapabilitiesProvider initial={caps}>
-        <EpicDrawer openId={epic.id} onClose={() => {}} />
-      </CapabilitiesProvider>
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={client}>
+        <CapabilitiesProvider initial={caps}>
+          <EpicDrawer openId={epic.id} onClose={() => {}} />
+        </CapabilitiesProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
   return { ...render(ui), client };
 }

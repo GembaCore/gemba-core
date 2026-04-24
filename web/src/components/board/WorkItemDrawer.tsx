@@ -22,15 +22,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Pencil, Plus, Terminal, Trash2, X } from 'lucide-react';
 import { useWorkItem, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { useAgents, useSprints } from '@/hooks/useAgents';
+import { useNavigate } from 'react-router-dom';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
 import type { AgentRef, DefinitionOfDone, StateCategory, WorkItem } from '@/types/core.gen';
 import type { Evidence } from '@/types/core.gen';
 import { rendererFor } from './descriptionRenderers';
 import { canEdit } from './canEdit';
+import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
 
 export interface WorkItemDrawerProps {
   // Bead id to show. null keeps the drawer closed. Changing this prop
@@ -113,7 +115,13 @@ function WorkItemDrawerBody({ id, canGoBack, onBack, onNavigate }: WorkItemDrawe
 
   return (
     <>
-      <DrawerHeader id={id} title={data?.title ?? ''} canGoBack={canGoBack} onBack={onBack} />
+      <DrawerHeader
+        id={id}
+        title={data?.title ?? ''}
+        canGoBack={canGoBack}
+        onBack={onBack}
+        item={data}
+      />
       <div className="flex-1 overflow-y-auto px-6 pb-10" data-testid="work-item-drawer-scroll">
         {isLoading ? (
           <div className="py-8 text-sm text-neutral-500" data-testid="work-item-drawer-loading">
@@ -139,13 +147,17 @@ function DrawerHeader({
   title,
   canGoBack,
   onBack,
+  item,
 }: {
   id: string;
   title: string;
   canGoBack: boolean;
   onBack: () => void;
+  item: WorkItem | undefined;
 }) {
   const [copied, setCopied] = useState(false);
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+  const navigate = useNavigate();
   const copyId = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(id);
@@ -191,6 +203,10 @@ function DrawerHeader({
           </button>
         </div>
       </div>
+      <DispatchButton
+        item={item}
+        onOpen={() => setDispatchOpen(true)}
+      />
       <Dialog.Close
         className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
         aria-label="Close"
@@ -198,7 +214,59 @@ function DrawerHeader({
       >
         <X className="h-4 w-4" />
       </Dialog.Close>
+      {item && dispatchOpen ? (
+        <NewSessionDialog
+          open={dispatchOpen}
+          onClose={() => setDispatchOpen(false)}
+          prefilledBeadId={item.id}
+          onStarted={() => navigate('/sessions')}
+        />
+      ) : null}
     </div>
+  );
+}
+
+// DispatchButton renders the header's Start-session shortcut for a
+// leaf WorkItem. Disabled when the bead is closed/canceled (no point
+// dispatching a session against terminal work), before the underlying
+// item has loaded, or when no OrchestrationPlane is bound (nothing
+// would accept the dispatch).
+function DispatchButton({
+  item,
+  onOpen,
+}: {
+  item: WorkItem | undefined;
+  onOpen: () => void;
+}) {
+  const { orchestrationPlane } = useCapabilities();
+  const isTerminal =
+    item?.state_category === 'completed' || item?.state_category === 'canceled';
+  const noPlane = !orchestrationPlane;
+  const disabled = !item || isTerminal || noPlane;
+  const title = !item
+    ? 'Loading…'
+    : isTerminal
+      ? 'Bead is closed; cannot dispatch a session.'
+      : noPlane
+        ? 'No orchestration plane bound; cannot dispatch a session.'
+        : 'Start a session for this bead';
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={disabled}
+      title={title}
+      data-testid="work-item-drawer-dispatch"
+      className={cn(
+        'mt-1 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium',
+        disabled
+          ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-600'
+          : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
+      )}
+    >
+      <Terminal className="h-3 w-3" aria-hidden />
+      Dispatch
+    </button>
   );
 }
 
