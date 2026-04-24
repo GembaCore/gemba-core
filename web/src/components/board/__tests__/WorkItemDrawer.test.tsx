@@ -276,7 +276,9 @@ describe('WorkItemDrawer', () => {
       wrapper: wrapper(capsWith('markdown')),
     });
     // Lazy markdown chunk resolves → renders the <div data-testid="description-markdown">.
-    const md = await screen.findByTestId('description-markdown');
+    // DoD notes also render through the same renderer, so there can be
+    // more than one; assert on the first (Description section).
+    const md = (await screen.findAllByTestId('description-markdown'))[0];
     expect(md.querySelector('h1')?.textContent).toBe('Goal');
     expect(md.querySelectorAll('li')).toHaveLength(2);
     expect(screen.queryByTestId('description-plain')).toBeNull();
@@ -289,7 +291,11 @@ describe('WorkItemDrawer', () => {
     render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, {
       wrapper: wrapper(capsWith(undefined)),
     });
-    await waitFor(() => expect(screen.getByTestId('description-plain')).toBeTruthy());
-    expect(screen.getByTestId('description-plain').textContent).toBe('# not-a-heading');
+    // DoD notes render through the same (plain) renderer, so there
+    // can be more than one; assert on the first.
+    await waitFor(() =>
+      expect(screen.getAllByTestId('description-plain').length).toBeGreaterThan(0)
+    );
+    expect(screen.getAllByTestId('description-plain')[0].textContent).toBe('# not-a-heading');
   });
 });

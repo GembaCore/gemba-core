@@ -22,7 +22,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowLeft, Check, Copy, Pencil, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useWorkItem, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
@@ -333,6 +333,7 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
       <Section title="Definition of Done" testid="section-dod">
         <DoDEditor
           dod={item.dod ?? null}
+          renderer={DescriptionRenderer}
           canEdit={canEdit('dod', editCtx)}
           saving={update.isPending}
           onSave={(next) => update.mutate({ id: item.id, patch: { dod: next } })}
@@ -1046,48 +1047,130 @@ function SprintEditor({
   );
 }
 
+// DoDEditor — structured editor for WorkItem.dod (gm-root.12). Renders
+// each acceptance criterion as its own row with inline text input,
+// add / remove buttons, and up / down reorder arrows. Notes run through
+// the adaptor's description renderer in read mode so markdown adaptors
+// get rich rendering; edit mode uses a plain textarea.
+//
+// Empty save (no criteria, no notes, no version) sends `null` so the
+// adaptor clears the field rather than persisting an empty object.
 function DoDEditor({
   dod,
+  renderer: Renderer,
   canEdit,
   saving,
   onSave,
 }: {
   dod: DefinitionOfDone | null;
+  renderer: React.ComponentType<{ source: string }>;
   canEdit: boolean;
   saving: boolean;
   onSave: (next: DefinitionOfDone | null) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [criteria, setCriteria] = useState((dod?.acceptance_criteria ?? []).join('\n'));
+  const [criteria, setCriteria] = useState<string[]>(dod?.acceptance_criteria ?? []);
   const [notes, setNotes] = useState(dod?.notes ?? '');
   const [version, setVersion] = useState(dod?.version ?? '');
   useEffect(() => {
     if (!editing) {
-      setCriteria((dod?.acceptance_criteria ?? []).join('\n'));
+      setCriteria(dod?.acceptance_criteria ?? []);
       setNotes(dod?.notes ?? '');
       setVersion(dod?.version ?? '');
     }
   }, [dod, editing]);
 
+  const startEditing = () => {
+    // Seed with one empty row when the bead has no criteria so the
+    // user has something to type into immediately. Saving drops empty
+    // rows, so an unedited placeholder doesn't persist.
+    setCriteria(dod?.acceptance_criteria?.length ? dod.acceptance_criteria : ['']);
+    setNotes(dod?.notes ?? '');
+    setVersion(dod?.version ?? '');
+    setEditing(true);
+  };
+
+  const updateCriterion = (i: number, text: string) => {
+    setCriteria((prev) => prev.map((c, idx) => (idx === i ? text : c)));
+  };
+  const addCriterion = () => setCriteria((prev) => [...prev, '']);
+  const removeCriterion = (i: number) =>
+    setCriteria((prev) => prev.filter((_, idx) => idx !== i));
+  const moveCriterion = (i: number, delta: -1 | 1) => {
+    setCriteria((prev) => {
+      const j = i + delta;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = prev.slice();
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  };
+
   if (editing) {
     return (
-      <div className="space-y-2" data-testid="work-item-dod-editing">
-        <label className="block text-xs text-neutral-500">
-          Acceptance criteria (one per line)
-          <textarea
-            value={criteria}
-            onChange={(e) => setCriteria(e.target.value)}
-            rows={5}
-            className="mt-1 w-full rounded border border-neutral-300 bg-white p-2 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-            autoFocus
-          />
-        </label>
+      <div className="space-y-3" data-testid="work-item-dod-editing">
+        <div className="space-y-1">
+          <div className="text-xs text-neutral-500">Acceptance criteria</div>
+          <ul className="space-y-1" data-testid="work-item-dod-criteria-list">
+            {criteria.map((c, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-1"
+                data-testid={`work-item-dod-criterion-${i}`}
+              >
+                <input
+                  value={c}
+                  onChange={(e) => updateCriterion(i, e.target.value)}
+                  placeholder="criterion"
+                  className="flex-1 rounded border border-neutral-300 bg-white px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+                />
+                <button
+                  type="button"
+                  onClick={() => moveCriterion(i, -1)}
+                  disabled={i === 0}
+                  aria-label="Move up"
+                  data-testid={`work-item-dod-criterion-${i}-up`}
+                  className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30 dark:hover:bg-neutral-800"
+                >
+                  <ArrowUp className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveCriterion(i, 1)}
+                  disabled={i === criteria.length - 1}
+                  aria-label="Move down"
+                  data-testid={`work-item-dod-criterion-${i}-down`}
+                  className="rounded p-1 text-neutral-500 hover:bg-neutral-100 disabled:opacity-30 dark:hover:bg-neutral-800"
+                >
+                  <ArrowDown className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeCriterion(i)}
+                  aria-label="Remove criterion"
+                  data-testid={`work-item-dod-criterion-${i}-remove`}
+                  className="rounded p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-950 dark:hover:text-rose-300"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            onClick={addCriterion}
+            className="inline-flex items-center gap-1 rounded border border-neutral-300 px-2 py-0.5 text-xs text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-900"
+            data-testid="work-item-dod-add-criterion"
+          >
+            <Plus className="h-3 w-3" /> Add criterion
+          </button>
+        </div>
         <label className="block text-xs text-neutral-500">
           Notes
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            rows={3}
+            rows={4}
             className="mt-1 w-full rounded border border-neutral-300 bg-white p-2 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
           />
         </label>
@@ -1111,10 +1194,7 @@ function DoDEditor({
           <button
             type="button"
             onClick={() => {
-              const list = criteria
-                .split('\n')
-                .map((s) => s.trim())
-                .filter((s) => s.length > 0);
+              const list = criteria.map((s) => s.trim()).filter((s) => s.length > 0);
               const n = notes.trim();
               const v = version.trim();
               if (list.length === 0 && !n && !v) {
@@ -1148,11 +1228,7 @@ function DoDEditor({
               <li key={i}>{c}</li>
             ))}
           </ul>
-          {dod.notes ? (
-            <pre className="whitespace-pre-wrap break-words font-sans text-sm text-neutral-700 dark:text-neutral-300">
-              {dod.notes}
-            </pre>
-          ) : null}
+          {dod.notes ? <Renderer source={dod.notes} /> : null}
           {dod.version ? (
             <div className="text-xs text-neutral-500">version {dod.version}</div>
           ) : null}
@@ -1163,7 +1239,7 @@ function DoDEditor({
       {canEdit ? (
         <button
           type="button"
-          onClick={() => setEditing(true)}
+          onClick={startEditing}
           className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
           data-testid="work-item-dod-edit"
         >
