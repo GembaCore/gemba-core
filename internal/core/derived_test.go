@@ -119,6 +119,34 @@ func TestDeriveTruthTable(t *testing.T) {
 			wantReview: true,
 		},
 		{
+			// gm-97w7.1: Manager-authored "## Blockers" section. In
+			// balanced/cautious mode the scanner stamps Urgency=Blocking.
+			name:       "open blocking transcript blocker → human + review",
+			item:       WorkItem{StateCategory: StateStarted},
+			esc:        []EscalationRequest{openEsc(EscalationBlocker, UrgencyBlocking)},
+			manifest:   manifestWithStateMap,
+			wantHuman:  true,
+			wantReview: true,
+		},
+		{
+			// gm-97w7.1: Coach "## Questions" in balanced mode (advisory).
+			// Review-worthy but not blocking.
+			name:       "open advisory transcript question → review only",
+			item:       WorkItem{StateCategory: StateStarted},
+			esc:        []EscalationRequest{openEsc(EscalationQuestion, UrgencyAdvisory)},
+			manifest:   manifestWithStateMap,
+			wantReview: true,
+		},
+		{
+			// gm-97w7.1: "## Questions" in cautious mode (blocking).
+			name:       "open blocking transcript question → human + review",
+			item:       WorkItem{StateCategory: StateStarted},
+			esc:        []EscalationRequest{openEsc(EscalationQuestion, UrgencyBlocking)},
+			manifest:   manifestWithStateMap,
+			wantHuman:  true,
+			wantReview: true,
+		},
+		{
 			name: "resolved HITL escalation → ignored (state != open)",
 			item: WorkItem{StateCategory: StateUnstarted},
 			esc: []EscalationRequest{

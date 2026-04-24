@@ -85,6 +85,32 @@ const (
 	// EscalationOrchestratorPause — orchestrator paused autonomously
 	// (e.g. conflict detected, auto-resolve failed).
 	EscalationOrchestratorPause EscalationKind = "orchestrator_pause"
+	// EscalationBlocker — Manager-authored skill surfaced a "## Blockers"
+	// section in the assistant's transcript (gm-97w7.1). Always backed
+	// by Channel=ChannelTranscript. Urgency is stamped by the scanner
+	// from (kind, interaction_mode).
+	EscalationBlocker EscalationKind = "blocker"
+	// EscalationQuestion — Coach- or Manager-authored skill surfaced a
+	// "## Questions" section in the assistant's transcript (gm-97w7.1).
+	// Always Channel=ChannelTranscript; Urgency mode-dependent.
+	EscalationQuestion EscalationKind = "question"
+)
+
+// EscalationChannel identifies how an EscalationRequest reached Gemba.
+// The response path branches on this: ChannelNotification escalations
+// answer back via the agent's Notification reply (SendKeys yes/no/
+// free-text); ChannelTranscript escalations answer back by writing the
+// operator's reply as the next UserPromptSubmit (gm-97w7.1).
+type EscalationChannel string
+
+const (
+	// ChannelNotification — surfaced via an agent-infra hook
+	// (Claude Notification, MCP elicitation, A2A input-required).
+	ChannelNotification EscalationChannel = "notification"
+	// ChannelTranscript — extracted by the transcript scanner from
+	// a "## Questions" or "## Blockers" section in the assistant's
+	// last turn (gm-97w7.1).
+	ChannelTranscript EscalationChannel = "transcript"
 )
 
 // PeekMode names a live-introspection mode an orchestrator supports for
@@ -503,6 +529,7 @@ type WorkspaceRequest struct {
 type EscalationRequest struct {
 	ID           string                `json:"id"`
 	Source       EscalationKind        `json:"source"`
+	Channel      EscalationChannel     `json:"channel,omitempty"`
 	AssignmentID string                `json:"assignment_id,omitempty"`
 	WorkItemID   WorkItemID            `json:"work_item_id,omitempty"`
 	AgentID      AgentID               `json:"agent_id,omitempty"`

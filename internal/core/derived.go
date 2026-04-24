@@ -77,7 +77,13 @@ func Derive(item WorkItem, escalations []EscalationRequest, manifest CapabilityM
 		case EscalationHITLApproval,
 			EscalationPermissionPrompt,
 			EscalationMCPElicitation,
-			EscalationA2AInputRequired:
+			EscalationA2AInputRequired,
+			EscalationBlocker,
+			EscalationQuestion:
+			// Blocker / Question kinds (gm-97w7.1) count as review
+			// sources regardless of Urgency — an open question with
+			// Urgency=Advisory still wants the operator's eye; the
+			// "is it blocking?" signal flows through hasBlocking.
 			hasReviewSrc = true
 		}
 	}
