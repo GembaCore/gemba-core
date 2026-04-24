@@ -71,6 +71,27 @@ var beadsStateMap = core.StateMap{
 	"closed":      core.StateCompleted,
 }
 
+// bdStatusForCategory is the canonical inverse of beadsStateMap used on
+// the write path. The forward map is many-to-one (several bd statuses
+// fold into StateStarted); the inverse picks the representative bd
+// status the adaptor emits when a caller patches by StateCategory
+// alone. StateStaged and StateCanceled have no bd-native status —
+// UpdateWorkItem refuses those rather than silently picking a surprising
+// mapping (e.g. canceled → closed would merge with completed).
+func bdStatusForCategory(cat core.StateCategory) (string, bool) {
+	switch cat {
+	case core.StateBacklog:
+		return "deferred", true
+	case core.StateUnstarted:
+		return "open", true
+	case core.StateStarted:
+		return "in_progress", true
+	case core.StateCompleted:
+		return "closed", true
+	}
+	return "", false
+}
+
 // toWorkItem projects a Beads record onto the adaptor-agnostic
 // core.WorkItem shape. Beads-specific fields that don't have a direct
 // core counterpart (issue_type, notes, parent, dependency graph, raw

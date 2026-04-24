@@ -866,6 +866,86 @@ func TestCreateMilestoneRoundTripsThroughList(t *testing.T) {
 	}
 }
 
+// TestUpdateWorkItem_StateCategoryTranslation asserts the bd adaptor
+// translates patch.StateCategory into the right bd --status token.
+// Before gm-m3c8 the adaptor dropped StateCategory silently, which made
+// every drag-to-restage PATCH a 200 that changed nothing.
+func TestUpdateWorkItem_StateCategoryTranslation(t *testing.T) {
+	cases := []struct {
+		name       string
+		category   core.StateCategory
+		wantStatus string
+		wantCat    core.StateCategory
+		wantErr    core.ErrorKind
+	}{
+		{"backlog", core.StateBacklog, "deferred", core.StateBacklog, ""},
+		{"unstarted", core.StateUnstarted, "open", core.StateUnstarted, ""},
+		{"started", core.StateStarted, "in_progress", core.StateStarted, ""},
+		{"completed", core.StateCompleted, "closed", core.StateCompleted, ""},
+		{"staged-rejected", core.StateStaged, "", "", core.KindValidation},
+		{"canceled-rejected", core.StateCanceled, "", "", core.KindValidation},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fake := newFakeBd(t)
+			impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+			ctx := context.Background()
+			created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+				Title: "x", Kind: "task", Status: "open",
+			})
+			if err != nil {
+				t.Fatalf("CreateWorkItem: %v", err)
+			}
+			got, err := impl.UpdateWorkItem(ctx, created.ID,
+				core.WorkItemPatch{StateCategory: &c.category})
+			if c.wantErr != "" {
+				if err == nil {
+					t.Fatalf("want AdaptorError %q, got nil", c.wantErr)
+				}
+				var aerr *core.AdaptorError
+				if !errors.As(err, &aerr) || aerr.Kind != c.wantErr {
+					t.Fatalf("want %q, got %T (%v)", c.wantErr, err, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("UpdateWorkItem: %v", err)
+			}
+			if got.Status != c.wantStatus {
+				t.Errorf("Status=%q want %q", got.Status, c.wantStatus)
+			}
+			if got.StateCategory != c.wantCat {
+				t.Errorf("StateCategory=%q want %q", got.StateCategory, c.wantCat)
+			}
+		})
+	}
+}
+
+// TestUpdateWorkItem_ExplicitStatusWinsOverStateCategory asserts that a
+// patch carrying BOTH status and state_category uses the explicit
+// status — callers who know the bd-native token get to bypass the
+// canonical inverse.
+func TestUpdateWorkItem_ExplicitStatusWinsOverStateCategory(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx := context.Background()
+	created, _ := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title: "x", Kind: "task", Status: "open",
+	})
+	explicit := "blocked" // StateStarted bucket; a plain StateStarted would map to in_progress
+	cat := core.StateStarted
+	got, err := impl.UpdateWorkItem(ctx, created.ID, core.WorkItemPatch{
+		Status:        &explicit,
+		StateCategory: &cat,
+	})
+	if err != nil {
+		t.Fatalf("UpdateWorkItem: %v", err)
+	}
+	if got.Status != "blocked" {
+		t.Errorf("Status=%q want blocked (explicit status must override StateCategory translation)", got.Status)
+	}
+}
+
 // TestBeadsSubscribeEmitsOnMutations asserts the gm-e4.3.1 contract:
 // a CreateWorkItem / UpdateWorkItem (closing-status included) call
 // surfaces a WorkPlaneEvent on every live Subscribe channel. Exercises

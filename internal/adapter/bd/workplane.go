@@ -450,6 +450,20 @@ func (w *WorkPlane) UpdateWorkItem(
 	}
 	if patch.Status != nil {
 		args = append(args, "--status", *patch.Status)
+	} else if patch.StateCategory != nil {
+		// Drag-to-restage and other core-level flows express the target
+		// as a StateCategory (the SPA never invents bd-native tokens).
+		// Translate via the canonical inverse of beadsStateMap: pick the
+		// representative bd status for the target bucket. Categories
+		// without a bd-native equivalent are a validation error — the
+		// caller must send an explicit --status instead.
+		bdStatus, ok := bdStatusForCategory(*patch.StateCategory)
+		if !ok {
+			return core.WorkItem{}, core.NewAdaptorError(core.KindValidation,
+				"beads: state_category %q has no bd-native status; send an explicit status field instead",
+				*patch.StateCategory)
+		}
+		args = append(args, "--status", bdStatus)
 	}
 	if patch.Priority != nil {
 		args = append(args, "--priority", strconv.Itoa(*patch.Priority))
