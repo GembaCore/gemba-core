@@ -1,14 +1,16 @@
 // EpicDrawer (gm-root.6 / ui-spec §5.6): drill-in for Epic cards.
 //
-// MVP scope: header + child-WorkItem list grouped by state. Stage /
-// Start workers actions are deferred — they need server-side mutation
-// routes (none in M1/M2 yet) plus the X-GEMBA-Confirm nonce flow
-// (gm-e4.4). Filed as follow-ups, not blockers for this slice.
+// Header carries Stage / Start workers actions (gm-vzy). Both go
+// through useUpdateWorkItem which already carries the X-GEMBA-Confirm
+// nonce flow (gm-root.8 slice 2). Stage transitions state_category →
+// "staged"; Start transitions → "started". Enablement is gated by
+// derived.agent_claimable on the epic; Start additionally requires
+// the epic to already be in Staged state (ui-spec §5.6 + gm-vzy DoD).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Check, Copy, X } from 'lucide-react';
-import { useWorkItem, useWorkItems } from '@/hooks/useWorkItems';
+import { Check, Copy, Play, Send, X } from 'lucide-react';
+import { useUpdateWorkItem, useWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
 import {
@@ -88,7 +90,7 @@ function EpicDrawerBody({ id, onOpenChild }: EpicDrawerBodyProps) {
 
   return (
     <>
-      <DrawerHeader id={id} title={epicItem?.title ?? ''} />
+      <DrawerHeader id={id} epic={epicItem} />
       <div className="flex-1 overflow-y-auto px-6 pb-10" data-testid="epic-drawer-scroll">
         {isLoading ? (
           <div className="py-8 text-sm text-neutral-500" data-testid="epic-drawer-loading">
@@ -109,7 +111,7 @@ function EpicDrawerBody({ id, onOpenChild }: EpicDrawerBodyProps) {
   );
 }
 
-function DrawerHeader({ id, title }: { id: string; title: string }) {
+function DrawerHeader({ id, epic }: { id: string; epic: WorkItem | undefined }) {
   const [copied, setCopied] = useState(false);
   const copyId = useCallback(async () => {
     try {
@@ -120,6 +122,7 @@ function DrawerHeader({ id, title }: { id: string; title: string }) {
       setCopied(false);
     }
   }, [id]);
+  const title = epic?.title ?? '';
   return (
     <div className="flex items-start gap-2 border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
       <div className="min-w-0 flex-1">
@@ -144,6 +147,7 @@ function DrawerHeader({ id, title }: { id: string; title: string }) {
           </button>
         </div>
       </div>
+      {epic ? <EpicActions epic={epic} /> : null}
       <Dialog.Close
         className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
         aria-label="Close"
@@ -152,6 +156,108 @@ function DrawerHeader({ id, title }: { id: string; title: string }) {
         <X className="h-4 w-4" />
       </Dialog.Close>
     </div>
+  );
+}
+
+// EpicActions renders the Stage / Start workers buttons per ui-spec
+// §5.6. Both are PATCH state_category mutations routed through
+// useUpdateWorkItem — it already wires the X-GEMBA-Confirm nonce
+// flow (gm-root.8 slice 2) and handles optimistic updates + rollback.
+//
+// Enablement rules (gm-vzy DoD):
+//   - Stage: requires derived.agent_claimable. Idempotent if already
+//     staged; we still disable in that case so the button never turns
+//     a confirmed click into a no-op surprise.
+//   - Start workers: requires derived.agent_claimable AND
+//     state_category === 'staged'. Starting an unstaged epic is a
+//     workflow violation, not a UX shortcut.
+function EpicActions({ epic }: { epic: WorkItem }) {
+  const mutation = useUpdateWorkItem();
+  const agentClaimable = epic.derived?.agent_claimable === true;
+  const isStaged = epic.state_category === 'staged';
+  const isStarted = epic.state_category === 'started';
+
+  // Disabled reasons drive both the `disabled` attr and the `title`
+  // tooltip so operators understand why a button won't fire.
+  const stageDisabledReason = !agentClaimable
+    ? 'Not agent-claimable: check derived signals or open escalations.'
+    : isStaged
+      ? 'Epic is already staged.'
+      : mutation.isPending
+        ? 'Mutation in flight.'
+        : null;
+  const startDisabledReason = !agentClaimable
+    ? 'Not agent-claimable: check derived signals or open escalations.'
+    : isStarted
+      ? 'Workers already started.'
+      : !isStaged
+        ? 'Stage the epic before starting workers.'
+        : mutation.isPending
+          ? 'Mutation in flight.'
+          : null;
+
+  const onStage = useCallback(() => {
+    if (stageDisabledReason) return;
+    mutation.mutate({ id: epic.id, patch: { state_category: 'staged' } });
+  }, [epic.id, mutation, stageDisabledReason]);
+
+  const onStart = useCallback(() => {
+    if (startDisabledReason) return;
+    mutation.mutate({ id: epic.id, patch: { state_category: 'started' } });
+  }, [epic.id, mutation, startDisabledReason]);
+
+  return (
+    <div className="mt-0.5 flex items-center gap-1">
+      <ActionButton
+        label="Stage"
+        icon={<Send className="h-3 w-3" />}
+        onClick={onStage}
+        disabledReason={stageDisabledReason}
+        testid="epic-drawer-stage"
+      />
+      <ActionButton
+        label="Start workers"
+        icon={<Play className="h-3 w-3" />}
+        onClick={onStart}
+        disabledReason={startDisabledReason}
+        testid="epic-drawer-start"
+      />
+    </div>
+  );
+}
+
+function ActionButton({
+  label,
+  icon,
+  onClick,
+  disabledReason,
+  testid,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabledReason: string | null;
+  testid: string;
+}) {
+  const disabled = disabledReason !== null;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={disabledReason ?? label}
+      data-testid={testid}
+      data-disabled={disabled ? 'true' : undefined}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium',
+        disabled
+          ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-600'
+          : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

@@ -188,7 +188,7 @@ describe('Board regression — project-canonical fixture', () => {
     mountBoard(items);
     // Per-root expected counts of epics (kind==='epic') by state_category.
     const epicsByRoot: Record<string, Partial<Record<StateCategory, number>>> = {
-      'demo/pc-root': { backlog: 1, started: 1, unstarted: 1, completed: 1 },
+      'demo/pc-root': { backlog: 1, started: 1, unstarted: 1, staged: 1, completed: 1 },
       'demo/pc-orphan': { backlog: 1 },
     };
     // pc-e4 is a child epic under pc-e1, which rolls up into pc-root's

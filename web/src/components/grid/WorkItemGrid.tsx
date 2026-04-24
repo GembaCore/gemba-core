@@ -22,9 +22,10 @@ import { cn } from '@/lib/utils';
 
 const STATE_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
-  unstarted: 'Unstarted',
-  started: 'Started',
-  completed: 'Completed',
+  unstarted: 'Next Up',
+  staged: 'Staged',
+  started: 'In Progress',
+  completed: 'Done',
   canceled: 'Canceled',
 };
 
