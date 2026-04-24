@@ -36,7 +36,7 @@ function wrap(ui: ReactNode, initialEntry = '/board') {
           <HotkeysContext.Provider value={registry}>
             <Routes>
               <Route path="/board" element={ui} />
-              <Route path="/board/:epicId" element={ui} />
+              <Route path="/board/*" element={ui} />
             </Routes>
           </HotkeysContext.Provider>
         </CapabilitiesProvider>
@@ -193,6 +193,40 @@ describe('BoardPage', () => {
     render(wrap(<BoardPage />, '/board/e1'));
     await waitFor(() => expect(screen.getByTestId('epic-drawer-content')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Epic e1 detail.')).toBeTruthy());
+  });
+
+  // Regression: bd ids carry slashes ("gemba/gemba/gm-e1"). The route
+  // must match the entire suffix, not just the first segment, otherwise
+  // the drawer never mounts and the URL bar shows but the panel doesn't
+  // appear.
+  it('/board/<workspace-prefixed-id> opens the EpicDrawer', async () => {
+    const data: WorkItem[] = [
+      epic('gemba/gemba/gm-root'),
+      epic('gemba/gemba/gm-e1', 'gemba/gemba/gm-root', { description: 'Prefixed.' }),
+    ];
+    fetchSpy.mockImplementation((url: string) => {
+      if (url === '/api/beads') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: data, total: data.length }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      if (url === '/api/beads/gemba%2Fgemba%2Fgm-e1') {
+        return Promise.resolve(
+          new Response(JSON.stringify(data[1]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    render(wrap(<BoardPage />, '/board/gemba/gemba/gm-e1'));
+    await waitFor(() => expect(screen.getByTestId('epic-drawer-content')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Prefixed.')).toBeTruthy());
   });
 
   it('?view=workitem still opens the WorkItem drawer on card click', async () => {

@@ -19,8 +19,11 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/board" replace />} />
         <Route path="/board" element={<BoardPage />} />
-        {/* Deep-link an Epic drawer over the board (ui-spec L116). */}
-        <Route path="/board/:epicId" element={<BoardPage />} />
+        {/* Wildcard so workspace-prefixed bead ids ("gemba/gemba/gm-e1")
+            match end-to-end — :epicId would only catch a single path
+            segment and the dolt adaptor canonically prefixes ids with
+            "<workspace>/<repo>/". useParams()['*'] surfaces the rest. */}
+        <Route path="/board/*" element={<BoardPage />} />
         <Route path="/backlog" element={<BacklogPage />} />
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />

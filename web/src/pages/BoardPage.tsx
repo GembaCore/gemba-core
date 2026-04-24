@@ -58,7 +58,12 @@ export function BoardPage() {
   const { data, isLoading, isError, error, refetch } = useBeads();
   const [params, setParams] = useSearchParams();
   const view = viewFromQuery(params);
-  const { epicId } = useParams<{ epicId?: string }>();
+  // The route is /board/* so the matched suffix lands under the splat
+  // param. bd ids carry slashes ("gemba/gemba/gm-e1"); a :epicId
+  // segment would only catch the first chunk.
+  const splatParams = useParams();
+  const splatRaw = splatParams['*'] ?? '';
+  const epicId = splatRaw.length > 0 ? splatRaw : null;
   const navigate = useNavigate();
 
   // workitem-view drawer is local SPA state; epic-view drawer is
