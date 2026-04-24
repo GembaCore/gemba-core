@@ -11,6 +11,10 @@ import (
 	"os"
 
 	"github.com/MikeBengtson/gemba/internal/cli"
+	// Side-effect: registers the bundled coaching + manager skills FS
+	// with internal/adapter/native/install so `gemba install-bridge`
+	// can copy them into a fresh worktree (gm-native.18).
+	_ "github.com/MikeBengtson/gemba/cmd/gemba-bridge/skills"
 )
 
 // Injected at build time via -ldflags. See Makefile.

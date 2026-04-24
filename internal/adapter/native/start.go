@@ -3,11 +3,11 @@ package native
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/install"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/preamble"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/worktrees"
 	"github.com/MikeBengtson/gemba/internal/core"
@@ -95,10 +95,11 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 
 	sessionID := fmt.Sprintf("%s:%s:%d", o.cfg.Backend.Name(), beadID, time.Now().UnixNano())
 
-	// Best-effort bridge install — if settings.local.json is already
-	// there, install is a no-op. Failures are logged but don't block
-	// spawn (degraded observability is better than failed dispatch).
-	_ = installBridgeForAgent(workspace, agent)
+	// Best-effort bridge install — the per-agent installer is
+	// idempotent; a populated worktree is a supported no-op.
+	// Failures are swallowed: degraded observability is better than
+	// failed dispatch.
+	_ = installBridgeForAgent(ctx, workspace, agent)
 
 	spec := backend.SpawnSpec{
 		Cwd: workspace,
@@ -230,33 +231,36 @@ func buildAgentCommand(a agents.AgentType) []string {
 	return argv
 }
 
-// installBridgeForAgent writes the appropriate hook stanza for the
-// agent's declared profile into the workspace. The native adaptor
-// does this eagerly on every StartSession (idempotent) so operators
-// never have to run `gemba install-bridge` by hand.
+// installBridgeForAgent runs the per-agent install strategy for the
+// agent's declared HookProfile. Idempotent — a populated worktree is
+// a supported no-op, so eager-install on every StartSession is safe.
 //
-// Kept here (not in internal/cli) to avoid a dependency from
-// internal/adapter/native back to the CLI package.
-func installBridgeForAgent(workspace string, a agents.AgentType) error {
-	if a.Hooks == agents.HookNone {
+// Kept here (not in internal/cli) so the spawn path doesn't depend on
+// the CLI package; both call sites resolve through install.Get.
+func installBridgeForAgent(ctx context.Context, workspace string, a agents.AgentType) error {
+	name, ok := installerNameForHook(a.Hooks)
+	if !ok {
 		return nil
 	}
-	// Minimal install: ensure the .claude/settings.local.json file
-	// exists. Full stanza installation lives behind the cli command
-	// so serve-side doesn't have to keep its JSON schema in sync
-	// with the CLI when the SPA later exposes install-bridge. For
-	// now, if the file is missing, create a placeholder so the
-	// operator knows to run install-bridge — this becomes real in a
-	// follow-up if bridging is mandatory at startup.
-	if a.Hooks == agents.HookClaudeCode {
-		dir := workspace + "/.claude"
-		_ = mkdirAllQuiet(dir)
+	inst, err := install.Get(name)
+	if err != nil {
+		return err
 	}
-	return nil
+	_, err = inst.Install(ctx, install.Options{Dir: workspace})
+	return err
 }
 
-// mkdirAllQuiet is a helper that swallows errors — best-effort
-// operations should not crash the spawn path.
-func mkdirAllQuiet(dir string) error {
-	return os.MkdirAll(dir, 0o755)
+// installerNameForHook maps an agents.HookProfile to its installer
+// registry key. Returns ok=false for HookNone (no installation).
+func installerNameForHook(h agents.HookProfile) (string, bool) {
+	switch h {
+	case agents.HookClaudeCode:
+		return "claude", true
+	case agents.HookPromptCommand:
+		return "shell_only", true
+	case agents.HookNone:
+		return "", false
+	default:
+		return "", false
+	}
 }

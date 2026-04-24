@@ -1,38 +1,48 @@
+// gemba install-bridge wires the per-agent install registry
+// (gm-native.18) so subsequent native sessions emit structured frames
+// to the bridge log. Idempotent — a second run with the same agent +
+// workspace is a no-op.
+
 package cli
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
 
+	"github.com/MikeBengtson/gemba/internal/adapter/native/install"
 	"github.com/spf13/cobra"
 )
 
-// newInstallBridgeCmd registers the `gemba install-bridge` subcommand
-// (gm-native.7). It writes an agent-appropriate hook stanza into the
-// current workspace so subsequent sessions started by the native
-// adaptor emit structured frames to the bridge log. Idempotent: a
-// second run on the same workspace with the same profile is a no-op.
+// newInstallBridgeCmd registers the `gemba install-bridge` subcommand.
+// --agent <name> picks the strategy (claude | shell_only | future
+// types). Legacy --profile flag still accepted with a deprecation
+// notice so operators with old aliases / scripts don't break.
 func newInstallBridgeCmd() *cobra.Command {
 	var (
-		profile string
-		workDir string
-		dryRun  bool
+		agentName string
+		profile   string
+		workDir   string
+		dryRun    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "install-bridge",
-		Short: "Install gemba-bridge hooks into the current workspace",
-		Long: `install-bridge writes the appropriate agent-hook stanza into the
-current workspace so gemba-bridge captures structured events from
-every session started by the native orchestrator adaptor.
+		Short: "Install gemba-bridge into the current workspace",
+		Long: `install-bridge runs the per-agent installer for the current
+workspace so gemba-bridge captures structured events from every
+session started by the native orchestrator adaptor (gm-native).
 
-Supported profiles:
-  claude_code    — writes .claude/settings.local.json hook stanza
-  prompt_command — writes .gemba/shellrc for zsh/bash $PROMPT_COMMAND
+Each installer knows what artifacts to scan for, how to merge with
+operator-authored content, and which default skill files to copy when
+absent. Operator-authored bytes outside the gemba sentinel block are
+never overwritten.
 
-Idempotent; a second run on the same workspace with the same profile
-leaves the file unchanged.`,
+Available installers:
+  claude       — .claude/settings.local.json (merge), CLAUDE.md
+                 (sentinel block), .claude/skills/ (copy if absent)
+  shell_only   — .gemba/shellrc (idempotent overwrite when sentinel
+                 present; preserved when operator owns the file)`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			dir := workDir
 			if dir == "" {
@@ -42,137 +52,62 @@ leaves the file unchanged.`,
 				}
 				dir = wd
 			}
-			return installBridge(cmd.OutOrStdout(), dir, profile, dryRun)
+			selected, err := resolveAgent(agentName, profile)
+			if err != nil {
+				return err
+			}
+			return runInstall(cmd.Context(), cmd.OutOrStdout(), dir, selected, dryRun)
 		},
 	}
-	cmd.Flags().StringVar(&profile, "profile", "claude_code", "hook profile (claude_code|prompt_command)")
+	cmd.Flags().StringVar(&agentName, "agent", "claude",
+		"installer name (claude | shell_only); see install help for the registry")
+	cmd.Flags().StringVar(&profile, "profile", "",
+		"DEPRECATED: alias for --agent. claude_code → claude, prompt_command → shell_only")
 	cmd.Flags().StringVar(&workDir, "workspace", "", "workspace directory (default: cwd)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print actions without writing files")
 	return cmd
 }
 
-// installBridge is separated from the cobra wiring so tests can drive
-// it without spinning up a command tree.
-func installBridge(out interface{ Write(p []byte) (int, error) }, dir, profile string, dryRun bool) error {
+// resolveAgent normalises --agent + the legacy --profile alias into
+// a single Installer name. The deprecation notice is intentionally
+// non-fatal: scripts shouldn't break, but operators see "switch to
+// --agent" the next time they run by hand.
+func resolveAgent(agentName, profile string) (string, error) {
+	if profile == "" {
+		return agentName, nil
+	}
+	mapped := profile
 	switch profile {
 	case "claude_code":
-		return installClaudeCodeProfile(out, dir, dryRun)
+		mapped = "claude"
 	case "prompt_command":
-		return installPromptCommandProfile(out, dir, dryRun)
-	default:
-		return fmt.Errorf("install-bridge: unknown profile %q (want claude_code or prompt_command)", profile)
+		mapped = "shell_only"
 	}
+	if agentName != "" && agentName != mapped {
+		return "", fmt.Errorf("install-bridge: --agent=%q and --profile=%q disagree (profile maps to %q); pick one", agentName, profile, mapped)
+	}
+	fmt.Fprintf(os.Stderr, "install-bridge: --profile is deprecated; use --agent=%s\n", mapped)
+	return mapped, nil
 }
 
-// sentinelKey marks settings.local.json as gemba-managed so a second
-// run can detect "already installed" without re-parsing our stanza.
-const sentinelKey = "_gemba_bridge"
-
-// installClaudeCodeProfile writes .claude/settings.local.json with
-// the gemba-bridge hook entries. Preserves any operator-authored
-// fields by doing a JSON merge (adds the "hooks" key if missing,
-// replaces only if our sentinel is present).
-func installClaudeCodeProfile(out interface{ Write(p []byte) (int, error) }, dir string, dryRun bool) error {
-	path := filepath.Join(dir, ".claude", "settings.local.json")
-	existing := map[string]interface{}{}
-	if b, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(b, &existing); err != nil {
-			return fmt.Errorf("install-bridge: parse %s: %w", path, err)
-		}
-	}
-	if _, alreadyOurs := existing[sentinelKey]; alreadyOurs {
-		fmt.Fprintf(out, "install-bridge: %s already installed (sentinel present); no-op\n", path)
-		return nil
-	}
-	existing["hooks"] = claudeHookStanza()
-	existing[sentinelKey] = map[string]interface{}{
-		"profile": "claude_code",
-		"version": "1",
-	}
-	if dryRun {
-		pretty, _ := json.MarshalIndent(existing, "", "  ")
-		fmt.Fprintf(out, "DRY RUN: would write %s:\n%s\n", path, pretty)
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("install-bridge: mkdir %s: %w", filepath.Dir(path), err)
-	}
-	pretty, err := json.MarshalIndent(existing, "", "  ")
+// runInstall delegates to the registry. Out is io.Writer not just
+// stdout so tests can capture the human-facing report.
+func runInstall(ctx context.Context, out io.Writer, dir, agent string, dryRun bool) error {
+	inst, err := install.Get(agent)
 	if err != nil {
-		return fmt.Errorf("install-bridge: marshal: %w", err)
+		return err
 	}
-	if err := os.WriteFile(path, append(pretty, '\n'), 0o644); err != nil {
-		return fmt.Errorf("install-bridge: write %s: %w", path, err)
+	rep, err := inst.Install(ctx, install.Options{Dir: dir, DryRun: dryRun})
+	for _, a := range rep.Actions {
+		fmt.Fprintf(out, "  %-9s %s — %s\n", a.Kind, a.Path, a.Reason)
 	}
-	fmt.Fprintf(out, "install-bridge: wrote %s (profile=claude_code)\n", path)
-	return nil
-}
-
-func claudeHookStanza() map[string]interface{} {
-	entry := func() map[string]interface{} {
-		return map[string]interface{}{
-			"hooks": []map[string]interface{}{
-				{
-					"type":    "command",
-					"command": "gemba-bridge",
-				},
-			},
-		}
+	if err != nil {
+		return fmt.Errorf("install-bridge[%s]: %w", agent, err)
 	}
-	return map[string]interface{}{
-		"SessionStart":     []map[string]interface{}{entry()},
-		"UserPromptSubmit": []map[string]interface{}{entry()},
-		"PreToolUse": []map[string]interface{}{
-			{
-				"matcher": "*",
-				"hooks":   entry()["hooks"],
-			},
-		},
-		"PostToolUse": []map[string]interface{}{
-			{
-				"matcher": "Bash",
-				"hooks":   entry()["hooks"],
-			},
-		},
-		"Notification": []map[string]interface{}{entry()},
-		"Stop":         []map[string]interface{}{entry()},
-	}
-}
-
-const shellrcContent = `# gemba-bridge prompt-command hook (gm-native.7). Source this from
-# your shell's rc (bash, zsh) when you want bd-invocation correlation
-# for a shell-only native session. Harmless outside a native session
-# because GEMBA_SESSION_ID is unset.
-__gemba_bridge_precmd() {
-  if [ -n "${GEMBA_SESSION_ID:-}" ] && command -v gemba-bridge >/dev/null 2>&1; then
-    # Pass the last command + exit status as a structured frame. We
-    # stringify to JSON inline to avoid a jq dependency.
-    printf '{"cmd":%q,"rc":%d}\n' "$(fc -ln -1 2>/dev/null || true)" "$?" |
-      GEMBA_HOOK_EVENT=PromptCommand gemba-bridge >/dev/null 2>&1 || true
-  fi
-}
-case "${SHELL##*/}" in
-  zsh)
-    precmd_functions+=(__gemba_bridge_precmd)
-    ;;
-  bash)
-    PROMPT_COMMAND="__gemba_bridge_precmd; ${PROMPT_COMMAND:-}"
-    ;;
-esac
-`
-
-func installPromptCommandProfile(out interface{ Write(p []byte) (int, error) }, dir string, dryRun bool) error {
-	path := filepath.Join(dir, ".gemba", "shellrc")
+	mode := ""
 	if dryRun {
-		fmt.Fprintf(out, "DRY RUN: would write %s (prompt_command profile, %d bytes)\n", path, len(shellrcContent))
-		return nil
+		mode = " (dry-run)"
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("install-bridge: mkdir %s: %w", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(shellrcContent), 0o644); err != nil {
-		return fmt.Errorf("install-bridge: write %s: %w", path, err)
-	}
-	fmt.Fprintf(out, "install-bridge: wrote %s (profile=prompt_command)\n", path)
+	fmt.Fprintf(out, "install-bridge[%s]: %d action(s)%s\n", rep.Agent, len(rep.Actions), mode)
 	return nil
 }
