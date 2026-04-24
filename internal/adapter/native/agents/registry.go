@@ -75,6 +75,66 @@ const (
 // autonomous development's bias toward "check in".
 const DefaultInteractionMode = InteractionBalanced
 
+// ContainerMount is one entry in an AgentType's container.mounts
+// list. `src` is a host path (template-expanded at spawn time —
+// `{{workspace}}`, `{{session_id}}`, `{{agent_name}}`); `dst` is the
+// destination inside the container. `mode` is "rw" | "ro" | "tmpfs".
+// See docs/design/containerized-sessions.md §7.
+type ContainerMount struct {
+	Src  string `toml:"src"`
+	Dst  string `toml:"dst"`
+	Mode string `toml:"mode"`
+	// Size is a tmpfs size hint (e.g. "128m"). Ignored for bind-mounts.
+	Size string `toml:"size"`
+}
+
+// ContainerSpec is the [agent.container] stanza from agents.toml —
+// optional; when present an agent type spawns as a Docker container
+// rather than a tmux pane. See gm-root.15.6 and
+// docs/design/containerized-sessions.md §11.
+type ContainerSpec struct {
+	// Image is the container image reference. Required when the
+	// stanza is present.
+	Image string `toml:"image"`
+	// Cwd is the working directory inside the container. Defaults
+	// to "/work".
+	Cwd string `toml:"cwd"`
+	// CPUs is the fractional CPU count (e.g. 2.0 for two cores).
+	// Required — zero means "no cap" which the design rejects for
+	// sandboxed agents.
+	CPUs float64 `toml:"cpus"`
+	// Memory is parsed by the backend from a string like "4g" into
+	// bytes; we keep it as a string here so validation errors are
+	// legible ("invalid memory spec '4gigs'" rather than a parse
+	// error from strconv).
+	Memory string `toml:"memory"`
+	// PidsLimit caps the number of processes. 0 → backend default
+	// (512).
+	PidsLimit int64 `toml:"pids_limit"`
+	// Mounts declares bind-mounts and tmpfs for the container.
+	Mounts []ContainerMount `toml:"mounts"`
+	// Secrets are named entries the backend resolves and mounts at
+	// /run/secrets/<name>. Never carry secret material as env.
+	Secrets []string `toml:"secrets"`
+	// Network picks an egress policy. "none" (default), "bridge:<name>",
+	// or "host" (requires Unsafe=true).
+	Network string `toml:"network"`
+	// ReadOnlyRootfs defaults to true when the stanza is present.
+	// Pointer-to-bool so absent and explicit-false differ.
+	ReadOnlyRootfs *bool `toml:"read_only_rootfs"`
+	// Unsafe unlocks --privileged / --network host / other envelope
+	// escapes. Required to accept any of them. Loud in the banner;
+	// logged on every spawn.
+	Unsafe bool `toml:"unsafe"`
+}
+
+// Present reports whether the operator declared a container stanza
+// at all. The zero-value sentinel is "no Image" — every present
+// spec requires one.
+func (c ContainerSpec) Present() bool {
+	return c.Image != ""
+}
+
 // AgentType is one entry in .gemba/agents.toml.
 type AgentType struct {
 	// Name is the operator-chosen identifier — must be unique within
@@ -105,6 +165,11 @@ type AgentType struct {
 	// .gemba/interaction_profile.md path. Relative paths resolve
 	// against the workspace dir. Empty string uses the default.
 	InteractionProfile string `toml:"interaction_profile"`
+	// Container is the optional [agent.container] stanza. When
+	// Present(), the agent spawns as a Docker container instead of
+	// a tmux pane. See gm-root.15.6 /
+	// docs/design/containerized-sessions.md §11.
+	Container ContainerSpec `toml:"container"`
 }
 
 // ResolvedInteractionMode returns the agent's configured mode with
@@ -203,11 +268,73 @@ func (r Registry) Validate() error {
 			problems = append(problems, fmt.Sprintf("%s: duplicate name (first at agent[%d])", prefix, first))
 		}
 		seen[a.Name] = i
+		if a.Container.Present() {
+			problems = append(problems, validateContainer(prefix, a.Container)...)
+		}
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// validateContainer enforces the ContainerSpec invariants the rest of
+// the stack depends on. Aggregated rather than failing-fast so the
+// operator sees every problem at once.
+func validateContainer(prefix string, c ContainerSpec) []string {
+	var problems []string
+	if strings.TrimSpace(c.Image) == "" {
+		problems = append(problems, fmt.Sprintf("%s.container: image required when stanza is present", prefix))
+	}
+	if c.CPUs < 0 {
+		problems = append(problems, fmt.Sprintf("%s.container: cpus must be >= 0 (got %v)", prefix, c.CPUs))
+	}
+	if c.PidsLimit < 0 {
+		problems = append(problems, fmt.Sprintf("%s.container: pids_limit must be >= 0 (got %d)", prefix, c.PidsLimit))
+	}
+	switch c.Network {
+	case "", "none", "host":
+		// "host" also needs Unsafe=true; checked below.
+	default:
+		if !strings.HasPrefix(c.Network, "bridge:") {
+			problems = append(problems, fmt.Sprintf(
+				"%s.container: unknown network %q (want 'none', 'host', or 'bridge:<name>')",
+				prefix, c.Network))
+		}
+	}
+	if c.Network == "host" && !c.Unsafe {
+		problems = append(problems, fmt.Sprintf(
+			"%s.container: network='host' requires unsafe=true (escape hatch; see docs/design/containerized-sessions.md §4)",
+			prefix))
+	}
+	// Mount dst uniqueness — two mounts on the same path silently
+	// overwrite each other in the final docker run, which is a
+	// config bug we can catch cheaply.
+	seenDst := map[string]int{}
+	for i, m := range c.Mounts {
+		if strings.TrimSpace(m.Dst) == "" {
+			problems = append(problems, fmt.Sprintf("%s.container.mounts[%d]: dst required", prefix, i))
+			continue
+		}
+		if first, dup := seenDst[m.Dst]; dup {
+			problems = append(problems, fmt.Sprintf(
+				"%s.container.mounts[%d]: duplicate dst %q (first at mounts[%d])",
+				prefix, i, m.Dst, first))
+		}
+		seenDst[m.Dst] = i
+		switch strings.ToLower(m.Mode) {
+		case "", "rw", "ro", "tmpfs":
+		default:
+			problems = append(problems, fmt.Sprintf(
+				"%s.container.mounts[%d]: unknown mode %q (want 'rw', 'ro', or 'tmpfs')",
+				prefix, i, m.Mode))
+		}
+		if strings.ToLower(m.Mode) != "tmpfs" && strings.TrimSpace(m.Src) == "" {
+			problems = append(problems, fmt.Sprintf(
+				"%s.container.mounts[%d]: src required for bind-mount", prefix, i))
+		}
+	}
+	return problems
 }
 
 func validPreamble(p PreambleStrategy) bool {
