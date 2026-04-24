@@ -131,8 +131,8 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		// are still in flight. The agent transitions to Ready (idle) or
 		// Working (bead dispatched) when the first gemba-state signal
 		// lands via the bridge (gm-cdph).
-		Status:       core.SessionInitializing,
-		StartedAt:    now,
+		Status:    core.SessionInitializing,
+		StartedAt: now,
 		ProviderMetadata: map[string]any{
 			"pane_id":    pane.ID,
 			"backend":    o.cfg.Backend.Name(),

@@ -597,6 +597,19 @@ type AgentFilter struct {
 	Workspace string    `json:"workspace,omitempty"`
 }
 
+// SessionFilter narrows ListSessions. Empty filter means "every
+// session the adaptor currently tracks." Status, when non-empty,
+// matches sessions whose Status equals one of the listed values
+// (logical OR). AgentID, when non-empty, matches the AgentID field
+// exactly. IncludeTerminal — when true, terminal sessions
+// (completed/failed) are included; default behavior excludes them so
+// the SPA's live-pane list isn't cluttered with stale rows.
+type SessionFilter struct {
+	Status          []SessionStatus `json:"status,omitempty"`
+	AgentID         AgentID         `json:"agent_id,omitempty"`
+	IncludeTerminal bool            `json:"include_terminal,omitempty"`
+}
+
 // ReadyFilter narrows ClaimNextReady to the subset of ready work an
 // agent is willing to pick up.
 type ReadyFilter struct {
@@ -752,6 +765,13 @@ type OrchestrationPlaneAdaptor interface {
 	// PeekSession returns a snapshot of a live session. The populated
 	// fields are gated by manifest.peek_modes.
 	PeekSession(ctx context.Context, sessionID string) (SessionPeek, error)
+	// ListSessions returns every session the adaptor currently knows
+	// about, filtered by f. Drives operator-visible session inventory
+	// (e.g. /sessions in the SPA). Returns an empty slice (not nil) when
+	// the adaptor has no live sessions. Adaptors MAY include recently
+	// closed (terminal) sessions as a courtesy — gm-native.15 callers
+	// filter client-side.
+	ListSessions(ctx context.Context, f SessionFilter) ([]Session, error)
 	// ListPendingRequests returns every open EscalationRequest
 	// (permission prompt, HITL approval, MCP elicitation,
 	// A2A input-required, orchestrator pause) currently attached to

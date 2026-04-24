@@ -223,6 +223,11 @@ type FakeOrchestrationPlane struct {
 	// AgentsFn — when set, ListAgents dispatches through it. Default
 	// returns nil, nil (no agents known).
 	AgentsFn func(ctx context.Context, f core.AgentFilter) ([]core.AgentRef, error)
+
+	// SessionsFn — when set, ListSessions dispatches through it.
+	// Default returns nil, nil so tests that don't care about session
+	// inventory get an empty list.
+	SessionsFn func(ctx context.Context, f core.SessionFilter) ([]core.Session, error)
 }
 
 // NewFakeOrchestrationPlane returns a FakeOrchestrationPlane carrying a
@@ -284,6 +289,12 @@ func (*FakeOrchestrationPlane) EndSession(context.Context, string, core.SessionE
 }
 func (*FakeOrchestrationPlane) PeekSession(context.Context, string) (core.SessionPeek, error) {
 	return core.SessionPeek{}, errors.New("fake: PeekSession not implemented")
+}
+func (f *FakeOrchestrationPlane) ListSessions(ctx context.Context, filter core.SessionFilter) ([]core.Session, error) {
+	if f.SessionsFn != nil {
+		return f.SessionsFn(ctx, filter)
+	}
+	return nil, nil
 }
 func (*FakeOrchestrationPlane) ListPendingRequests(context.Context, string) ([]core.EscalationRequest, error) {
 	return []core.EscalationRequest{}, nil

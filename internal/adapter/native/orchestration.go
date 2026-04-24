@@ -139,6 +139,38 @@ func (*OrchestrationPlane) PeekSession(context.Context, string) (core.SessionPee
 	return core.SessionPeek{}, unsupported("PeekSession")
 }
 
+// ListSessions returns a snapshot of every live session, filtered by f.
+// Used by the SPA's /sessions inventory page (gm-native.15). Returns a
+// fresh slice + copies of the Session values so callers can't mutate
+// adaptor state.
+func (o *OrchestrationPlane) ListSessions(_ context.Context, f core.SessionFilter) ([]core.Session, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]core.Session, 0, len(o.sessions))
+	for _, s := range o.sessions {
+		if !f.IncludeTerminal && isTerminalStatus(s.Status) {
+			continue
+		}
+		if len(f.Status) > 0 {
+			match := false
+			for _, want := range f.Status {
+				if s.Status == want {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		if f.AgentID != "" && s.AgentID != f.AgentID {
+			continue
+		}
+		out = append(out, *s)
+	}
+	return out, nil
+}
+
 // ListPendingRequests / ListOpenEscalations / ResolveEscalation are
 // implemented in escalations.go (gm-native.13).
 

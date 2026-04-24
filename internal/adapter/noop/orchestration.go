@@ -212,6 +212,36 @@ func (o *OrchestrationPlane) PeekSession(_ context.Context, sessionID string) (c
 	}, nil
 }
 
+// ListSessions returns every session the noop adaptor tracks, filtered
+// by f. Useful for the conformance harness's snapshot expectations.
+func (o *OrchestrationPlane) ListSessions(_ context.Context, f core.SessionFilter) ([]core.Session, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	out := make([]core.Session, 0, len(o.sessions))
+	for _, s := range o.sessions {
+		if !f.IncludeTerminal && isTerminal(s.Status) {
+			continue
+		}
+		if len(f.Status) > 0 {
+			match := false
+			for _, want := range f.Status {
+				if s.Status == want {
+					match = true
+					break
+				}
+			}
+			if !match {
+				continue
+			}
+		}
+		if f.AgentID != "" && s.AgentID != f.AgentID {
+			continue
+		}
+		out = append(out, *s)
+	}
+	return out, nil
+}
+
 func (o *OrchestrationPlane) ListPendingRequests(_ context.Context, sessionID string) ([]core.EscalationRequest, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()

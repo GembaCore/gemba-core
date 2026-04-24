@@ -532,6 +532,10 @@ func (o *OrchestrationPlane) ListPendingRequests(context.Context, string) ([]cor
 	return nil, unsupported("ListPendingRequests")
 }
 
+func (o *OrchestrationPlane) ListSessions(context.Context, core.SessionFilter) ([]core.Session, error) {
+	return nil, unsupported("ListSessions")
+}
+
 func (o *OrchestrationPlane) ListOpenEscalations(context.Context, core.EscalationFilter) ([]core.EscalationRequest, error) {
 	return nil, unsupported("ListOpenEscalations")
 }

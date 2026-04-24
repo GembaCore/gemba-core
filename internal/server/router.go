@@ -146,7 +146,14 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// AssigneePicker / OwnerPicker. Empty list when no
 		// orchestration plane is bound (the freeform editor takes over).
 		api.Get("/agents", r.listAgents)
-		api.Get("/sessions", notImplemented)
+		// gm-native.15: session inventory + dispatch + end. POST and
+		// DELETE are gated by X-GEMBA-Confirm so SPA double-clicks /
+		// React re-mounts can't double-spawn or double-end.
+		api.Get("/sessions", r.listSessions)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/sessions", r.startSession)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/sessions/{id}", r.endSession)
 		// gm-peg: list work items across the registered WorkPlane.
 		// Empty filter today — filtering / pagination land in later
 		// milestones.

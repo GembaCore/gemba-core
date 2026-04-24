@@ -323,6 +323,9 @@ func (noopOrchestrator) PeekSession(context.Context, string) (SessionPeek, error
 func (noopOrchestrator) ListPendingRequests(context.Context, string) ([]EscalationRequest, error) {
 	return []EscalationRequest{}, nil
 }
+func (noopOrchestrator) ListSessions(context.Context, SessionFilter) ([]Session, error) {
+	return []Session{}, nil
+}
 func (noopOrchestrator) AcquireWorkspace(context.Context, WorkspaceRequest) (Workspace, error) {
 	return Workspace{}, nil
 }
