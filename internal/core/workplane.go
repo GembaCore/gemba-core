@@ -677,4 +677,70 @@ type WorkPlane interface {
 	// TokenBudgetEnforced=false SHOULD return ErrUnsupported so the UI
 	// can hide the widget.
 	ReadBudgetRollup(ctx context.Context, sprintID string) (BudgetRollup, error)
+
+	// Subscribe streams WorkPlaneEvents matching f. The adaptor closes
+	// the returned channel when ctx is cancelled or the underlying
+	// transport disconnects (gm-e4.3.1).
+	//
+	// Adaptors that cannot emit events (noop, read-only dolt-direct,
+	// archival formats) return nil + ErrUnsupported. The server-side
+	// pump treats ErrUnsupported as "no events from this plane" and
+	// drops silently — callers MUST NOT treat it as a hard failure.
+	//
+	// Multiple concurrent subscribers are supported; the adaptor fans
+	// out each emitted event to all active subscribers. Slow
+	// subscribers drop events rather than block the fan-out (the hub
+	// handles SSE-client-level backpressure upstream).
+	Subscribe(ctx context.Context, f WorkPlaneSubscribeFilter) (<-chan WorkPlaneEvent, error)
 }
+
+// WorkPlaneSubscribeFilter narrows a Subscribe stream. Zero values
+// mean "no filter on that field"; multiple non-zero fields combine
+// with AND. gm-e4.3.1.
+type WorkPlaneSubscribeFilter struct {
+	// Kinds filters to a subset of WorkPlaneEvent kinds
+	// (workitem_created / workitem_updated / workitem_closed /
+	// workitem_evidence_attached). Empty means all kinds.
+	Kinds []string
+	// WorkItemID narrows to events about a single work item. Empty
+	// means all items.
+	WorkItemID WorkItemID
+	// Since filters out events emitted before this timestamp — useful
+	// when a client reconnects and wants to catch up from its last
+	// known event time.
+	Since *time.Time
+}
+
+// WorkPlaneEvent is the streamed envelope every adaptor mutation
+// surfaces through. Mirrors OrchestrationEvent's shape so the event
+// hub's canonicalisation layer (internal/events/translate.go) treats
+// both planes identically. gm-e4.3.1.
+//
+// Canonical Kind values:
+//
+//	"workitem_created"           — CreateWorkItem completed
+//	"workitem_updated"           — UpdateWorkItem completed
+//	"workitem_closed"            — state_category transitioned to
+//	                               completed or canceled
+//	"workitem_evidence_attached" — AttachEvidence completed
+//
+// Adaptors MAY emit additional kinds; the canonicaliser drops unknown
+// kinds under the "workplane." namespace so the SPA's kind-handler
+// registry can ignore them without error.
+type WorkPlaneEvent struct {
+	ID         string         `json:"id"`
+	Kind       string         `json:"kind"`
+	At         time.Time      `json:"at"`
+	WorkItemID WorkItemID     `json:"work_item_id,omitempty"`
+	Payload    map[string]any `json:"payload,omitempty"`
+}
+
+// Canonical WorkPlaneEvent.Kind values. Adaptors SHOULD use these
+// tokens; any other value is passed through verbatim by the events
+// canonicaliser.
+const (
+	WorkItemEventCreated          = "workitem_created"
+	WorkItemEventUpdated          = "workitem_updated"
+	WorkItemEventClosed           = "workitem_closed"
+	WorkItemEventEvidenceAttached = "workitem_evidence_attached"
+)

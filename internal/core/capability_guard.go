@@ -251,6 +251,14 @@ func (g *guardedWorkPlane) ReadBudgetRollup(
 	return g.inner.ReadBudgetRollup(ctx, sprintID)
 }
 
+// Subscribe passes through to the inner adaptor unchanged — gating
+// Subscribe by capability would block the server-side hub pump from
+// attaching, which is worse than emitting zero events (the pump
+// handles ErrUnsupported). gm-e4.3.1.
+func (g *guardedWorkPlane) Subscribe(ctx context.Context, f WorkPlaneSubscribeFilter) (<-chan WorkPlaneEvent, error) {
+	return g.inner.Subscribe(ctx, f)
+}
+
 // AssertCapabilityDenied is the Conformance Group E helper for the
 // capability-enforcement rule: given an error observed from an adaptor
 // boundary call the adaptor was expected to refuse, it returns nil when

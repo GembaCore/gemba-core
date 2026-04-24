@@ -3,9 +3,11 @@ package bd
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MikeBengtson/gemba/internal/core"
 )
@@ -47,6 +49,7 @@ type WorkPlane struct {
 	run               Runner
 	prefix            string
 	descriptionFormat string
+	emitter           *core.WorkPlaneEmitter
 }
 
 // NewWorkPlane returns a WorkPlane shelling to the `bd` binary on PATH.
@@ -73,7 +76,12 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 	if format == "" {
 		format = core.DescriptionFormatMarkdown
 	}
-	return &WorkPlane{run: runner, prefix: defaultPrefix, descriptionFormat: format}, nil
+	return &WorkPlane{
+		run:               runner,
+		prefix:            defaultPrefix,
+		descriptionFormat: format,
+		emitter:           core.NewWorkPlaneEmitter(),
+	}, nil
 }
 
 // NewWorkPlaneWithRunner is the constructor tests use to inject a stub
@@ -83,7 +91,12 @@ func NewWorkPlaneWithRunner(run Runner, prefix string) *WorkPlane {
 	if prefix == "" {
 		prefix = defaultPrefix
 	}
-	return &WorkPlane{run: run, prefix: prefix, descriptionFormat: core.DescriptionFormatMarkdown}
+	return &WorkPlane{
+		run:               run,
+		prefix:            prefix,
+		descriptionFormat: core.DescriptionFormatMarkdown,
+		emitter:           core.NewWorkPlaneEmitter(),
+	}
 }
 
 const (
@@ -382,7 +395,9 @@ func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.
 	if err != nil {
 		return core.WorkItem{}, err
 	}
-	return bead.toWorkItem(w.prefix), nil
+	wiOut := bead.toWorkItem(w.prefix)
+	w.emit(core.WorkItemEventCreated, wiOut)
+	return wiOut, nil
 }
 
 // decodeCreateOutput accepts both shapes bd's create command can emit
@@ -474,7 +489,26 @@ func (w *WorkPlane) UpdateWorkItem(
 	// simplest path to a populated WorkItem and the safer one — the
 	// caller always sees the persisted state, not our optimistic
 	// in-memory merge.
-	return w.GetWorkItem(ctx, id)
+	wiOut, err := w.GetWorkItem(ctx, id)
+	if err != nil {
+		return core.WorkItem{}, err
+	}
+	kind := core.WorkItemEventUpdated
+	// Treat a transition into a terminal state as a dedicated 'closed'
+	// signal. Mirrors the gm-e12.2 SPA handler that invalidates
+	// ['beads'] on workitem.closed in addition to workitem.updated.
+	if patch.StateCategory != nil &&
+		(*patch.StateCategory == core.StateCompleted || *patch.StateCategory == core.StateCanceled) {
+		kind = core.WorkItemEventClosed
+	} else if wiOut.StateCategory == core.StateCompleted || wiOut.StateCategory == core.StateCanceled {
+		// StateCategory wasn't explicit in the patch but bd derived a
+		// terminal bucket from a native status token (e.g. 'closed'
+		// mapping to StateCompleted). The SPA needs the close signal
+		// either way.
+		kind = core.WorkItemEventClosed
+	}
+	w.emit(kind, wiOut)
+	return wiOut, nil
 }
 
 // AttachEvidence is gated off until gm-e6.5 lands the synthesis
@@ -496,6 +530,33 @@ func (w *WorkPlane) ListSprints(_ context.Context) ([]core.Sprint, error) {
 // AND TokenBudgetEnforced=false there is nothing to roll up.
 func (w *WorkPlane) ReadBudgetRollup(_ context.Context, _ string) (core.BudgetRollup, error) {
 	return core.BudgetRollup{}, core.EnforceCapability(beadsManifest, core.OpReadBudgetRollup)
+}
+
+// Subscribe streams WorkPlaneEvents for mutations this adaptor
+// instance performs. Mutations made by a separate `bd` process (e.g. a
+// human running `bd update` in a terminal) do NOT surface here — the
+// DoD for gm-e4.3.1 promises the in-process half of the chain; the
+// cross-process half lands in a follow-up (file watcher or bd git
+// hook). Returning a real channel rather than ErrUnsupported lets the
+// /events SSE hub attach and fan out the subset it does see today.
+// gm-e4.3.1.
+func (w *WorkPlane) Subscribe(ctx context.Context, f core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	return w.emitter.Subscribe(ctx, f), nil
+}
+
+// emit publishes a WorkPlaneEvent after a successful mutation. Called
+// from CreateWorkItem / UpdateWorkItem.
+func (w *WorkPlane) emit(kind string, wi core.WorkItem) {
+	now := time.Now().UTC()
+	w.emitter.Publish(core.WorkPlaneEvent{
+		ID:         fmt.Sprintf("bd-%s-%d", wi.ID, now.UnixNano()),
+		Kind:       kind,
+		At:         now,
+		WorkItemID: wi.ID,
+		Payload: map[string]any{
+			"after": wi,
+		},
+	})
 }
 
 // isNotFoundError reports whether err carries bd's "not found" signal.

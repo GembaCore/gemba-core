@@ -206,6 +206,9 @@ func (c *capturingWorkPlane) ReadBudgetRollup(context.Context, string) (BudgetRo
 	c.readBudgetCalled = true
 	return BudgetRollup{}, nil
 }
+func (*capturingWorkPlane) Subscribe(context.Context, WorkPlaneSubscribeFilter) (<-chan WorkPlaneEvent, error) {
+	return nil, ErrUnsupported
+}
 
 // TestGuardedWorkPlaneBlocksBeforeAdaptor is the gm-4qf integration
 // check called out in the bead: disable a capability in the manifest,

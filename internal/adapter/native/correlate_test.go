@@ -46,6 +46,9 @@ func (f *fakeWorkPlane) ListSprints(context.Context) ([]core.Sprint, error) { re
 func (f *fakeWorkPlane) ReadBudgetRollup(context.Context, string) (core.BudgetRollup, error) {
 	return core.BudgetRollup{}, nil
 }
+func (f *fakeWorkPlane) Subscribe(context.Context, core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	return nil, core.ErrUnsupported
+}
 
 func (f *fakeWorkPlane) calls() []attachCall {
 	f.mu.Lock()

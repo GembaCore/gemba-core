@@ -113,3 +113,6 @@ func (brokenWorkPlane) ListSprints(context.Context) ([]core.Sprint, error) { ret
 func (brokenWorkPlane) ReadBudgetRollup(context.Context, string) (core.BudgetRollup, error) {
 	return core.BudgetRollup{}, nil
 }
+func (brokenWorkPlane) Subscribe(context.Context, core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	return nil, core.ErrUnsupported
+}

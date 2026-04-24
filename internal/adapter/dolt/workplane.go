@@ -351,6 +351,15 @@ func (w *WorkPlane) ReadBudgetRollup(context.Context, string) (core.BudgetRollup
 	return core.BudgetRollup{}, core.EnforceCapability(doltManifest, core.OpReadBudgetRollup)
 }
 
+// Subscribe returns KindUnsupported — the Dolt read-only adaptor has
+// no mutation path, so there is nothing to emit. The server-side
+// AttachWorkPlaneStream pump treats Unsupported as "no events from
+// this plane" and drops silently. gm-e4.3.1.
+func (w *WorkPlane) Subscribe(context.Context, core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	return nil, core.NewAdaptorError(core.KindUnsupported,
+		"dolt: Subscribe is not supported (read-only adaptor emits no mutation events)")
+}
+
 // readOnlyError builds the KindReadOnly envelope the three write
 // methods share.
 func readOnlyError(op string) error {

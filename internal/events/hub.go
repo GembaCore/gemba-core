@@ -166,6 +166,24 @@ func (h *Hub) AttachOrchestrationStream(ctx context.Context, adaptorID string, i
 	}()
 }
 
+// AttachWorkPlaneStream feeds a WorkPlane adaptor's Subscribe channel
+// into the hub. Counterpart to AttachOrchestrationStream. gm-e4.3.1.
+func (h *Hub) AttachWorkPlaneStream(ctx context.Context, adaptorID string, in <-chan core.WorkPlaneEvent) {
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev, ok := <-in:
+				if !ok {
+					return
+				}
+				h.Publish(FromWorkPlaneEvent(adaptorID, ev))
+			}
+		}
+	}()
+}
+
 // Close drops every subscriber and rejects subsequent Subscribe /
 // Publish calls. Idempotent. Used at server shutdown to unstick any
 // SSE handler waiting on the hub.

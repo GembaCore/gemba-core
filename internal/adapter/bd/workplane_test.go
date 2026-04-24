@@ -865,3 +865,53 @@ func TestCreateMilestoneRoundTripsThroughList(t *testing.T) {
 			got.Kind, core.KindMilestone)
 	}
 }
+
+// TestBeadsSubscribeEmitsOnMutations asserts the gm-e4.3.1 contract:
+// a CreateWorkItem / UpdateWorkItem (closing-status included) call
+// surfaces a WorkPlaneEvent on every live Subscribe channel. Exercises
+// the path the /events SSE hub consumes via AttachWorkPlaneStream.
+func TestBeadsSubscribeEmitsOnMutations(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ch, err := impl.Subscribe(ctx, core.WorkPlaneSubscribeFilter{})
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title: "a task", Kind: "task", Status: "open",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	select {
+	case ev := <-ch:
+		if ev.Kind != core.WorkItemEventCreated {
+			t.Errorf("expected %q, got %q", core.WorkItemEventCreated, ev.Kind)
+		}
+		if ev.WorkItemID != created.ID {
+			t.Errorf("WorkItemID=%q want %q", ev.WorkItemID, created.ID)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for workitem_created event")
+	}
+
+	// Update with a terminal status should surface workitem_closed,
+	// not workitem_updated — the SPA's kind-handler registry keys off
+	// this distinction.
+	closed := "closed"
+	if _, err := impl.UpdateWorkItem(ctx, created.ID, core.WorkItemPatch{Status: &closed}); err != nil {
+		t.Fatalf("UpdateWorkItem: %v", err)
+	}
+	select {
+	case ev := <-ch:
+		if ev.Kind != core.WorkItemEventClosed {
+			t.Errorf("terminal transition emitted %q, want %q", ev.Kind, core.WorkItemEventClosed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for workitem_closed event")
+	}
+}

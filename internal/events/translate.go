@@ -86,3 +86,41 @@ func FromOrchestrationStream(adaptorID string, in <-chan core.OrchestrationEvent
 	}()
 	return out
 }
+
+// FromWorkPlaneEvent converts a core.WorkPlaneEvent into a unified
+// GembaEvent. gm-e4.3.1.
+//
+// Mapping table — adaptor-emitted Kind → canonical events.Kind:
+//
+//	workitem_created           → workitem.created
+//	workitem_updated           → workitem.updated
+//	workitem_closed            → workitem.closed
+//	workitem_evidence_attached → workitem.evidence_attached
+//
+// Any other Kind is passed through verbatim under the "workplane."
+// namespace so a subscriber that doesn't recognise the token still
+// receives a typed event it can ignore.
+func FromWorkPlaneEvent(adaptorID string, ev core.WorkPlaneEvent) GembaEvent {
+	return GembaEvent{
+		ID:         ev.ID,
+		Kind:       canonicalWorkPlaneKind(ev.Kind),
+		At:         ev.At,
+		Source:     Source{Plane: PlaneWorkPlane, AdaptorID: adaptorID},
+		WorkItemID: string(ev.WorkItemID),
+		Payload:    ev.Payload,
+	}
+}
+
+func canonicalWorkPlaneKind(k string) Kind {
+	switch k {
+	case core.WorkItemEventCreated:
+		return WorkItemCreated
+	case core.WorkItemEventUpdated:
+		return WorkItemUpdated
+	case core.WorkItemEventClosed:
+		return WorkItemClosed
+	case core.WorkItemEventEvidenceAttached:
+		return WorkItemEvidence
+	}
+	return Kind("workplane." + k)
+}

@@ -36,6 +36,11 @@ type FakeWorkPlane struct {
 	SprintsFn    func(ctx context.Context) ([]core.Sprint, error)
 	BudgetRollFn func(ctx context.Context, sprintID string) (core.BudgetRollup, error)
 
+	// emitter fans WorkPlaneEvents out to Subscribe callers. Tests
+	// drive it via EmitEvent — the fake doesn't auto-emit on
+	// Create/Update so tests can control the exact event sequence.
+	emitter *core.WorkPlaneEmitter
+
 	mu          sync.Mutex
 	describeN   int
 	getCalls    []core.WorkItemID
@@ -74,6 +79,7 @@ func NewFakeWorkPlane(transport core.Transport) *FakeWorkPlane {
 				"closed": core.StateCompleted,
 			},
 		},
+		emitter: core.NewWorkPlaneEmitter(),
 	}
 }
 
@@ -211,6 +217,26 @@ func (f *FakeWorkPlane) ReadBudgetRollup(ctx context.Context, sprintID string) (
 		return core.BudgetRollup{}, core.ErrUnsupported
 	}
 	return f.BudgetRollFn(ctx, sprintID)
+}
+
+// Subscribe returns a channel fed by EmitEvent. Tests use it to
+// verify the /events fan-out chain (Subscribe → translate →
+// GembaEvent → hub → SSE) without needing a live bd subprocess.
+func (f *FakeWorkPlane) Subscribe(ctx context.Context, filter core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	if f.emitter == nil {
+		f.emitter = core.NewWorkPlaneEmitter()
+	}
+	return f.emitter.Subscribe(ctx, filter), nil
+}
+
+// EmitEvent publishes ev through the fake's emitter. Tests that want
+// to exercise the Subscribe pipeline call this after whatever setup
+// they need.
+func (f *FakeWorkPlane) EmitEvent(ev core.WorkPlaneEvent) {
+	if f.emitter == nil {
+		return
+	}
+	f.emitter.Publish(ev)
 }
 
 // FakeOrchestrationPlane is the OrchestrationPlaneAdaptor analogue.

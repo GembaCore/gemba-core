@@ -126,3 +126,7 @@ func (d *decorator) ListSprints(ctx context.Context) ([]core.Sprint, error) {
 func (d *decorator) ReadBudgetRollup(ctx context.Context, sprintID string) (core.BudgetRollup, error) {
 	return d.inner.ReadBudgetRollup(ctx, sprintID)
 }
+
+func (d *decorator) Subscribe(ctx context.Context, f core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	return d.inner.Subscribe(ctx, f)
+}

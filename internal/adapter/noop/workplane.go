@@ -109,3 +109,10 @@ func (w *WorkPlane) ListSprints(_ context.Context) ([]core.Sprint, error) {
 func (w *WorkPlane) ReadBudgetRollup(_ context.Context, _ string) (core.BudgetRollup, error) {
 	return core.BudgetRollup{}, core.EnforceCapability(noopWorkPlaneManifest, core.OpReadBudgetRollup)
 }
+
+// Subscribe returns ErrUnsupported — the noop adaptor doesn't emit
+// mutation events. The server-side hub pump treats this as
+// "no events from this plane" and drops silently. gm-e4.3.1.
+func (w *WorkPlane) Subscribe(_ context.Context, _ core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	return nil, core.NewAdaptorError(core.KindUnsupported, "noop: Subscribe is not supported")
+}

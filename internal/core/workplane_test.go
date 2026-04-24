@@ -42,6 +42,9 @@ func (noopWorkPlane) ListSprints(context.Context) ([]Sprint, error) { return nil
 func (noopWorkPlane) ReadBudgetRollup(context.Context, string) (BudgetRollup, error) {
 	return BudgetRollup{}, ErrUnsupported
 }
+func (noopWorkPlane) Subscribe(context.Context, WorkPlaneSubscribeFilter) (<-chan WorkPlaneEvent, error) {
+	return nil, ErrUnsupported
+}
 
 func TestTransportValid(t *testing.T) {
 	for _, tr := range []Transport{TransportAPI, TransportJSONL, TransportMCP} {

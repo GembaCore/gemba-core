@@ -199,6 +199,29 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		}
 	}
 
+	// Wire the bound WorkPlane's Subscribe stream into the hub
+	// (gm-e4.3.1) so workitem.* mutations fan out to /board and
+	// /backlog subscribers without polling. An adaptor that opts out
+	// (noop, dolt read-only) returns KindUnsupported — we treat that
+	// as "no events from this plane" and skip silently.
+	if wp := host.WorkPlane(); wp != nil && handler.EventsHub() != nil {
+		wch, werr := wp.Subscribe(ctx, core.WorkPlaneSubscribeFilter{})
+		switch {
+		case werr == nil:
+			m, mErr := wp.Describe(ctx)
+			adaptorID := ""
+			if mErr == nil {
+				adaptorID = m.AdaptorName
+			}
+			handler.EventsHub().AttachWorkPlaneStream(ctx, adaptorID, wch)
+		case errors.Is(werr, core.ErrUnsupported):
+			// Expected for read-only / noop adaptors; no log.
+		default:
+			slog.Warn("events: workplane Subscribe failed; workitem SSE stream will be empty",
+				"err", werr)
+		}
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
