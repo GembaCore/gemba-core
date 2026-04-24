@@ -28,6 +28,20 @@ export function AppHotkeys() {
   useHotkey('view-4', go('/insights'));
   useHotkey('view-5', go('/escalations'));
   useHotkey('capability-browser', go('/capabilities'));
+  useHotkey('sessions-view', go('/sessions'));
+  // New-session is a two-step: route to /sessions then fire the
+  // page's "New session" button. The button sets data-hotkey-target
+  // so clickTarget finds it regardless of scroll / overlay state.
+  useHotkey('new-session', () => {
+    navigate('/sessions');
+    // Defer the click one tick so the route mounts and the button
+    // lands in the DOM before clickTarget queries.
+    setTimeout(() => {
+      const el = document.querySelector<HTMLElement>('[data-hotkey-target="new-session"]');
+      el?.click();
+      el?.focus();
+    }, 0);
+  });
   // Drift doesn't have its own route yet — live inside insights until gm-e14
   // ships it. Hotkey intentionally still fires so it's muscle-memory-stable.
   useHotkey('drift-view', go('/insights'));

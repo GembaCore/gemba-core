@@ -1,5 +1,15 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutGrid, ListTodo, Network, Sparkles, AlertTriangle, Boxes, Mail, Table2 } from 'lucide-react';
+import {
+  LayoutGrid,
+  ListTodo,
+  Network,
+  Sparkles,
+  AlertTriangle,
+  Boxes,
+  Mail,
+  Table2,
+  Terminal,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { features } from '@/lib/features';
@@ -10,6 +20,7 @@ const items: Item[] = [
   { to: '/board', label: 'Board', Icon: LayoutGrid },
   { to: '/backlog', label: 'Backlog', Icon: ListTodo },
   { to: '/grid', label: 'Grid', Icon: Table2 },
+  { to: '/sessions', label: 'Sessions', Icon: Terminal },
   { to: '/graph', label: 'Graph', Icon: Network },
   { to: '/insights', label: 'Insights', Icon: Sparkles },
   { to: '/escalations', label: 'Escalations', Icon: AlertTriangle },

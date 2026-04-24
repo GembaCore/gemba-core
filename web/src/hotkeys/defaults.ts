@@ -41,6 +41,16 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
   { id: 'workspace-switch', keys: ['W'], description: 'Switch workspace', category: 'views' },
   { id: 'capability-browser', keys: ['C'], description: 'Capability browser', category: 'views' },
   { id: 'drift-view', keys: ['D'], description: 'Drift view', category: 'views' },
+  { id: 'sessions-view', keys: ['S'], description: 'Sessions view', category: 'views' },
+  // gm-native.15: global "new session" dispatcher. ⌘⇧S navigates to
+  // /sessions and clicks the New-Session button so the operator can
+  // spin a pane from anywhere in the SPA.
+  {
+    id: 'new-session',
+    keys: ['Mod+Shift+S'],
+    description: 'New session',
+    category: 'creation',
+  },
   // Board: toggle Epic-primary (default) ↔ WorkItem-flat (alt) per
   // ui-spec L293. Note: most browsers reserve Cmd-Shift-W for "close
   // all windows"; when the OS swallows the keystroke the shortcut is a

@@ -3,6 +3,7 @@ import { AppShell } from '@/layouts/AppShell';
 import { BoardPage } from '@/pages/BoardPage';
 import { BacklogPage } from '@/pages/BacklogPage';
 import { GridPage } from '@/pages/GridPage';
+import { SessionsPage } from '@/pages/SessionsPage';
 import {
   CapabilitiesPage,
   EscalationsPage,
@@ -27,6 +28,7 @@ export default function App() {
         <Route path="/board/*" element={<BoardPage />} />
         <Route path="/backlog" element={<BacklogPage />} />
         <Route path="/grid" element={<GridPage />} />
+        <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />
         <Route path="/escalations" element={<EscalationsPage />} />
