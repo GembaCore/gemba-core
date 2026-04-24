@@ -41,6 +41,16 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
   { id: 'workspace-switch', keys: ['W'], description: 'Switch workspace', category: 'views' },
   { id: 'capability-browser', keys: ['C'], description: 'Capability browser', category: 'views' },
   { id: 'drift-view', keys: ['D'], description: 'Drift view', category: 'views' },
+  // Board: toggle Epic-primary (default) ↔ WorkItem-flat (alt) per
+  // ui-spec L293. Note: most browsers reserve Cmd-Shift-W for "close
+  // all windows"; when the OS swallows the keystroke the shortcut is a
+  // no-op and operators must use the in-page toggle instead.
+  {
+    id: 'view-toggle-board',
+    keys: ['Mod+W'],
+    description: 'Toggle board view (Epic / Work item)',
+    category: 'views',
+  },
 
   // Drawer / panel
   { id: 'drawer-open', keys: ['o'], description: 'Open detail drawer', category: 'drawer' },

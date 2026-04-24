@@ -1,15 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { BoardPage } from '../BoardPage';
 import { CapabilitiesProvider } from '@/capabilities';
 import type { CapabilitiesResponse } from '@/capabilities';
+import { HotkeyRegistry, HotkeysContext } from '@/hotkeys';
 import { STATE_CATEGORIES, type WorkItem } from '@/types/core.gen';
 
-// Seed a CapabilitiesProvider so BeadDrawer's useCapabilities() resolves.
-// The board itself doesn't consult the manifest, but the drawer (rendered
-// inside BoardPage) does for description_format.
+// Seed a CapabilitiesProvider so BeadDrawer / EpicDrawer's
+// useCapabilities() resolves. The board itself doesn't consult the
+// manifest, but the drawers (rendered inside BoardPage) do.
 const caps: CapabilitiesResponse = {
   work_plane: {
     adaptor_name: 'fake',
@@ -24,16 +26,30 @@ const caps: CapabilitiesResponse = {
   orchestration_plane: null,
 };
 
-function wrap(ui: ReactNode) {
+function wrap(ui: ReactNode, initialEntry = '/board') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const registry = new HotkeyRegistry();
   return (
-    <QueryClientProvider client={client}>
-      <CapabilitiesProvider initial={caps}>{ui}</CapabilitiesProvider>
-    </QueryClientProvider>
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <QueryClientProvider client={client}>
+        <CapabilitiesProvider initial={caps}>
+          <HotkeysContext.Provider value={registry}>
+            <Routes>
+              <Route path="/board" element={ui} />
+              <Route path="/board/:epicId" element={ui} />
+            </Routes>
+          </HotkeysContext.Provider>
+        </CapabilitiesProvider>
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 
-function bead(id: string, category: WorkItem['state_category'], extra: Partial<WorkItem> = {}): WorkItem {
+function bead(
+  id: string,
+  category: WorkItem['state_category'],
+  extra: Partial<WorkItem> = {}
+): WorkItem {
   return {
     id,
     kind: 'task',
@@ -43,6 +59,13 @@ function bead(id: string, category: WorkItem['state_category'], extra: Partial<W
     created_at: '2026-04-20T00:00:00Z',
     updated_at: '2026-04-22T00:00:00Z',
     ...extra,
+  };
+}
+
+function epic(id: string, parent?: string, extra: Partial<WorkItem> = {}): WorkItem {
+  return {
+    ...bead(id, 'started', { kind: 'epic', ...extra }),
+    relationships: parent ? [{ kind: 'parent_child', from: parent, to: id }] : [],
   };
 }
 
@@ -65,12 +88,47 @@ describe('BoardPage', () => {
     expect(screen.getAllByTestId('board-skeleton-card').length).toBeGreaterThan(0);
   });
 
-  // Mocks emit the real server wire shape — {items,total} — so the
-  // test exercises listBeads' envelope unwrap (gm-root.1.8). Iterating
-  // the envelope object directly would throw "TypeError: i is not
-  // iterable" on line 26 of BoardPage; this is the integration test
-  // called out in the bug's Definition of Done.
-  it('renders 5 columns with beads grouped by state_category', async () => {
+  // Default Epic-primary view (gm-root.6 / ui-spec §4). Cards on /board
+  // are Epics swimlaned by parent-epic; the WorkItem-flat board is now
+  // the alternate.
+  it('default view at /board renders Epic cards in swimlanes', async () => {
+    const data: WorkItem[] = [
+      epic('root'),
+      epic('e1', 'root'),
+      epic('e2', 'root'),
+      bead('t1', 'started', { relationships: [{ kind: 'parent_child', from: 'e1', to: 't1' }] }),
+    ];
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ items: data, total: data.length }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    render(wrap(<BoardPage />));
+    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+    // Swimlane keyed by root epic id.
+    expect(screen.getByTestId('board-epic-swimlane-root')).toBeTruthy();
+    // Epic cards (not WorkItem cards) carry data-epic-card="true".
+    const epicCards = document.querySelectorAll('[data-epic-card="true"]');
+    expect(epicCards).toHaveLength(3);
+    // The flat WorkItem board is NOT mounted on the default view.
+    expect(screen.queryByTestId('board-workitem')).toBeNull();
+  });
+
+  it('shows the Epic-empty copy when the dataset has no Epics', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ items: [bead('t1', 'started')], total: 1 }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    render(wrap(<BoardPage />));
+    await waitFor(() => expect(screen.getByTestId('board-epic-empty')).toBeTruthy());
+    expect(screen.getByText(/No Epics yet/i)).toBeTruthy();
+  });
+
+  // /board?view=workitem opts back into the M1 flat view (ui-spec L293).
+  it('?view=workitem renders the flat WorkItem columns', async () => {
     const data: WorkItem[] = [
       bead('gm-a', 'started'),
       bead('gm-b', 'unstarted'),
@@ -83,14 +141,16 @@ describe('BoardPage', () => {
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    render(wrap(<BoardPage />));
-    await waitFor(() => expect(screen.getByTestId('board')).toBeTruthy());
+    render(wrap(<BoardPage />, '/board?view=workitem'));
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
 
     for (const cat of STATE_CATEGORIES) {
       expect(screen.getByTestId(`board-column-${cat}`)).toBeTruthy();
     }
     const unstartedCol = screen.getByTestId('board-column-unstarted');
     expect(unstartedCol.querySelectorAll('[data-bead-id]')).toHaveLength(2);
+    // Epic view is not mounted on the alternate.
+    expect(screen.queryByTestId('board-epic')).toBeNull();
   });
 
   it('shows empty state when the adaptor returns zero beads', async () => {
@@ -104,16 +164,40 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
   });
 
-  // Integration: clicking a card fires /api/beads/{id} and surfaces the
-  // BeadDrawer's loaded content (gm-qai wire-up). This pins the BoardPage
-  // ↔ BeadDrawer contract so a future refactor can't accidentally
-  // unmount one without the other.
-  it('opens the drill-in drawer when a card is clicked', async () => {
+  // /board/:epicId deep-link auto-opens the Epic drawer (ui-spec L116).
+  it('/board/:epicId mounts the EpicDrawer for that epic', async () => {
+    const data: WorkItem[] = [
+      epic('root'),
+      epic('e1', 'root', { description: 'Epic e1 detail.' }),
+    ];
+    fetchSpy.mockImplementation((url: string) => {
+      if (url === '/api/beads') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: data, total: data.length }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      if (url === '/api/beads/e1') {
+        return Promise.resolve(
+          new Response(JSON.stringify(data[1]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    render(wrap(<BoardPage />, '/board/e1'));
+    await waitFor(() => expect(screen.getByTestId('epic-drawer-content')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Epic e1 detail.')).toBeTruthy());
+  });
+
+  it('?view=workitem still opens the WorkItem drawer on card click', async () => {
     const listed = bead('gm-a', 'started');
-    const detail: WorkItem = {
-      ...listed,
-      description: 'Deep dive into gm-a.',
-    };
+    const detail: WorkItem = { ...listed, description: 'Deep dive into gm-a.' };
     fetchSpy.mockImplementation((url: string) => {
       if (url === '/api/beads') {
         return Promise.resolve(
@@ -134,14 +218,30 @@ describe('BoardPage', () => {
       throw new Error(`unexpected fetch to ${url}`);
     });
 
-    render(wrap(<BoardPage />));
+    render(wrap(<BoardPage />, '/board?view=workitem'));
     const card = await waitFor(() => screen.getByRole('button', { name: /open bead gm-a/i }));
     fireEvent.click(card);
-
-    // Drawer mounts, fetches /api/beads/gm-a, renders description.
     await waitFor(() => expect(screen.getByTestId('bead-drawer-content')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Deep dive into gm-a.')).toBeTruthy());
-    expect(fetchSpy).toHaveBeenCalledWith('/api/beads/gm-a', expect.anything());
+  });
+
+  // The in-page view toggle flips ?view=workitem on/off without a reload.
+  it('view toggle switches between Epic and WorkItem boards', async () => {
+    const data: WorkItem[] = [epic('root'), bead('t1', 'started')];
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ items: data, total: data.length }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    render(wrap(<BoardPage />));
+    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('view-toggle-workitem'));
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('view-toggle-epic'));
+    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
   });
 
   it('shows error state with a retry button that re-fetches', async () => {
