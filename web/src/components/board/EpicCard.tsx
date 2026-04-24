@@ -67,7 +67,13 @@ function priorityLabel(priority: number | null | undefined): string | null {
 export function EpicCard({ item, childCounts, onSelect }: EpicCardProps) {
   const pri = priorityLabel(item.priority);
   const interactive = !!onSelect;
+  // ui-spec §4.5: primary card interaction is drag (restage); double-click
+  // opens the drawer. Drag isn't wired yet (gm-root.6 follow-up) so
+  // single-click is kept as an accessible shortcut — once the sortable
+  // wrapper lands, single-click becomes the drag-start gesture and the
+  // drawer open collapses onto double-click exclusively.
   const handleClick = onSelect ? () => onSelect(item.id) : undefined;
+  const handleDoubleClick = onSelect ? () => onSelect(item.id) : undefined;
   const handleKeyDown = onSelect
     ? (e: KeyboardEvent<HTMLElement>) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -85,6 +91,7 @@ export function EpicCard({ item, childCounts, onSelect }: EpicCardProps) {
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? `Open epic ${item.id}` : undefined}
       onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
       className={cn(
         'group rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm',
