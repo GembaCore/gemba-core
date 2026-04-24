@@ -67,6 +67,10 @@ describe('BacklogPage', () => {
   const fetchSpy = vi.fn();
 
   beforeEach(() => {
+    // Reset URL-hash + localStorage so filter state doesn't leak
+    // across tests via usePersistedFilter (gm-e12.3.2).
+    window.localStorage.clear();
+    window.history.replaceState(null, '', '/');
     vi.stubGlobal('fetch', fetchSpy);
   });
 

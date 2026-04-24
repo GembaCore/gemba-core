@@ -3,6 +3,40 @@
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
+// jsdom's localStorage stub in this version exposes get/setItem but not
+// removeItem / clear on some entries, which breaks hooks that reset
+// storage between tests. Install a compliant in-memory replacement so
+// tests can exercise the full Storage API deterministically.
+class MemoryStorage implements Storage {
+  private store = new Map<string, string>();
+  get length(): number {
+    return this.store.size;
+  }
+  clear(): void {
+    this.store.clear();
+  }
+  getItem(key: string): string | null {
+    return this.store.has(key) ? this.store.get(key)! : null;
+  }
+  key(index: number): string | null {
+    return Array.from(this.store.keys())[index] ?? null;
+  }
+  removeItem(key: string): void {
+    this.store.delete(key);
+  }
+  setItem(key: string, value: string): void {
+    this.store.set(key, String(value));
+  }
+}
+Object.defineProperty(window, 'localStorage', {
+  configurable: true,
+  value: new MemoryStorage(),
+});
+Object.defineProperty(window, 'sessionStorage', {
+  configurable: true,
+  value: new MemoryStorage(),
+});
+
 // jsdom returns zero layout dimensions, so @tanstack/react-virtual
 // (used by WorkItemGrid) can't compute a visible window and skips
 // rendering every row. Stub enough of the layout APIs that

@@ -11,11 +11,15 @@
 import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useFilteredWorkItems } from '@/hooks/useWorkItems';
+import { usePersistedFilter } from '@/hooks/usePersistedFilter';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
 import { WorkItemGrid } from '@/components/grid/WorkItemGrid';
 import type { WorkItemListFilter } from '@/api/workItems';
+import type { BacklogFilter } from '@/lib/backlogFilter';
 import { STATE_CATEGORIES, type StateCategory } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+
+const STORAGE_KEY = 'gemba.backlog.filter';
 
 // Kinds we expose as chips. An adaptor can surface more via the
 // CapabilityManifest field_extensions slot once gm-e11.4 is fully
@@ -32,25 +36,21 @@ const STATE_LABELS: Record<StateCategory, string> = {
 };
 
 export function BacklogPage() {
-  const [stateFilter, setStateFilter] = useState<Set<StateCategory>>(
-    () => new Set<StateCategory>(['backlog', 'unstarted'])
-  );
-  const [kindFilter, setKindFilter] = useState<Set<string>>(() => new Set<string>());
-  const [search, setSearch] = useState('');
+  const [backlogFilter, setBacklogFilter] = usePersistedFilter(STORAGE_KEY);
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const filter = useMemo<WorkItemListFilter>(() => {
+  const stateFilter = backlogFilter.state_category;
+  const kindFilter = backlogFilter.kind;
+  const search = backlogFilter.search;
+
+  const apiFilter = useMemo<WorkItemListFilter>(() => {
     const f: WorkItemListFilter = {};
-    if (stateFilter.size > 0) {
-      f.state_category = [...stateFilter];
-    }
-    if (kindFilter.size > 0) {
-      f.kind = [...kindFilter];
-    }
+    if (stateFilter.length > 0) f.state_category = stateFilter;
+    if (kindFilter.length > 0) f.kind = kindFilter;
     return f;
   }, [stateFilter, kindFilter]);
 
-  const { data = [], isLoading, error } = useFilteredWorkItems(filter);
+  const { data = [], isLoading, error } = useFilteredWorkItems(apiFilter);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -58,12 +58,10 @@ export function BacklogPage() {
     return data.filter((it) => it.title.toLowerCase().includes(needle));
   }, [data, search]);
 
-  const toggle = <T,>(set: Set<T>, value: T): Set<T> => {
-    const next = new Set(set);
-    if (next.has(value)) next.delete(value);
-    else next.add(value);
-    return next;
-  };
+  const patch = (p: Partial<BacklogFilter>) => setBacklogFilter({ ...backlogFilter, ...p });
+
+  const toggleArrayValue = <T extends string>(arr: T[], value: T): T[] =>
+    arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -82,8 +80,8 @@ export function BacklogPage() {
           {STATE_CATEGORIES.map((sc) => (
             <Chip
               key={sc}
-              active={stateFilter.has(sc)}
-              onClick={() => setStateFilter((s) => toggle(s, sc))}
+              active={stateFilter.includes(sc)}
+              onClick={() => patch({ state_category: toggleArrayValue(stateFilter, sc) })}
               testid={`backlog-state-${sc}`}
             >
               {STATE_LABELS[sc]}
@@ -94,8 +92,8 @@ export function BacklogPage() {
           {KIND_CHIPS.map((k) => (
             <Chip
               key={k}
-              active={kindFilter.has(k)}
-              onClick={() => setKindFilter((s) => toggle(s, k))}
+              active={kindFilter.includes(k)}
+              onClick={() => patch({ kind: toggleArrayValue(kindFilter, k) })}
               testid={`backlog-kind-${k}`}
             >
               {k}
@@ -106,7 +104,7 @@ export function BacklogPage() {
           <Search className="absolute left-2 h-3 w-3 text-neutral-400" aria-hidden />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => patch({ search: e.target.value })}
             placeholder="Search titles…"
             className="w-56 rounded border border-neutral-300 bg-white py-1 pl-7 pr-2 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
             data-testid="backlog-search"
