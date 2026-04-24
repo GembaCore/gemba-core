@@ -1,11 +1,27 @@
 # Running Gemba against your work items
 
-Gemba is a single-binary Go service that reads a WorkPlane (a work tracker) and renders a Kanban board in your browser. At M1 the only WorkPlane adaptor is **beads** (`bd`) — the work items themselves are bd issues. You can point Gemba at a beads rig two ways:
+Gemba is a single-binary Go service that reads a WorkPlane (a work
+tracker) and renders a Kanban board in your browser. The only hard
+requirement is a data plane; **beads** (`bd`) fulfills that out of
+the box, and the work items themselves are bd issues. You can point
+Gemba at a beads rig two ways:
 
-- **Mode A — `--beads-dir`**: Gemba shells out to the `bd` CLI for every read. Slower but portable; works anywhere you can run `bd`.
-- **Mode B — `--dolt-url`**: Gemba opens a direct read-only SQL connection to your Dolt server. Faster and no `bd` dependency, but needs a reachable Dolt instance.
+- **Mode A — `--beads-dir`**: Gemba shells out to the `bd` CLI for
+  every read. Slower but portable; works anywhere you can run `bd`.
+- **Mode B — `--dolt-url`**: Gemba opens a direct read-only SQL
+  connection to your Dolt server. Faster and no `bd` dependency, but
+  needs a reachable Dolt instance.
 
-Exactly one of the two must be passed (`gm-98l` enforces this at startup).
+Exactly one of the two must be passed (`gm-98l` enforces this at
+startup).
+
+Agent sessions (optional). Add `--orchestration=native` to the
+commands below to light up `/sessions` in the SPA with live tmux /
+iTerm2 / Terminal.app-backed dispatch — no external daemon required.
+See [`docs/adaptors/native.md`](../adaptors/native.md) for the full
+native-orchestration story. Gas Town / Gas City / LangGraph / etc.
+adaptors swap in with `--orchestration=<name>` when you want their
+specific scheduling semantics.
 
 ## Prerequisites
 

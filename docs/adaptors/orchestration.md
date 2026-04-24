@@ -1,9 +1,13 @@
 # OrchestrationPlane adaptor
 
 The OrchestrationPlane is Gemba's adaptor-agnostic contract with an
-agent runtime — the thing that *runs* agents (Gas Town, LangGraph,
-CrewAI, OpenHands, Devin, Factory, Gas City, …). This document is the
-authoring reference for anyone implementing that contract in Go.
+agent runtime — the thing that *runs* agents. The **native** adaptor
+(tmux / iTerm2 / Terminal.app, driven by the `gemba-bridge` shim) is
+bundled with the binary and is the default when a user runs `gemba
+serve --orchestration=native`. Optional adaptor slots for Gas Town,
+LangGraph, CrewAI, OpenHands, Devin, Factory, Gas City, etc. use the
+same contract. This document is the authoring reference for anyone
+implementing that contract in Go.
 
 It matches `internal/core/orchestration.go` and the design in
 `gemba_prime/crew/mike/domain.md` §3.
@@ -19,8 +23,12 @@ WorkPlane's jurisdiction (gm-root DD-1). When the two disagree on
 anything in the work-item record (status, assignee, labels) the
 WorkPlane wins and the OrchestrationPlane reconciles.
 
-Gemba pairs exactly one WorkPlane adaptor with exactly one
-OrchestrationPlane adaptor per deployment (README, gm-root DD-1).
+Gemba pairs a WorkPlane adaptor (**required**) with **zero or one**
+OrchestrationPlane adaptor per deployment. The WorkPlane is the hard
+requirement — Beads fulfills it out of the box. An OrchestrationPlane
+is optional; without one, Gemba still renders the Kanban and serves
+reads, it just doesn't dispatch or track agent sessions. With one
+bound, exactly one is bound at a time (gm-root DD-1).
 
 ---
 
