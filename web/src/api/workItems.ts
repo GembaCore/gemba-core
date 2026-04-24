@@ -6,7 +6,7 @@
 // (including tests that mount the hooks with a fresh QueryClient per run).
 
 import { apiFetch } from './client';
-import type { WorkItem } from '@/types/core.gen';
+import type { AgentRef, DefinitionOfDone, WorkItem } from '@/types/core.gen';
 
 // ListWorkItemsEnvelope is the wire shape the gm-peg list handler emits.
 // The server normalises nil slices so `items` is always a JSON array,
@@ -57,9 +57,10 @@ export interface WorkItemPatch {
   state_category?: WorkItem['state_category'];
   priority?: number | null;
   labels?: string[];
-  // owner / assignee / dod / sprint_id / custom land in slice 3 — the
-  // server already accepts them; the client surface stays narrow until
-  // the drawer has UI for each.
+  owner?: AgentRef | null;
+  assignee?: AgentRef | null;
+  sprint_id?: string | null;
+  dod?: DefinitionOfDone | null;
 }
 
 // Confirm header MUST match internal/server/nonce.go ConfirmHeader.

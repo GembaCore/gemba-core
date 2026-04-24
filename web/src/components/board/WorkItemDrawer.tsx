@@ -26,7 +26,7 @@ import { ArrowLeft, Check, Copy, Pencil, X } from 'lucide-react';
 import { useWorkItem, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
-import type { StateCategory, WorkItem } from '@/types/core.gen';
+import type { AgentRef, DefinitionOfDone, StateCategory, WorkItem } from '@/types/core.gen';
 import type { Evidence } from '@/types/core.gen';
 import { rendererFor } from './descriptionRenderers';
 import { canEdit } from './canEdit';
@@ -262,16 +262,23 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
             {update.error?.message ?? 'Update failed.'}
           </div>
         ) : null}
-        {/* assignee + owner are read-only in this slice — editing them
-            needs an /api/agents picker that doesn't exist yet
-            (gm-root.8 follow-up). The matrix already gates them
-            correctly so flipping them on is a one-edit change here
-            once the picker lands. */}
         <DefRow label="Assignee">
-          <AgentPill agent={item.assignee ?? null} />
+          <AgentEditor
+            agent={item.assignee ?? null}
+            canEdit={canEdit('assignee', editCtx)}
+            saving={update.isPending}
+            testidPrefix="work-item-assignee"
+            onSave={(next) => update.mutate({ id: item.id, patch: { assignee: next } })}
+          />
         </DefRow>
         <DefRow label="Owner">
-          <AgentPill agent={item.owner ?? null} />
+          <AgentEditor
+            agent={item.owner ?? null}
+            canEdit={canEdit('owner', editCtx)}
+            saving={update.isPending}
+            testidPrefix="work-item-owner"
+            onSave={(next) => update.mutate({ id: item.id, patch: { owner: next } })}
+          />
         </DefRow>
         <DefRow label="Labels">
           <LabelsEditor
@@ -324,33 +331,23 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
       </Section>
 
       <Section title="Definition of Done" testid="section-dod">
-        {item.dod ? (
-          <div className="space-y-2 text-sm">
-            <ul className="list-disc space-y-1 pl-5">
-              {item.dod.acceptance_criteria.map((c, i) => (
-                <li key={i}>{c}</li>
-              ))}
-            </ul>
-            {item.dod.notes ? (
-              <pre className="whitespace-pre-wrap break-words font-sans text-sm text-neutral-700 dark:text-neutral-300">
-                {item.dod.notes}
-              </pre>
-            ) : null}
-            {item.dod.version ? (
-              <div className="text-xs text-neutral-500">version {item.dod.version}</div>
-            ) : null}
-          </div>
-        ) : (
-          <Muted>No DoD declared.</Muted>
-        )}
+        <DoDEditor
+          dod={item.dod ?? null}
+          canEdit={canEdit('dod', editCtx)}
+          saving={update.isPending}
+          onSave={(next) => update.mutate({ id: item.id, patch: { dod: next } })}
+        />
       </Section>
 
       <Section title="Sprint & budget" testid="section-sprint">
-        {item.sprint_id ? (
-          <DefRow label="Sprint">
-            <span className="font-mono text-sm">{item.sprint_id}</span>
-          </DefRow>
-        ) : null}
+        <DefRow label="Sprint">
+          <SprintEditor
+            sprintId={item.sprint_id ?? null}
+            canEdit={canEdit('sprint_id', editCtx)}
+            saving={update.isPending}
+            onSave={(next) => update.mutate({ id: item.id, patch: { sprint_id: next } })}
+          />
+        </DefRow>
         {sprintBudget ? (
           <div className="mt-2 space-y-1 text-sm">
             <DefRow label="Budget used">
@@ -365,7 +362,7 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
             </DefRow>
           </div>
         ) : null}
-        {!item.sprint_id && !sprintBudget ? <Muted>No sprint or budget set.</Muted> : null}
+        {!sprintBudget ? <div className="mt-2 text-xs text-neutral-500">No budget set.</div> : null}
       </Section>
 
       <Section title="Derived signals" testid="section-derived">
@@ -859,6 +856,322 @@ function Chip({ label, value }: { label: string; value: string }) {
       <span className="text-neutral-500">{label}</span>
       <span className="font-mono text-neutral-900 dark:text-neutral-100">{value}</span>
     </span>
+  );
+}
+
+// AgentEditor lets the operator edit assignee / owner. No /api/agents
+// picker exists yet, so the form is a bare id + name + kind triple;
+// clearing id saves null (unassigned). Adaptors that reject partial
+// AgentRefs will surface the error through the standard mutation path.
+function AgentEditor({
+  agent,
+  canEdit,
+  saving,
+  testidPrefix,
+  onSave,
+}: {
+  agent: AgentRef | null;
+  canEdit: boolean;
+  saving: boolean;
+  testidPrefix: string;
+  onSave: (next: AgentRef | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [id, setId] = useState(agent?.id ?? '');
+  const [name, setName] = useState(agent?.name ?? '');
+  const [kind, setKind] = useState<'human' | 'agent'>(agent?.agent_kind ?? 'human');
+  useEffect(() => {
+    if (!editing) {
+      setId(agent?.id ?? '');
+      setName(agent?.name ?? '');
+      setKind(agent?.agent_kind ?? 'human');
+    }
+  }, [agent, editing]);
+
+  if (editing) {
+    return (
+      <div className="space-y-2" data-testid={`${testidPrefix}-editing`}>
+        <div className="flex flex-wrap items-center gap-1 text-xs">
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as 'human' | 'agent')}
+            className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 font-mono dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          >
+            <option value="human">human</option>
+            <option value="agent">agent</option>
+          </select>
+          <input
+            value={id}
+            onChange={(e) => setId(e.target.value)}
+            placeholder="id"
+            className="flex-1 rounded border border-neutral-300 bg-white px-2 py-0.5 font-mono dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          />
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="name"
+            className="flex-1 rounded border border-neutral-300 bg-white px-2 py-0.5 font-mono dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          />
+        </div>
+        <div className="flex justify-end gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            disabled={saving}
+            className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const trimmedId = id.trim();
+              if (!trimmedId) {
+                onSave(null);
+              } else {
+                onSave({
+                  id: trimmedId,
+                  name: name.trim() || trimmedId,
+                  agent_kind: kind,
+                });
+              }
+              setEditing(false);
+            }}
+            disabled={saving}
+            className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
+            data-testid={`${testidPrefix}-save`}
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex-1">
+        <AgentPill agent={agent} />
+      </div>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+          aria-label="Edit"
+          data-testid={`${testidPrefix}-edit`}
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function SprintEditor({
+  sprintId,
+  canEdit,
+  saving,
+  onSave,
+}: {
+  sprintId: string | null;
+  canEdit: boolean;
+  saving: boolean;
+  onSave: (next: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(sprintId ?? '');
+  useEffect(() => {
+    if (!editing) setDraft(sprintId ?? '');
+  }, [sprintId, editing]);
+
+  if (editing) {
+    return (
+      <div className="space-y-2" data-testid="work-item-sprint-editing">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoFocus
+          placeholder="sprint-id (blank to clear)"
+          className="w-full rounded border border-neutral-300 bg-white px-2 py-1 font-mono text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        />
+        <div className="flex justify-end gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            disabled={saving}
+            className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const trimmed = draft.trim();
+              onSave(trimmed.length > 0 ? trimmed : null);
+              setEditing(false);
+            }}
+            disabled={saving}
+            className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
+            data-testid="work-item-sprint-save"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex-1">
+        {sprintId ? (
+          <span className="font-mono text-sm">{sprintId}</span>
+        ) : (
+          <Muted>No sprint.</Muted>
+        )}
+      </div>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+          aria-label="Edit sprint"
+          data-testid="work-item-sprint-edit"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function DoDEditor({
+  dod,
+  canEdit,
+  saving,
+  onSave,
+}: {
+  dod: DefinitionOfDone | null;
+  canEdit: boolean;
+  saving: boolean;
+  onSave: (next: DefinitionOfDone | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [criteria, setCriteria] = useState((dod?.acceptance_criteria ?? []).join('\n'));
+  const [notes, setNotes] = useState(dod?.notes ?? '');
+  const [version, setVersion] = useState(dod?.version ?? '');
+  useEffect(() => {
+    if (!editing) {
+      setCriteria((dod?.acceptance_criteria ?? []).join('\n'));
+      setNotes(dod?.notes ?? '');
+      setVersion(dod?.version ?? '');
+    }
+  }, [dod, editing]);
+
+  if (editing) {
+    return (
+      <div className="space-y-2" data-testid="work-item-dod-editing">
+        <label className="block text-xs text-neutral-500">
+          Acceptance criteria (one per line)
+          <textarea
+            value={criteria}
+            onChange={(e) => setCriteria(e.target.value)}
+            rows={5}
+            className="mt-1 w-full rounded border border-neutral-300 bg-white p-2 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+            autoFocus
+          />
+        </label>
+        <label className="block text-xs text-neutral-500">
+          Notes
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+            className="mt-1 w-full rounded border border-neutral-300 bg-white p-2 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          />
+        </label>
+        <label className="block text-xs text-neutral-500">
+          Version
+          <input
+            value={version}
+            onChange={(e) => setVersion(e.target.value)}
+            className="mt-1 w-full rounded border border-neutral-300 bg-white px-2 py-1 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          />
+        </label>
+        <div className="flex justify-end gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setEditing(false)}
+            disabled={saving}
+            className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const list = criteria
+                .split('\n')
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0);
+              const n = notes.trim();
+              const v = version.trim();
+              if (list.length === 0 && !n && !v) {
+                onSave(null);
+              } else {
+                onSave({
+                  acceptance_criteria: list,
+                  notes: n || undefined,
+                  version: v || undefined,
+                });
+              }
+              setEditing(false);
+            }}
+            disabled={saving}
+            className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
+            data-testid="work-item-dod-save"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {dod ? (
+        <div className="space-y-2 text-sm">
+          <ul className="list-disc space-y-1 pl-5">
+            {dod.acceptance_criteria.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+          {dod.notes ? (
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm text-neutral-700 dark:text-neutral-300">
+              {dod.notes}
+            </pre>
+          ) : null}
+          {dod.version ? (
+            <div className="text-xs text-neutral-500">version {dod.version}</div>
+          ) : null}
+        </div>
+      ) : (
+        <Muted>No DoD declared.</Muted>
+      )}
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+          data-testid="work-item-dod-edit"
+        >
+          <Pencil className="h-3 w-3" />
+          {dod ? 'Edit' : 'Add DoD'}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
