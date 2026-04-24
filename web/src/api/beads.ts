@@ -45,3 +45,59 @@ export async function getBead(id: string): Promise<WorkItem> {
   }
   return apiFetch<WorkItem>(`/beads/${encodeURIComponent(id)}`);
 }
+
+// WorkItemPatch mirrors the Go shape (internal/core/workplane.go).
+// Every field is optional; the wire encoding is `omitempty`-friendly,
+// so undefined fields stay out of the JSON body and the adaptor
+// treats unset == "no change".
+export interface WorkItemPatch {
+  title?: string;
+  description?: string;
+  status?: string;
+  state_category?: WorkItem['state_category'];
+  priority?: number | null;
+  labels?: string[];
+  // owner / assignee / dod / sprint_id / custom land in slice 3 — the
+  // server already accepts them; the client surface stays narrow until
+  // the drawer has UI for each.
+}
+
+// Confirm header MUST match internal/server/nonce.go ConfirmHeader.
+// Kept on the api/ side so every mutation route uses the same token
+// without duplicating the literal across hooks.
+export const CONFIRM_HEADER = 'X-GEMBA-Confirm';
+
+// updateBead — PATCH /api/beads/{id}. Generates a fresh UUID nonce
+// per call so a SPA double-click can't double-apply (the server
+// caches replays per nonce and returns the cached envelope verbatim).
+// Caller can pass an explicit `nonce` for retry semantics — useful
+// when a request is in-flight and the network drops; resending with
+// the same nonce is idempotent.
+export async function updateBead(
+  id: string,
+  patch: WorkItemPatch,
+  opts: { nonce?: string } = {}
+): Promise<WorkItem> {
+  if (!id) {
+    throw new Error('updateBead: id is required');
+  }
+  return apiFetch<WorkItem>(`/beads/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+    headers: {
+      'Content-Type': 'application/json',
+      [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+    },
+  });
+}
+
+// freshNonce returns a UUID-like opaque token. crypto.randomUUID is
+// available in every browser the SPA targets and in jsdom; the
+// fallback covers older test environments without crypto wired up.
+function freshNonce(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  // Math.random fallback — only the test environment hits this.
+  return `nonce-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}

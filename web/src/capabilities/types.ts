@@ -68,6 +68,10 @@ export interface WorkPlaneManifest {
   sprint_native: boolean;
   token_budget_enforced: boolean;
   evidence_synthesis_required: boolean;
+  // read_only is set by adaptors that cannot service mutations (the
+  // --dolt-url SQL connector). The SPA hides every edit affordance
+  // when true rather than disabling them (gm-root DD-15).
+  read_only?: boolean;
   // description_format declares the content type of WorkItem.Description
   // so the SPA's renderer registry can pick the right component
   // ("plain" → preformatted, "markdown" → react-markdown + GFM).

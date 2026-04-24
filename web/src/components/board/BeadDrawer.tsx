@@ -22,12 +22,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowLeft, Check, Copy, X } from 'lucide-react';
-import { useBead } from '@/hooks/useBeads';
+import { ArrowLeft, Check, Copy, Pencil, X } from 'lucide-react';
+import { useBead, useUpdateBead } from '@/hooks/useBeads';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
-import type { Evidence, WorkItem } from '@/types/core.gen';
+import type { StateCategory, WorkItem } from '@/types/core.gen';
+import type { Evidence } from '@/types/core.gen';
 import { rendererFor } from './descriptionRenderers';
+import { canEdit } from './canEdit';
 
 export interface BeadDrawerProps {
   // Bead id to show. null keeps the drawer closed. Changing this prop
@@ -212,16 +214,42 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   // restart) and useCapabilities memoizes.
   const { workPlane } = useCapabilities();
   const DescriptionRenderer = rendererFor(workPlane?.description_format);
+  const adaptorReadOnly = workPlane?.read_only === true;
+  const editCtx = { item, adaptorReadOnly };
+  const update = useUpdateBead();
 
   return (
     <div className="space-y-6 pt-4">
       <Section title="Overview" testid="section-overview">
-        <div className="flex flex-wrap gap-2">
-          <Chip label="status" value={item.status} />
-          <Chip label="state" value={item.state_category} />
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusEditor
+            item={item}
+            stateMap={workPlane?.state_map ?? {}}
+            canEdit={canEdit('status', editCtx)}
+            disabled={update.isPending}
+            onChange={(status, stateCategory) =>
+              update.mutate({
+                id: item.id,
+                patch: { status, state_category: stateCategory },
+              })
+            }
+          />
           <Chip label="type" value={item.kind} />
           {item.priority != null ? <Chip label="P" value={String(item.priority)} /> : null}
+          <CloseButton
+            item={item}
+            adaptorReadOnly={adaptorReadOnly}
+            disabled={update.isPending}
+            onClose={() =>
+              update.mutate({ id: item.id, patch: { state_category: 'completed' } })
+            }
+          />
         </div>
+        {update.isError ? (
+          <div className="mt-2 text-xs text-rose-600 dark:text-rose-400" data-testid="bead-edit-error">
+            {update.error?.message ?? 'Update failed.'}
+          </div>
+        ) : null}
         <DefRow label="Assignee">
           <AgentPill agent={item.assignee ?? null} />
         </DefRow>
@@ -247,11 +275,13 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
       </Section>
 
       <Section title="Description" testid="section-description">
-        {item.description ? (
-          <DescriptionRenderer source={item.description} />
-        ) : (
-          <Muted>No description.</Muted>
-        )}
+        <DescriptionEditor
+          item={item}
+          renderer={DescriptionRenderer}
+          canEdit={canEdit('description', editCtx)}
+          saving={update.isPending}
+          onSave={(text) => update.mutate({ id: item.id, patch: { description: text } })}
+        />
       </Section>
 
       {closeReason ? (
@@ -367,6 +397,188 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
             ))}
           </div>
         </Section>
+      ) : null}
+    </div>
+  );
+}
+
+// StatusEditor renders a select bound to the workplane's state_map.
+// When canEdit is false (e.g. read-only adaptor) it falls back to a
+// pair of static chips so the visual weight of the row stays the same.
+function StatusEditor({
+  item,
+  stateMap,
+  canEdit,
+  disabled,
+  onChange,
+}: {
+  item: WorkItem;
+  stateMap: Record<string, StateCategory>;
+  canEdit: boolean;
+  disabled: boolean;
+  onChange: (status: string, stateCategory: StateCategory) => void;
+}) {
+  const tokens = Object.keys(stateMap).sort();
+  if (!canEdit || tokens.length === 0) {
+    return (
+      <>
+        <Chip label="status" value={item.status} />
+        <Chip label="state" value={item.state_category} />
+      </>
+    );
+  }
+  return (
+    <label className="inline-flex items-center gap-1 text-xs" data-testid="bead-status-editor">
+      <span className="text-neutral-500">status</span>
+      <select
+        value={item.status}
+        disabled={disabled}
+        onChange={(e) => {
+          const next = e.target.value;
+          onChange(next, stateMap[next] ?? item.state_category);
+        }}
+        className={cn(
+          'rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-xs font-mono',
+          'dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100',
+          disabled && 'opacity-60'
+        )}
+      >
+        {/* If the current status isn't in the map, surface it as the
+            first option so the select doesn't silently mutate state. */}
+        {!tokens.includes(item.status) ? (
+          <option value={item.status}>{item.status}</option>
+        ) : null}
+        {tokens.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// CloseButton — quick-action for human-assigned beads. Shows when:
+//   * adaptor is writable
+//   * bead is assigned to a human (per gm-root.8 design Q3)
+//   * bead isn't already in a terminal state
+// Sends `{state_category: 'completed'}`; the adaptor maps that back to
+// its native "closed" status.
+function CloseButton({
+  item,
+  adaptorReadOnly,
+  disabled,
+  onClose,
+}: {
+  item: WorkItem;
+  adaptorReadOnly: boolean;
+  disabled: boolean;
+  onClose: () => void;
+}) {
+  if (adaptorReadOnly) return null;
+  if (item.assignee?.agent_kind !== 'human') return null;
+  if (item.state_category === 'completed' || item.state_category === 'canceled') return null;
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      disabled={disabled}
+      className={cn(
+        'ml-auto inline-flex items-center gap-1 rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs text-emerald-800',
+        'hover:bg-emerald-100',
+        'dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-200 dark:hover:bg-emerald-900',
+        disabled && 'opacity-60'
+      )}
+      data-testid="bead-close-button"
+    >
+      Close
+    </button>
+  );
+}
+
+// DescriptionEditor toggles between the renderer (read mode) and a
+// textarea (edit mode). Save fires the patch; Cancel discards. Empty
+// description in read mode shows the existing "No description." copy
+// plus the edit pencil so the user can add one.
+function DescriptionEditor({
+  item,
+  renderer: Renderer,
+  canEdit,
+  saving,
+  onSave,
+}: {
+  item: WorkItem;
+  renderer: React.ComponentType<{ source: string }>;
+  canEdit: boolean;
+  saving: boolean;
+  onSave: (text: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.description ?? '');
+
+  // If the upstream description changes (e.g. another agent edits), and
+  // we're not editing, re-seed the draft so a future edit starts from
+  // the new baseline.
+  useEffect(() => {
+    if (!editing) setDraft(item.description ?? '');
+  }, [item.description, editing]);
+
+  if (editing) {
+    return (
+      <div className="space-y-2" data-testid="bead-description-editing">
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={8}
+          className="w-full rounded border border-neutral-300 bg-white p-2 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          autoFocus
+        />
+        <div className="flex justify-end gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(false);
+              setDraft(item.description ?? '');
+            }}
+            disabled={saving}
+            className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onSave(draft);
+              setEditing(false);
+            }}
+            disabled={saving}
+            className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
+            data-testid="bead-description-save"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {item.description ? (
+        <Renderer source={item.description} />
+      ) : (
+        <Muted>No description.</Muted>
+      )}
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="inline-flex items-center gap-1 text-[11px] text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200"
+          data-testid="bead-description-edit"
+        >
+          <Pencil className="h-3 w-3" />
+          {item.description ? 'Edit' : 'Add description'}
+        </button>
       ) : null}
     </div>
   );
