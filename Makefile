@@ -31,13 +31,22 @@ frontend-build: frontend-install ## build the Vite SPA into web/dist
 	cd web && pnpm build
 	@touch web/dist/.keep   # vite's emptyOutDir:true sweeps this; restore so go build on a fresh clone still finds the dir
 
-build: frontend-build ## build the single-binary with SPA embedded
+build: frontend-build build-sentinels ## build the single-binary with SPA embedded
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba ./cmd/gemba
 	@echo "built bin/gemba ($(VERSION))"
 	@du -h bin/gemba | awk '{print "  size: " $$1}'
 
-build-go-only: ## build without rebuilding the frontend (fast dev iteration)
+build-go-only: build-sentinels ## build without rebuilding the frontend (fast dev iteration)
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba ./cmd/gemba
+
+## Sentinel binaries (gemba-bridge, gemba-state, gemba-ask) that
+## dispatched agents shell out to. They ship alongside the main
+## binary so install-bridge can place them on PATH in the session's
+## worktree env.
+build-sentinels: ## build the sentinel CLIs (gemba-bridge, gemba-state, gemba-ask)
+	go build -ldflags="$(LDFLAGS)" -o bin/gemba-bridge ./cmd/gemba-bridge
+	go build -ldflags="$(LDFLAGS)" -o bin/gemba-state  ./cmd/gemba-state
+	go build -ldflags="$(LDFLAGS)" -o bin/gemba-ask    ./cmd/gemba-ask
 
 ## --- Test / Lint ---
 
