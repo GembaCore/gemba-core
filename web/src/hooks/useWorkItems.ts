@@ -199,6 +199,7 @@ function applyPatch(patch: WorkItemPatch): Partial<WorkItem> {
   if (patch.assignee !== undefined) out.assignee = patch.assignee ?? undefined;
   if (patch.sprint_id !== undefined) out.sprint_id = patch.sprint_id ?? undefined;
   if (patch.dod !== undefined) out.dod = patch.dod ?? undefined;
+  if (patch.custom !== undefined) out.custom = patch.custom;
   // bump updated_at so relativeTime() in cards / drawer reflects the
   // optimistic change immediately. Server overwrites with its own
   // timestamp on the next refetch.

@@ -23,7 +23,8 @@ export type EditableField =
   | 'sprint_id'
   | 'assignee'
   | 'owner'
-  | 'dod';
+  | 'dod'
+  | 'custom';
 
 export interface CanEditContext {
   item: WorkItem;

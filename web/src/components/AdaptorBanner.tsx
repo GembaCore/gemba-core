@@ -38,7 +38,7 @@ function useAdaptorsStream(): void {
     let closed = false;
     let snapshotFallbackFired = false;
     let es: EventSource | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    const reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
     const connect = () => {
       if (closed) return;

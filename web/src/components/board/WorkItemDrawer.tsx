@@ -229,6 +229,14 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   const { workPlane } = useCapabilities();
   const DescriptionRenderer = rendererFor(workPlane?.description_format);
   const adaptorReadOnly = workPlane?.read_only === true;
+  // field_extensions is the manifest's type declaration for custom keys
+  // — we consult it in the Extensions tab to pick the right inline
+  // editor (string / number / boolean / markdown / json).
+  const fieldTypeByName = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const fe of workPlane?.field_extensions ?? []) out.set(fe.name, fe.type);
+    return out;
+  }, [workPlane?.field_extensions]);
   const editCtx = { item, adaptorReadOnly };
   const update = useUpdateWorkItem();
 
@@ -447,7 +455,21 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
                 </div>
                 <dl className="space-y-1">
                   {g.entries.map(([k, v]) => (
-                    <CustomRow key={k} fullKey={k} value={v} />
+                    <CustomRow
+                      key={k}
+                      fullKey={k}
+                      value={v}
+                      fieldType={fieldTypeByName.get(k)}
+                      renderer={DescriptionRenderer}
+                      canEdit={canEdit('custom', editCtx)}
+                      saving={update.isPending}
+                      onSave={(next) =>
+                        update.mutate({
+                          id: item.id,
+                          patch: { custom: { ...(item.custom ?? {}), [k]: next } },
+                        })
+                      }
+                    />
                   ))}
                 </dl>
               </div>
@@ -1527,20 +1549,288 @@ function EvidenceRow({ evidence }: { evidence: Evidence }) {
   );
 }
 
-function CustomRow({ fullKey, value }: { fullKey: string; value: unknown }) {
+// CustomRow (gm-root.13) renders an extension-field row with an
+// inline editor chosen by the field's declared type from
+// CapabilityManifest.field_extensions. If the manifest doesn't declare
+// a type for this key we fall back to JSON (the most permissive). The
+// save path goes through the parent's onSave so the drawer's single
+// mutation manages the PATCH + invalidation.
+function CustomRow({
+  fullKey,
+  value,
+  fieldType,
+  renderer: Renderer,
+  canEdit: canEditField,
+  saving,
+  onSave,
+}: {
+  fullKey: string;
+  value: unknown;
+  fieldType: string | undefined;
+  renderer: React.ComponentType<{ source: string }>;
+  canEdit: boolean;
+  saving: boolean;
+  onSave: (next: unknown) => void;
+}) {
   const short = fullKey.includes(':') ? fullKey.split(':').slice(1).join(':') : fullKey;
+  const kind = customEditorKind(fieldType, value);
+  const testBase = `custom-${fullKey}`;
+  const [editing, setEditing] = useState(false);
+
   return (
-    <div className="flex gap-2 text-sm">
+    <div className="flex gap-2 text-sm" data-testid={`${testBase}-row`}>
       <dt className="w-40 shrink-0 truncate font-mono text-xs text-neutral-500" title={fullKey}>
         {short}
       </dt>
       <dd className="min-w-0 flex-1">
-        <pre className="whitespace-pre-wrap break-words font-mono text-xs text-neutral-800 dark:text-neutral-200">
-          {renderCustomValue(value)}
-        </pre>
+        {editing ? (
+          <CustomRowEditor
+            fullKey={fullKey}
+            value={value}
+            kind={kind}
+            saving={saving}
+            onCancel={() => setEditing(false)}
+            onSave={(next) => {
+              setEditing(false);
+              onSave(next);
+            }}
+          />
+        ) : (
+          <div className="flex items-start gap-1">
+            <div className="min-w-0 flex-1">
+              {kind === 'markdown' && typeof value === 'string' ? (
+                <Renderer source={value} />
+              ) : kind === 'boolean' && typeof value === 'boolean' ? (
+                <span
+                  data-testid={`${testBase}-value`}
+                  className="font-mono text-xs text-neutral-800 dark:text-neutral-200"
+                >
+                  {value ? 'true' : 'false'}
+                </span>
+              ) : (
+                <pre
+                  data-testid={`${testBase}-value`}
+                  className="whitespace-pre-wrap break-words font-mono text-xs text-neutral-800 dark:text-neutral-200"
+                >
+                  {renderCustomValue(value)}
+                </pre>
+              )}
+            </div>
+            {canEditField ? (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                disabled={saving}
+                data-testid={`${testBase}-edit`}
+                aria-label={`Edit ${fullKey}`}
+                className="shrink-0 rounded p-0.5 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            ) : null}
+          </div>
+        )}
       </dd>
     </div>
   );
+}
+
+type CustomEditorKind = 'string' | 'number' | 'boolean' | 'markdown' | 'json';
+
+// customEditorKind picks the editor shape for a custom field. Manifest
+// declarations win; otherwise we infer from the current value's JS
+// type. Unknown types fall through to JSON so the operator can at
+// least see + round-trip the raw value.
+function customEditorKind(
+  fieldType: string | undefined,
+  value: unknown
+): CustomEditorKind {
+  if (fieldType) {
+    const t = fieldType.toLowerCase();
+    if (t === 'string' || t === 'text') return 'string';
+    if (t === 'number' || t === 'int' || t === 'integer' || t === 'float') return 'number';
+    if (t === 'boolean' || t === 'bool') return 'boolean';
+    if (t === 'markdown' || t === 'md') return 'markdown';
+  }
+  if (typeof value === 'string') return 'string';
+  if (typeof value === 'number') return 'number';
+  if (typeof value === 'boolean') return 'boolean';
+  return 'json';
+}
+
+function CustomRowEditor({
+  fullKey,
+  value,
+  kind,
+  saving,
+  onCancel,
+  onSave,
+}: {
+  fullKey: string;
+  value: unknown;
+  kind: CustomEditorKind;
+  saving: boolean;
+  onCancel: () => void;
+  onSave: (next: unknown) => void;
+}) {
+  const testBase = `custom-${fullKey}`;
+  const initial = initialEditorText(kind, value);
+  const [draft, setDraft] = useState(initial);
+  const [error, setError] = useState<string | null>(null);
+
+  const commit = () => {
+    const parsed = parseEditorValue(kind, draft);
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+    // Empty patch (value unchanged) is a no-op — don't round-trip.
+    if (stableEqual(parsed.value, value)) {
+      onCancel();
+      return;
+    }
+    onSave(parsed.value);
+  };
+
+  if (kind === 'boolean') {
+    const checked = draft === 'true';
+    return (
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={saving}
+          data-testid={`${testBase}-input`}
+          onChange={(e) => setDraft(e.target.checked ? 'true' : 'false')}
+        />
+        <SaveCancel
+          testBase={testBase}
+          saving={saving}
+          onSave={commit}
+          onCancel={onCancel}
+        />
+      </div>
+    );
+  }
+
+  const isMultiline = kind === 'markdown' || kind === 'json';
+  return (
+    <div className="space-y-1">
+      {isMultiline ? (
+        <textarea
+          value={draft}
+          disabled={saving}
+          data-testid={`${testBase}-input`}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={kind === 'json' ? 4 : 6}
+          className="w-full rounded border border-neutral-300 bg-white px-2 py-1 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        />
+      ) : (
+        <input
+          type={kind === 'number' ? 'number' : 'text'}
+          value={draft}
+          disabled={saving}
+          data-testid={`${testBase}-input`}
+          onChange={(e) => setDraft(e.target.value)}
+          className="w-full rounded border border-neutral-300 bg-white px-2 py-1 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        />
+      )}
+      {error ? (
+        <div className="text-xs text-rose-600 dark:text-rose-400" data-testid={`${testBase}-error`}>
+          {error}
+        </div>
+      ) : null}
+      <SaveCancel testBase={testBase} saving={saving} onSave={commit} onCancel={onCancel} />
+    </div>
+  );
+}
+
+function SaveCancel({
+  testBase,
+  saving,
+  onSave,
+  onCancel,
+}: {
+  testBase: string;
+  saving: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saving}
+        data-testid={`${testBase}-save`}
+        className="rounded bg-neutral-900 px-2 py-0.5 text-xs text-white hover:bg-neutral-700 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300"
+      >
+        Save
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={saving}
+        data-testid={`${testBase}-cancel`}
+        className="rounded px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-100 disabled:opacity-50 dark:text-neutral-400 dark:hover:bg-neutral-800"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+function initialEditorText(kind: CustomEditorKind, value: unknown): string {
+  if (kind === 'string' || kind === 'markdown') {
+    return typeof value === 'string' ? value : '';
+  }
+  if (kind === 'number') {
+    return typeof value === 'number' ? String(value) : '';
+  }
+  if (kind === 'boolean') {
+    return value === true ? 'true' : 'false';
+  }
+  // json
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+type ParseResult =
+  | { ok: true; value: unknown }
+  | { ok: false; error: string };
+
+function parseEditorValue(kind: CustomEditorKind, draft: string): ParseResult {
+  if (kind === 'string' || kind === 'markdown') return { ok: true, value: draft };
+  if (kind === 'number') {
+    if (draft.trim() === '') return { ok: true, value: null };
+    const n = Number(draft);
+    if (!Number.isFinite(n)) return { ok: false, error: 'Not a number' };
+    return { ok: true, value: n };
+  }
+  if (kind === 'boolean') {
+    return { ok: true, value: draft === 'true' };
+  }
+  // json
+  if (draft.trim() === '') return { ok: true, value: null };
+  try {
+    return { ok: true, value: JSON.parse(draft) };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
+
+function stableEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
 }
 
 // ---------- derivations ----------

@@ -96,6 +96,12 @@ export interface WorkItemPatch {
   assignee?: AgentRef | null;
   sprint_id?: string | null;
   dod?: DefinitionOfDone | null;
+  // custom is sent as the full map the adaptor should persist. The
+  // drawer's Extensions editor (gm-root.13) writes a single key by
+  // spreading the existing item.custom and overwriting one entry, so
+  // adaptors that treat the field as a replacement don't lose the
+  // rest of the extension map.
+  custom?: Record<string, unknown>;
 }
 
 // Confirm header MUST match internal/server/nonce.go ConfirmHeader.
