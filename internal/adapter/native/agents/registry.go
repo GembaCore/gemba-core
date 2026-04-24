@@ -52,6 +52,29 @@ const (
 	HookNone HookProfile = "none"
 )
 
+// InteractionMode selects which section of the interaction_profile.md
+// gets injected into the session preamble (gm-bglh / gm-97w7). See
+// .gemba/interaction_profile.md for the behavioural contract of each
+// mode.
+type InteractionMode string
+
+const (
+	// InteractionDangerous — never ask, never stop. Best for trusted
+	// autonomous loops where human review happens post-hoc.
+	InteractionDangerous InteractionMode = "dangerous"
+	// InteractionBalanced — stop for questions AND blockers. Default.
+	InteractionBalanced InteractionMode = "balanced"
+	// InteractionCautious — surface questions inline; stop only for
+	// blockers. Best when the operator is watching the session.
+	InteractionCautious InteractionMode = "cautious"
+)
+
+// DefaultInteractionMode is the mode used when an agent's config
+// doesn't declare one. Balanced is the safest default — the operator
+// sees questions and blockers both, which matches unassisted
+// autonomous development's bias toward "check in".
+const DefaultInteractionMode = InteractionBalanced
+
 // AgentType is one entry in .gemba/agents.toml.
 type AgentType struct {
 	// Name is the operator-chosen identifier — must be unique within
@@ -74,6 +97,23 @@ type AgentType struct {
 	Preamble PreambleStrategy `toml:"preamble"`
 	// Hooks selects which gemba-bridge profile this type uses.
 	Hooks HookProfile `toml:"hooks"`
+	// InteractionMode selects which section of the
+	// interaction_profile.md gets composed into the session preamble.
+	// Empty string falls back to DefaultInteractionMode (balanced).
+	InteractionMode InteractionMode `toml:"interaction_mode"`
+	// InteractionProfile optionally overrides the default
+	// .gemba/interaction_profile.md path. Relative paths resolve
+	// against the workspace dir. Empty string uses the default.
+	InteractionProfile string `toml:"interaction_profile"`
+}
+
+// ResolvedInteractionMode returns the agent's configured mode with
+// the default applied when the field is blank.
+func (a AgentType) ResolvedInteractionMode() InteractionMode {
+	if a.InteractionMode == "" {
+		return DefaultInteractionMode
+	}
+	return a.InteractionMode
 }
 
 // Registry is the parsed agents.toml.
@@ -154,6 +194,11 @@ func (r Registry) Validate() error {
 		if !validHook(a.Hooks) {
 			problems = append(problems, fmt.Sprintf("%s: unknown hook profile %q", prefix, a.Hooks))
 		}
+		// Interaction mode is optional; empty string falls back to the
+		// default at dispatch time. Any non-empty value must be known.
+		if a.InteractionMode != "" && !validInteractionMode(a.InteractionMode) {
+			problems = append(problems, fmt.Sprintf("%s: unknown interaction_mode %q (want dangerous | balanced | cautious)", prefix, a.InteractionMode))
+		}
 		if first, dup := seen[a.Name]; dup {
 			problems = append(problems, fmt.Sprintf("%s: duplicate name (first at agent[%d])", prefix, first))
 		}
@@ -176,6 +221,14 @@ func validPreamble(p PreambleStrategy) bool {
 func validHook(h HookProfile) bool {
 	switch h {
 	case HookClaudeCode, HookPromptCommand, HookNone:
+		return true
+	}
+	return false
+}
+
+func validInteractionMode(m InteractionMode) bool {
+	switch m {
+	case InteractionDangerous, InteractionBalanced, InteractionCautious:
 		return true
 	}
 	return false

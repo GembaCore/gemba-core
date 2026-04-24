@@ -81,6 +81,34 @@ func TestBuildPrefersOperatorDoD(t *testing.T) {
 	}
 }
 
+func TestBuildInjectsSelectedInteractionProfileSection(t *testing.T) {
+	repo := t.TempDir()
+	writeFile(t, filepath.Join(repo, ".gemba", "interaction_profile.md"),
+		"## dangerous\nNo asking.\n\n## balanced\nStop for questions.\n\n## cautious\nSurface all.\n")
+	item := core.WorkItem{ID: "gm-ip", Kind: "task"}
+	c := Build(Sources{
+		RepoRoot:               repo,
+		InteractionProfilePath: filepath.Join(repo, ".gemba", "interaction_profile.md"),
+		InteractionMode:        "balanced",
+	}, item)
+	if !strings.Contains(c.Text, "Stop for questions") {
+		t.Errorf("balanced section missing from composed preamble:\n%s", c.Text)
+	}
+	if strings.Contains(c.Text, "No asking.") || strings.Contains(c.Text, "Surface all.") {
+		t.Errorf("non-selected sections leaked into composed preamble:\n%s", c.Text)
+	}
+}
+
+func TestBuildOmitsProfileWhenUnconfigured(t *testing.T) {
+	// No InteractionProfilePath + no InteractionMode → no section
+	// injected, but also no error. Regression test against requiring
+	// the profile for Build to succeed.
+	c := Build(Sources{}, core.WorkItem{ID: "gm-x", Kind: "task"})
+	if strings.Contains(c.Text, "dangerous") || strings.Contains(c.Text, "cautious") {
+		t.Errorf("unconfigured Sources produced profile section:\n%s", c.Text)
+	}
+}
+
 func TestApplyToClaudeMDIdempotent(t *testing.T) {
 	ws := t.TempDir()
 	writeFile(t, filepath.Join(ws, "CLAUDE.md"), "# operator notes\n\nhand-written content\n")

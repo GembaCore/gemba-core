@@ -181,8 +181,10 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	if o.cfg.WorkPlane != nil {
 		if item, err := o.cfg.WorkPlane.GetWorkItem(ctx, core.WorkItemID(beadID)); err == nil {
 			composed := preamble.Build(preamble.Sources{
-				RepoRoot:     o.cfg.RepoRoot,
-				WorkspaceDir: workspace,
+				RepoRoot:               o.cfg.RepoRoot,
+				WorkspaceDir:           workspace,
+				InteractionProfilePath: preamble.ResolveProfilePath(o.cfg.RepoRoot, agent.InteractionProfile),
+				InteractionMode:        agent.ResolvedInteractionMode(),
 			}, item)
 			if strat, err := preamble.Apply(workspace, agent, composed); err == nil && strat.FirstMessage != "" {
 				_ = o.cfg.Backend.SendKeys(ctx, pane.ID, strat.FirstMessage+" Enter")

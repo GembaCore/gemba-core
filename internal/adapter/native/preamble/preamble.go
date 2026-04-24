@@ -36,6 +36,15 @@ type Sources struct {
 	// WorkspaceDir is the worktree the session runs in; .gemba/
 	// workspace.md here provides workspace-scoped overrides.
 	WorkspaceDir string
+	// InteractionProfilePath is the absolute path to the
+	// interaction_profile.md whose section matching InteractionMode
+	// gets composed as the PersonaSystem layer. Empty string →
+	// no interaction guidance injected (gm-bglh / gm-97w7).
+	InteractionProfilePath string
+	// InteractionMode picks which section of the profile above is
+	// injected (dangerous | balanced | cautious). Empty string →
+	// no injection.
+	InteractionMode agents.InteractionMode
 }
 
 // Build reads the sources + work item and returns a composed prompt
@@ -47,9 +56,27 @@ func Build(s Sources, item core.WorkItem) prompt.Composed {
 		ProjectValues:     readLines(filepath.Join(s.RepoRoot, ".gemba", "values.md")),
 		ProjectGuardrails: readLines(filepath.Join(s.RepoRoot, ".gemba", "guardrails.md")),
 		WorkspaceValues:   readLines(filepath.Join(s.WorkspaceDir, ".gemba", "workspace.md")),
+		PersonaSystem:     SelectProfileSection(s.InteractionProfilePath, s.InteractionMode),
 		UserInput:         renderWorkItem(item),
 	}
 	return env.Compose(prompt.ComposeOptions{})
+}
+
+// ResolveProfilePath picks the absolute path to the
+// interaction_profile.md to use for a session. Agent-level override
+// wins over the project default. Empty return means no profile.
+func ResolveProfilePath(repoRoot string, agentProfile string) string {
+	if agentProfile != "" {
+		if filepath.IsAbs(agentProfile) {
+			return agentProfile
+		}
+		return filepath.Join(repoRoot, agentProfile)
+	}
+	p := filepath.Join(repoRoot, ".gemba", "interaction_profile.md")
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	return ""
 }
 
 // renderWorkItem formats the bead as the user-input layer of the
