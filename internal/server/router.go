@@ -25,6 +25,11 @@ type Router struct {
 	spa  fs.FS
 	host *api.Host
 
+	// nonceCache backs the X-GEMBA-Confirm idempotency gate every
+	// mutating route is wrapped in. Per-process — multi-instance
+	// gemba serve will need a shared store.
+	nonceCache *NonceCache
+
 	mux http.Handler
 }
 
@@ -34,7 +39,12 @@ type Router struct {
 // host may be nil during early bring-up — handlers that need a WorkPlane
 // must check Host() before dereferencing.
 func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
-	r := &Router{cfg: cfg, spa: spa, host: host}
+	r := &Router{
+		cfg:        cfg,
+		spa:        spa,
+		host:       host,
+		nonceCache: NewNonceCache(0, 0), // defaults: 1024 entries / 5min TTL
+	}
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.RequestID)
@@ -119,6 +129,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// the SPA drill-in drawer (M1.7c). Static sibling routes above
 		// (/beads, /beads/ready) take precedence in chi's matcher.
 		api.Get("/beads/{id}", r.getBead)
+		// Mutations gated by the X-GEMBA-Confirm nonce so SPA
+		// double-clicks / React re-mounts can't double-apply.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Patch("/beads/{id}", r.patchBead)
 		api.Get("/packs", notImplemented)
 		api.Get("/desired-state", notImplemented)
 		api.Get("/drift", notImplemented)
