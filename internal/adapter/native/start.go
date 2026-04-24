@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
@@ -104,19 +106,14 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	// failed dispatch.
 	_ = installBridgeForAgent(ctx, workspace, agent)
 
-	spec := backend.SpawnSpec{
-		Cwd: workspace,
-		Env: map[string]string{
-			"GEMBA_SESSION_ID":      sessionID,
-			"GEMBA_AGENT_TYPE":      agentType,
-			"GEMBA_INTERACTION_MODE": string(agent.ResolvedInteractionMode()),
-		},
-		Command: buildAgentCommand(agent),
+	title, _ := prompt.Extension[extKeyTitle].(string)
+	if title == "" {
+		title = "gemba: " + beadID
 	}
-	if title, ok := prompt.Extension[extKeyTitle].(string); ok && title != "" {
-		spec.Title = title
-	} else {
-		spec.Title = "gemba: " + beadID
+	spec, err := buildSpawnSpec(agent, workspace, sessionID, agentType, title)
+	if err != nil {
+		return core.Session{}, core.WrapAdaptorError(core.KindValidation, err,
+			"native: build spawn spec for %s", beadID)
 	}
 
 	pane, err := o.cfg.Backend.SpawnPane(ctx, spec)
@@ -219,6 +216,142 @@ func (o *OrchestrationPlane) readSession(sessionID string) *core.Session {
 	}
 	cp := *s
 	return &cp
+}
+
+// buildSpawnSpec composes the backend.SpawnSpec for a StartSession
+// call. For tmux-backed agents it produces the same spec as before
+// the container work (no behavior change). For agents declaring a
+// [agent.container] stanza (gm-root.15.6) it populates Image, Mounts,
+// Network, Secrets, Limits, Labels, and UserNS per gm-root.15.10 /
+// docs/design/containerized-sessions.md §7.
+//
+// Workspace bind-mount policy: if the operator did not declare an
+// explicit mount for the container Cwd, one is added automatically so
+// the worktree the adaptor provisioned is reachable inside the
+// container. Files the agent writes land in the worktree on the host
+// owned by the operator (UserNS == host UID of the worktree).
+func buildSpawnSpec(agent agents.AgentType, workspace, sessionID, agentType, title string) (backend.SpawnSpec, error) {
+	spec := backend.SpawnSpec{
+		Cwd: workspace,
+		Env: map[string]string{
+			"GEMBA_SESSION_ID":       sessionID,
+			"GEMBA_AGENT_TYPE":       agentType,
+			"GEMBA_INTERACTION_MODE": string(agent.ResolvedInteractionMode()),
+		},
+		Command: buildAgentCommand(agent),
+		Title:   title,
+	}
+	if !agent.Container.Present() {
+		return spec, nil
+	}
+	c := agent.Container
+
+	cwd := c.Cwd
+	if cwd == "" {
+		cwd = "/work"
+	}
+	spec.Cwd = cwd
+	spec.Image = c.Image
+	spec.Network = backend.NetworkPolicy{Mode: c.Network}
+	spec.Secrets = append([]string(nil), c.Secrets...)
+
+	mem, err := parseMemory(c.Memory)
+	if err != nil {
+		return backend.SpawnSpec{}, fmt.Errorf("agent %q: container.memory: %w", agent.Name, err)
+	}
+	spec.Limits = backend.Limits{
+		CPUs:      c.CPUs,
+		Memory:    mem,
+		PidsLimit: c.PidsLimit,
+	}
+
+	// ReadOnlyRootfs defaults to true when the operator didn't say
+	// otherwise. Nil pointer on the config struct means "not set";
+	// non-nil respects the explicit value.
+	spec.ReadOnlyRootfs = c.ReadOnlyRootfs == nil || *c.ReadOnlyRootfs
+
+	// UserNS aligns container uid to the host uid of the worktree so
+	// writes round-trip without chown surprises. os.Getuid is correct
+	// because the gemba process provisioned the worktree itself.
+	spec.UserNS = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+
+	// Labels the reaper (gm-root.15.13) relies on. Any operator
+	// labels carried by a future ContainerSpec.Labels would merge in
+	// here; for now only the gemba-owned keys.
+	spec.Labels = map[string]string{
+		"gemba.session": sessionID,
+		"gemba.agent":   agent.Name,
+	}
+
+	// Workspace bind-mount: if the operator's mount list already
+	// covers the container cwd, trust it; otherwise add one mapping
+	// the worktree to cwd read-write. Operator-declared mounts come
+	// first so their order (which the backend preserves) reflects
+	// the operator's intent.
+	var cwdCovered bool
+	for _, m := range c.Mounts {
+		if m.Dst == cwd {
+			cwdCovered = true
+		}
+		spec.Mounts = append(spec.Mounts, expandMount(m, workspace, sessionID, agent.Name))
+	}
+	if !cwdCovered {
+		spec.Mounts = append(spec.Mounts, backend.Mount{
+			Src:  workspace,
+			Dst:  cwd,
+			Mode: "rw",
+		})
+	}
+	return spec, nil
+}
+
+// expandMount resolves {{workspace}}, {{session_id}}, {{agent_name}}
+// in a ContainerMount.Src. Unresolved placeholders are left as-is and
+// surface later as docker errors — the validator upstream does not
+// know the runtime values so we prefer cheap, visible failures over
+// silent trimming.
+func expandMount(m agents.ContainerMount, workspace, sessionID, agentName string) backend.Mount {
+	src := m.Src
+	src = strings.ReplaceAll(src, "{{workspace}}", workspace)
+	src = strings.ReplaceAll(src, "{{session_id}}", sessionID)
+	src = strings.ReplaceAll(src, "{{agent_name}}", agentName)
+	return backend.Mount{
+		Src:  src,
+		Dst:  m.Dst,
+		Mode: m.Mode,
+		Size: m.Size,
+	}
+}
+
+// parseMemory accepts the compact human form ("4g", "512m", "1024k")
+// or a plain byte count. Empty returns 0 (backend default). The
+// parser is deliberately strict — typo'd specs like "4gb" or "4gigs"
+// fail config-load rather than silently becoming "no limit".
+func parseMemory(s string) (int64, error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return 0, nil
+	}
+	var unit int64 = 1
+	switch s[len(s)-1] {
+	case 'k':
+		unit = 1 << 10
+		s = s[:len(s)-1]
+	case 'm':
+		unit = 1 << 20
+		s = s[:len(s)-1]
+	case 'g':
+		unit = 1 << 30
+		s = s[:len(s)-1]
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid memory spec %q (want '4g', '512m', '1024k', or plain bytes)", s)
+	}
+	if n < 0 {
+		return 0, fmt.Errorf("memory must be non-negative, got %d", n)
+	}
+	return n * unit, nil
 }
 
 // buildAgentCommand assembles the argv the backend SpawnPane runs.
