@@ -73,6 +73,18 @@ type ServeConfig struct {
 	// (TMUX / TERM_PROGRAM). Accepted: auto | tmux | iterm | terminal.
 	TerminalBackend string
 
+	// AgentsRegistryPath points to the TOML file the native
+	// OrchestrationPlane loads its agent-type registry from
+	// (gm-native.6). Empty defaults to ".gemba/agents.toml" in the
+	// workspace. Missing file is non-fatal: the SPA's picker shows an
+	// empty roster until the operator drops a registry in.
+	AgentsRegistryPath string
+
+	// WorktreesDir overrides the default worktree parent dir for the
+	// native adaptor's StartSession provisioner. Empty defaults to a
+	// sibling "worktrees" directory next to the repo root.
+	WorktreesDir string
+
 	DangerouslySkipPermissions bool
 }
 

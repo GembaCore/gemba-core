@@ -18,6 +18,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
 	"github.com/MikeBengtson/gemba/internal/adapter/native"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
@@ -81,6 +82,14 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 
 	cmd.Flags().StringVar(&cfg.TerminalBackend, "terminal", "auto",
 		"terminal backend when --orchestration=native: auto|tmux|iterm|terminal")
+
+	cmd.Flags().StringVar(&cfg.AgentsRegistryPath, "agents-registry", "",
+		"path to .gemba/agents.toml for --orchestration=native "+
+			"(default: .gemba/agents.toml in cwd; missing is non-fatal)")
+
+	cmd.Flags().StringVar(&cfg.WorktreesDir, "worktrees-dir", "",
+		"parent directory for per-session worktrees "+
+			"(default: sibling 'worktrees' next to repo root)")
 
 	cmd.Flags().StringVar(&cfg.BeadsDir, "beads-dir", "",
 		"path to the beads workspace the WorkPlane adaptor targets "+
@@ -391,31 +400,66 @@ func registerOrchestrationPlane(ctx context.Context, host *api.Host, cfg config.
 	case "":
 		return nil
 	case "native":
-		// Resolve the backend eagerly so the operator sees a clear
-		// error before the listener opens. The real backend impls
-		// (gm-native.4 tmux, gm-native.5 AppleScript) aren't wired in
-		// yet — detection still happens so the manifest shows the
-		// resolved kind once the implementations land.
-		kind, err := backend.ResolveKind(backend.Kind(cfg.TerminalBackend))
-		if err != nil {
-			return fmt.Errorf("orchestration=native: %w", err)
-		}
-		slog.Info("native orchestration plane selected",
-			"backend", string(kind),
-			"scaffold_only", true)
-		reg, err := host.RegisterOrchestrationPlane(ctx, native.New())
-		if err != nil {
-			return fmt.Errorf("register native orchestration: %w", err)
-		}
-		slog.Info("orchestration plane registered",
-			"adaptor", reg.AdaptorName,
-			"version", reg.AdaptorVersion,
-			"protocol", reg.ProtocolVersion,
-			"transport", reg.Transport)
-		return nil
+		return registerNativeOrchestration(ctx, host, cfg)
 	default:
 		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native' or empty)", cfg.Orchestration)
 	}
+}
+
+// registerNativeOrchestration wires the native adaptor end-to-end
+// (gm-native.20). Resolves the concrete terminal backend, loads the
+// agents.toml registry, discovers the repo root, then constructs the
+// OrchestrationPlane via NewWithConfig so StartSession can actually
+// spawn panes. A missing agents.toml is a non-fatal warning — serve
+// comes up with an empty roster and the SPA surfaces a clear empty
+// state instead of crashing.
+func registerNativeOrchestration(ctx context.Context, host *api.Host, cfg config.ServeConfig) error {
+	kind, err := backend.ResolveKind(backend.Kind(cfg.TerminalBackend))
+	if err != nil {
+		return fmt.Errorf("orchestration=native: %w", err)
+	}
+	b, err := backend.Select(kind)
+	if err != nil {
+		return fmt.Errorf("orchestration=native: %w", err)
+	}
+
+	registryPath := cfg.AgentsRegistryPath
+	if registryPath == "" {
+		registryPath = ".gemba/agents.toml"
+	}
+	registry, regErr := agents.Load(registryPath)
+	if regErr != nil {
+		// Missing file is the common first-run case — warn, keep going
+		// with an empty registry so the SPA's agent-type picker shows
+		// 'no agents registered; drop a .gemba/agents.toml to wire
+		// one up' instead of 503ing the entire orchestration plane.
+		slog.Warn("native orchestration: agents.toml not loaded; registry will be empty",
+			"path", registryPath,
+			"err", regErr)
+	}
+
+	slog.Info("native orchestration plane selected",
+		"backend", string(kind),
+		"agents_registry", registryPath,
+		"agents_registered", len(registry.Names()))
+
+	plane := native.NewWithConfig(native.Config{
+		Backend:      b,
+		Registry:     registry,
+		WorkPlane:    host.WorkPlane(),
+		RepoRoot:     os.Getenv("PWD"),
+		WorktreesDir: cfg.WorktreesDir,
+	})
+	reg, err := host.RegisterOrchestrationPlane(ctx, plane)
+	if err != nil {
+		return fmt.Errorf("register native orchestration: %w", err)
+	}
+	slog.Info("orchestration plane registered",
+		"adaptor", reg.AdaptorName,
+		"version", reg.AdaptorVersion,
+		"protocol", reg.ProtocolVersion,
+		"transport", reg.Transport)
+	return nil
 }
 
 // printStartupBanner emits the three-line operator-facing summary the gm-root.1.3
