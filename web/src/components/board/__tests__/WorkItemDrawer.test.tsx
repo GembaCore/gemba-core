@@ -140,7 +140,7 @@ describe('WorkItemDrawer', () => {
     fetchSpy.mockReset();
   });
 
-  it('renders every section for a fixture bead', async () => {
+  it('renders every tab for a fixture bead', async () => {
     fetchSpy.mockResolvedValueOnce(mockJSON(fixture));
 
     render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
@@ -154,43 +154,72 @@ describe('WorkItemDrawer', () => {
     expect(screen.getByTestId('work-item-drawer-id').textContent).toBe('gm-foo');
     expect(screen.getByTestId('work-item-drawer-copy')).toBeTruthy();
 
-    // All top-level sections render
+    // Overview is always visible (pinned above the tabs). Labels chip
+    // lives here too.
     expect(screen.getByTestId('section-overview')).toBeTruthy();
+    expect(screen.getByText('milestone:m1')).toBeTruthy();
+
+    // Default tab: Description. Close-reason also lives here because
+    // it's a description-like narrative field.
     expect(screen.getByTestId('section-description')).toBeTruthy();
     expect(screen.getByTestId('section-close-reason')).toBeTruthy();
-    expect(screen.getByTestId('section-relationships')).toBeTruthy();
-    expect(screen.getByTestId('section-evidence')).toBeTruthy();
-    expect(screen.getByTestId('section-dod')).toBeTruthy();
-    expect(screen.getByTestId('section-sprint')).toBeTruthy();
-    expect(screen.getByTestId('section-derived')).toBeTruthy();
-    expect(screen.getByTestId('section-timestamps')).toBeTruthy();
-    expect(screen.getByTestId('section-custom')).toBeTruthy();
+    expect(screen.getByText(/Line one/)).toBeTruthy();
+    expect(screen.getByText('superseded by gm-bar')).toBeTruthy();
 
-    // Relationship groups split correctly by direction
+    // Edges tab: relationships split by direction + extension edges
+    // from Custom["beads:*"]. Inactive tabs must not have mounted
+    // their section, so asserting before click ensures the partition
+    // really is working.
+    expect(screen.queryByTestId('section-relationships')).toBeNull();
+    act(() => {
+      screen.getByTestId('drawer-tab-edges').click();
+    });
+    expect(screen.getByTestId('section-relationships')).toBeTruthy();
     expect(screen.getByTestId('relgroup-blocks')).toBeTruthy();
     expect(screen.getByTestId('relgroup-blocked-by')).toBeTruthy();
     expect(screen.getByTestId('relgroup-parent')).toBeTruthy();
     expect(screen.getByTestId('relgroup-children')).toBeTruthy();
     expect(screen.getByTestId('relgroup-relates-to')).toBeTruthy();
     expect(screen.getByTestId('relgroup-extension-edges')).toBeTruthy();
-
-    // Extension edges surfaced from Custom["beads:*"]
     expect(screen.getByText('gm-dep1')).toBeTruthy();
     expect(screen.getByText('gm-dep2')).toBeTruthy();
 
-    // Body fields propagated (testing-library normalizes whitespace,
-    // so assert on each line separately).
-    expect(screen.getByText(/Line one/)).toBeTruthy();
-    expect(screen.getByText('superseded by gm-bar')).toBeTruthy();
-    expect(screen.getByText('milestone:m1')).toBeTruthy();
+    // Evidence tab
+    act(() => {
+      screen.getByTestId('drawer-tab-evidence').click();
+    });
+    expect(screen.getByTestId('section-evidence')).toBeTruthy();
     expect(screen.getByText('implements drawer')).toBeTruthy();
+
+    // DoD tab: section + informational banner + acceptance criterion
+    act(() => {
+      screen.getByTestId('drawer-tab-dod').click();
+    });
+    expect(screen.getByTestId('section-dod')).toBeTruthy();
+    expect(screen.getByTestId('work-item-dod-banner')).toBeTruthy();
     expect(screen.getByText('Renders every section')).toBeTruthy();
+
+    // Sprint tab
+    act(() => {
+      screen.getByTestId('drawer-tab-sprint').click();
+    });
+    expect(screen.getByTestId('section-sprint')).toBeTruthy();
     expect(screen.getByText('sprint-1')).toBeTruthy();
 
-    // Derived pills
+    // Activity tab: timestamps + derived signals live together here.
+    act(() => {
+      screen.getByTestId('drawer-tab-activity').click();
+    });
+    expect(screen.getByTestId('section-timestamps')).toBeTruthy();
+    expect(screen.getByTestId('section-derived')).toBeTruthy();
     expect(screen.getByText(/human-action-required/)).toBeTruthy();
 
-    // Custom field namespaces rendered
+    // Extensions tab: conditional on the bead actually having custom
+    // fields. The fixture has beads:* and gt:* so the tab is offered.
+    act(() => {
+      screen.getByTestId('drawer-tab-extensions').click();
+    });
+    expect(screen.getByTestId('section-custom')).toBeTruthy();
     expect(screen.getByText('beads')).toBeTruthy();
     expect(screen.getByText('gt')).toBeTruthy();
   });
@@ -205,6 +234,11 @@ describe('WorkItemDrawer', () => {
 
     render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
     await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
+
+    // Relationships now live on the Edges tab (gm-e12.5).
+    act(() => {
+      screen.getByTestId('drawer-tab-edges').click();
+    });
 
     // Click a relationship link — gm-child appears under "blocks".
     const link = screen.getAllByText('gm-child')[0];

@@ -202,6 +202,19 @@ function DrawerHeader({
   );
 }
 
+// Tab identifiers for the drawer body (gm-e12.5). The Overview strip
+// (title + status/priority/assignee/owner/labels) is rendered above
+// the tabs as always-visible context; tabs partition the rest of the
+// record so the drawer stays scannable at one viewport height.
+type DrawerTab =
+  | 'description'
+  | 'edges'
+  | 'evidence'
+  | 'dod'
+  | 'sprint'
+  | 'activity'
+  | 'extensions';
+
 function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: string) => void }) {
   const grouped = useMemo(() => groupRelationships(item), [item]);
   const customGroups = useMemo(() => groupCustom(item.custom), [item.custom]);
@@ -218,6 +231,15 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   const adaptorReadOnly = workPlane?.read_only === true;
   const editCtx = { item, adaptorReadOnly };
   const update = useUpdateWorkItem();
+
+  const hasExtensions = customGroups.length > 0;
+  const [tab, setTab] = useState<DrawerTab>('description');
+  // If the active tab disappears (e.g. the user navigates via Back to
+  // a bead with no extension fields), fall back to Description rather
+  // than leaving the drawer with no panel rendered.
+  useEffect(() => {
+    if (tab === 'extensions' && !hasExtensions) setTab('description');
+  }, [tab, hasExtensions]);
 
   return (
     <div className="space-y-6 pt-4">
@@ -291,104 +313,131 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
         </DefRow>
       </Section>
 
-      <Section title="Description" testid="section-description">
-        <DescriptionEditor
-          item={item}
-          renderer={DescriptionRenderer}
-          canEdit={canEdit('description', editCtx)}
-          saving={update.isPending}
-          onSave={(text) => update.mutate({ id: item.id, patch: { description: text } })}
-        />
-      </Section>
+      <DrawerTabBar tab={tab} onChange={setTab} hasExtensions={hasExtensions} />
 
-      {closeReason ? (
-        <Section title="Close reason" testid="section-close-reason">
-          <pre className="whitespace-pre-wrap break-words font-sans text-sm text-neutral-800 dark:text-neutral-200">
-            {closeReason}
-          </pre>
+      {tab === 'description' ? (
+        <>
+          <Section title="Description" testid="section-description">
+            <DescriptionEditor
+              item={item}
+              renderer={DescriptionRenderer}
+              canEdit={canEdit('description', editCtx)}
+              saving={update.isPending}
+              onSave={(text) => update.mutate({ id: item.id, patch: { description: text } })}
+            />
+          </Section>
+          {closeReason ? (
+            <Section title="Close reason" testid="section-close-reason">
+              <pre className="whitespace-pre-wrap break-words font-sans text-sm text-neutral-800 dark:text-neutral-200">
+                {closeReason}
+              </pre>
+            </Section>
+          ) : null}
+        </>
+      ) : null}
+
+      {tab === 'edges' ? (
+        <Section title="Relationships" testid="section-relationships">
+          <RelGroup label="blocks" rows={grouped.blocks} onNavigate={onNavigate} />
+          <RelGroup label="blocked by" rows={grouped.blockedBy} onNavigate={onNavigate} />
+          <RelGroup label="parent" rows={grouped.parent} onNavigate={onNavigate} />
+          <RelGroup label="children" rows={grouped.children} onNavigate={onNavigate} />
+          <RelGroup label="relates to" rows={grouped.relatesTo} onNavigate={onNavigate} />
+          {grouped.extension.length > 0 ? (
+            <RelGroup
+              label="extension edges"
+              rows={grouped.extension}
+              onNavigate={onNavigate}
+              ext
+            />
+          ) : null}
+          {!grouped.any ? <Muted>No relationships.</Muted> : null}
         </Section>
       ) : null}
 
-      <Section title="Relationships" testid="section-relationships">
-        <RelGroup label="blocks" rows={grouped.blocks} onNavigate={onNavigate} />
-        <RelGroup label="blocked by" rows={grouped.blockedBy} onNavigate={onNavigate} />
-        <RelGroup label="parent" rows={grouped.parent} onNavigate={onNavigate} />
-        <RelGroup label="children" rows={grouped.children} onNavigate={onNavigate} />
-        <RelGroup label="relates to" rows={grouped.relatesTo} onNavigate={onNavigate} />
-        <RelGroup label="extension edges" rows={grouped.extension} onNavigate={onNavigate} ext />
-        {!grouped.any ? <Muted>No relationships.</Muted> : null}
-      </Section>
+      {tab === 'evidence' ? (
+        <Section title="Evidence" testid="section-evidence">
+          {item.evidence && item.evidence.length > 0 ? (
+            <ul className="space-y-2">
+              {item.evidence.map((e) => (
+                <EvidenceRow key={e.id} evidence={e} />
+              ))}
+            </ul>
+          ) : (
+            <Muted>No evidence attached.</Muted>
+          )}
+        </Section>
+      ) : null}
 
-      <Section title="Evidence" testid="section-evidence">
-        {item.evidence && item.evidence.length > 0 ? (
-          <ul className="space-y-2">
-            {item.evidence.map((e) => (
-              <EvidenceRow key={e.id} evidence={e} />
-            ))}
-          </ul>
-        ) : (
-          <Muted>No evidence attached.</Muted>
-        )}
-      </Section>
-
-      <Section title="Definition of Done" testid="section-dod">
-        <DoDEditor
-          dod={item.dod ?? null}
-          renderer={DescriptionRenderer}
-          canEdit={canEdit('dod', editCtx)}
-          saving={update.isPending}
-          onSave={(next) => update.mutate({ id: item.id, patch: { dod: next } })}
-        />
-      </Section>
-
-      <Section title="Sprint & budget" testid="section-sprint">
-        <DefRow label="Sprint">
-          <SprintEditor
-            sprintId={item.sprint_id ?? null}
-            canEdit={canEdit('sprint_id', editCtx)}
+      {tab === 'dod' ? (
+        <Section title="Definition of Done" testid="section-dod">
+          <DoDBanner />
+          <DoDEditor
+            dod={item.dod ?? null}
+            renderer={DescriptionRenderer}
+            canEdit={canEdit('dod', editCtx)}
             saving={update.isPending}
-            onSave={(next) => update.mutate({ id: item.id, patch: { sprint_id: next } })}
+            onSave={(next) => update.mutate({ id: item.id, patch: { dod: next } })}
           />
-        </DefRow>
-        {sprintBudget ? (
-          <div className="mt-2 space-y-1 text-sm">
-            <DefRow label="Budget used">
-              <span className="font-mono">
-                {sprintBudget.used} / {sprintBudget.limit}
-              </span>
-            </DefRow>
-            <DefRow label="Thresholds">
-              <span className="font-mono text-xs text-neutral-500">
-                inform={sprintBudget.inform} warn={sprintBudget.warn} stop={sprintBudget.stop}
-              </span>
-            </DefRow>
-          </div>
-        ) : null}
-        {!sprintBudget ? <div className="mt-2 text-xs text-neutral-500">No budget set.</div> : null}
-      </Section>
+        </Section>
+      ) : null}
 
-      <Section title="Derived signals" testid="section-derived">
-        {item.derived ? (
-          <div className="flex flex-wrap gap-2 text-xs">
-            <DerivedPill label="agent-claimable" on={item.derived.agent_claimable} />
-            <DerivedPill label="human-action-required" on={item.derived.human_action_required} />
-            <DerivedPill label="review-pending" on={item.derived.review_pending} />
-          </div>
-        ) : (
-          <Muted>Not populated by the adaptor.</Muted>
-        )}
-      </Section>
+      {tab === 'sprint' ? (
+        <Section title="Sprint & budget" testid="section-sprint">
+          <DefRow label="Sprint">
+            <SprintEditor
+              sprintId={item.sprint_id ?? null}
+              canEdit={canEdit('sprint_id', editCtx)}
+              saving={update.isPending}
+              onSave={(next) => update.mutate({ id: item.id, patch: { sprint_id: next } })}
+            />
+          </DefRow>
+          {sprintBudget ? (
+            <div className="mt-2 space-y-1 text-sm">
+              <DefRow label="Budget used">
+                <span className="font-mono">
+                  {sprintBudget.used} / {sprintBudget.limit}
+                </span>
+              </DefRow>
+              <DefRow label="Thresholds">
+                <span className="font-mono text-xs text-neutral-500">
+                  inform={sprintBudget.inform} warn={sprintBudget.warn} stop={sprintBudget.stop}
+                </span>
+              </DefRow>
+            </div>
+          ) : null}
+          {!sprintBudget ? <div className="mt-2 text-xs text-neutral-500">No budget set.</div> : null}
+        </Section>
+      ) : null}
 
-      <Section title="Timestamps" testid="section-timestamps">
-        <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-          <Timestamp label="Created" ts={timestamps.created} />
-          <Timestamp label="Started" ts={timestamps.started} />
-          <Timestamp label="Updated" ts={timestamps.updated} />
-          <Timestamp label="Closed" ts={timestamps.closed} />
-        </dl>
-      </Section>
+      {tab === 'activity' ? (
+        <>
+          <Section title="Timestamps" testid="section-timestamps">
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+              <Timestamp label="Created" ts={timestamps.created} />
+              <Timestamp label="Started" ts={timestamps.started} />
+              <Timestamp label="Updated" ts={timestamps.updated} />
+              <Timestamp label="Closed" ts={timestamps.closed} />
+            </dl>
+          </Section>
+          <Section title="Derived signals" testid="section-derived">
+            {item.derived ? (
+              <div className="flex flex-wrap gap-2 text-xs">
+                <DerivedPill label="agent-claimable" on={item.derived.agent_claimable} />
+                <DerivedPill
+                  label="human-action-required"
+                  on={item.derived.human_action_required}
+                />
+                <DerivedPill label="review-pending" on={item.derived.review_pending} />
+              </div>
+            ) : (
+              <Muted>Not populated by the adaptor.</Muted>
+            )}
+          </Section>
+        </>
+      ) : null}
 
-      {customGroups.length > 0 ? (
+      {tab === 'extensions' && hasExtensions ? (
         <Section title="Extension fields" testid="section-custom">
           <div className="space-y-4">
             {customGroups.map((g) => (
@@ -406,6 +455,75 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
           </div>
         </Section>
       ) : null}
+    </div>
+  );
+}
+
+// DrawerTabBar — horizontal tab strip below the Overview strip.
+// Extensions tab only appears when the bead actually has extension
+// fields; an empty tab is clutter on every core bead.
+function DrawerTabBar({
+  tab,
+  onChange,
+  hasExtensions,
+}: {
+  tab: DrawerTab;
+  onChange: (t: DrawerTab) => void;
+  hasExtensions: boolean;
+}) {
+  const tabs: Array<{ id: DrawerTab; label: string }> = [
+    { id: 'description', label: 'Description' },
+    { id: 'edges', label: 'Edges' },
+    { id: 'evidence', label: 'Evidence' },
+    { id: 'dod', label: 'DoD' },
+    { id: 'sprint', label: 'Sprint' },
+    { id: 'activity', label: 'Activity' },
+  ];
+  if (hasExtensions) tabs.push({ id: 'extensions', label: 'Extensions' });
+  return (
+    <div
+      role="tablist"
+      aria-label="Work item details"
+      data-testid="work-item-drawer-tabs"
+      className="-mx-1 flex flex-wrap items-center gap-0.5 border-b border-neutral-200 dark:border-neutral-800"
+    >
+      {tabs.map((t) => {
+        const active = tab === t.id;
+        return (
+          <button
+            key={t.id}
+            role="tab"
+            type="button"
+            aria-selected={active}
+            data-active={active}
+            data-testid={`drawer-tab-${t.id}`}
+            onClick={() => onChange(t.id)}
+            className={cn(
+              '-mb-px border-b-2 px-3 py-1.5 text-xs',
+              active
+                ? 'border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100'
+                : 'border-transparent text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200'
+            )}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// DoDBanner — informational-only reminder that the DoD is documentation,
+// not a state-machine gate. Closing a bead doesn't validate DoD; we
+// surface that here so operators don't treat the checklist as a lock.
+function DoDBanner() {
+  return (
+    <div
+      data-testid="work-item-dod-banner"
+      className="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+    >
+      Informational only — the DoD documents expected outcomes but does not
+      gate state transitions. Closing a bead does not validate these criteria.
     </div>
   );
 }

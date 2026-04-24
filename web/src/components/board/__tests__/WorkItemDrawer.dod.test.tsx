@@ -70,6 +70,12 @@ function mockJSON(body: unknown, status = 200): Response {
 async function openEditor(fetchSpy: ReturnType<typeof vi.fn>, item: WorkItem = baseFixture) {
   fetchSpy.mockResolvedValueOnce(mockJSON(item));
   render(<WorkItemDrawer openId={item.id} onClose={() => {}} />, { wrapper: wrapper() });
+  // DoD lives behind the DoD tab now (gm-e12.5) — default tab is
+  // Description. Click through to mount the editor.
+  await waitFor(() => expect(screen.getByTestId('drawer-tab-dod')).toBeTruthy());
+  act(() => {
+    screen.getByTestId('drawer-tab-dod').click();
+  });
   await waitFor(() => expect(screen.getByTestId('section-dod')).toBeTruthy());
   act(() => {
     screen.getByTestId('work-item-dod-edit').click();
@@ -229,6 +235,12 @@ describe('WorkItemDrawer DoD editor', () => {
     );
     render(<WorkItemDrawer openId="gm-dod" onClose={() => {}} />, {
       wrapper: wrapper(caps('markdown')),
+    });
+    // DoD notes render through the same markdown renderer as
+    // description, but they live behind the DoD tab (gm-e12.5).
+    await waitFor(() => expect(screen.getByTestId('drawer-tab-dod')).toBeTruthy());
+    act(() => {
+      screen.getByTestId('drawer-tab-dod').click();
     });
     // Lazy markdown chunk resolves; the renderer component for notes
     // is the same one used for description, so the data-testid is
