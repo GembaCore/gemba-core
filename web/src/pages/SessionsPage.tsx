@@ -7,15 +7,37 @@
 // (bead id + optional title), last event, open-escalation count, End.
 
 import { useMemo, useState } from 'react';
-import { Play, StopCircle } from 'lucide-react';
+import { AlertTriangle, Play, StopCircle } from 'lucide-react';
 import { useSessions, useEndSession } from '@/hooks/useSessions';
+import { useEscalations } from '@/hooks/useEscalations';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
+import { EscalationPanel } from '@/components/sessions/EscalationPanel';
 import type { Session } from '@/api/sessions';
 
 export function SessionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [escalationSessionId, setEscalationSessionId] = useState<string | null>(null);
   const { data: sessions = [], isLoading, error } = useSessions();
+  // Global escalation feed drives per-row badges. The per-session
+  // panel uses its own scoped query (faster polling) when open.
+  const { data: allEscalations = [] } = useEscalations();
   const endMut = useEndSession();
+
+  // Map from session id → open escalation count. Escalations carry
+  // assignment_id, not session_id today (gm-native.13's index keys on
+  // assignment_id), so match on Session.assignment_id. When the
+  // adaptor starts emitting session_id-tagged escalations we'll
+  // tighten this lookup; the count semantics are unchanged.
+  const escalationCount = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const e of allEscalations) {
+      if (e.state !== 'open') continue;
+      const key = e.assignment_id;
+      if (!key) continue;
+      m.set(key, (m.get(key) ?? 0) + 1);
+    }
+    return m;
+  }, [allEscalations]);
 
   // Sort: non-terminal first (newest started first), then terminal
   // (most recently ended first). Operator attention is on live panes.
@@ -65,6 +87,7 @@ export function SessionsPage() {
                 <Th>Bead</Th>
                 <Th>Agent</Th>
                 <Th>Status</Th>
+                <Th>Pending</Th>
                 <Th>Worktree</Th>
                 <Th>Started</Th>
                 <Th></Th>
@@ -72,7 +95,14 @@ export function SessionsPage() {
             </thead>
             <tbody>
               {rows.map((s) => (
-                <Row key={s.id} s={s} onEnd={() => endMut.mutate({ id: s.id })} ending={endMut.isPending} />
+                <Row
+                  key={s.id}
+                  s={s}
+                  onEnd={() => endMut.mutate({ id: s.id })}
+                  ending={endMut.isPending}
+                  escalationCount={escalationCount.get(s.assignment_id) ?? 0}
+                  onOpenEscalations={() => setEscalationSessionId(s.id)}
+                />
               ))}
             </tbody>
           </table>
@@ -80,11 +110,30 @@ export function SessionsPage() {
       </div>
 
       <NewSessionDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      {escalationSessionId && (
+        <EscalationPanel
+          sessionId={escalationSessionId}
+          open={true}
+          onClose={() => setEscalationSessionId(null)}
+        />
+      )}
     </div>
   );
 }
 
-function Row({ s, onEnd, ending }: { s: Session; onEnd: () => void; ending: boolean }) {
+function Row({
+  s,
+  onEnd,
+  ending,
+  escalationCount,
+  onOpenEscalations,
+}: {
+  s: Session;
+  onEnd: () => void;
+  ending: boolean;
+  escalationCount: number;
+  onOpenEscalations: () => void;
+}) {
   const terminal = isTerminal(s);
   const worktree = typeof s.provider_metadata?.worktree === 'string' ? s.provider_metadata.worktree : '';
   const beadID = typeof s.provider_metadata?.bead_id === 'string' ? s.provider_metadata.bead_id : s.assignment_id;
@@ -110,6 +159,21 @@ function Row({ s, onEnd, ending }: { s: Session; onEnd: () => void; ending: bool
         >
           {s.status}
         </span>
+      </Td>
+      <Td>
+        {escalationCount > 0 ? (
+          <button
+            type="button"
+            onClick={onOpenEscalations}
+            className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
+            aria-label={`${escalationCount} open escalation${escalationCount === 1 ? '' : 's'}`}
+          >
+            <AlertTriangle className="h-3 w-3" aria-hidden />
+            {escalationCount}
+          </button>
+        ) : (
+          <span className="text-xs text-neutral-400">—</span>
+        )}
       </Td>
       <Td>
         <span className="truncate font-mono text-xs text-neutral-500">{worktree}</span>

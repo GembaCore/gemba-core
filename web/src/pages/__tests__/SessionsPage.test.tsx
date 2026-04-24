@@ -103,7 +103,7 @@ describe('SessionsPage', () => {
       ],
       total: 1,
     };
-    fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
+    fetchSpy.mockImplementation((_url: string, init?: RequestInit) => {
       if (init?.method === 'DELETE') {
         return Promise.resolve(
           jsonResponse({
