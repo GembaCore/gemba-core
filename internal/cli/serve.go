@@ -174,6 +174,22 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	handler.StartHealthBus()
 	defer handler.Close()
 
+	// Wire the bound OrchestrationPlane's Subscribe stream into the
+	// /events SSE hub (gm-e4.3) so adaptor events fan out to SPA
+	// clients without each client polling. Best-effort: a Subscribe
+	// failure logs but doesn't stop the server — the SPA degrades to
+	// the polling paths /sessions and EscalationPanel still ship.
+	if op := host.OrchestrationPlane(); op != nil && handler.EventsHub() != nil {
+		ch, err := op.Subscribe(ctx, core.SubscribeFilter{})
+		if err != nil {
+			slog.Warn("events: orchestration Subscribe failed; SSE stream will be empty",
+				"err", err)
+		} else {
+			handler.EventsHub().AttachOrchestrationStream(ctx,
+				op.Describe().AdaptorID, ch)
+		}
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,

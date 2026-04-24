@@ -138,7 +138,7 @@ type GembaEvent struct {
 // AND together (Kinds within Kinds OR'd, then AND'd against the
 // rest).
 type Filter struct {
-	Kinds        []Kind `json:"kinds,omitempty"`
+	Kinds        []Kind  `json:"kinds,omitempty"`
 	Planes       []Plane `json:"planes,omitempty"`
 	AssignmentID string  `json:"assignment_id,omitempty"`
 	SessionID    string  `json:"session_id,omitempty"`

@@ -11,14 +11,14 @@ import (
 func TestGembaEventJSONRoundTrip(t *testing.T) {
 	at := time.Date(2026, 4, 24, 12, 0, 0, 0, time.UTC)
 	ev := GembaEvent{
-		ID:           "evt-1",
-		Kind:         WorkItemUpdated,
-		At:           at,
-		Source:       Source{Plane: PlaneWorkPlane, AdaptorID: "bd"},
-		WorkItemID:   "gm-foo",
-		EpicID:       "gm-root",
-		TraceID:      "00-abc-def-01",
-		Payload:      map[string]any{"before": "open", "after": "in_progress"},
+		ID:         "evt-1",
+		Kind:       WorkItemUpdated,
+		At:         at,
+		Source:     Source{Plane: PlaneWorkPlane, AdaptorID: "bd"},
+		WorkItemID: "gm-foo",
+		EpicID:     "gm-root",
+		TraceID:    "00-abc-def-01",
+		Payload:    map[string]any{"before": "open", "after": "in_progress"},
 	}
 	b, err := json.Marshal(ev)
 	if err != nil {

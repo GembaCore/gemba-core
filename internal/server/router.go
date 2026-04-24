@@ -12,6 +12,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -45,6 +46,14 @@ type Router struct {
 	// construction. gm-root.7.
 	healthBus *registry.HealthBus
 
+	// eventsHub is the GembaEvent fan-out broker that drives the
+	// /events SSE endpoint (gm-e4.3). NewRouter constructs the hub;
+	// cmd/gemba serve attaches the bound OrchestrationPlane's Subscribe
+	// stream via AttachOrchestrationStream so events flow adaptor →
+	// hub → SSE clients. Optional — when nil the /events endpoint
+	// returns 503.
+	eventsHub *events.Hub
+
 	mux http.Handler
 }
 
@@ -61,6 +70,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		nonceCache: NewNonceCache(0, 0), // defaults: 1024 entries / 5min TTL
 	}
 	r.healthBus = registry.NewHealthBus(healthBusInterval, r.boundAdaptorStatuses)
+	r.eventsHub = events.NewHub(events.Config{})
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.RequestID)
@@ -192,7 +202,9 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		}
 		ev.NotFound(apiNotFound)
 		ev.MethodNotAllowed(apiNotFound)
-		ev.Get("/", notImplemented)
+		// gm-e4.3: SSE hub stream. ?topics=... + ?planes=... +
+		// scope filters. See events_stream.go for parser.
+		ev.Get("/", r.eventsStream)
 	})
 
 	// SPA fallback is last and only matches non-API paths.
@@ -225,13 +237,23 @@ func (r *Router) StartHealthBus() {
 	}
 }
 
-// Close stops the HealthBus ticker. Safe to call when StartHealthBus
-// was never invoked.
+// Close stops the HealthBus ticker and tears down the events hub.
+// Safe to call when StartHealthBus was never invoked.
 func (r *Router) Close() {
 	if r.healthBus != nil {
 		r.healthBus.Stop()
 	}
+	if r.eventsHub != nil {
+		r.eventsHub.Close()
+	}
 }
+
+// EventsHub returns the GembaEvent fan-out broker. cmd/gemba serve
+// uses this to AttachOrchestrationStream against the registered
+// adaptor's Subscribe() output, so adaptor events fan to /events SSE
+// subscribers. Returns nil only when the router was constructed
+// without one (zero-value/test paths).
+func (r *Router) EventsHub() *events.Hub { return r.eventsHub }
 
 // --- stock handlers -------------------------------------------------------
 
