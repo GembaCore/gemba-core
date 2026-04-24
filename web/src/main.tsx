@@ -6,6 +6,7 @@ import App from './App';
 import { ThemeProvider } from '@/lib/theme';
 import { CapabilitiesProvider } from '@/capabilities';
 import { HotkeysProvider } from '@/hotkeys';
+import { startSSE } from '@/data/sse';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -21,6 +22,15 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Open the /events SSE consumer once at boot. Connection lifetime is
+// the app's lifetime — EventSource auto-reconnects on transient
+// disconnects so this is a fire-and-forget call. Returns a cleanup
+// closure we keep in module scope so HMR teardown closes the socket.
+const stopSSE = startSSE(queryClient);
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => stopSSE());
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

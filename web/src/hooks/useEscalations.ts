@@ -1,12 +1,9 @@
-// React Query hooks for /api/escalations (gm-native.16). Polls at 2s
-// when scoped to a session — the open EscalationPanel is the
-// operator's interactive surface, so we trade a bit of network chatter
-// for sub-2s latency on permission-prompt arrival. Global list polls
-// at 5s (cheaper, mostly a count badge).
+// React Query hooks for /api/escalations (gm-native.16).
 //
-// Polling here is a stand-in until the orchestration SSE feed lands;
-// then this hook switches to invalidate-on-event with the same key
-// shape and the SessionsPage row badge upgrades to push-fresh.
+// Invalidation: SSE-driven via @/data/sse (gm-e12.2). Both
+// escalation.opened and escalation.resolved events on the /events
+// stream invalidate ['escalations'], which refreshes the per-session
+// panel and the SessionsPage badge in lock-step. No polling.
 
 import {
   useMutation,
@@ -41,8 +38,7 @@ export function useEscalations(sessionId?: string): UseQueryResult<EscalationReq
     queryKey: escalationsKeys.list(sessionId),
     queryFn: () => listEscalations(sessionId),
     retry,
-    refetchInterval: sessionId ? 2_000 : 5_000,
-    staleTime: sessionId ? 1_000 : 2_500,
+    staleTime: 2_500,
   });
 }
 

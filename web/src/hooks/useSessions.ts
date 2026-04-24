@@ -2,10 +2,11 @@
 // useAgents / useWorkItems pattern: small picker-friendly list,
 // retry-shy on adaptor-degraded, mutation hooks invalidate the list.
 //
-// Polling cadence: 5s while no SSE feed is wired (gm-native.11 will
-// graduate this to event-driven invalidation). Lower than work-items'
-// staleTime because the SessionsPage is the operator's eyes on live
-// panes — staleness here means End / New shows out-of-date state.
+// Invalidation: SSE-driven via @/data/sse (gm-e12.2). The /events
+// stream maps session.transition / session.state_reported events to
+// invalidations on ['sessions'], so the list refreshes on push
+// instead of poll. A short staleTime keeps mounted pages from
+// re-fetching on every render but doesn't hammer the server.
 
 import {
   useMutation,
@@ -52,7 +53,6 @@ export function useSessions(filter?: SessionListFilter): UseQueryResult<Session[
     queryKey: sessionsKeys.list(filter),
     queryFn: () => listSessions(filter),
     retry,
-    refetchInterval: 5_000,
     staleTime: 2_500,
   });
 }
