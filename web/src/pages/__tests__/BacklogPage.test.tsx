@@ -96,9 +96,9 @@ describe('BacklogPage', () => {
     );
     render(<BacklogPage />, { wrapper: wrapper() });
 
-    await waitFor(() => expect(screen.getByTestId('backlog-table')).toBeTruthy());
-    expect(screen.getByTestId('backlog-row-gm-1')).toBeTruthy();
-    expect(screen.getByTestId('backlog-row-gm-2')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('work-item-grid')).toBeTruthy());
+    expect(screen.getByTestId('grid-row-gm-1')).toBeTruthy();
+    expect(screen.getByTestId('grid-row-gm-2')).toBeTruthy();
     expect(screen.getByTestId('backlog-count').textContent).toMatch(/2 items/);
   });
 
@@ -114,15 +114,15 @@ describe('BacklogPage', () => {
       })
     );
     render(<BacklogPage />, { wrapper: wrapper() });
-    await waitFor(() => expect(screen.getByTestId('backlog-table')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('work-item-grid')).toBeTruthy());
 
     const box = screen.getByTestId('backlog-search');
     fireEvent.change(box, { target: { value: 'be' } });
 
     await waitFor(() => {
-      expect(screen.queryByTestId('backlog-row-gm-1')).toBeNull();
-      expect(screen.getByTestId('backlog-row-gm-2')).toBeTruthy();
-      expect(screen.queryByTestId('backlog-row-gm-3')).toBeNull();
+      expect(screen.queryByTestId('grid-row-gm-1')).toBeNull();
+      expect(screen.getByTestId('grid-row-gm-2')).toBeTruthy();
+      expect(screen.queryByTestId('grid-row-gm-3')).toBeNull();
     });
     expect(screen.getByTestId('backlog-count').textContent).toMatch(/3 items.*1 shown/);
   });
@@ -147,10 +147,10 @@ describe('BacklogPage', () => {
     // WorkItemDrawer will fetch /work-items/gm-77 on open.
     fetchSpy.mockResolvedValueOnce(jsonResponse(item));
     render(<BacklogPage />, { wrapper: wrapper() });
-    await waitFor(() => expect(screen.getByTestId('backlog-table')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('work-item-grid')).toBeTruthy());
 
     act(() => {
-      screen.getByTestId('backlog-row-gm-77').click();
+      screen.getByTestId('grid-row-gm-77').click();
     });
 
     const drawer = await screen.findByTestId('work-item-drawer-content');

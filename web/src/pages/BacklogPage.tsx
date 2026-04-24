@@ -12,8 +12,9 @@ import { useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useFilteredWorkItems } from '@/hooks/useWorkItems';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
+import { WorkItemGrid } from '@/components/grid/WorkItemGrid';
 import type { WorkItemListFilter } from '@/api/workItems';
-import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
+import { STATE_CATEGORIES, type StateCategory } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 
 // Kinds we expose as chips. An adaptor can surface more via the
@@ -135,7 +136,7 @@ export function BacklogPage() {
             No work items match the current filters.
           </div>
         ) : (
-          <BacklogTable rows={filtered} onSelect={setOpenId} />
+          <WorkItemGrid rows={filtered} onSelect={setOpenId} />
         )}
       </div>
 
@@ -182,50 +183,3 @@ function Chip({
   );
 }
 
-function BacklogTable({ rows, onSelect }: { rows: WorkItem[]; onSelect: (id: string) => void }) {
-  return (
-    <table className="w-full border-collapse text-sm" data-testid="backlog-table">
-      <thead className="sticky top-0 bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500 dark:bg-neutral-950">
-        <tr>
-          <Th className="w-32">ID</Th>
-          <Th>Title</Th>
-          <Th className="w-24">Kind</Th>
-          <Th className="w-28">State</Th>
-          <Th className="w-14">P</Th>
-          <Th className="w-32">Assignee</Th>
-          <Th className="w-32">Sprint</Th>
-          <Th className="w-44">Updated</Th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr
-            key={r.id}
-            onClick={() => onSelect(r.id)}
-            className="cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900"
-            data-testid={`backlog-row-${r.id}`}
-          >
-            <Td className="font-mono text-xs">{r.id}</Td>
-            <Td className="truncate">{r.title}</Td>
-            <Td className="text-xs text-neutral-600 dark:text-neutral-400">{r.kind}</Td>
-            <Td className="text-xs">{STATE_LABELS[r.state_category] ?? r.state_category}</Td>
-            <Td className="font-mono text-xs">{r.priority ?? '—'}</Td>
-            <Td className="text-xs text-neutral-600 dark:text-neutral-400">
-              {r.assignee?.name || r.assignee?.id || '—'}
-            </Td>
-            <Td className="font-mono text-xs">{r.sprint_id || '—'}</Td>
-            <Td className="text-xs text-neutral-500">{r.updated_at}</Td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <th className={cn('px-4 py-2 font-medium', className)}>{children}</th>;
-}
-
-function Td({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <td className={cn('px-4 py-2 align-top', className)}>{children}</td>;
-}
