@@ -30,7 +30,7 @@ web/.vite/
 *.crt
 
 # Audit log produced at runtime
-~/.bc/
+~/.gemba/
 
 # Gas Town (added by gt)
 .runtime/

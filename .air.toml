@@ -2,8 +2,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/bc ./cmd/gemba"
-  bin = "./tmp/bc"
+  cmd = "go build -o ./tmp/gemba ./cmd/gemba"
+  bin = "./tmp/gemba"
   args_bin = ["serve", "--port", "7666"]
   include_ext = ["go"]
   exclude_dir = ["tmp", "web", "bin", "dist", "node_modules", ".git"]
