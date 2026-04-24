@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   epicChildren,
+  groupEpicsAsSingle,
+  groupEpicsByLabel,
   groupEpicsByRoot,
   isEpic,
   ORPHAN_ROOT_ID,
+  SINGLE_LANE_ID,
 } from '../epicHierarchy';
 import type { WorkItem } from '@/types/core.gen';
 
@@ -104,6 +107,64 @@ describe('groupEpicsByRoot', () => {
     const items = [epic('z-root'), epic('a-root'), epic('orphan', 'gone')];
     const out = groupEpicsByRoot(items);
     expect(out.map((s) => s.root.id)).toEqual(['a-root', 'z-root', ORPHAN_ROOT_ID]);
+  });
+});
+
+describe('groupEpicsAsSingle', () => {
+  it('returns no swimlanes for an empty / non-epic input', () => {
+    expect(groupEpicsAsSingle([])).toEqual([]);
+    expect(groupEpicsAsSingle([task('t')])).toEqual([]);
+  });
+
+  it('packs every epic into one synthetic swimlane', () => {
+    const out = groupEpicsAsSingle([epic('z'), epic('a'), epic('m')]);
+    expect(out).toHaveLength(1);
+    expect(out[0].root.id).toBe(SINGLE_LANE_ID);
+    expect(out[0].members.map((m) => m.id)).toEqual(['a', 'm', 'z']);
+  });
+});
+
+function epicWithLabels(id: string, labels: string[]): WorkItem {
+  return { ...epic(id), labels };
+}
+
+describe('groupEpicsByLabel', () => {
+  it('returns no swimlanes for an empty epic set', () => {
+    expect(groupEpicsByLabel([])).toEqual([]);
+    expect(groupEpicsByLabel([task('t')])).toEqual([]);
+  });
+
+  it('one swimlane per distinct label, sorted', () => {
+    const out = groupEpicsByLabel([
+      epicWithLabels('a', ['risk:high', 'milestone:m1']),
+      epicWithLabels('b', ['risk:high']),
+      epicWithLabels('c', ['milestone:m1']),
+    ]);
+    expect(out.map((s) => s.root.id)).toEqual(['milestone:m1', 'risk:high']);
+    // Union semantics: an epic with multiple labels appears in every
+    // matching swimlane. `a` carries both labels.
+    const m1 = out.find((s) => s.root.id === 'milestone:m1');
+    const high = out.find((s) => s.root.id === 'risk:high');
+    expect(m1?.members.map((m) => m.id).sort()).toEqual(['a', 'c']);
+    expect(high?.members.map((m) => m.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('label-less epics fall into the orphan swimlane (last)', () => {
+    const out = groupEpicsByLabel([
+      epicWithLabels('a', ['x']),
+      epic('orphan'),
+    ]);
+    expect(out[0].root.id).toBe('x');
+    expect(out[out.length - 1].root.id).toBe(ORPHAN_ROOT_ID);
+  });
+
+  it('all epics labeled — no orphan swimlane appears', () => {
+    const out = groupEpicsByLabel([
+      epicWithLabels('a', ['x']),
+      epicWithLabels('b', ['x']),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].root.id).toBe('x');
   });
 });
 

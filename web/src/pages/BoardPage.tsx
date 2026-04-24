@@ -21,6 +21,12 @@ import { BoardColumn } from '@/components/board/BoardColumn';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
 import { EpicDrawer } from '@/components/board/EpicDrawer';
 import { EpicView } from '@/components/board/EpicView';
+import {
+  DEFAULT_SWIMLANE_MODE,
+  parseSwimlaneMode,
+  SWIMLANE_MODES,
+  type SwimlaneMode,
+} from '@/components/board/swimlaneMode';
 import { useWorkItems } from '@/hooks/useWorkItems';
 import { useHotkey } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
@@ -79,6 +85,20 @@ export function BoardPage() {
     },
     [params, setParams]
   );
+
+  // Swimlane partition (ui-spec §4.4). URL is the source of truth so
+  // the operator's selection survives reloads + deep-links and a future
+  // workspace-switcher can clobber it without a stale-state hazard.
+  const swimlane = parseSwimlaneMode(params.get('swimlane'));
+  const setSwimlane = useCallback(
+    (next: SwimlaneMode) => {
+      const p = new URLSearchParams(params);
+      if (next === DEFAULT_SWIMLANE_MODE) p.delete('swimlane');
+      else p.set('swimlane', next);
+      setParams(p, { replace: true });
+    },
+    [params, setParams]
+  );
   const toggleView = useCallback(
     () => setView(view === 'epic' ? 'workitem' : 'epic'),
     [setView, view]
@@ -104,9 +124,14 @@ export function BoardPage() {
 
   return (
     <>
-      <ViewToggle view={view} onChange={setView} />
+      <BoardHeader
+        view={view}
+        onChangeView={setView}
+        swimlane={swimlane}
+        onChangeSwimlane={setSwimlane}
+      />
       {view === 'epic' ? (
-        <EpicView items={data} onSelectEpic={openEpic} />
+        <EpicView items={data} onSelectEpic={openEpic} mode={swimlane} />
       ) : (
         <WorkItemBoard data={data} onSelectWorkItem={setOpenWorkItemId} />
       )}
@@ -120,31 +145,71 @@ export function BoardPage() {
   );
 }
 
-interface ViewToggleProps {
+// BoardHeader holds the view picker — both the cards-as-X toggle
+// (Epics / Work items) and the swimlane partition selector
+// (by-parent-epic / by-label / none). Swimlane control is hidden in
+// the WorkItem view because that variant isn't swimlaned.
+interface BoardHeaderProps {
   view: BoardView;
-  onChange: (v: BoardView) => void;
+  onChangeView: (v: BoardView) => void;
+  swimlane: SwimlaneMode;
+  onChangeSwimlane: (s: SwimlaneMode) => void;
 }
-function ViewToggle({ view, onChange }: ViewToggleProps) {
+function BoardHeader({ view, onChangeView, swimlane, onChangeSwimlane }: BoardHeaderProps) {
   return (
     <div
       data-testid="board-view-toggle"
-      className="flex items-center justify-end gap-1 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
+      className="flex items-center gap-3 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
     >
-      <ToggleButton
-        active={view === 'epic'}
-        onClick={() => onChange('epic')}
-        label="Epics"
-        icon={<LayoutGrid className="h-3 w-3" />}
-        testid="view-toggle-epic"
-      />
-      <ToggleButton
-        active={view === 'workitem'}
-        onClick={() => onChange('workitem')}
-        label="Work items"
-        icon={<ListChecks className="h-3 w-3" />}
-        testid="view-toggle-workitem"
-      />
+      {view === 'epic' ? (
+        <SwimlaneSwitcher value={swimlane} onChange={onChangeSwimlane} />
+      ) : null}
+      <div className="ml-auto flex items-center gap-1">
+        <ToggleButton
+          active={view === 'epic'}
+          onClick={() => onChangeView('epic')}
+          label="Epics"
+          icon={<LayoutGrid className="h-3 w-3" />}
+          testid="view-toggle-epic"
+        />
+        <ToggleButton
+          active={view === 'workitem'}
+          onClick={() => onChangeView('workitem')}
+          label="Work items"
+          icon={<ListChecks className="h-3 w-3" />}
+          testid="view-toggle-workitem"
+        />
+      </div>
     </div>
+  );
+}
+
+const SWIMLANE_LABELS: Record<SwimlaneMode, string> = {
+  'by-parent-epic': 'Parent epic',
+  'by-label': 'Label',
+  'none': 'None',
+};
+
+interface SwimlaneSwitcherProps {
+  value: SwimlaneMode;
+  onChange: (v: SwimlaneMode) => void;
+}
+function SwimlaneSwitcher({ value, onChange }: SwimlaneSwitcherProps) {
+  return (
+    <label className="inline-flex items-center gap-1" data-testid="swimlane-switcher">
+      <span className="text-neutral-500">Swimlane</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as SwimlaneMode)}
+        className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-xs font-mono dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+      >
+        {SWIMLANE_MODES.map((m) => (
+          <option key={m} value={m}>
+            {SWIMLANE_LABELS[m]}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 

@@ -1,10 +1,8 @@
 // EpicView (gm-root.6 / ui-spec §4): the default Board surface — Epic
-// cards organized as swimlanes by parent-epic. Each swimlane is a row;
-// inside the row the five StateCategory columns hold the Epic's cards.
-//
-// MVP scope: one swimlane mode (by parent-epic). Switcher for
-// parallel-group / label / none deferred per the gm-root.6 follow-ups
-// section.
+// cards organized into horizontal swimlanes. The swimlane partition
+// is operator-selectable per ui-spec §4.4 (by-parent-epic | by-label |
+// none); by-parallel-group is deferred until parallel groups exist as
+// a backend concept.
 
 import { useMemo } from 'react';
 import {
@@ -13,7 +11,15 @@ import {
   type WorkItem,
 } from '@/types/core.gen';
 import { EpicCard, type EpicChildCounts } from './EpicCard';
-import { groupEpicsByRoot, ORPHAN_ROOT_ID, type EpicSwimlane } from './epicHierarchy';
+import {
+  groupEpicsAsSingle,
+  groupEpicsByLabel,
+  groupEpicsByRoot,
+  ORPHAN_ROOT_ID,
+  SINGLE_LANE_ID,
+  type EpicSwimlane,
+} from './epicHierarchy';
+import { DEFAULT_SWIMLANE_MODE, type SwimlaneMode } from './swimlaneMode';
 
 const COLUMN_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
@@ -26,10 +32,24 @@ const COLUMN_LABELS: Record<StateCategory, string> = {
 export interface EpicViewProps {
   items: WorkItem[];
   onSelectEpic: (id: string) => void;
+  // mode selects how the Epic set is partitioned into rows. Defaults
+  // to by-parent-epic so callers that haven't migrated yet keep the
+  // old behaviour.
+  mode?: SwimlaneMode;
 }
 
-export function EpicView({ items, onSelectEpic }: EpicViewProps) {
-  const swimlanes = useMemo(() => groupEpicsByRoot(items), [items]);
+export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: EpicViewProps) {
+  const swimlanes = useMemo(() => {
+    switch (mode) {
+      case 'by-label':
+        return groupEpicsByLabel(items);
+      case 'none':
+        return groupEpicsAsSingle(items);
+      case 'by-parent-epic':
+      default:
+        return groupEpicsByRoot(items);
+    }
+  }, [items, mode]);
   const childCountsByEpic = useMemo(() => buildChildCounts(items), [items]);
 
   if (swimlanes.length === 0) {
@@ -95,6 +115,10 @@ interface SwimlaneRowProps {
 
 function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowProps) {
   const isOrphan = swimlane.root.id === ORPHAN_ROOT_ID;
+  // The "none" mode returns a single synthetic swimlane labelled
+  // "All epics" — render the row gutter blank so the layout reads as
+  // a flat board rather than an awkwardly-labelled single lane.
+  const isSingleLane = swimlane.root.id === SINGLE_LANE_ID;
   // Bucket members by state so each column renders only its slice.
   const byState: Record<StateCategory, WorkItem[]> = {
     backlog: [],
@@ -112,24 +136,28 @@ function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowP
       className="flex border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"
     >
       <div className="w-48 shrink-0 pr-3">
-        <div
-          className={
-            'text-xs font-semibold uppercase tracking-wide ' +
-            (isOrphan
-              ? 'text-neutral-400 dark:text-neutral-500'
-              : 'text-neutral-700 dark:text-neutral-300')
-          }
-        >
-          {swimlane.root.title}
-        </div>
-        {!isOrphan && (
-          <div className="mt-0.5 font-mono text-[11px] text-neutral-500">
-            {swimlane.root.id}
-          </div>
+        {isSingleLane ? null : (
+          <>
+            <div
+              className={
+                'text-xs font-semibold uppercase tracking-wide ' +
+                (isOrphan
+                  ? 'text-neutral-400 dark:text-neutral-500'
+                  : 'text-neutral-700 dark:text-neutral-300')
+              }
+            >
+              {swimlane.root.title}
+            </div>
+            {!isOrphan && (
+              <div className="mt-0.5 font-mono text-[11px] text-neutral-500">
+                {swimlane.root.id}
+              </div>
+            )}
+            <div className="mt-1 text-[11px] text-neutral-500">
+              {swimlane.members.length} {swimlane.members.length === 1 ? 'epic' : 'epics'}
+            </div>
+          </>
         )}
-        <div className="mt-1 text-[11px] text-neutral-500">
-          {swimlane.members.length} {swimlane.members.length === 1 ? 'epic' : 'epics'}
-        </div>
       </div>
       <div className="flex flex-1 gap-3">
         {STATE_CATEGORIES.map((cat) => (

@@ -278,6 +278,64 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
   });
 
+  // ui-spec §4.4 swimlane switcher. The select lives at the top of the
+  // Epic view; changing it rewrites ?swimlane=… and the EpicView
+  // re-groups. by-label MUST surface a swimlane per distinct label,
+  // not per parent-epic.
+  it('swimlane switcher re-groups epics by label when selected', async () => {
+    const data: WorkItem[] = [
+      { ...epic('e1'), labels: ['risk:high'] },
+      { ...epic('e2'), labels: ['risk:high', 'milestone:m1'] },
+      { ...epic('e3'), labels: ['milestone:m1'] },
+    ];
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ items: data, total: data.length }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    render(wrap(<BoardPage />));
+    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+
+    // Default mode: by-parent-epic. Three top-level epics → three
+    // swimlanes keyed by epic id.
+    expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
+    expect(screen.getByTestId('board-epic-swimlane-e2')).toBeTruthy();
+    expect(screen.getByTestId('board-epic-swimlane-e3')).toBeTruthy();
+
+    // Switch to by-label.
+    const switcher = screen.getByTestId('swimlane-switcher').querySelector('select')!;
+    fireEvent.change(switcher, { target: { value: 'by-label' } });
+    await waitFor(() =>
+      expect(screen.getByTestId('board-epic-swimlane-milestone:m1')).toBeTruthy()
+    );
+    expect(screen.getByTestId('board-epic-swimlane-risk:high')).toBeTruthy();
+    // by-parent-epic swimlanes (keyed by epic id) are gone.
+    expect(screen.queryByTestId('board-epic-swimlane-e1')).toBeNull();
+
+    // Switch to none — single synthetic swimlane.
+    fireEvent.change(switcher, { target: { value: 'none' } });
+    await waitFor(() =>
+      expect(screen.getByTestId('board-epic-swimlane-__all__')).toBeTruthy()
+    );
+  });
+
+  // ?swimlane=by-label deep-link survives reload by reading from the
+  // URL on first render.
+  it('?swimlane=by-label boots straight into the by-label view', async () => {
+    const data: WorkItem[] = [{ ...epic('e1'), labels: ['risk:high'] }];
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ items: data, total: data.length }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    render(wrap(<BoardPage />, '/board?swimlane=by-label'));
+    await waitFor(() =>
+      expect(screen.getByTestId('board-epic-swimlane-risk:high')).toBeTruthy()
+    );
+  });
+
   it('shows error state with a retry button that re-fetches', async () => {
     // 503/adaptor_degraded does not auto-retry (see useWorkItems.retry),
     // so the error surfaces immediately and the manual retry click

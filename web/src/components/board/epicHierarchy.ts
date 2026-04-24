@@ -177,3 +177,91 @@ export function epicChildren(items: WorkItem[], epicID: WorkItemID): WorkItem[] 
   }
   return out;
 }
+
+// SINGLE_LANE_ID is the synthetic root id used when the operator picks
+// "no swimlanes" — every epic falls into one bucket and the row gutter
+// renders empty.
+export const SINGLE_LANE_ID: WorkItemID = '__all__';
+
+// groupEpicsAsSingle returns one swimlane containing every Epic in the
+// input. Used for the "none" swimlane mode (ui-spec §4.4) — same layout
+// as the multi-lane modes but the row gutter stays blank.
+export function groupEpicsAsSingle(items: WorkItem[]): EpicSwimlane[] {
+  const epics = items.filter(isEpic);
+  if (epics.length === 0) return [];
+  const sorted = [...epics].sort((a, b) => a.id.localeCompare(b.id));
+  return [
+    {
+      root: {
+        id: SINGLE_LANE_ID,
+        kind: EPIC_KIND,
+        title: 'All epics',
+        status: 'open',
+        state_category: 'unstarted',
+        created_at: '',
+        updated_at: '',
+      },
+      members: sorted,
+    },
+  ];
+}
+
+// groupEpicsByLabel returns one swimlane per distinct label that
+// appears on at least one Epic. Epics carrying multiple labels show
+// up in every matching swimlane (the spec's by-label mode is union,
+// not partition — operators want to see "all the epics tagged
+// `risk:high`" without wondering which lane stole them). Epics with
+// no labels collapse into the ORPHAN_ROOT_ID swimlane so they're
+// visible.
+export function groupEpicsByLabel(items: WorkItem[]): EpicSwimlane[] {
+  const epics = items.filter(isEpic);
+  if (epics.length === 0) return [];
+  const byLabel = new Map<string, WorkItem[]>();
+  const orphans: WorkItem[] = [];
+  for (const e of epics) {
+    const labels = e.labels ?? [];
+    if (labels.length === 0) {
+      orphans.push(e);
+      continue;
+    }
+    for (const l of labels) {
+      const list = byLabel.get(l) ?? [];
+      list.push(e);
+      byLabel.set(l, list);
+    }
+  }
+  const swimlanes: EpicSwimlane[] = [];
+  for (const [label, members] of byLabel) {
+    members.sort((a, b) => a.id.localeCompare(b.id));
+    swimlanes.push({
+      root: {
+        id: label,
+        kind: EPIC_KIND,
+        title: label,
+        status: 'open',
+        state_category: 'unstarted',
+        created_at: '',
+        updated_at: '',
+      },
+      members,
+    });
+  }
+  swimlanes.sort((a, b) => a.root.id.localeCompare(b.root.id));
+  if (orphans.length > 0) {
+    orphans.sort((a, b) => a.id.localeCompare(b.id));
+    swimlanes.push({
+      root: {
+        id: ORPHAN_ROOT_ID,
+        kind: EPIC_KIND,
+        title: 'No labels',
+        status: 'open',
+        state_category: 'unstarted',
+        created_at: '',
+        updated_at: '',
+      },
+      members: orphans,
+    });
+  }
+  return swimlanes;
+}
+
