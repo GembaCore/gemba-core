@@ -147,8 +147,10 @@ describe('BeadDrawer', () => {
 
     await waitFor(() => expect(screen.getByTestId('section-overview')).toBeTruthy());
 
-    // Header: id + title + copy button
-    expect(screen.getByText('Fixture bead')).toBeTruthy();
+    // Header: id + title + copy button. The title appears in both the
+    // Dialog header and the editable TitleEditor (gm-root.8 slice 3),
+    // so getAllByText is the correct shape.
+    expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0);
     expect(screen.getByTestId('bead-drawer-id').textContent).toBe('gm-foo');
     expect(screen.getByTestId('bead-drawer-copy')).toBeTruthy();
 
@@ -202,7 +204,7 @@ describe('BeadDrawer', () => {
     });
 
     render(<BeadDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
-    await waitFor(() => expect(screen.getByText('Fixture bead')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
 
     // Click a relationship link — gm-child appears under "blocks".
     const link = screen.getAllByText('gm-child')[0];
@@ -210,13 +212,13 @@ describe('BeadDrawer', () => {
       link.click();
     });
 
-    await waitFor(() => expect(screen.getByText('Navigated child')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Navigated child').length).toBeGreaterThan(0));
     // Back button now exists (stack length > 1).
     const back = screen.getByTestId('bead-drawer-back');
     act(() => {
       back.click();
     });
-    await waitFor(() => expect(screen.getByText('Fixture bead')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
   });
 
   it('closing the drawer fires onClose', async () => {
@@ -237,7 +239,7 @@ describe('BeadDrawer', () => {
     }
 
     render(<Harness />, { wrapper: wrapper() });
-    await waitFor(() => expect(screen.getByText('Fixture bead')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
 
     act(() => {
       screen.getByTestId('bead-drawer-close').click();

@@ -220,6 +220,13 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
 
   return (
     <div className="space-y-6 pt-4">
+      <TitleEditor
+        item={item}
+        canEdit={canEdit('title', editCtx)}
+        saving={update.isPending}
+        onSave={(text) => update.mutate({ id: item.id, patch: { title: text } })}
+      />
+
       <Section title="Overview" testid="section-overview">
         <div className="flex flex-wrap items-center gap-2">
           <StatusEditor
@@ -235,7 +242,12 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
             }
           />
           <Chip label="type" value={item.kind} />
-          {item.priority != null ? <Chip label="P" value={String(item.priority)} /> : null}
+          <PriorityEditor
+            item={item}
+            canEdit={canEdit('priority', editCtx)}
+            disabled={update.isPending}
+            onChange={(p) => update.mutate({ id: item.id, patch: { priority: p } })}
+          />
           <CloseButton
             item={item}
             adaptorReadOnly={adaptorReadOnly}
@@ -250,6 +262,11 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
             {update.error?.message ?? 'Update failed.'}
           </div>
         ) : null}
+        {/* assignee + owner are read-only in this slice — editing them
+            needs an /api/agents picker that doesn't exist yet
+            (gm-root.8 follow-up). The matrix already gates them
+            correctly so flipping them on is a one-edit change here
+            once the picker lands. */}
         <DefRow label="Assignee">
           <AgentPill agent={item.assignee ?? null} />
         </DefRow>
@@ -257,20 +274,12 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
           <AgentPill agent={item.owner ?? null} />
         </DefRow>
         <DefRow label="Labels">
-          {item.labels && item.labels.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {item.labels.map((l) => (
-                <span
-                  key={l}
-                  className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
-                >
-                  {l}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <Muted>none</Muted>
-          )}
+          <LabelsEditor
+            item={item}
+            canEdit={canEdit('labels', editCtx)}
+            saving={update.isPending}
+            onSave={(labels) => update.mutate({ id: item.id, patch: { labels } })}
+          />
         </DefRow>
       </Section>
 
@@ -397,6 +406,232 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
             ))}
           </div>
         </Section>
+      ) : null}
+    </div>
+  );
+}
+
+// TitleEditor renders the WorkItem title as a header. Pencil → input
+// → Save/Cancel. Title is the most-edited field in practice; keeping
+// it at the top of the body (above Overview) means the operator never
+// has to scroll to rename a card.
+function TitleEditor({
+  item,
+  canEdit,
+  saving,
+  onSave,
+}: {
+  item: WorkItem;
+  canEdit: boolean;
+  saving: boolean;
+  onSave: (text: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.title);
+  useEffect(() => {
+    if (!editing) setDraft(item.title);
+  }, [item.title, editing]);
+
+  if (editing) {
+    return (
+      <div className="space-y-2" data-testid="bead-title-editing">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoFocus
+          className="w-full rounded border border-neutral-300 bg-white px-2 py-1 text-base font-semibold dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        />
+        <div className="flex justify-end gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(false);
+              setDraft(item.title);
+            }}
+            disabled={saving}
+            className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const trimmed = draft.trim();
+              if (trimmed.length > 0 && trimmed !== item.title) {
+                onSave(trimmed);
+              }
+              setEditing(false);
+            }}
+            disabled={saving}
+            className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
+            data-testid="bead-title-save"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2">
+      <h2 className="flex-1 text-base font-semibold text-neutral-900 dark:text-neutral-100">
+        {item.title}
+      </h2>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+          aria-label="Edit title"
+          data-testid="bead-title-edit"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+// PriorityEditor renders a select 0..4 plus an "unset" option (priority
+// can be null on a WorkItem). Returns to a chip when not editable.
+function PriorityEditor({
+  item,
+  canEdit,
+  disabled,
+  onChange,
+}: {
+  item: WorkItem;
+  canEdit: boolean;
+  disabled: boolean;
+  onChange: (priority: number | null) => void;
+}) {
+  if (!canEdit) {
+    return item.priority != null ? (
+      <Chip label="P" value={String(item.priority)} />
+    ) : null;
+  }
+  const value = item.priority ?? '';
+  return (
+    <label className="inline-flex items-center gap-1 text-xs" data-testid="bead-priority-editor">
+      <span className="text-neutral-500">P</span>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => {
+          const raw = e.target.value;
+          onChange(raw === '' ? null : Number(raw));
+        }}
+        className={cn(
+          'rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-xs font-mono',
+          'dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100',
+          disabled && 'opacity-60'
+        )}
+      >
+        <option value="">—</option>
+        {[0, 1, 2, 3, 4].map((p) => (
+          <option key={p} value={p}>
+            {p}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+// LabelsEditor toggles between the chip strip (read mode) and a
+// comma-separated input (edit mode). Comma-split is intentional
+// minimum-viable — bd labels are restricted character-set strings, so
+// a bare text input + split-on-comma is good enough until a proper
+// chip-input lands. Preserves order; trims whitespace; drops empties.
+function LabelsEditor({
+  item,
+  canEdit,
+  saving,
+  onSave,
+}: {
+  item: WorkItem;
+  canEdit: boolean;
+  saving: boolean;
+  onSave: (labels: string[]) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState((item.labels ?? []).join(', '));
+  useEffect(() => {
+    if (!editing) setDraft((item.labels ?? []).join(', '));
+  }, [item.labels, editing]);
+
+  if (editing) {
+    return (
+      <div className="space-y-2" data-testid="bead-labels-editing">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          autoFocus
+          placeholder="comma,separated,labels"
+          className="w-full rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-mono dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+        />
+        <div className="flex justify-end gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setEditing(false);
+              setDraft((item.labels ?? []).join(', '));
+            }}
+            disabled={saving}
+            className="rounded border border-neutral-300 px-2 py-1 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const next = draft
+                .split(',')
+                .map((s) => s.trim())
+                .filter((s) => s.length > 0);
+              onSave(next);
+              setEditing(false);
+            }}
+            disabled={saving}
+            className="rounded border border-sky-500 bg-sky-500 px-2 py-1 text-white hover:bg-sky-600 disabled:opacity-60"
+            data-testid="bead-labels-save"
+          >
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex-1">
+        {item.labels && item.labels.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {item.labels.map((l) => (
+              <span
+                key={l}
+                className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+              >
+                {l}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <Muted>none</Muted>
+        )}
+      </div>
+      {canEdit ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+          aria-label="Edit labels"
+          data-testid="bead-labels-edit"
+        >
+          <Pencil className="h-3 w-3" />
+        </button>
       ) : null}
     </div>
   );
