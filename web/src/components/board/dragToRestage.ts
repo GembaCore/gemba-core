@@ -55,3 +55,11 @@ export function resolveRestage({
   if (item.state_category === parsed.cat) return null;
   return { id: item.id, patch: { state_category: parsed.cat } };
 }
+
+// shouldAutoStartSession encodes the rule: a successful drag-to-restage
+// into "In Progress" on an epic is the operator saying "go do this
+// work." The EpicView fires useStartSession when this returns true.
+// Pulled out so the branch is unit-testable without driving dnd-kit.
+export function shouldAutoStartSession(item: WorkItem): boolean {
+  return item.kind === 'epic' && item.state_category === 'started';
+}

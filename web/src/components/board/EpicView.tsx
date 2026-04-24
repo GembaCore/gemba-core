@@ -29,6 +29,8 @@ import {
   type WorkItem,
 } from '@/types/core.gen';
 import { useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { useAgents } from '@/hooks/useAgents';
+import { useStartSession } from '@/hooks/useSessions';
 import { EpicCard, type EpicChildCounts } from './EpicCard';
 import {
   groupEpicsAsSingle,
@@ -39,7 +41,7 @@ import {
   type EpicSwimlane,
 } from './epicHierarchy';
 import { DEFAULT_SWIMLANE_MODE, type SwimlaneMode } from './swimlaneMode';
-import { cellId, resolveRestage } from './dragToRestage';
+import { cellId, resolveRestage, shouldAutoStartSession } from './dragToRestage';
 
 // Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
 // Progress → Done → Canceled). The STATE_CATEGORIES order from
@@ -86,6 +88,17 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
   );
 
   const updateWorkItem = useUpdateWorkItem();
+  const startSession = useStartSession();
+  const { data: agents = [] } = useAgents();
+  // Pick a default agent dialect for auto-dispatch on drag-to-started.
+  // Mirrors NewSessionDialog's fallback so operators see consistent
+  // behavior whether they drag or use the manual dialog.
+  const defaultAgentType = useMemo(() => {
+    for (const a of agents) {
+      if (a.dialect) return a.dialect;
+    }
+    return 'claude';
+  }, [agents]);
   // Index items by id so the drag handler can read the source
   // state_category without re-walking the list.
   const itemById = useMemo(() => {
@@ -102,9 +115,19 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
         itemById,
       });
       if (!patch) return;
-      updateWorkItem.mutate(patch);
+      updateWorkItem.mutate(patch, {
+        onSuccess: (updated) => {
+          // Drag-to-In-Progress on an epic means "go do this work" —
+          // dispatch a session. Backend dedups by nonce.
+          if (!shouldAutoStartSession(updated)) return;
+          startSession.mutate({
+            bead_id: updated.id,
+            agent_type: defaultAgentType,
+          });
+        },
+      });
     },
-    [itemById, updateWorkItem]
+    [itemById, updateWorkItem, startSession, defaultAgentType]
   );
 
   if (swimlanes.length === 0) {

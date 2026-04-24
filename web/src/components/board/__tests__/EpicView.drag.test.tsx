@@ -19,7 +19,7 @@ import type { WorkItem } from '@/types/core.gen';
 import { workItemsKeys } from '@/hooks/useWorkItems';
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import { EpicView } from '../EpicView';
-import { cellId, parseCellId, resolveRestage } from '../dragToRestage';
+import { cellId, parseCellId, resolveRestage, shouldAutoStartSession } from '../dragToRestage';
 
 const caps: CapabilitiesResponse = {
   work_plane: {
@@ -120,6 +120,22 @@ describe('resolveRestage', () => {
         itemById: items,
       })
     ).toBeNull();
+  });
+});
+
+describe('shouldAutoStartSession', () => {
+  it('fires for an epic transitioning to started', () => {
+    expect(shouldAutoStartSession(epic('demo/pc-a', 'started'))).toBe(true);
+  });
+
+  it('does not fire for an epic moving to a non-started column', () => {
+    expect(shouldAutoStartSession(epic('demo/pc-a', 'staged'))).toBe(false);
+    expect(shouldAutoStartSession(epic('demo/pc-a', 'completed'))).toBe(false);
+  });
+
+  it('does not fire for non-epic items dropped into started', () => {
+    const task: WorkItem = { ...epic('demo/pc-t', 'started'), kind: 'task' };
+    expect(shouldAutoStartSession(task)).toBe(false);
   });
 });
 
