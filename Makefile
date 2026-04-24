@@ -39,14 +39,16 @@ build: frontend-build build-sentinels ## build the single-binary with SPA embedd
 build-go-only: build-sentinels ## build without rebuilding the frontend (fast dev iteration)
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba ./cmd/gemba
 
-## Sentinel binaries (gemba-bridge, gemba-state, gemba-ask) that
-## dispatched agents shell out to. They ship alongside the main
-## binary so install-bridge can place them on PATH in the session's
-## worktree env.
-build-sentinels: ## build the sentinel CLIs (gemba-bridge, gemba-state, gemba-ask)
+## Sentinel binaries. gemba-bridge / gemba-state / gemba-ask are the
+## shell-callable set; gemba-mcp is the MCP-tool server variant an
+## MCP-native agent can speak to over stdio instead (gm-97w7.2). All
+## four ship alongside the main binary so install-bridge can place
+## them on PATH in the session's worktree env.
+build-sentinels: ## build the sentinel CLIs + MCP server
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba-bridge ./cmd/gemba-bridge
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba-state  ./cmd/gemba-state
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba-ask    ./cmd/gemba-ask
+	go build -ldflags="$(LDFLAGS)" -o bin/gemba-mcp    ./cmd/gemba-mcp
 
 ## --- Test / Lint ---
 
