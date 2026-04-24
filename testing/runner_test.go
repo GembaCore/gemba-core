@@ -20,8 +20,11 @@ func TestRunWorkPlaneProbes_NoopGreen(t *testing.T) {
 	if !report.Passed() {
 		t.Fatalf("noop work plane probes must be green; report=%+v", report)
 	}
-	if got := len(report.Groups); got != 6 {
-		t.Errorf("want 6 groups (A–F), got %d", got)
+	// A–F are always present; G–K land with gm-l26, gated by manifest
+	// fields the noop adaptor doesn't advertise — they surface as
+	// NotApplicable rather than being dropped.
+	if got := len(report.Groups); got != 11 {
+		t.Errorf("want 11 groups (A–K), got %d", got)
 	}
 }
 

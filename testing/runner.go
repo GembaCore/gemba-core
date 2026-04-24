@@ -172,9 +172,180 @@ func RunWorkPlaneProbes(impl core.WorkPlane, fixture *WorkPlaneFixture) *Report 
 		})
 	}
 
-	r.Groups = []GroupResult{groupA, groupB, groupC, groupD, groupE, groupF}
+	// --- gm-l26 Groups G–K -------------------------------------------
+	// Capability-gated at the group level. When a group is Skipped
+	// because the manifest doesn't advertise the relevant R-field, we
+	// still emit a GroupResult with NotApplicable=true so operators
+	// reading the report know the group was considered (not silently
+	// dropped).
+	m := manifestOrZero(impl)
+
+	groupG := GroupResult{Name: "G: R3 dep-graph evolution"}
+	if m.DependencyGraphNative && m.ReadySetQuery {
+		groupG.Probes = append(groupG.Probes,
+			gatedProbe("G_ready_set_graph_evolution",
+				fixture.ReadySetGraphEvolution != nil,
+				"fixture.ReadySetGraphEvolution not provided",
+				func(t probeT) { probeReadySetGraphEvolution(t, impl, fixture) },
+			),
+		)
+	} else {
+		groupG.NotApplicable = true
+		groupG.Note = "manifest does not advertise dependency_graph_native + ready_set_query (R3)"
+	}
+	if hasEdgeExtension(m, "beads:discovered_from") {
+		groupG.Probes = append(groupG.Probes,
+			gatedProbe("G_discovered_from_mid_execution",
+				fixture.DiscoveredFromMidExecution != nil,
+				"fixture.DiscoveredFromMidExecution not provided",
+				func(t probeT) { probeDiscoveredFromMidExecution(t, impl, fixture) },
+			),
+		)
+	}
+
+	groupH := GroupResult{Name: "H: R4 versioned transport round-trip"}
+	anyTransport := false
+	for _, vt := range m.VersioningTransport {
+		if vt == core.VersioningNone {
+			continue
+		}
+		anyTransport = true
+		vt := vt
+		groupH.Probes = append(groupH.Probes,
+			gatedProbe("H_versioned_state_round_trip_"+string(vt),
+				fixture.VersionedStateRoundTrip != nil,
+				"fixture.VersionedStateRoundTrip not provided",
+				func(t probeT) { probeVersionedStateRoundTrip(t, impl, fixture, vt) },
+			),
+		)
+		if vt == core.VersioningGit || vt == core.VersioningDolt {
+			groupH.Probes = append(groupH.Probes,
+				gatedProbe("H_branch_merge_round_trip_"+string(vt),
+					fixture.BranchMergeRoundTrip != nil,
+					"fixture.BranchMergeRoundTrip not provided",
+					func(t probeT) { probeBranchMergeRoundTrip(t, impl, fixture, vt) },
+				),
+			)
+		}
+	}
+	if !anyTransport {
+		groupH.NotApplicable = true
+		groupH.Note = "manifest declares no versioning_transport (R4)"
+	}
+
+	groupI := GroupResult{Name: "I: R5 concurrency stress"}
+	if m.ConcurrencyModel != "" && m.ConcurrencyModel != core.ConcurrencyOptimistic {
+		groupI.Probes = append(groupI.Probes,
+			runProbe("I_concurrent_writer_stress_N16",
+				func(t probeT) { probeConcurrentWriterStress(t, impl, fixture) },
+			),
+			gatedProbe("I_read_after_write_cross_writer",
+				fixture.ReadAfterWriteCrossWriter != nil,
+				"fixture.ReadAfterWriteCrossWriter not provided",
+				func(t probeT) { probeReadAfterWriteCrossWriter(t, impl, fixture) },
+			),
+		)
+	} else {
+		groupI.NotApplicable = true
+		groupI.Note = "manifest declares concurrency_model=optimistic or none (R5)"
+	}
+
+	groupJ := GroupResult{Name: "J: R6 session decoupling"}
+	if m.AgentSessionDecoupling {
+		groupJ.Probes = append(groupJ.Probes,
+			gatedProbe("J_session_death_recovery",
+				fixture.SessionDeathRecovery != nil,
+				"fixture.SessionDeathRecovery not provided",
+				func(t probeT) { probeSessionDeathRecovery(t, impl, fixture) },
+			),
+			gatedProbe("J_work_pickup_by_second_agent",
+				fixture.WorkPickupBySecondAgent != nil,
+				"fixture.WorkPickupBySecondAgent not provided",
+				func(t probeT) { probeWorkPickupBySecondAgent(t, impl, fixture) },
+			),
+		)
+	} else {
+		groupJ.NotApplicable = true
+		groupJ.Note = "manifest does not advertise agent_session_decoupling (R6)"
+	}
+
+	groupK := GroupResult{Name: "K: R8 orchestrator hooks"}
+	anyHook := false
+	if containsOrchestratorHook(m, core.HookReadySetSubscribe) {
+		anyHook = true
+		groupK.Probes = append(groupK.Probes,
+			gatedProbe("K_ready_set_subscribe_latency",
+				fixture.ReadySetSubscribeLatency != nil,
+				"fixture.ReadySetSubscribeLatency not provided",
+				func(t probeT) { probeReadySetSubscribeLatency(t, impl, fixture) },
+			),
+		)
+	}
+	if containsOrchestratorHook(m, core.HookClaimAtomic) {
+		anyHook = true
+		groupK.Probes = append(groupK.Probes,
+			gatedProbe("K_claim_atomic",
+				fixture.ClaimAtomic != nil,
+				"fixture.ClaimAtomic not provided",
+				func(t probeT) { probeClaimAtomic(t, impl, fixture) },
+			),
+		)
+	}
+	if containsOrchestratorHook(m, core.HookEscalationIngest) {
+		anyHook = true
+		groupK.Probes = append(groupK.Probes,
+			gatedProbe("K_escalation_ingest_round_trip",
+				fixture.EscalationIngestRoundTrip != nil,
+				"fixture.EscalationIngestRoundTrip not provided",
+				func(t probeT) { probeEscalationIngestRoundTrip(t, impl, fixture) },
+			),
+		)
+	}
+	if containsOrchestratorHook(m, core.HookWorkCompleteAck) {
+		anyHook = true
+		groupK.Probes = append(groupK.Probes,
+			gatedProbe("K_work_complete_ack",
+				fixture.WorkCompleteAck != nil,
+				"fixture.WorkCompleteAck not provided",
+				func(t probeT) { probeWorkCompleteAck(t, impl, fixture) },
+			),
+		)
+	}
+	if containsOrchestratorHook(m, core.HookPoolBulkDispatch) {
+		anyHook = true
+		groupK.Probes = append(groupK.Probes,
+			gatedProbe("K_pool_bulk_dispatch",
+				fixture.PoolBulkDispatch != nil,
+				"fixture.PoolBulkDispatch not provided",
+				func(t probeT) { probePoolBulkDispatch(t, impl, fixture) },
+			),
+		)
+	}
+	if !anyHook {
+		groupK.NotApplicable = true
+		groupK.Note = "manifest declares no orchestrator_hooks (R8)"
+	}
+
+	r.Groups = []GroupResult{groupA, groupB, groupC, groupD, groupE, groupF,
+		groupG, groupH, groupI, groupJ, groupK}
 	r.FinishedAt = time.Now()
 	return r
+}
+
+// gatedProbe wraps runProbe with a "skipped unless hookReady" gate.
+// When the hook isn't ready, it emits a ProbeResult with Skipped=true
+// carrying the supplied reason so the report distinguishes
+// "capability declared but unit test opt-in missing" from
+// "capability not declared". gm-l26.
+func gatedProbe(name string, hookReady bool, skipReason string, fn func(probeT)) ProbeResult {
+	if !hookReady {
+		return ProbeResult{
+			Name:     name,
+			Skipped:  true,
+			Messages: []string{skipReason},
+		}
+	}
+	return runProbe(name, fn)
 }
 
 // RunOrchestrationProbes runs the OrchestrationPlane conformance probes

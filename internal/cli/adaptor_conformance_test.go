@@ -92,8 +92,11 @@ func TestAdaptorTest_JSONOutputIsValidReport(t *testing.T) {
 	if got.Plane != "work" {
 		t.Errorf("plane=%q, want work", got.Plane)
 	}
-	if len(got.Groups) != 6 {
-		t.Errorf("want 6 groups (A–F), got %d", len(got.Groups))
+	// A–F always present; G–K land with gm-l26 as
+	// NotApplicable when the noop manifest doesn't advertise the
+	// capabilities (R1–R8).
+	if len(got.Groups) != 11 {
+		t.Errorf("want 11 groups (A–K), got %d", len(got.Groups))
 	}
 }
 
