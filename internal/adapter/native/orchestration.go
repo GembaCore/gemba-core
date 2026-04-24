@@ -2,31 +2,59 @@ package native
 
 import (
 	"context"
+	"sync"
 	"time"
 
+	"github.com/MikeBengtson/gemba/internal/adapter/native/bridge"
 	"github.com/MikeBengtson/gemba/internal/core"
 )
 
-// OrchestrationPlane is the native adaptor. gm-native.2 ships the
-// scaffold — every non-Describe method returns core.KindUnsupported
-// so the server can mount the adaptor without exercising any of the
-// unimplemented surfaces. Subsequent beads (gm-native.9 StartSession,
-// gm-native.12 EndSession, gm-native.13 escalations, …) fill in real
-// behavior method by method.
+// OrchestrationPlane is the native adaptor. gm-native.9 extends the
+// scaffold with a real StartSession path; methods that haven't been
+// implemented yet still return KindUnsupported.
 type OrchestrationPlane struct {
-	// Placeholder for dependencies that land in later beads (backend,
-	// agent-type registry, bridge tailer). Keeping the struct exported
-	// but minimal lets tests construct it via New() without having to
-	// thread config through yet.
+	cfg    Config
+	fanout *bridge.Fanout
+
+	mu sync.Mutex
+	// sessions by id — populated on StartSession, removed on EndSession.
+	sessions map[string]*core.Session
+	// panes -> active session id so we can refuse double-dispatch on
+	// a pane that's already running an assignment.
+	paneActive map[string]string
+	// nonces dedupes StartSession retries by assignment id. Value is
+	// the session id we returned the first time so replays echo it.
+	nonces map[string]string
 }
 
-// New constructs the native OrchestrationPlane. Takes no arguments
-// today; backend + agent-registry wiring (gm-native.4/.6) will extend
-// this signature with explicit deps (prefer option funcs over a big
-// config struct when they land).
+// New constructs the native OrchestrationPlane with zero config.
+// Useful for tests that don't exercise StartSession. For real use
+// call NewWithConfig.
 func New() *OrchestrationPlane {
-	return &OrchestrationPlane{}
+	return NewWithConfig(Config{})
 }
+
+// NewWithConfig constructs the native OrchestrationPlane with the
+// given dependencies. Missing deps degrade gracefully — a nil
+// Backend means StartSession returns KindUnsupported, a nil WorkPlane
+// means bead-mutation correlation is off, etc.
+func NewWithConfig(cfg Config) *OrchestrationPlane {
+	fo := cfg.Fanout
+	if fo == nil {
+		fo = bridge.NewFanout()
+	}
+	return &OrchestrationPlane{
+		cfg:        cfg,
+		fanout:     fo,
+		sessions:   make(map[string]*core.Session),
+		paneActive: make(map[string]string),
+		nonces:     make(map[string]string),
+	}
+}
+
+// Fanout exposes the bridge fanout so the server can register new
+// session tailers when it wires in the SSE hub.
+func (o *OrchestrationPlane) Fanout() *bridge.Fanout { return o.fanout }
 
 var _ core.OrchestrationPlaneAdaptor = (*OrchestrationPlane)(nil)
 
@@ -79,9 +107,10 @@ func (*OrchestrationPlane) ReleaseReservation(context.Context, string) error {
 	return unsupported("ReleaseReservation")
 }
 
-func (*OrchestrationPlane) StartSession(context.Context, string, core.SessionPrompt) (core.Session, error) {
-	return core.Session{}, unsupported("StartSession")
-}
+// StartSession is implemented in start.go so the full lifecycle
+// (worktree provisioning, bridge install, backend spawn, state
+// recording, event emission) has room to breathe without bloating
+// this dispatch file. gm-native.9.
 
 func (*OrchestrationPlane) PauseSession(context.Context, string, core.ConfirmNonce) (core.Session, error) {
 	return core.Session{}, unsupported("PauseSession")
@@ -123,13 +152,29 @@ func (*OrchestrationPlane) ResolveEscalation(context.Context, string, core.Escal
 	return core.EscalationRequest{}, unsupported("ResolveEscalation")
 }
 
-func (*OrchestrationPlane) Subscribe(ctx context.Context, _ core.SubscribeFilter) (<-chan core.OrchestrationEvent, error) {
-	// Scaffold: a closed-on-ctx-done channel. gm-native.8 replaces this
-	// with the bridge-log tail fan-out.
-	ch := make(chan core.OrchestrationEvent)
+func (o *OrchestrationPlane) Subscribe(ctx context.Context, _ core.SubscribeFilter) (<-chan core.OrchestrationEvent, error) {
+	// Spawn a ctx-scoped relay from the adaptor-wide fanout so the
+	// subscriber doesn't receive events after its ctx is canceled.
+	// Draining the fanout directly would couple one caller's
+	// lifetime to every live session.
+	out := make(chan core.OrchestrationEvent, 64)
 	go func() {
-		defer close(ch)
-		<-ctx.Done()
+		defer close(out)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev, ok := <-o.fanout.Events():
+				if !ok {
+					return
+				}
+				select {
+				case out <- ev:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
 	}()
-	return ch, nil
+	return out, nil
 }
