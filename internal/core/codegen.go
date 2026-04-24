@@ -263,6 +263,14 @@ export type EvidenceKind =
   | "file"
   | "custom";
 
+// KIND_MILESTONE is the canonical WorkItem.kind token for milestones
+// (gm-root.3). WorkItem.kind is a free string because adaptors emit
+// kinds beyond the core's knowledge, so this is an exported constant
+// rather than a union variant. SPA code that gates on "is this a
+// milestone?" MUST compare against KIND_MILESTONE rather than
+// hardcoding the literal.
+export const KIND_MILESTONE = "milestone";
+
 export type BudgetTier = "inform" | "warn" | "stop";
 
 export type AgentKind = "agent" | "human";

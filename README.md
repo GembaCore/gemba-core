@@ -74,6 +74,7 @@ The build executes here once the work package imports into the local Beads rig a
 ├── docs/
 │   ├── adaptors/                 # per-adaptor authoring docs + conformance reports
 │   ├── dd/                       # design-decision outcomes from validation phase
+│   ├── design/                   # durable conventions (e.g. milestone-convention.md)
 │   └── guides/                   # writing-an-adaptor, migration guide, ...
 ├── .github/workflows/ci.yml
 ├── Makefile

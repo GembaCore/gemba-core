@@ -670,3 +670,121 @@ func TestBeadsListWorkItemsFilterKindsEmpty(t *testing.T) {
 		t.Errorf("empty filter: got %d items, want 2 (Kinds nil must not narrow)", len(got))
 	}
 }
+
+// gm-root.3.4: CreateWorkItem with Kind=KindMilestone translates to
+// `bd create -t epic -l type:milestone …`. The read path (tested
+// above) then round-trips the label back onto Kind=KindMilestone,
+// so the end-to-end surface is stable.
+func TestCreateWorkItemMilestoneEncodesAsEpicWithLabel(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx := context.Background()
+
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title:  "MVP ships",
+		Kind:   core.KindMilestone,
+		Status: "open",
+		Labels: []string{"area:core"},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+
+	// The adaptor must report the milestone Kind on the result of the
+	// create so callers don't have to re-fetch.
+	if created.Kind != core.KindMilestone {
+		t.Errorf("created.Kind=%q want %q", created.Kind, core.KindMilestone)
+	}
+
+	// Inspect what the fake received: native type must be "epic", and
+	// the milestone label must be present alongside caller labels.
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.beads) != 1 {
+		t.Fatalf("fake.beads: want 1, got %d", len(fake.beads))
+	}
+	var stored *bd.Bead
+	for _, b := range fake.beads {
+		stored = b
+	}
+	if stored.IssueType != "epic" {
+		t.Errorf("native IssueType=%q want \"epic\" (milestones encode as epic)", stored.IssueType)
+	}
+	wantLabels := map[string]bool{"area:core": false, "type:milestone": false}
+	for _, l := range stored.Labels {
+		if _, ok := wantLabels[l]; ok {
+			wantLabels[l] = true
+		}
+	}
+	for lbl, found := range wantLabels {
+		if !found {
+			t.Errorf("stored labels missing %q; got %v", lbl, stored.Labels)
+		}
+	}
+}
+
+// gm-root.3.4: re-creating a milestone whose caller-supplied labels
+// already include type:milestone must not duplicate the marker.
+func TestCreateWorkItemMilestoneIdempotentLabel(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	if _, err := impl.CreateWorkItem(context.Background(), core.WorkItem{
+		Title:  "Already flagged",
+		Kind:   core.KindMilestone,
+		Labels: []string{"type:milestone", "area:core"},
+	}); err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	var stored *bd.Bead
+	for _, b := range fake.beads {
+		stored = b
+	}
+	count := 0
+	for _, l := range stored.Labels {
+		if l == "type:milestone" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("type:milestone appeared %d times; must be 1 (idempotent)", count)
+	}
+}
+
+// gm-root.3.4 round-trip: create a milestone via the write path, then
+// read it back via ListWorkItems and confirm Kind survived.
+func TestCreateMilestoneRoundTripsThroughList(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx := context.Background()
+
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title: "M2 ships",
+		Kind:  core.KindMilestone,
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+
+	items, err := impl.ListWorkItems(ctx, core.WorkItemFilter{})
+	if err != nil {
+		t.Fatalf("ListWorkItems: %v", err)
+	}
+	var got *core.WorkItem
+	for i := range items {
+		if items[i].ID == created.ID {
+			got = &items[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("created milestone %q not found in list", created.ID)
+	}
+	if got.Kind != core.KindMilestone {
+		t.Errorf("round-trip Kind=%q want %q (label projection broken)",
+			got.Kind, core.KindMilestone)
+	}
+}

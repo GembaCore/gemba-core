@@ -295,8 +295,18 @@ func (w *WorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.W
 // Writing .beads/*.db directly is a conformance failure.
 func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.WorkItem, error) {
 	args := []string{"create", wi.Title, "--json"}
-	if wi.Kind != "" {
-		args = append(args, "--type", wi.Kind)
+	// gm-root.3.4: KindMilestone is Gemba-native. bd has no milestone
+	// issue type, so we encode it as `-t epic -l type:milestone`
+	// (see docs/design/milestone-convention.md). Every other kind
+	// passes through unchanged as the bd native type.
+	kindArg := wi.Kind
+	addMilestoneLabel := false
+	if kindArg == core.KindMilestone {
+		kindArg = "epic"
+		addMilestoneLabel = true
+	}
+	if kindArg != "" {
+		args = append(args, "--type", kindArg)
 	}
 	if wi.Priority != nil {
 		args = append(args, "--priority", strconv.Itoa(*wi.Priority))
@@ -311,6 +321,11 @@ func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.
 	labels := stripAgentLabels(wi.Labels)
 	if wi.Assignee != nil {
 		labels = append(labels, agentLabels(wi.Assignee)...)
+	}
+	if addMilestoneLabel && !hasLabel(labels, milestoneLabel) {
+		// Append, not prepend — caller-supplied labels keep their order
+		// and the milestone marker is stable at a known index.
+		labels = append(labels, milestoneLabel)
 	}
 	if len(labels) > 0 {
 		args = append(args, "--labels", strings.Join(labels, ","))

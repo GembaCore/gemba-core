@@ -7,6 +7,33 @@ import (
 	"time"
 )
 
+// gm-root.3.2: KindMilestone round-trips through JSON unchanged.
+// WorkItem.Kind is a free string so there's no Valid() gate —
+// encoding and decoding the constant must preserve the token.
+func TestKindMilestoneJSONRoundTrip(t *testing.T) {
+	wi := WorkItem{
+		ID:            "gm-ms",
+		Kind:          KindMilestone,
+		Title:         "MVP ships",
+		Status:        "open",
+		StateCategory: StateUnstarted,
+	}
+	data, err := json.Marshal(wi)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var round WorkItem
+	if err := json.Unmarshal(data, &round); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if round.Kind != KindMilestone {
+		t.Errorf("kind round-trip: got %q, want %q", round.Kind, KindMilestone)
+	}
+	if round.Kind != "milestone" {
+		t.Errorf("KindMilestone literal drift: got %q, want \"milestone\"", round.Kind)
+	}
+}
+
 func TestStateCategoryValid(t *testing.T) {
 	for _, s := range []StateCategory{
 		StateBacklog, StateUnstarted, StateStaged, StateStarted, StateCompleted, StateCanceled,
