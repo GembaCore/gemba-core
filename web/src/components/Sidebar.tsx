@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutGrid, ListTodo, Network, Sparkles, AlertTriangle, Boxes, Mail } from 'lucide-react';
+import { LayoutGrid, ListTodo, Network, Sparkles, AlertTriangle, Boxes, Mail, Table2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { features } from '@/lib/features';
@@ -9,6 +9,7 @@ type Item = { to: string; label: string; Icon: LucideIcon; gated?: boolean };
 const items: Item[] = [
   { to: '/board', label: 'Board', Icon: LayoutGrid },
   { to: '/backlog', label: 'Backlog', Icon: ListTodo },
+  { to: '/grid', label: 'Grid', Icon: Table2 },
   { to: '/graph', label: 'Graph', Icon: Network },
   { to: '/insights', label: 'Insights', Icon: Sparkles },
   { to: '/escalations', label: 'Escalations', Icon: AlertTriangle },

@@ -7,7 +7,7 @@
 // saved filters, URL-hash sharing, manifest-derived extension
 // columns, JSONL import.
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   flexRender,
   getCoreRowModel,
@@ -16,7 +16,7 @@ import {
   type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { SlidersHorizontal } from 'lucide-react';
+import { Bookmark, SlidersHorizontal, Trash2 } from 'lucide-react';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 
@@ -159,9 +159,122 @@ const DEFAULT_VISIBILITY: VisibilityState = {
   updated: true,
 };
 
-export function WorkItemGrid({ rows, onSelect }: WorkItemGridProps) {
+// COMPACT_VISIBILITY — power-user preset hiding the chattier columns
+// (kind, sprint, labels) so the screen is dominated by the two most
+// scannable ones: title + state + assignee.
+const COMPACT_VISIBILITY: VisibilityState = {
+  id: true,
+  title: true,
+  kind: false,
+  state: true,
+  priority: true,
+  assignee: true,
+  sprint: false,
+  labels: false,
+  updated: true,
+};
+
+export interface GridPreset {
+  id: string;
+  name: string;
+  visibility: VisibilityState;
+  builtin?: boolean;
+}
+
+const BUILTIN_PRESETS: GridPreset[] = [
+  { id: 'default', name: 'Default', visibility: DEFAULT_VISIBILITY, builtin: true },
+  { id: 'compact', name: 'Compact', visibility: COMPACT_VISIBILITY, builtin: true },
+];
+
+// loadUserPresets / saveUserPresets round-trip through localStorage.
+// Shape mismatches fall back to [] so a corrupt entry doesn't break
+// the grid header.
+function loadUserPresets(storageKey: string): GridPreset[] {
+  try {
+    const raw = window.localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const v = JSON.parse(raw) as unknown;
+    if (!Array.isArray(v)) return [];
+    return v.filter(
+      (p): p is GridPreset =>
+        !!p &&
+        typeof p === 'object' &&
+        typeof (p as GridPreset).id === 'string' &&
+        typeof (p as GridPreset).name === 'string' &&
+        !!(p as GridPreset).visibility &&
+        typeof (p as GridPreset).visibility === 'object'
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveUserPresets(storageKey: string, presets: GridPreset[]): void {
+  try {
+    window.localStorage.setItem(storageKey, JSON.stringify(presets));
+  } catch {
+    // Quota / private-mode; silently drop — the UI will re-prompt
+    // next time.
+  }
+}
+
+export interface WorkItemGridPresetOptions {
+  // localStorage key for user-saved presets. Omit to disable the
+  // preset menu entirely (Backlog page uses the grid without presets).
+  storageKey: string;
+  // Prompt runner — injected in tests to bypass window.prompt.
+  promptName?: () => string | null;
+}
+
+export interface WorkItemGridProps {
+  rows: WorkItem[];
+  onSelect?: (id: string) => void;
+  presets?: WorkItemGridPresetOptions;
+}
+
+export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
   const [visibility, setVisibility] = useState<VisibilityState>(DEFAULT_VISIBILITY);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [presetMenuOpen, setPresetMenuOpen] = useState(false);
+  const [userPresets, setUserPresets] = useState<GridPreset[]>(() =>
+    presets ? loadUserPresets(presets.storageKey) : []
+  );
+
+  // Keep user presets in sync with localStorage so a second tab
+  // editing presets shows up after focus events. Low-friction: only
+  // reread when the menu opens; avoids polling.
+  useEffect(() => {
+    if (presets && presetMenuOpen) {
+      setUserPresets(loadUserPresets(presets.storageKey));
+    }
+  }, [presets, presetMenuOpen]);
+
+  const applyPreset = (p: GridPreset) => {
+    setVisibility({ ...p.visibility });
+    setPresetMenuOpen(false);
+  };
+
+  const savePreset = () => {
+    if (!presets) return;
+    const name = (presets.promptName ?? defaultPromptName)();
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    const next: GridPreset = {
+      id: `user:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
+      name: trimmed,
+      visibility: { ...visibility },
+    };
+    const merged = [...userPresets, next];
+    setUserPresets(merged);
+    saveUserPresets(presets.storageKey, merged);
+  };
+
+  const deletePreset = (id: string) => {
+    if (!presets) return;
+    const merged = userPresets.filter((p) => p.id !== id);
+    setUserPresets(merged);
+    saveUserPresets(presets.storageKey, merged);
+  };
 
   const columns = useMemo(() => coreColumns, []);
 
@@ -193,6 +306,56 @@ export function WorkItemGrid({ rows, onSelect }: WorkItemGridProps) {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="work-item-grid">
       <div className="flex items-center justify-end gap-1 border-b border-neutral-200 bg-neutral-50 px-2 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950">
+        {presets ? (
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setPresetMenuOpen((v) => !v)}
+              className="inline-flex items-center gap-1 rounded border border-neutral-300 bg-white px-2 py-0.5 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+              data-testid="grid-presets-toggle"
+            >
+              <Bookmark className="h-3 w-3" />
+              Presets
+            </button>
+            {presetMenuOpen ? (
+              <div
+                className="absolute right-0 top-full z-10 mt-1 min-w-[200px] rounded border border-neutral-200 bg-white p-1 shadow-md dark:border-neutral-700 dark:bg-neutral-900"
+                data-testid="grid-presets-menu"
+              >
+                <PresetGroup label="Built-in">
+                  {BUILTIN_PRESETS.map((p) => (
+                    <PresetRow
+                      key={p.id}
+                      preset={p}
+                      onApply={() => applyPreset(p)}
+                    />
+                  ))}
+                </PresetGroup>
+                {userPresets.length > 0 ? (
+                  <PresetGroup label="Saved">
+                    {userPresets.map((p) => (
+                      <PresetRow
+                        key={p.id}
+                        preset={p}
+                        onApply={() => applyPreset(p)}
+                        onDelete={() => deletePreset(p.id)}
+                      />
+                    ))}
+                  </PresetGroup>
+                ) : null}
+                <div className="my-1 border-t border-neutral-200 dark:border-neutral-700" />
+                <button
+                  type="button"
+                  onClick={savePreset}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  data-testid="grid-presets-save"
+                >
+                  Save current as…
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <div className="relative">
           <button
             type="button"
@@ -292,4 +455,63 @@ export function WorkItemGrid({ rows, onSelect }: WorkItemGridProps) {
       </div>
     </div>
   );
+}
+
+function PresetGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="py-0.5">
+      <div className="px-2 py-0.5 font-medium uppercase tracking-wide text-[10px] text-neutral-500">
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function PresetRow({
+  preset,
+  onApply,
+  onDelete,
+}: {
+  preset: GridPreset;
+  onApply: () => void;
+  onDelete?: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center justify-between rounded px-2 py-1 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
+      data-testid={`grid-preset-${preset.id}`}
+    >
+      <button
+        type="button"
+        onClick={onApply}
+        className="flex-1 text-left"
+        data-testid={`grid-preset-apply-${preset.id}`}
+      >
+        {preset.name}
+      </button>
+      {onDelete ? (
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label={`Delete preset ${preset.name}`}
+          data-testid={`grid-preset-delete-${preset.id}`}
+          className="ml-2 rounded p-1 text-neutral-500 hover:bg-rose-100 hover:text-rose-700 dark:hover:bg-rose-950 dark:hover:text-rose-300"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function defaultPromptName(): string | null {
+  if (typeof window === 'undefined' || typeof window.prompt !== 'function') return null;
+  return window.prompt('Preset name');
 }

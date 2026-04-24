@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/layouts/AppShell';
 import { BoardPage } from '@/pages/BoardPage';
 import { BacklogPage } from '@/pages/BacklogPage';
+import { GridPage } from '@/pages/GridPage';
 import {
   CapabilitiesPage,
   EscalationsPage,
@@ -25,6 +26,7 @@ export default function App() {
             "<workspace>/<repo>/". useParams()['*'] surfaces the rest. */}
         <Route path="/board/*" element={<BoardPage />} />
         <Route path="/backlog" element={<BacklogPage />} />
+        <Route path="/grid" element={<GridPage />} />
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />
         <Route path="/escalations" element={<EscalationsPage />} />

@@ -2,7 +2,7 @@
 // menu, row-click wiring, and confirms virtualization by asserting
 // that only a bounded number of DOM rows exist for a large input set.
 
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, within } from '@testing-library/react';
 import { WorkItemGrid } from '../WorkItemGrid';
 import type { WorkItem } from '@/types/core.gen';
@@ -88,5 +88,122 @@ describe('WorkItemGrid', () => {
       screen.getByTestId('grid-row-gm-1').click();
     });
     expect(onSelect).toHaveBeenCalledWith('gm-1');
+  });
+
+  it('does not render the presets button unless presets prop is set', () => {
+    render(<WorkItemGrid rows={range(1)} />);
+    expect(screen.queryByTestId('grid-presets-toggle')).toBeNull();
+  });
+});
+
+describe('WorkItemGrid presets (gm-e12.3.3)', () => {
+  const STORAGE_KEY = 'gemba.test.grid.presets';
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  const headerCols = () =>
+    Array.from(document.querySelectorAll('th')).map((th) => th.textContent);
+
+  it('applying the Compact built-in preset hides kind/sprint/labels', () => {
+    render(<WorkItemGrid rows={range(3)} presets={{ storageKey: STORAGE_KEY }} />);
+
+    // Default → all nine columns present.
+    expect(headerCols()).toEqual(expect.arrayContaining(['Kind', 'Sprint', 'Labels']));
+
+    act(() => {
+      screen.getByTestId('grid-presets-toggle').click();
+    });
+    act(() => {
+      screen.getByTestId('grid-preset-apply-compact').click();
+    });
+
+    const cols = headerCols();
+    expect(cols).not.toContain('Kind');
+    expect(cols).not.toContain('Sprint');
+    expect(cols).not.toContain('Labels');
+    // Compact keeps these:
+    expect(cols).toEqual(expect.arrayContaining(['ID', 'Title', 'State', 'P', 'Assignee', 'Updated']));
+  });
+
+  it('saves a custom preset through the prompt and persists it to localStorage', () => {
+    render(
+      <WorkItemGrid
+        rows={range(1)}
+        presets={{ storageKey: STORAGE_KEY, promptName: () => 'Mine' }}
+      />
+    );
+
+    act(() => {
+      screen.getByTestId('grid-presets-toggle').click();
+    });
+    act(() => {
+      screen.getByTestId('grid-presets-save').click();
+    });
+
+    // Reopen menu; saved preset should appear in the Saved group.
+    act(() => {
+      screen.getByTestId('grid-presets-toggle').click();
+    });
+    act(() => {
+      screen.getByTestId('grid-presets-toggle').click();
+    });
+
+    const saved = screen.getAllByText('Mine');
+    expect(saved.length).toBeGreaterThan(0);
+
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!) as Array<{ name: string }>;
+    expect(parsed.map((p) => p.name)).toEqual(['Mine']);
+  });
+
+  it('deletes a saved preset via the trash button', () => {
+    // Seed a user preset directly into localStorage.
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([{ id: 'user:1', name: 'Dev', visibility: { title: true } }])
+    );
+    render(<WorkItemGrid rows={range(1)} presets={{ storageKey: STORAGE_KEY }} />);
+
+    act(() => {
+      screen.getByTestId('grid-presets-toggle').click();
+    });
+    act(() => {
+      screen.getByTestId('grid-preset-delete-user:1').click();
+    });
+
+    expect(screen.queryByTestId('grid-preset-user:1')).toBeNull();
+    expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY)!)).toEqual([]);
+  });
+
+  it('built-in presets have no delete button', () => {
+    render(<WorkItemGrid rows={range(1)} presets={{ storageKey: STORAGE_KEY }} />);
+    act(() => {
+      screen.getByTestId('grid-presets-toggle').click();
+    });
+    expect(screen.queryByTestId('grid-preset-delete-default')).toBeNull();
+    expect(screen.queryByTestId('grid-preset-delete-compact')).toBeNull();
+  });
+
+  it('ignores an empty / canceled preset name', () => {
+    render(
+      <WorkItemGrid
+        rows={range(1)}
+        presets={{ storageKey: STORAGE_KEY, promptName: () => '  ' }}
+      />
+    );
+    act(() => {
+      screen.getByTestId('grid-presets-toggle').click();
+    });
+    act(() => {
+      screen.getByTestId('grid-presets-save').click();
+    });
+    expect(window.localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 });
