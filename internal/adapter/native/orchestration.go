@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/bridge"
 	"github.com/MikeBengtson/gemba/internal/core"
 )
@@ -140,12 +141,109 @@ func (*OrchestrationPlane) ReleaseReservation(context.Context, string) error {
 // recording, event emission) has room to breathe without bloating
 // this dispatch file. gm-native.9.
 
-func (*OrchestrationPlane) PauseSession(context.Context, string, core.ConfirmNonce) (core.Session, error) {
-	return core.Session{}, unsupported("PauseSession")
+// PauseSession freezes a running session's processes without closing
+// the session. Only supported when the backend satisfies
+// backend.Pausable — today that's the Docker backend (gm-root.15.12).
+// Tmux / iTerm / Terminal.app return KindUnsupported.
+//
+// Successful pause transitions the Session.Status to SessionSuspended.
+// Idempotent: pausing an already-suspended session is a no-op (and
+// returns the current session record rather than erroring).
+func (o *OrchestrationPlane) PauseSession(ctx context.Context, sessionID string, _ core.ConfirmNonce) (core.Session, error) {
+	if o.cfg.Backend == nil {
+		return core.Session{}, unsupported("PauseSession")
+	}
+	pausable, ok := o.cfg.Backend.(backend.Pausable)
+	if !ok {
+		return core.Session{}, core.NewAdaptorError(core.KindUnsupported,
+			"native: PauseSession not supported by backend %q", o.cfg.Backend.Name())
+	}
+	if sessionID == "" {
+		return core.Session{}, core.NewAdaptorError(core.KindValidation,
+			"native: PauseSession requires session id")
+	}
+
+	paneID, sess, err := o.lookupSessionPane(sessionID)
+	if err != nil {
+		return core.Session{}, err
+	}
+	if sess.Status == core.SessionSuspended {
+		return *sess, nil
+	}
+	if err := pausable.Pause(ctx, paneID); err != nil {
+		return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
+			"native: pause %s", sessionID)
+	}
+	return o.updateSessionStatus(sessionID, core.SessionSuspended), nil
 }
 
-func (*OrchestrationPlane) ResumeSession(context.Context, string, core.ConfirmNonce) (core.Session, error) {
-	return core.Session{}, unsupported("ResumeSession")
+// ResumeSession is the PauseSession counterpart. The container's
+// memory state is identical to pre-pause; the agent continues from
+// exactly where it was. Status returns to SessionReady — the
+// correlator will re-emit SessionWorking on the next observable
+// activity if the agent is mid-task.
+func (o *OrchestrationPlane) ResumeSession(ctx context.Context, sessionID string, _ core.ConfirmNonce) (core.Session, error) {
+	if o.cfg.Backend == nil {
+		return core.Session{}, unsupported("ResumeSession")
+	}
+	pausable, ok := o.cfg.Backend.(backend.Pausable)
+	if !ok {
+		return core.Session{}, core.NewAdaptorError(core.KindUnsupported,
+			"native: ResumeSession not supported by backend %q", o.cfg.Backend.Name())
+	}
+	if sessionID == "" {
+		return core.Session{}, core.NewAdaptorError(core.KindValidation,
+			"native: ResumeSession requires session id")
+	}
+
+	paneID, sess, err := o.lookupSessionPane(sessionID)
+	if err != nil {
+		return core.Session{}, err
+	}
+	if sess.Status != core.SessionSuspended {
+		// Not paused — treat as no-op rather than erroring, matching
+		// the Docker daemon's behavior where `docker unpause` on a
+		// running container returns an error we'd rather smooth over.
+		return *sess, nil
+	}
+	if err := pausable.Unpause(ctx, paneID); err != nil {
+		return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
+			"native: resume %s", sessionID)
+	}
+	return o.updateSessionStatus(sessionID, core.SessionReady), nil
+}
+
+// lookupSessionPane returns the pane id + session record for the
+// given session id. Error uses KindNotFound so the HTTP surface maps
+// it to 404 cleanly.
+func (o *OrchestrationPlane) lookupSessionPane(sessionID string) (string, *core.Session, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	sess, ok := o.sessions[sessionID]
+	if !ok {
+		return "", nil, core.NewAdaptorError(core.KindSessionNotFound,
+			"native: session %q not found", sessionID)
+	}
+	paneID, _ := sess.ProviderMetadata["pane_id"].(string)
+	if paneID == "" {
+		return "", nil, core.NewAdaptorError(core.KindSessionNotFound,
+			"native: session %q has no pane id", sessionID)
+	}
+	cp := *sess
+	return paneID, &cp, nil
+}
+
+// updateSessionStatus atomically mutates a live session's status and
+// returns a copy. Callers get the new state without holding the lock.
+func (o *OrchestrationPlane) updateSessionStatus(sessionID string, status core.SessionStatus) core.Session {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	sess := o.sessions[sessionID]
+	if sess == nil {
+		return core.Session{}
+	}
+	sess.Status = status
+	return *sess
 }
 
 // EndSession lives in end.go (gm-native.12).
