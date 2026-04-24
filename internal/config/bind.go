@@ -53,6 +53,12 @@ type ServeConfig struct {
 	// serve threads the path through today so the flag surface is stable.
 	ConfigPath string
 
+	// OrchestratorConfigPath points at a JSON file describing the
+	// active orchestrator's shader settings (gm-root.4). Empty means
+	// "probe ./.gemba/orchestrator.json"; missing → no shader, NopShader
+	// takes over. Set explicitly via --orchestrator-config.
+	OrchestratorConfigPath string
+
 	DangerouslySkipPermissions bool
 }
 

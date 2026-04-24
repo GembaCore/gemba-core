@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +21,8 @@ import (
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server"
+	"github.com/MikeBengtson/gemba/internal/shader"
+	"github.com/MikeBengtson/gemba/internal/shader/gastown"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/spf13/cobra"
 )
@@ -67,6 +70,9 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 
 	cmd.Flags().StringVar(&cfg.ConfigPath, "config", "",
 		"path to gemba.toml (default: probe cwd, then ~/.config/gemba/)")
+
+	cmd.Flags().StringVar(&cfg.OrchestratorConfigPath, "orchestrator-config", "",
+		"path to .gemba/orchestrator.json (default: probe cwd; missing → no shader)")
 
 	cmd.Flags().StringVar(&cfg.BeadsDir, "beads-dir", "",
 		"path to the beads workspace the WorkPlane adaptor targets "+
@@ -220,45 +226,99 @@ type workPlaneReg struct {
 	SourceKind string
 	// Source is the dir path or redacted Dolt URL.
 	Source string
+	// Shader is the orchestrator shader's manifest ("nop" when none
+	// configured). Surfaced in the startup banner so the operator
+	// sees which transform is active.
+	Shader core.ShaderManifest
 }
 
 func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*workPlaneReg, error) {
 	host := api.New()
-	if cfg.DoltURL != "" {
-		return registerDoltWorkPlane(ctx, host, cfg)
+	sh, err := buildShader(cfg)
+	if err != nil {
+		return nil, err
 	}
-	return registerBeadsWorkPlane(ctx, host, cfg)
+	if cfg.DoltURL != "" {
+		return registerDoltWorkPlane(ctx, host, cfg, sh)
+	}
+	return registerBeadsWorkPlane(ctx, host, cfg, sh)
 }
 
-func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) (*workPlaneReg, error) {
+// buildShader resolves the orchestrator config (gm-root.4) and
+// constructs the matching core.Shader. Returns NopShader when no
+// config file is present — callers don't need to handle nil.
+func buildShader(cfg config.ServeConfig) (core.Shader, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return core.NopShader{}, nil // best-effort; degrade to nop
+	}
+	path := config.ResolveOrchestratorConfigPath(cfg.OrchestratorConfigPath, cwd)
+	if path == "" {
+		return core.NopShader{}, nil
+	}
+	oc, err := config.LoadOrchestratorConfig(path)
+	if err != nil {
+		return nil, fmt.Errorf("orchestrator config: %w", err)
+	}
+	switch oc.Orchestrator {
+	case "gastown":
+		var gcfg config.GastownShaderConfig
+		if len(oc.Config) > 0 {
+			if err := json.Unmarshal(oc.Config, &gcfg); err != nil {
+				return nil, fmt.Errorf("orchestrator config[gastown]: %w", err)
+			}
+		}
+		sh, err := gastown.New(gastown.Config{
+			Rig:          gcfg.Rig,
+			RigAbbr:      gcfg.RigAbbr,
+			IDFormat:     gcfg.IDFormat,
+			TitleFormat:  gcfg.TitleFormat,
+			KindPrefixes: gcfg.KindPrefixes,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return sh, nil
+	case "nop", "":
+		return core.NopShader{}, nil
+	default:
+		return nil, fmt.Errorf("orchestrator config: unknown orchestrator %q", oc.Orchestrator)
+	}
+}
+
+func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig, sh core.Shader) (*workPlaneReg, error) {
 	adaptor, err := bd.NewWorkPlane(bd.Config{BeadsDir: cfg.BeadsDir})
 	if err != nil {
 		return nil, fmt.Errorf("beads workplane: %w", err)
 	}
-	reg, err := host.RegisterWorkPlane(ctx, adaptor)
+	wrapped := shader.Wrap(adaptor, sh)
+	reg, err := host.RegisterWorkPlane(ctx, wrapped)
 	if err != nil {
 		return nil, fmt.Errorf("register beads workplane: %w", err)
 	}
-	manifest, err := adaptor.Describe(ctx)
+	manifest, err := wrapped.Describe(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("describe beads workplane: %w", err)
 	}
+	shManifest := sh.Describe()
 	slog.Info("workplane adaptor registered",
 		"adaptor", reg.AdaptorName,
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
-		"beads_dir", cfg.BeadsDir)
+		"beads_dir", cfg.BeadsDir,
+		"shader", shManifest.Name)
 	return &workPlaneReg{
 		Host:       host,
 		Manifest:   manifest,
 		Mode:       "bd-dir",
 		SourceKind: "dir",
 		Source:     cfg.BeadsDir,
+		Shader:     shManifest,
 	}, nil
 }
 
-func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) (*workPlaneReg, error) {
+func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig, sh core.Shader) (*workPlaneReg, error) {
 	adaptor, err := dolt.NewWorkPlane(dolt.Config{URL: cfg.DoltURL})
 	if err != nil {
 		return nil, fmt.Errorf("dolt workplane: %w", err)
@@ -269,32 +329,36 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 	// has no view of ServeConfig and only knows the pool is wired
 	// when this hook is set.
 	dolt.SetProbeDB(adaptor.DB())
-	reg, err := host.RegisterWorkPlane(ctx, adaptor)
+	wrapped := shader.Wrap(adaptor, sh)
+	reg, err := host.RegisterWorkPlane(ctx, wrapped)
 	if err != nil {
 		dolt.SetProbeDB(nil)
 		_ = adaptor.Close()
 		return nil, fmt.Errorf("register dolt workplane: %w", err)
 	}
-	manifest, err := adaptor.Describe(ctx)
+	manifest, err := wrapped.Describe(ctx)
 	if err != nil {
 		dolt.SetProbeDB(nil)
 		_ = adaptor.Close()
 		return nil, fmt.Errorf("describe dolt workplane: %w", err)
 	}
 	redacted := redactDoltURL(cfg.DoltURL)
+	shManifest := sh.Describe()
 	slog.Info("workplane adaptor registered",
 		"adaptor", reg.AdaptorName,
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
 		"read_only", true,
-		"dolt_url", redacted)
+		"dolt_url", redacted,
+		"shader", shManifest.Name)
 	return &workPlaneReg{
 		Host:       host,
 		Manifest:   manifest,
 		Mode:       "dolt-sql",
 		SourceKind: "url",
 		Source:     redacted,
+		Shader:     shManifest,
 	}, nil
 }
 
@@ -321,6 +385,7 @@ func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *w
 		len(reg.Manifest.EdgeExtensions),
 		yesNo(reg.Manifest.SprintNative),
 		yesNo(reg.Manifest.TokenBudgetEnforced))
+	fmt.Fprintf(w, "▶ shader: %s\n", reg.Shader.Name)
 }
 
 func yesNo(b bool) string {

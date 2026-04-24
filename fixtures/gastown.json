@@ -1,0 +1,16 @@
+{
+  "orchestrator": "gastown",
+  "config": {
+    "rig": "gemba",
+    "rig_abbr": "gm",
+    "title_format": "{{.kind_prefix}}{{.title}}",
+    "kind_prefixes": {
+      "bug": "BUG: ",
+      "decision": "DESIGN: ",
+      "epic": "[epic] ",
+      "task": "",
+      "chore": "",
+      "feature": ""
+    }
+  }
+}
