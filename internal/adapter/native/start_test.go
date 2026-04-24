@@ -144,8 +144,11 @@ func TestStartSessionHappyPath(t *testing.T) {
 	if sess.AssignmentID != "assign-1" {
 		t.Errorf("assignment id: got %q", sess.AssignmentID)
 	}
-	if sess.Status != core.SessionRunning {
-		t.Errorf("status: got %q", sess.Status)
+	// StartSession's initial status is Initializing — the adaptor
+	// transitions to Working when the first gemba-state signal lands
+	// via the bridge (gm-cdph).
+	if sess.Status != core.SessionInitializing {
+		t.Errorf("status: got %q, want %q", sess.Status, core.SessionInitializing)
 	}
 	if sess.ProviderMetadata["backend"] != "fake" {
 		t.Errorf("metadata.backend: got %v", sess.ProviderMetadata["backend"])

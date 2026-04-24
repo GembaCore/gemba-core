@@ -47,6 +47,32 @@ export type EvidenceKind =
 // hardcoding the literal.
 export const KIND_MILESTONE = "milestone";
 
+// SessionStatus is the observable session lifecycle tag (gm-d044).
+// The SPA uses it to render the per-session badge on the board + drawer
+// (gm-r1l1). Suspended is the only non-observable value; it's kept for
+// the pre-existing Pause/Resume flow and sits outside the
+// initializing/ready/working/prompting observable set.
+export type SessionStatus =
+  | "initializing"
+  | "ready"
+  | "working"
+  | "prompting"
+  | "stalled"
+  | "suspended"
+  | "completed"
+  | "failed";
+
+export const SESSION_STATUSES: readonly SessionStatus[] = [
+  "initializing",
+  "ready",
+  "working",
+  "prompting",
+  "stalled",
+  "suspended",
+  "completed",
+  "failed",
+] as const;
+
 export type BudgetTier = "inform" | "warn" | "stop";
 
 export type AgentKind = "agent" | "human";

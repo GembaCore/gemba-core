@@ -120,7 +120,7 @@ func (o *OrchestrationPlane) StartSession(_ context.Context, assignmentID string
 		ID:           sessID,
 		AssignmentID: a.ID,
 		AgentID:      a.AgentID,
-		Status:       core.SessionRunning,
+		Status:       core.SessionWorking,
 		StartedAt:    time.Now(),
 	}
 	o.sessions[sessID] = s
@@ -155,7 +155,7 @@ func (o *OrchestrationPlane) ResumeSession(_ context.Context, sessionID string, 
 		return *s, core.NewAdaptorError(core.KindSessionClosed,
 			"noop: session %q already terminal", sessionID)
 	}
-	s.Status = core.SessionRunning
+	s.Status = core.SessionWorking
 	return *s, nil
 }
 

@@ -228,7 +228,7 @@ func TestSessionActiveTurnAndCloseReasonWire(t *testing.T) {
 	// An idle session with no close_reason must serialise without the
 	// key at all — consumers distinguish "closed with reason X" from
 	// "still running" by field presence.
-	open := Session{ID: "sess-2", AssignmentID: "asg-1", Status: SessionRunning, StartedAt: end}
+	open := Session{ID: "sess-2", AssignmentID: "asg-1", Status: SessionWorking, StartedAt: end}
 	openData, err := json.Marshal(open)
 	if err != nil {
 		t.Fatalf("marshal open: %v", err)

@@ -298,16 +298,53 @@ type Session struct {
 	ProviderMetadata map[string]any      `json:"provider_metadata,omitempty"`
 }
 
-// SessionStatus is the lifecycle tag on a Session.
+// SessionStatus is the observable lifecycle tag on a Session (gm-d044).
+//
+// The non-terminal values are observable: an adaptor reports them based
+// on structured signals from the agent (preamble install + the
+// `gemba-state` tool sentinel per gm-cdph). Operators reading the SPA
+// can tell at a glance whether a session is spinning up, idle, doing
+// work, or asking for input.
+//
+//   - Initializing → hook installed; preamble / skills injection in flight.
+//     Ends when the agent acknowledges by emitting `ready` or `working`.
+//   - Ready        → session is alive and idle; no bead assigned.
+//   - Working      → a bead or active work item has been dispatched and
+//     the agent is executing.
+//   - Prompting    → the agent has surfaced a question or blocker and is
+//     waiting for operator input (ui-spec §4.8 / gm-97w7).
+//   - Stalled      → no observable progress for the configured window;
+//     UI-side heuristic today (gm-r1l1), adaptor ticker later (gm-dccy).
+//   - Suspended    → user-initiated pause via PauseSession. Kept for the
+//     existing Pause/Resume contract; orthogonal to the
+//     initializing/ready/working/prompting observable set.
+//   - Completed    → terminal; clean finish.
+//   - Failed       → terminal; error or abort.
 type SessionStatus string
 
 const (
-	SessionRunning       SessionStatus = "running"
-	SessionInputRequired SessionStatus = "input_required"
-	SessionSuspended     SessionStatus = "suspended"
-	SessionCompleted     SessionStatus = "completed"
-	SessionFailed        SessionStatus = "failed"
+	SessionInitializing SessionStatus = "initializing"
+	SessionReady        SessionStatus = "ready"
+	SessionWorking      SessionStatus = "working"
+	SessionPrompting    SessionStatus = "prompting"
+	SessionStalled      SessionStatus = "stalled"
+	SessionSuspended    SessionStatus = "suspended"
+	SessionCompleted    SessionStatus = "completed"
+	SessionFailed       SessionStatus = "failed"
 )
+
+// SessionStatuses is the exhaustive set of valid SessionStatus values.
+// Used by the TS codegen and by exhaustive-switch helpers.
+var SessionStatuses = []SessionStatus{
+	SessionInitializing,
+	SessionReady,
+	SessionWorking,
+	SessionPrompting,
+	SessionStalled,
+	SessionSuspended,
+	SessionCompleted,
+	SessionFailed,
+}
 
 // SessionEndMode names the terminal intent when EndSession is called.
 // This is the *caller's request*; SessionCloseReason is the *recorded
@@ -655,12 +692,14 @@ type OrchestrationPlaneAdaptor interface {
 	// assignmentID is unknown (conformance B.3) and MUST emit a
 	// `session_transition` event with the new session's state on success.
 	StartSession(ctx context.Context, assignmentID string, prompt SessionPrompt) (Session, error)
-	// PauseSession moves a running session to suspended. Idempotent
-	// under the same nonce. MUST emit a `session_transition` event
-	// (first call only; replays under the same nonce emit nothing).
+	// PauseSession moves a non-terminal session to Suspended (user-
+	// initiated pause). Idempotent under the same nonce. MUST emit a
+	// `session_transition` event (first call only; replays under the
+	// same nonce emit nothing).
 	PauseSession(ctx context.Context, sessionID string, nonce ConfirmNonce) (Session, error)
-	// ResumeSession moves a suspended/input_required session back to
-	// running. MUST emit a `session_transition` event on the first call.
+	// ResumeSession moves a Suspended session back to whichever of the
+	// observable states applies (typically Working). MUST emit a
+	// `session_transition` event on the first call.
 	ResumeSession(ctx context.Context, sessionID string, nonce ConfirmNonce) (Session, error)
 	// EndSession terminates a session with the given mode. Idempotent
 	// in two reinforcing senses (conformance B.4, t3code audit):
