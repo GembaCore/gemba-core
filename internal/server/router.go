@@ -123,7 +123,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// name leaked the bd identity into the contract.
 		api.Get("/city", notImplemented)
 		api.Get("/rigs", notImplemented)
-		api.Get("/agents", notImplemented)
+		// gm-root.10: orchestrator's known agents — drives the SPA's
+		// AssigneePicker / OwnerPicker. Empty list when no
+		// orchestration plane is bound (the freeform editor takes over).
+		api.Get("/agents", r.listAgents)
 		api.Get("/sessions", notImplemented)
 		// gm-peg: list work items across the registered WorkPlane.
 		// Empty filter today — filtering / pagination land in later
@@ -139,6 +142,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// double-clicks / React re-mounts can't double-apply.
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Patch("/work-items/{id}", r.patchWorkItem)
+		// gm-root.11: WorkPlane sprints — drives the SPA's SprintPicker.
+		// Adaptors with sprint_native=false return an empty list and the
+		// freeform editor takes over.
+		api.Get("/sprints", r.listSprints)
 		api.Get("/packs", notImplemented)
 		api.Get("/desired-state", notImplemented)
 		api.Get("/drift", notImplemented)

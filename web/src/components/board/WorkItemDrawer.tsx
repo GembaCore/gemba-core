@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useWorkItem, useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { useAgents, useSprints } from '@/hooks/useAgents';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
 import type { AgentRef, DefinitionOfDone, StateCategory, WorkItem } from '@/types/core.gen';
@@ -860,10 +861,13 @@ function Chip({ label, value }: { label: string; value: string }) {
   );
 }
 
-// AgentEditor lets the operator edit assignee / owner. No /api/agents
-// picker exists yet, so the form is a bare id + name + kind triple;
-// clearing id saves null (unassigned). Adaptors that reject partial
-// AgentRefs will surface the error through the standard mutation path.
+// AgentEditor lets the operator edit assignee / owner. When the
+// orchestrator's roster is reachable via /api/agents (gm-root.10),
+// the top of the form renders a picker over that list; selecting a
+// row pre-fills id + name + kind. When the roster is empty (no
+// orchestration plane bound, or it returns []), the freeform inputs
+// remain the only UI — operators can still type a custom id+name+kind
+// triple. Clearing id saves null (unassigned).
 function AgentEditor({
   agent,
   canEdit,
@@ -881,6 +885,9 @@ function AgentEditor({
   const [id, setId] = useState(agent?.id ?? '');
   const [name, setName] = useState(agent?.name ?? '');
   const [kind, setKind] = useState<'human' | 'agent'>(agent?.agent_kind ?? 'human');
+  // Roster fetched lazily so closed drawers don't pay for it. Empty
+  // list → picker hides and the freeform editor takes over.
+  const { data: roster } = useAgents();
   useEffect(() => {
     if (!editing) {
       setId(agent?.id ?? '');
@@ -892,6 +899,30 @@ function AgentEditor({
   if (editing) {
     return (
       <div className="space-y-2" data-testid={`${testidPrefix}-editing`}>
+        {roster && roster.length > 0 ? (
+          <select
+            value={id}
+            data-testid={`${testidPrefix}-picker`}
+            onChange={(e) => {
+              const picked = (roster ?? []).find((a) => a.id === e.target.value);
+              if (picked) {
+                setId(picked.id);
+                setName(picked.name);
+                setKind(picked.agent_kind);
+              } else {
+                setId('');
+              }
+            }}
+            className="w-full rounded border border-neutral-300 bg-white px-1.5 py-0.5 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          >
+            <option value="">— pick from roster (or type below) —</option>
+            {roster.map((a) => (
+              <option key={a.id} value={a.id}>
+                [{a.agent_kind}] {a.name} ({a.id})
+              </option>
+            ))}
+          </select>
+        ) : null}
         <div className="flex flex-wrap items-center gap-1 text-xs">
           <select
             value={kind}
@@ -982,6 +1013,10 @@ function SprintEditor({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(sprintId ?? '');
+  // Roster from /api/sprints (gm-root.11). Empty for adaptors with
+  // sprint_native=false (bd today) — picker hides and the freeform
+  // input below remains the only UI.
+  const { data: roster } = useSprints();
   useEffect(() => {
     if (!editing) setDraft(sprintId ?? '');
   }, [sprintId, editing]);
@@ -989,6 +1024,21 @@ function SprintEditor({
   if (editing) {
     return (
       <div className="space-y-2" data-testid="work-item-sprint-editing">
+        {roster && roster.length > 0 ? (
+          <select
+            value={draft}
+            data-testid="work-item-sprint-picker"
+            onChange={(e) => setDraft(e.target.value)}
+            className="w-full rounded border border-neutral-300 bg-white px-2 py-1 font-mono text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
+          >
+            <option value="">— pick a sprint (or type below) —</option>
+            {roster.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name} ({s.id})
+              </option>
+            ))}
+          </select>
+        ) : null}
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

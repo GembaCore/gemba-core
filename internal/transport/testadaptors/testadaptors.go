@@ -214,8 +214,15 @@ func (f *FakeWorkPlane) ReadBudgetRollup(ctx context.Context, sprintID string) (
 }
 
 // FakeOrchestrationPlane is the OrchestrationPlaneAdaptor analogue.
+// Programmable hooks let tests dispatch concrete responses without a
+// custom struct. Same convention as FakeWorkPlane: nil hook → the
+// per-method default (typically nil/empty).
 type FakeOrchestrationPlane struct {
 	Manifest core.OrchestrationCapabilityManifest
+
+	// AgentsFn — when set, ListAgents dispatches through it. Default
+	// returns nil, nil (no agents known).
+	AgentsFn func(ctx context.Context, f core.AgentFilter) ([]core.AgentRef, error)
 }
 
 // NewFakeOrchestrationPlane returns a FakeOrchestrationPlane carrying a
@@ -244,7 +251,10 @@ func (*FakeOrchestrationPlane) DeclaredState(context.Context) (core.WorkspaceTop
 func (*FakeOrchestrationPlane) ObservedState(context.Context) (core.WorkspaceTopology, error) {
 	return core.WorkspaceTopology{}, nil
 }
-func (*FakeOrchestrationPlane) ListAgents(context.Context, core.AgentFilter) ([]core.AgentRef, error) {
+func (f *FakeOrchestrationPlane) ListAgents(ctx context.Context, filter core.AgentFilter) ([]core.AgentRef, error) {
+	if f.AgentsFn != nil {
+		return f.AgentsFn(ctx, filter)
+	}
 	return nil, nil
 }
 func (*FakeOrchestrationPlane) ReadAgent(context.Context, core.AgentID) (*core.AgentRef, error) {
