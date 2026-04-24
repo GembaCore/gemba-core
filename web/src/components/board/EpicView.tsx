@@ -3,13 +3,32 @@
 // is operator-selectable per ui-spec §4.4 (by-parent-epic | by-label |
 // none); by-parallel-group is deferred until parallel groups exist as
 // a backend concept.
+//
+// Drag-to-restage (gm-75u / ui-spec §4.5): whole card is draggable;
+// dropping on a different column fires a PATCH state_category via
+// useUpdateWorkItem which carries the X-GEMBA-Confirm nonce
+// (gm-root.8 slice 2). Reorder-within-column isn't wired — needs a
+// UserOrder backend field (separate follow-up).
 
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 import {
   STATE_CATEGORIES,
   type StateCategory,
   type WorkItem,
 } from '@/types/core.gen';
+import { useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { EpicCard, type EpicChildCounts } from './EpicCard';
 import {
   groupEpicsAsSingle,
@@ -20,6 +39,7 @@ import {
   type EpicSwimlane,
 } from './epicHierarchy';
 import { DEFAULT_SWIMLANE_MODE, type SwimlaneMode } from './swimlaneMode';
+import { cellId, resolveRestage } from './dragToRestage';
 
 // Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
 // Progress → Done → Canceled). The STATE_CATEGORIES order from
@@ -57,6 +77,36 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
   const childCountsByEpic = useMemo(() => buildChildCounts(items), [items]);
   const rootEpics = useMemo(() => findRootEpics(items), [items]);
 
+  // PointerSensor requires a 4px move before starting a drag so a plain
+  // double-click doesn't accidentally begin a drag gesture. KeyboardSensor
+  // keeps the card navigable + draggable for operators without a pointer.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const updateWorkItem = useUpdateWorkItem();
+  // Index items by id so the drag handler can read the source
+  // state_category without re-walking the list.
+  const itemById = useMemo(() => {
+    const m = new Map<string, WorkItem>();
+    for (const it of items) m.set(it.id, it);
+    return m;
+  }, [items]);
+
+  const onDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const patch = resolveRestage({
+        activeID: event.active.id,
+        overID: event.over?.id,
+        itemById,
+      });
+      if (!patch) return;
+      updateWorkItem.mutate(patch);
+    },
+    [itemById, updateWorkItem]
+  );
+
   if (swimlanes.length === 0) {
     return (
       <div
@@ -72,23 +122,25 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
   }
 
   return (
-    <div
-      data-testid="board-epic"
-      className="flex h-full flex-col overflow-y-auto"
-    >
-      <RootEpicBanner roots={rootEpics} onSelectEpic={onSelectEpic} />
-      <ColumnHeader />
-      <div className="flex flex-col">
-        {swimlanes.map((s) => (
-          <SwimlaneRow
-            key={s.root.id}
-            swimlane={s}
-            childCountsByEpic={childCountsByEpic}
-            onSelectEpic={onSelectEpic}
-          />
-        ))}
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <div
+        data-testid="board-epic"
+        className="flex h-full flex-col overflow-y-auto"
+      >
+        <RootEpicBanner roots={rootEpics} onSelectEpic={onSelectEpic} />
+        <ColumnHeader />
+        <div className="flex flex-col">
+          {swimlanes.map((s) => (
+            <SwimlaneRow
+              key={s.root.id}
+              swimlane={s}
+              childCountsByEpic={childCountsByEpic}
+              onSelectEpic={onSelectEpic}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+    </DndContext>
   );
 }
 
@@ -210,23 +262,70 @@ function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowP
       )}
       <div className="flex gap-3">
         {STATE_CATEGORIES.map((cat) => (
-          <div
-            key={cat}
-            data-testid={`board-epic-cell-${swimlane.root.id}-${cat}`}
-            className="min-w-[14rem] flex-1 space-y-2"
-          >
+          <DroppableCell key={cat} rootID={swimlane.root.id} cat={cat}>
             {byState[cat].map((epicItem) => (
-              <EpicCard
+              <DraggableEpicCard
                 key={epicItem.id}
                 item={epicItem}
                 childCounts={childCountsByEpic.get(epicItem.id) ?? emptyCounts()}
                 onSelect={onSelectEpic}
               />
             ))}
-          </div>
+          </DroppableCell>
         ))}
       </div>
     </section>
+  );
+}
+
+// DroppableCell is the column-per-swimlane target. The cell id encodes
+// the (rootID, stateCategory) pair so onDragEnd can route the drop to
+// the right PATCH.
+interface DroppableCellProps {
+  rootID: string;
+  cat: StateCategory;
+  children: React.ReactNode;
+}
+function DroppableCell({ rootID, cat, children }: DroppableCellProps) {
+  const { setNodeRef, isOver } = useDroppable({ id: cellId(rootID, cat) });
+  return (
+    <div
+      ref={setNodeRef}
+      data-testid={`board-epic-cell-${rootID}-${cat}`}
+      data-drop-over={isOver || undefined}
+      className={
+        'min-w-[14rem] flex-1 space-y-2 rounded-sm transition-colors ' +
+        (isOver ? 'bg-sky-50 dark:bg-sky-950/40' : '')
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
+// DraggableEpicCard wraps the existing EpicCard with the dnd-kit
+// pointer/keyboard drag handle. The card itself is the handle so the
+// whole surface is grabbable (ui-spec §4.5). While dragging, the card
+// gets a visual lift via translate + higher z-index; the original
+// space is preserved so other cards don't reflow.
+interface DraggableEpicCardProps {
+  item: WorkItem;
+  childCounts: EpicChildCounts;
+  onSelect: (id: string) => void;
+}
+function DraggableEpicCard({ item, childCounts, onSelect }: DraggableEpicCardProps) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.85 : undefined,
+    zIndex: isDragging ? 50 : undefined,
+    position: isDragging ? 'relative' : undefined,
+    touchAction: 'none',
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <EpicCard item={item} childCounts={childCounts} onSelect={onSelect} draggable />
+    </div>
   );
 }
 

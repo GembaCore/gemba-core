@@ -59,6 +59,12 @@ export interface EpicCardProps {
   item: WorkItem;
   childCounts: EpicChildCounts;
   onSelect?: (id: string) => void;
+  // draggable=true switches the card's click semantics to match
+  // ui-spec §4.5: single-click is a drag-start gesture (no drawer
+  // open), double-click opens the drawer. When false the single-click
+  // shortcut is preserved so non-DnD contexts stay accessible. Flipped
+  // on by EpicView when gm-75u wires the DndContext.
+  draggable?: boolean;
 }
 
 function priorityLabel(priority: number | null | undefined): string | null {
@@ -67,24 +73,32 @@ function priorityLabel(priority: number | null | undefined): string | null {
   return `P${priority}`;
 }
 
-export function EpicCard({ item, childCounts, onSelect }: EpicCardProps) {
+export function EpicCard({ item, childCounts, onSelect, draggable }: EpicCardProps) {
   const pri = priorityLabel(item.priority);
   const interactive = !!onSelect;
-  // ui-spec §4.5: primary card interaction is drag (restage); double-click
-  // opens the drawer. Drag isn't wired yet (gm-root.6 follow-up) so
-  // single-click is kept as an accessible shortcut — once the sortable
-  // wrapper lands, single-click becomes the drag-start gesture and the
-  // drawer open collapses onto double-click exclusively.
-  const handleClick = onSelect ? () => onSelect(item.id) : undefined;
+  // ui-spec §4.5: primary card interaction is drag (restage);
+  // double-click opens the drawer. In draggable mode we drop the
+  // single-click handler because the pointer-down is the drag-start
+  // gesture. Keyboard (Enter / Space) still opens the drawer so the
+  // card is navigable without a pointer.
+  const handleClick = !draggable && onSelect ? () => onSelect(item.id) : undefined;
   const handleDoubleClick = onSelect ? () => onSelect(item.id) : undefined;
-  const handleKeyDown = onSelect
-    ? (e: KeyboardEvent<HTMLElement>) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect(item.id);
+  // In draggable mode dnd-kit's KeyboardSensor claims Space/Enter on
+  // the draggable wrapper to run the keyboard-drag cycle (Space =
+  // start, arrows = move, Space/Enter = drop). Handling the same keys
+  // here would race that sensor and surface-open-drawer instead of
+  // drag — so keyboard drawer-open collapses to pointer double-click
+  // (ui-spec §4.5). Tracked as a follow-up if operators want a
+  // keyboard drawer shortcut.
+  const handleKeyDown =
+    !draggable && onSelect
+      ? (e: KeyboardEvent<HTMLElement>) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(item.id);
+          }
         }
-      }
-    : undefined;
+      : undefined;
 
   return (
     <article
