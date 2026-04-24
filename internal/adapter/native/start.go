@@ -8,6 +8,7 @@ import (
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/preamble"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/worktrees"
 	"github.com/MikeBengtson/gemba/internal/core"
 )
@@ -166,6 +167,25 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		// won't get structured events though.
 		_ = err // TODO surface via slog when structured logger lands here
 	}
+
+	// Preamble injection (gm-native.10): fetch the bead, compose
+	// project + workspace + bead context, apply per agent type's
+	// strategy (CLAUDE.md, first-message, or stdout banner).
+	// Everything is best-effort — a failed preamble must not abort
+	// a live session. If WorkPlane is nil (tests, degraded mode) we
+	// skip entirely.
+	if o.cfg.WorkPlane != nil {
+		if item, err := o.cfg.WorkPlane.GetWorkItem(ctx, core.WorkItemID(beadID)); err == nil {
+			composed := preamble.Build(preamble.Sources{
+				RepoRoot:     o.cfg.RepoRoot,
+				WorkspaceDir: workspace,
+			}, item)
+			if strat, err := preamble.Apply(workspace, agent, composed); err == nil && strat.FirstMessage != "" {
+				_ = o.cfg.Backend.SendKeys(ctx, pane.ID, strat.FirstMessage+" Enter")
+			}
+		}
+	}
+
 	return *sess, nil
 }
 

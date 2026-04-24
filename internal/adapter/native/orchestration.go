@@ -120,9 +120,7 @@ func (*OrchestrationPlane) ResumeSession(context.Context, string, core.ConfirmNo
 	return core.Session{}, unsupported("ResumeSession")
 }
 
-func (*OrchestrationPlane) EndSession(context.Context, string, core.SessionEndMode, core.ConfirmNonce) (core.Session, error) {
-	return core.Session{}, unsupported("EndSession")
-}
+// EndSession lives in end.go (gm-native.12).
 
 func (*OrchestrationPlane) PeekSession(context.Context, string) (core.SessionPeek, error) {
 	return core.SessionPeek{}, unsupported("PeekSession")
