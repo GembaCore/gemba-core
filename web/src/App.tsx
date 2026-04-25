@@ -5,10 +5,10 @@ import { BacklogPage } from '@/pages/BacklogPage';
 import { GridPage } from '@/pages/GridPage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { AgentsPage } from '@/pages/AgentsPage';
+import { GraphPage } from '@/pages/GraphPage';
 import {
   CapabilitiesPage,
   EscalationsPage,
-  GraphPage,
   HealthPage,
   InsightsPage,
   MailPage,
