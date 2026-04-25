@@ -19,9 +19,6 @@ export function InsightsPage() {
 export function EscalationsPage() {
   return <Page title="Escalations" />;
 }
-export function CapabilitiesPage() {
-  return <Page title="Capability Browser" />;
-}
 export function MailPage() {
   return <Page title="Mail" />;
 }

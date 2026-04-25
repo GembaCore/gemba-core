@@ -6,8 +6,8 @@ import { GridPage } from '@/pages/GridPage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { AgentsPage } from '@/pages/AgentsPage';
 import { GraphPage } from '@/pages/GraphPage';
+import CapabilitiesPage from '@/pages/CapabilitiesPage';
 import {
-  CapabilitiesPage,
   EscalationsPage,
   HealthPage,
   InsightsPage,
