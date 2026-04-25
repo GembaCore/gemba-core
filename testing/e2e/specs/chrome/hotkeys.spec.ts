@@ -44,12 +44,10 @@ test.describe('App hotkeys @chrome', () => {
     await expect(page.getByTestId('command-palette-dialog')).toBeVisible();
   });
 
-  test.skip('Mod+Shift+S routes to /sessions (blocked on gm-jvl8)', async ({ page }) => {
-    // DEFAULT_HOTKEYS registers 'Mod+Shift+S' but the keys.ts
-    // normalizer drops the Shift prefix for 1-char keys, so the
-    // matcher never sees a chord that begins with 'Mod+Shift+'.
-    // Re-enable once gm-jvl8 lands a fix that round-trips
-    // shifted-letter chords.
+  test('Mod+Shift+S routes to /sessions', async ({ page }) => {
+    // gm-jvl8: the matcher now folds Mod+Shift+<letter> chords via
+    // canonicalChord so the registered 'Mod+Shift+S' matches the
+    // normalized 'Mod+S' from a Cmd-Shift-S keystroke.
     await page.keyboard.press('Meta+Shift+S');
     await expect(page).toHaveURL(/\/sessions$/);
   });

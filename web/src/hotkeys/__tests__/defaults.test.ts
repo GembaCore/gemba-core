@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_HOTKEYS } from '../defaults';
+import { canonicalChord, normalizeKey } from '../keys';
+
+function kb(init: KeyboardEventInit): KeyboardEvent {
+  return new KeyboardEvent('keydown', init);
+}
 
 describe('DEFAULT_HOTKEYS', () => {
   it('registers at least the 15 shortcuts required by gm-7hj DoD', () => {
@@ -41,6 +46,23 @@ describe('DEFAULT_HOTKEYS', () => {
     // Gemba-specific additions (per bead)
     for (const must of ['workspace-switch', 'capability-browser', 'drift-view']) {
       expect(ids.has(must), `missing gemba shortcut: ${must}`).toBe(true);
+    }
+  });
+
+  it('every Mod+Shift+<letter> chord matches its expected KeyboardEvent (gm-jvl8)', () => {
+    // Regression guard: the normalizer drops Shift+ for 1-char keys
+    // and the matcher folds via canonicalChord. Verify the round-trip
+    // for the two chords that previously silently never fired.
+    const cases: Array<{ chord: string; event: KeyboardEventInit }> = [
+      { chord: 'Mod+Shift+S', event: { key: 'S', metaKey: true, shiftKey: true } },
+      { chord: 'Mod+W', event: { key: 'W', metaKey: true, shiftKey: true } },
+    ];
+    for (const { chord, event } of cases) {
+      // Confirm each chord is actually registered so the test stays
+      // honest if defaults.ts ever drops one of the surfaces.
+      const seq = DEFAULT_HOTKEYS.flatMap((h) => h.keys);
+      expect(seq, `chord ${chord} expected in DEFAULT_HOTKEYS`).toContain(chord);
+      expect(canonicalChord(chord)).toBe(canonicalChord(normalizeKey(kb(event))));
     }
   });
 

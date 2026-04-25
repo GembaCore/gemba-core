@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeKey, isEditableTarget } from '../keys';
+import { canonicalChord, normalizeKey, isEditableTarget } from '../keys';
 
 function kb(init: KeyboardEventInit): KeyboardEvent {
   return new KeyboardEvent('keydown', init);
@@ -30,6 +30,39 @@ describe('normalizeKey', () => {
 
   it('represents space as Space', () => {
     expect(normalizeKey(kb({ key: ' ' }))).toBe('Space');
+  });
+});
+
+describe('canonicalChord (gm-jvl8)', () => {
+  it('round-trips chords without Shift+ unchanged', () => {
+    expect(canonicalChord('j')).toBe('j');
+    expect(canonicalChord('Mod+k')).toBe('Mod+k');
+    expect(canonicalChord('G')).toBe('G');
+    expect(canonicalChord('Mod+W')).toBe('Mod+W');
+  });
+
+  it('drops Shift+ from 1-char-key chords (folds to shifted-letter form)', () => {
+    expect(canonicalChord('Mod+Shift+S')).toBe('Mod+S');
+    expect(canonicalChord('Shift+G')).toBe('G');
+  });
+
+  it('uppercases the trailing letter so case-insensitive variants fold together', () => {
+    expect(canonicalChord('Mod+Shift+s')).toBe('Mod+S');
+  });
+
+  it('keeps Shift+ for multi-char named keys', () => {
+    expect(canonicalChord('Shift+ArrowUp')).toBe('Shift+ArrowUp');
+    expect(canonicalChord('Mod+Shift+Escape')).toBe('Mod+Shift+Escape');
+  });
+
+  it('matches normalizeKey output for the same logical keystroke', () => {
+    // The whole point: the chord 'Mod+Shift+S' must collapse to the
+    // same canonical form as the normalized event for Cmd+Shift+S.
+    const chord = canonicalChord('Mod+Shift+S');
+    const event = canonicalChord(
+      normalizeKey(kb({ key: 'S', metaKey: true, shiftKey: true })),
+    );
+    expect(chord).toBe(event);
   });
 });
 
