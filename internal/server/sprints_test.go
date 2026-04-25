@@ -94,3 +94,60 @@ func TestListSprints_NoHost_Returns503(t *testing.T) {
 		t.Fatalf("want 503, got %d", rec.Code)
 	}
 }
+
+// gm-j51y: workspaces with sprint_native=false (bd, dolt) surface
+// the capability guard's denial as an AdaptorError. The handler MUST
+// translate that into a 200-empty list so the SPA's SprintPicker
+// hides cleanly without flooding the console with 500s on every
+// page load.
+func TestListSprints_CapabilityDenied_Returns200Empty(t *testing.T) {
+	host := api.New()
+	wp := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	wp.SprintsFn = func(context.Context) ([]core.Sprint, error) {
+		return nil, core.NewAdaptorError(core.KindCapabilityDenied,
+			"list_sprints denied: manifest sprint_native=false")
+	}
+	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
+		t.Fatalf("RegisterWorkPlane: %v", err)
+	}
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sprints", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 on capability_denied (gm-j51y), got %d body=%q",
+			rec.Code, rec.Body.String())
+	}
+	if !contains(rec.Body.String(), `"sprints":[]`) {
+		t.Fatalf("want empty sprints array; body=%q", rec.Body.String())
+	}
+	if !contains(rec.Body.String(), `"total":0`) {
+		t.Fatalf("want total:0; body=%q", rec.Body.String())
+	}
+}
+
+// Other adaptor errors (process_failed, request_failed, etc.) MUST
+// still surface — only KindCapabilityDenied is the contract-aware
+// "this adaptor doesn't have sprints" signal.
+func TestListSprints_OtherAdaptorErrorStillSurfaces(t *testing.T) {
+	host := api.New()
+	wp := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	wp.SprintsFn = func(context.Context) ([]core.Sprint, error) {
+		return nil, core.NewAdaptorError(core.KindAdaptorDegraded,
+			"upstream sprints API unreachable")
+	}
+	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
+		t.Fatalf("RegisterWorkPlane: %v", err)
+	}
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/sprints", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("KindAdaptorDegraded must NOT collapse to 200; got %d", rec.Code)
+	}
+}
