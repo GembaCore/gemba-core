@@ -1,12 +1,17 @@
-import { useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { CapabilitiesContext, type CapabilityState } from './context-internal';
 import type { CapabilitiesResponse } from './types';
+import { observeInstanceId } from '../transport/instanceId';
 
-// The capability manifests change rarely — once at connect, and again on
-// adaptor restart. We poll anyway (at a slow cadence) because there is no
-// SSE hub yet; when gm-e4.3 lands, this can become a keyed invalidation.
-const POLL_MS = 30_000;
+// Capabilities are startup-immutable: configured once during gemba
+// serve boot, never mutate during the process lifetime. We fetch once
+// and never refetch (gm-6m60). The InstanceIdGuard handles the only
+// real invalidation case (server restarted with new config) by full-
+// reloading the SPA when a later response shows a different
+// instance_id. Earlier comments in this file referenced a future
+// "gm-e4.3 keyed invalidation" approach — that's been superseded;
+// capabilities don't need a live channel.
 
 async function fetchCapabilities(): Promise<CapabilitiesResponse> {
   const r = await fetch('/api/capabilities');
@@ -27,11 +32,21 @@ export function CapabilitiesProvider({ children, initial }: CapabilitiesProvider
   const { data, isLoading, error } = useQuery({
     queryKey: ['capabilities'],
     queryFn: fetchCapabilities,
-    refetchInterval: POLL_MS,
-    refetchIntervalInBackground: false,
-    staleTime: POLL_MS / 2,
+    staleTime: Infinity,
+    gcTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     enabled: initial === undefined,
   });
+
+  // Stash the boot id from the first manifest we see. Subsequent
+  // observers (the AdaptorBanner SSE) will trigger a full reload if
+  // the server restarts with a different id.
+  useEffect(() => {
+    const id = (initial ?? data)?.instance_id;
+    if (id) observeInstanceId(id);
+  }, [initial, data]);
 
   const value = useMemo<CapabilityState>(() => {
     const resolved = initial ?? data;

@@ -3,6 +3,8 @@
 package server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
@@ -33,6 +35,13 @@ type Router struct {
 	cfg  config.ServeConfig
 	spa  fs.FS
 	host *api.Host
+
+	// instanceID is a per-process boot UUID stamped on every response
+	// the SPA treats as startup-immutable (capabilities, adaptors).
+	// Clients store the first id they observe and full-reload on
+	// mismatch — that's how we detect a server restart with different
+	// config without a live capabilities-changed channel. gm-6m60.
+	instanceID string
 
 	// nonceCache backs the X-GEMBA-Confirm idempotency gate every
 	// mutating route is wrapped in. Per-process — multi-instance
@@ -67,6 +76,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		cfg:        cfg,
 		spa:        spa,
 		host:       host,
+		instanceID: newInstanceID(),
 		nonceCache: NewNonceCache(0, 0), // defaults: 1024 entries / 5min TTL
 	}
 	r.healthBus = registry.NewHealthBus(healthBusInterval, r.boundAdaptorStatuses)
@@ -228,6 +238,25 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 // router was constructed without one. Tests and handlers use this to
 // reach the registered WorkPlane / OrchestrationPlane.
 func (r *Router) Host() *api.Host { return r.host }
+
+// InstanceID returns the per-process boot id stamped on startup-
+// immutable responses (capabilities, adaptors). The SPA stores the
+// first id it sees and full-reloads if a later response shows a
+// different id, which is how we detect a server restart with new
+// config without a capabilities-changed channel. gm-6m60.
+func (r *Router) InstanceID() string { return r.instanceID }
+
+// newInstanceID generates a 128-bit hex-encoded random id for the
+// boot stamp. Same generator the auth package uses for tokens — no
+// new dependency. Falls back to a timestamp-derived sentinel on the
+// vanishingly-rare crypto/rand failure so NewRouter never panics.
+func newInstanceID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "boot-" + time.Now().UTC().Format("20060102T150405.000000000")
+	}
+	return hex.EncodeToString(b)
+}
 
 // StartHealthBus starts the background probe ticker that feeds the
 // /api/adaptors snapshot and the /api/adaptors/stream SSE endpoint.

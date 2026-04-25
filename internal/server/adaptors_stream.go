@@ -75,7 +75,7 @@ func (r *Router) adaptorsStream(w http.ResponseWriter, req *http.Request) {
 			if !ok {
 				return
 			}
-			if err := writeAdaptorsFrame(w, frame); err != nil {
+			if err := writeAdaptorsFrame(w, r.instanceID, frame); err != nil {
 				return
 			}
 			flusher.Flush()
@@ -91,9 +91,15 @@ func (r *Router) adaptorsStream(w http.ResponseWriter, req *http.Request) {
 
 // writeAdaptorsFrame emits a single SSE `data:` frame encoding the
 // same envelope /api/adaptors serves synchronously — the SPA can
-// share its response type across both transports.
-func writeAdaptorsFrame(w http.ResponseWriter, adaptors []registry.AdaptorStatus) error {
-	body, err := json.Marshal(map[string]any{"adaptors": adaptors})
+// share its response type across both transports. instance_id is the
+// per-process boot stamp the SPA uses as a server-restart sentinel
+// (gm-6m60); it appears on every frame so a reconnecting client
+// catches the new id without waiting for a /api/capabilities refetch.
+func writeAdaptorsFrame(w http.ResponseWriter, instanceID string, adaptors []registry.AdaptorStatus) error {
+	body, err := json.Marshal(map[string]any{
+		"instance_id": instanceID,
+		"adaptors":    adaptors,
+	})
 	if err != nil {
 		return err
 	}

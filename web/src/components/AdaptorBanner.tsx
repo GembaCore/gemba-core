@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { observeInstanceId } from '../transport/instanceId';
 
 // AdaptorBanner — gm-b1 / gm-root.7. Subscribes to the server-pushed
 // /api/adaptors/stream SSE feed so transitions surface in <1 s of the
@@ -10,6 +11,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 // DoD (gm-b1): killing the bd daemon mid-session produces a clear
 // banner. Readonly views keep working — this component MUST NOT block
 // rendering of the rest of the app on a failed stream.
+//
+// gm-6m60: every frame carries instance_id (the per-process boot
+// stamp). The banner pipes it through observeInstanceId so a server
+// restart with new config triggers a full SPA reload — that's how the
+// otherwise-cached capabilities manifest gets refreshed.
 
 type AdaptorStatus = {
   name: string;
@@ -19,6 +25,7 @@ type AdaptorStatus = {
 };
 
 type AdaptorsResponse = {
+  instance_id?: string;
   adaptors: AdaptorStatus[];
 };
 
@@ -53,6 +60,7 @@ function useAdaptorsStream(): void {
       es.onmessage = (ev) => {
         try {
           const parsed = JSON.parse(ev.data) as AdaptorsResponse;
+          observeInstanceId(parsed.instance_id);
           qc.setQueryData<AdaptorsResponse>(['adaptors'], parsed);
         } catch {
           // Ignore malformed frames — the next transition will
@@ -77,7 +85,10 @@ function useAdaptorsStream(): void {
         const r = await fetch(SNAPSHOT_URL);
         if (!r.ok) return;
         const data = (await r.json()) as AdaptorsResponse;
-        if (!closed) qc.setQueryData<AdaptorsResponse>(['adaptors'], data);
+        if (!closed) {
+          observeInstanceId(data.instance_id);
+          qc.setQueryData<AdaptorsResponse>(['adaptors'], data);
+        }
       } catch {
         // Same philosophy as the original poll — the banner silently
         // stays absent when the health surface itself is unreachable.

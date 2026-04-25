@@ -37,7 +37,8 @@ import (
 // expected wire shape.
 func (r *Router) adaptorsHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"adaptors": r.snapshotAdaptorStatuses(),
+		"instance_id": r.instanceID,
+		"adaptors":    r.snapshotAdaptorStatuses(),
 	})
 }
 

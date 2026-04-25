@@ -103,7 +103,15 @@ export interface OrchestrationManifest {
 // optional at the envelope level — before adaptors are wired up, the server
 // returns nulls rather than synthesising placeholders, and the UI renders
 // a conservative "no capability" state.
+//
+// instance_id is the per-process boot stamp (gm-6m60). Capabilities are
+// startup-immutable; the SPA fetches once with staleTime: Infinity and
+// the InstanceIdGuard reloads the page when any later response shows a
+// different id (i.e. server restarted with new config).
 export interface CapabilitiesResponse {
+  // Optional in the type so test fixtures can omit it; the real
+  // server always populates it. observeInstanceId() ignores undefined.
+  instance_id?: string;
   work_plane: WorkPlaneManifest | null;
   orchestration_plane: OrchestrationManifest | null;
 }

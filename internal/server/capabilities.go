@@ -8,10 +8,19 @@ import (
 )
 
 // capabilitiesResponse is the envelope the SPA reads at /api/capabilities
-// (gm-e11.4). Both fields are pointers so the JSON carries explicit null
-// when an adaptor is not yet registered — the SPA renders a conservative
-// "no capability" state on null rather than inventing defaults.
+// (gm-e11.4). Both manifests are pointers so the JSON carries explicit
+// null when an adaptor is not yet registered — the SPA renders a
+// conservative "no capability" state on null rather than inventing
+// defaults.
+//
+// InstanceID is the per-process boot stamp (gm-6m60). Capabilities are
+// startup-immutable: they get configured once during gemba serve boot
+// and never mutate. Rather than push capability-changed events the SPA
+// fetches once with staleTime: Infinity and reloads itself when any
+// later response shows a different instance_id (i.e. the server
+// restarted with new config).
 type capabilitiesResponse struct {
+	InstanceID         string                                `json:"instance_id"`
 	WorkPlane          *core.CapabilityManifest              `json:"work_plane"`
 	OrchestrationPlane *core.OrchestrationCapabilityManifest `json:"orchestration_plane"`
 }
@@ -45,7 +54,7 @@ func (r *Router) capabilities(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	resp := capabilitiesResponse{WorkPlane: &workManifest}
+	resp := capabilitiesResponse{InstanceID: r.instanceID, WorkPlane: &workManifest}
 	if op := r.host.OrchestrationPlane(); op != nil {
 		orchManifest := op.Describe()
 		resp.OrchestrationPlane = &orchManifest
