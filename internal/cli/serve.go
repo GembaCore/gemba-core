@@ -24,6 +24,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server"
+	"github.com/MikeBengtson/gemba/internal/server/metrics"
 	"github.com/MikeBengtson/gemba/internal/shader"
 	"github.com/MikeBengtson/gemba/internal/shader/gastown"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
@@ -220,6 +221,15 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 			slog.Warn("events: workplane Subscribe failed; workitem SSE stream will be empty",
 				"err", werr)
 		}
+	}
+
+	// Bind the Prometheus collector to the events hub and expose
+	// /metrics. The collector subscribes once with no filter so every
+	// hub-published event drives a metric (gm-e3.6.2).
+	if hub := handler.EventsHub(); hub != nil {
+		mc := metrics.NewCollector()
+		go mc.Run(ctx, hub)
+		handler.AttachMetricsHandler(mc.Handler())
 	}
 
 	srv := &http.Server{

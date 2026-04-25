@@ -63,6 +63,12 @@ type Router struct {
 	// returns 503.
 	eventsHub *events.Hub
 
+	// metricsHandler is the Prometheus /metrics handler. Lazy-attached
+	// by cmd/gemba serve via AttachMetricsHandler so a Router without
+	// a metrics binding (most tests) returns 503 from /metrics instead
+	// of panicking on a nil deref. gm-e3.6.2.
+	metricsHandler http.Handler
+
 	mux http.Handler
 }
 
@@ -221,6 +227,22 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		ev.Get("/", r.eventsStream)
 	})
 
+	// Prometheus scrape surface (gm-e3.6.2). Sits behind the same auth
+	// middleware as /api/* — a deployment with token auth requires its
+	// scrape job to present credentials; loopback-only deployments
+	// leave auth off and Prometheus scrapes anonymously, matching the
+	// standard "/metrics behind a reverse proxy" convention. Mounted
+	// when r.metricsHandler is non-nil; cmd/gemba serve calls
+	// AttachMetricsHandler before starting the listener.
+	if apiAuth != nil {
+		mux.Group(func(g chi.Router) {
+			g.Use(apiAuth)
+			g.Method(http.MethodGet, "/metrics", metricsAdapter(&r.metricsHandler))
+		})
+	} else {
+		mux.Method(http.MethodGet, "/metrics", metricsAdapter(&r.metricsHandler))
+	}
+
 	// SPA fallback is last and only matches non-API paths.
 	mux.NotFound(r.serveSPA)
 
@@ -267,6 +289,26 @@ func newInstanceID() string {
 func (r *Router) StartHealthBus() {
 	if r.healthBus != nil {
 		r.healthBus.Start()
+	}
+}
+
+// AttachMetricsHandler binds an http.Handler to GET /metrics. Calling
+// with nil leaves the route returning 503 — useful for tests that
+// want to skip the metrics surface entirely. cmd/gemba serve calls
+// this with a metrics.Collector.Handler() once at boot.
+func (r *Router) AttachMetricsHandler(h http.Handler) { r.metricsHandler = h }
+
+// metricsAdapter dereferences the Router's metrics handler at request
+// time, so the route can be registered before the handler is set.
+// Routes without an attached handler return 503.
+func metricsAdapter(p *http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, req *http.Request) {
+		h := *p
+		if h == nil {
+			http.Error(w, "metrics not configured", http.StatusServiceUnavailable)
+			return
+		}
+		h.ServeHTTP(w, req)
 	}
 }
 
