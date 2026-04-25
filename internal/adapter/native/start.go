@@ -16,6 +16,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/native/preamble"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/worktrees"
 	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/internal/persona"
 )
 
 // Keys the SessionPrompt.Extension map uses to carry Gemba-specific
@@ -30,6 +31,14 @@ const (
 	// extKeyTitle carries the operator-visible pane title. Optional;
 	// when unset the backend falls back to its default.
 	extKeyTitle = "gemba:title"
+	// extKeySurface carries a *persona.Surface materialized by the
+	// dispatcher / polecat scheduler (gm-utik). When present it is
+	// translated into the container backend's volume-mount list — the
+	// strongest enforcement layer of the cwd-constraint contract. When
+	// absent the backend falls back to the legacy operator-mounts-only
+	// behavior so terminal backends and pre-surface dispatch paths
+	// keep working.
+	extKeySurface = "gemba:surface"
 )
 
 // StartSession implements core.OrchestrationPlaneAdaptor for the
@@ -110,7 +119,8 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	if title == "" {
 		title = "gemba: " + beadID
 	}
-	spec, err := buildSpawnSpec(agent, workspace, sessionID, agentType, title)
+	surface, _ := prompt.Extension[extKeySurface].(*persona.Surface)
+	spec, err := buildSpawnSpec(agent, workspace, sessionID, agentType, title, surface)
 	if err != nil {
 		return core.Session{}, core.WrapAdaptorError(core.KindValidation, err,
 			"native: build spawn spec for %s", beadID)
@@ -263,7 +273,7 @@ func (o *OrchestrationPlane) readSession(sessionID string) *core.Session {
 // the worktree the adaptor provisioned is reachable inside the
 // container. Files the agent writes land in the worktree on the host
 // owned by the operator (UserNS == host UID of the worktree).
-func buildSpawnSpec(agent agents.AgentType, workspace, sessionID, agentType, title string) (backend.SpawnSpec, error) {
+func buildSpawnSpec(agent agents.AgentType, workspace, sessionID, agentType, title string, surface *persona.Surface) (backend.SpawnSpec, error) {
 	spec := backend.SpawnSpec{
 		Cwd: workspace,
 		Env: map[string]string{
@@ -322,18 +332,35 @@ func buildSpawnSpec(agent agents.AgentType, workspace, sessionID, agentType, tit
 	// first so their order (which the backend preserves) reflects
 	// the operator's intent.
 	var cwdCovered bool
+	operatorMounts := make([]backend.Mount, 0, len(c.Mounts))
 	for _, m := range c.Mounts {
 		if m.Dst == cwd {
 			cwdCovered = true
 		}
-		spec.Mounts = append(spec.Mounts, expandMount(m, workspace, sessionID, agent.Name))
+		operatorMounts = append(operatorMounts, expandMount(m, workspace, sessionID, agent.Name))
 	}
 	if !cwdCovered {
-		spec.Mounts = append(spec.Mounts, backend.Mount{
+		operatorMounts = append(operatorMounts, backend.Mount{
 			Src:  workspace,
 			Dst:  cwd,
 			Mode: "rw",
 		})
+	}
+
+	// gm-utik: when the dispatcher attached a Surface, translate it
+	// into the strongest enforcement layer — the OS sees only the
+	// surface-allowed paths and refuses anything else. ExpandPaths
+	// resolves $HOME / $GOPATH / $GOROOT against the host env (the
+	// surface ships them as templates so the resolution stays out of
+	// the persona package). Operator mounts compose per SurfaceMode.
+	if surface != nil {
+		expanded := persona.ExpandPaths(*surface, persona.EnvFromOS(os.Getenv))
+		surfaceMounts, _ := SurfaceMounts(expanded, DefaultPathExists)
+		mode, _ := ParseSurfaceMode(c.SurfaceMode)
+		merged, _ := MergeSurfaceMounts(operatorMounts, surfaceMounts, mode)
+		spec.Mounts = merged
+	} else {
+		spec.Mounts = operatorMounts
 	}
 	return spec, nil
 }

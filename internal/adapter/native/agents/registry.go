@@ -126,6 +126,13 @@ type ContainerSpec struct {
 	// escapes. Required to accept any of them. Loud in the banner;
 	// logged on every spawn.
 	Unsafe bool `toml:"unsafe"`
+	// SurfaceMode controls how the surface-derived mount set
+	// (gm-utik) composes with the operator's Mounts list above.
+	// "additive" (default) layers operator extras on top of the
+	// policy-enforced surface; "exclusive" drops them entirely.
+	// Empty string = "additive". Unknown values fall back to
+	// additive with a logged warning at spawn time.
+	SurfaceMode string `toml:"surface_mode"`
 }
 
 // Present reports whether the operator declared a container stanza

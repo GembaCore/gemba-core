@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
+	"github.com/MikeBengtson/gemba/internal/persona"
 )
 
 func TestBuildSpawnSpec_TmuxPathUnchanged(t *testing.T) {
@@ -17,7 +18,7 @@ func TestBuildSpawnSpec_TmuxPathUnchanged(t *testing.T) {
 		Preamble: agents.PreambleClaudeMD,
 		Hooks:    agents.HookClaudeCode,
 	}
-	spec, err := buildSpawnSpec(agent, "/home/op/work", "sess-1", "claude", "title")
+	spec, err := buildSpawnSpec(agent, "/home/op/work", "sess-1", "claude", "title", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +51,7 @@ func TestBuildSpawnSpec_ContainerAutoWorkspaceMount(t *testing.T) {
 			ReadOnlyRootfs: &ro,
 		},
 	}
-	spec, err := buildSpawnSpec(agent, "/home/op/worktrees/sess-1", "sess-1", "claude-sandbox", "title")
+	spec, err := buildSpawnSpec(agent, "/home/op/worktrees/sess-1", "sess-1", "claude-sandbox", "title", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +108,7 @@ func TestBuildSpawnSpec_OperatorMountCoversCwd(t *testing.T) {
 			},
 		},
 	}
-	spec, err := buildSpawnSpec(agent, "/tmp/ws", "s", "c", "t")
+	spec, err := buildSpawnSpec(agent, "/tmp/ws", "s", "c", "t", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +139,7 @@ func TestBuildSpawnSpec_TemplateExpansion(t *testing.T) {
 			},
 		},
 	}
-	spec, err := buildSpawnSpec(agent, "/ws", "sess-42", "c", "t")
+	spec, err := buildSpawnSpec(agent, "/ws", "sess-42", "c", "t", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestBuildSpawnSpec_ReadOnlyRootfsExplicitFalse(t *testing.T) {
 			ReadOnlyRootfs: &ro,
 		},
 	}
-	spec, err := buildSpawnSpec(agent, "/ws", "s", "c", "t")
+	spec, err := buildSpawnSpec(agent, "/ws", "s", "c", "t", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -210,7 +211,7 @@ func TestBuildSpawnSpec_UserNSMatchesProcess(t *testing.T) {
 		Hooks:    agents.HookNone,
 		Container: agents.ContainerSpec{Image: "img"},
 	}
-	spec, err := buildSpawnSpec(agent, "/ws", "s", "c", "t")
+	spec, err := buildSpawnSpec(agent, "/ws", "s", "c", "t", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,4 +234,106 @@ func itoa(i int) string {
 		return string(rune('0' + i))
 	}
 	return itoa(i/10) + itoa(i%10)
+}
+
+// gm-utik: when a Surface is attached to the prompt, buildSpawnSpec
+// must compose its mounts on top of the operator's set per the
+// agent's surface_mode.
+func TestBuildSpawnSpec_SurfaceAdditive(t *testing.T) {
+	t.Setenv("HOME", "/Users/op") // exercise tooling-path expansion
+
+	agent := agents.AgentType{
+		Name:     "c",
+		Binary:   "claude",
+		Preamble: agents.PreambleClaudeMD,
+		Hooks:    agents.HookNone,
+		Container: agents.ContainerSpec{
+			Image: "img:1",
+			Cwd:   "/work",
+			Mounts: []agents.ContainerMount{
+				{Src: "{{workspace}}/scratch", Dst: "/scratch", Mode: "rw"},
+			},
+			// SurfaceMode left empty == additive (default).
+		},
+	}
+	// Use a Surface whose paths actually exist on the test host so
+	// the path-existence filter doesn't drop them. /tmp is the safest
+	// universally-present anchor; we point Cwd + ToolingPaths there.
+	s := &persona.Surface{
+		Cwd:          "/tmp",
+		ToolingPaths: []string{"/tmp"},
+	}
+	spec, err := buildSpawnSpec(agent, "/tmp", "sess-1", "c", "t", s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Operator scratch mount survives, surface /tmp lands as :rw.
+	var sawScratch, sawSurfaceCwd bool
+	for _, m := range spec.Mounts {
+		if m.Dst == "/scratch" && m.Mode == "rw" {
+			sawScratch = true
+		}
+		if m.Dst == "/tmp" && m.Mode == "rw" {
+			sawSurfaceCwd = true
+		}
+	}
+	if !sawScratch {
+		t.Errorf("operator scratch mount lost in additive merge: %+v", spec.Mounts)
+	}
+	if !sawSurfaceCwd {
+		t.Errorf("surface cwd mount missing: %+v", spec.Mounts)
+	}
+}
+
+func TestBuildSpawnSpec_SurfaceExclusiveDropsOperatorMounts(t *testing.T) {
+	agent := agents.AgentType{
+		Name:     "c",
+		Binary:   "claude",
+		Preamble: agents.PreambleClaudeMD,
+		Hooks:    agents.HookNone,
+		Container: agents.ContainerSpec{
+			Image: "img:1",
+			Cwd:   "/work",
+			Mounts: []agents.ContainerMount{
+				{Src: "/host/scratch", Dst: "/scratch", Mode: "rw"},
+			},
+			SurfaceMode: "exclusive",
+		},
+	}
+	s := &persona.Surface{Cwd: "/tmp"}
+	spec, err := buildSpawnSpec(agent, "/tmp", "s", "c", "t", s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range spec.Mounts {
+		if m.Dst == "/scratch" {
+			t.Errorf("exclusive mode must drop operator mount, got %+v", m)
+		}
+	}
+}
+
+func TestBuildSpawnSpec_NilSurfaceKeepsLegacyBehavior(t *testing.T) {
+	// Pre-surface dispatch flows pass nil; the original mount list
+	// (operator + auto cwd) should be unchanged.
+	agent := agents.AgentType{
+		Name:     "c",
+		Binary:   "claude",
+		Preamble: agents.PreambleClaudeMD,
+		Hooks:    agents.HookNone,
+		Container: agents.ContainerSpec{
+			Image: "img:1",
+			Cwd:   "/work",
+		},
+	}
+	spec, err := buildSpawnSpec(agent, "/tmp", "s", "c", "t", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(spec.Mounts) != 1 {
+		t.Fatalf("nil-surface path should produce just the auto cwd mount, got %d: %+v",
+			len(spec.Mounts), spec.Mounts)
+	}
+	if spec.Mounts[0].Mode != "rw" || spec.Mounts[0].Dst != "/work" {
+		t.Errorf("auto cwd mount lost: %+v", spec.Mounts[0])
+	}
 }
