@@ -166,11 +166,13 @@ event. Operators don't need to tune this.
 
 ### Installing the hook
 
-> **Status (2026-04-25)**: the hook itself ships in the upstream `beads`
-> repo (gm-e4.3.3 upstream PR — the gemba-side bead is for docs and a
-> skipped integration test). When that PR lands, the install path is
-> `bd hooks install --gemba-url ... --gemba-auth ...`; the section
-> below describes the contract the hook is required to honour.
+> **Status (2026-04-25)**: the gemba-side companion binary
+> (`bin/gemba-bd-hook`) ships in this repo today (gm-e4.3.3, this
+> bead). The proper post-write hook point in `bd` itself remains
+> external — `bd hooks install --gemba-url ...` is the eventual
+> shape, blocked on an upstream PR. Until then the binary is wired
+> via cron / wrapper alias / manual invocation; see the section
+> below.
 
 The hook is invoked by `bd` after every successful write that touches
 a bead's `UpdatedAt`. It reads two values from its environment:
@@ -218,3 +220,42 @@ arrives:
 The post-write hook is the only piece of cross-process plumbing
 between `bd` and `gemba`. Anything more sophisticated (Dolt binlog
 tail, polling shim) would replace this hook, not stack on top of it.
+
+### Companion binary: `gemba-bd-hook`
+
+The id-detection + POST + retry logic ships as a small Go binary at
+`bin/gemba-bd-hook` (built by `make build` alongside the other
+sentinel CLIs). The intended long-term path is for `bd hooks install`
+to drop a one-line shim that invokes this binary — keeping the
+upstream PR small and the heavy lifting in this repo. Until that
+upstream PR lands the binary is wired manually.
+
+Three id-collection modes:
+
+```bash
+# Explicit ids — simplest, ideal for ad-hoc scripts.
+gemba-bd-hook --id gm-foo --id gm-bar
+
+# Read ids from stdin — convenient with bd query pipelines.
+echo gm-foo | gemba-bd-hook --stdin
+
+# Detect ids from a Dolt diff. Run from the bd workspace dir.
+gemba-bd-hook --from-dolt-diff HEAD~1
+```
+
+Three install patterns (until the upstream PR lands):
+
+- **Cron** — `* * * * *  cd <bd-dir> && gemba-bd-hook
+  --from-dolt-diff HEAD~1`. Coarse-grained (1-minute lag); catches
+  everything regardless of caller.
+- **Wrapper alias** — alias `bd` to a shell function that calls the
+  real `bd`, captures the exit, and on success calls
+  `gemba-bd-hook --from-dolt-diff HEAD~1`. Catches terminal
+  invocations; misses other tools.
+- **Manual** — append `gemba-bd-hook --id <id>` to any script that
+  already detects bd writes.
+
+Fail-open is the default. Pass `--strict` for paths where a silent
+drop would hide real problems. With `GEMBA_NOTIFY_URL` unset the
+binary is a silent no-op so a hook script can call it
+unconditionally on machines that don't run gemba locally.

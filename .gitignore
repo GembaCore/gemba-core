@@ -17,6 +17,7 @@ web/node_modules/
 /gemba-bridge
 /gemba-mcp
 /gemba-state
+/gemba-bd-hook
 /gen-core-types
 
 # Frontend
