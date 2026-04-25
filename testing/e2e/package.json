@@ -11,6 +11,7 @@
     "test:chrome": "playwright test --project=chrome-fake",
     "test:drawers": "playwright test --project=route-fake specs/drawers",
     "test:grid": "playwright test --project=route-fake specs/grid",
+    "test:graph": "playwright test --project=route-fake specs/graph",
     "test:route": "playwright test --project=route-fake",
     "test:realtime": "playwright test --project=realtime-fake",
     "test:realtime:deep": "playwright test --project=realtime-deep --workers=2",

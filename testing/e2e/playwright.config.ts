@@ -63,15 +63,15 @@ const projects: Project[] = [
     timeout: 30_000,
   },
 
-  // ── Pending — enumerated for visibility, owned by sibling beads ────
-  // route-fake is partially active: gm-5v8v.5 lands board/**,
-  // gm-5v8v.6 lands grid/**, gm-5v8v.8 lands drawers/**, gm-5v8v.9
-  // lands sessions/**. Sibling bead .7 adds graph/** when it ships.
+  // route-fake is the multi-bead route tier slot. Each child bead
+  // (.5 board, .6 grid, .7 graph, .8 drawers, .9 sessions) plugs its
+  // spec directory in here.
   {
     name: 'route-fake',
     testMatch: [
       'board/**/*.spec.ts',
       'drawers/**/*.spec.ts',
+      'graph/**/*.spec.ts',
       'grid/**/*.spec.ts',
       'sessions/**/*.spec.ts',
     ],
@@ -79,7 +79,7 @@ const projects: Project[] = [
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'route', backend: 'fake', bead: 'gm-5v8v.5,6,8,9', status: 'active' },
+    metadata: { tier: 'route', backend: 'fake', bead: 'gm-5v8v.5,6,7,8,9', status: 'active' },
     timeout: 30_000,
   },
   // realtime-fake: AdaptorBanner + adaptors-stream specs (gm-5v8v.10).
