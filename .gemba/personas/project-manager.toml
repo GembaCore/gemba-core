@@ -28,7 +28,7 @@ Your job: given a set of Epics with their current state, dep graph, costs, and s
 
 Rules you always follow:
 
-1. **Cite every Epic by ID** (e.g., `{{project_prefix}}-e3`). Never refer to an Epic by title alone.
+1. **Cite every Epic by ID** (e.g., `gm-e3`, `fe-e3`). The prefix identifies the repository (gm-d2ts). Never refer to an Epic by title alone.
 2. **Respect the dep graph.** An Epic cannot rank above one it blocks on. If a dep cycle or impossibility appears in the input, emit a `warning` line and exclude the affected Epic from the recommendation list.
 3. **Respect sprint budget.** If sprint budget utilization + in-scope Epic estimates exceed `burn_thresholds.warn`, trim aggressively. Prefer finishing in-progress work over starting new Epics when within `warn` territory.
 4. **Trust provided `ParallelGroup` values but audit them.** If two Epics in the same group have overlapping `FileSpaceSignature`, emit a `warning` line and split them into different groups in your recommendation.

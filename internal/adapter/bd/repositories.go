@@ -147,6 +147,25 @@ func branchLabels(brs []core.BeadBranch) []string {
 	return out
 }
 
+// prefixOf returns the substring of beadID up to (but not including)
+// the first hyphen — the prefix used to route a bead to its
+// [core.Repository] when no explicit `repo:*` label is set (gm-d2ts).
+// Returns "" when beadID has no hyphen, which the caller treats as
+// "no prefix match" and falls through to legacy behavior.
+//
+// Examples:
+//
+//	"gm-e3"     → "gm"
+//	"fe-bug-44" → "fe"
+//	"e3"        → ""
+func prefixOf(beadID string) string {
+	idx := strings.IndexByte(beadID, '-')
+	if idx <= 0 {
+		return ""
+	}
+	return beadID[:idx]
+}
+
 // stripBranchLabels returns in with every `branch:*` entry removed.
 // Used on the write path so a patch carrying a new branch mapping
 // authoritatively replaces stale labels rather than stacking on top.

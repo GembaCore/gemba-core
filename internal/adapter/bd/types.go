@@ -98,7 +98,7 @@ func bdStatusForCategory(cat core.StateCategory) (string, bool) {
 // timestamps) survive on Custom under the "beads:" namespace so the
 // UI extension under web/src/extensions/beads/ can render them without
 // a round-trip back to bd.
-func (b *Bead) toWorkItem(prefix string) core.WorkItem {
+func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.WorkItem {
 	category, ok := beadsStateMap[b.Status]
 	if !ok {
 		// Unknown statuses land in backlog so the SPA still has a lane
@@ -141,7 +141,16 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 	if hasLabel(b.Labels, milestoneLabel) {
 		kind = core.KindMilestone
 	}
-	primary, repos := repositoriesFromLabels(b.Labels)
+	primary, repoIDs := repositoriesFromLabels(b.Labels)
+	// gm-d2ts: when no `repo:*` label is set and a registry is
+	// available, fall back to bead-id-prefix routing. Lets operators
+	// who organize beads by per-repo prefix skip per-bead labelling.
+	if primary == "" && repos != nil {
+		if r, ok := repos.GetByPrefix(prefixOf(b.ID)); ok {
+			primary = r.ID
+			repoIDs = []core.RepositoryID{r.ID}
+		}
+	}
 	branches := branchesFromLabels(b.Labels)
 	wi := core.WorkItem{
 		ID:                  id,
@@ -152,7 +161,7 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 		StateCategory:       category,
 		Priority:            &priority,
 		PrimaryRepositoryID: primary,
-		RepositoryIDs:       repos,
+		RepositoryIDs:       repoIDs,
 		Branches:            branches,
 		Labels:              append([]string(nil), b.Labels...),
 		// Relationships carries only the three core edges (blocks,

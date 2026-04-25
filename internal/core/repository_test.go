@@ -13,6 +13,7 @@ id = "gemba"
 path = "/tmp/repos/gemba"
 default_branch = "main"
 url = "https://github.com/MikeBengtson/gemba.git"
+bead_prefix = "gm"
 `
 
 func writeRepoFile(t *testing.T, dir, name, body string) string {
@@ -29,6 +30,7 @@ func TestRepository_ValidateAccepts(t *testing.T) {
 		ID:            "gemba",
 		Path:          "/abs/path",
 		DefaultBranch: "main",
+		BeadPrefix:    "gm",
 	}
 	if err := r.Validate(); err != nil {
 		t.Errorf("expected valid, got: %v", err)
@@ -50,7 +52,7 @@ func TestRepository_ValidateRejects(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			r := Repository{ID: "gemba", Path: "/abs", DefaultBranch: "main"}
+			r := Repository{ID: "gemba", Path: "/abs", DefaultBranch: "main", BeadPrefix: "gm"}
 			c.mutate(&r)
 			err := r.Validate()
 			if err == nil {
@@ -170,7 +172,7 @@ func TestLoadRepositoriesDir_RejectsDuplicateID(t *testing.T) {
 
 func TestRepositoryRegistry_RegisterAndLookup(t *testing.T) {
 	reg := NewRepositoryRegistry()
-	r := &Repository{ID: "gemba", Path: "/abs", DefaultBranch: "main"}
+	r := &Repository{ID: "gemba", Path: "/abs", DefaultBranch: "main", BeadPrefix: "gm"}
 	if err := reg.Register(r); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -179,7 +181,7 @@ func TestRepositoryRegistry_RegisterAndLookup(t *testing.T) {
 		t.Errorf("idempotent re-register: %v", err)
 	}
 	// Conflicting register on different pointer.
-	other := &Repository{ID: "gemba", Path: "/abs2", DefaultBranch: "main"}
+	other := &Repository{ID: "gemba", Path: "/abs2", DefaultBranch: "main", BeadPrefix: "gm"}
 	if err := reg.Register(other); err == nil {
 		t.Error("expected duplicate-id error on different pointer")
 	}
@@ -195,7 +197,7 @@ func TestRepositoryRegistry_RegisterValidates(t *testing.T) {
 	if err := reg.Register(nil); err == nil {
 		t.Error("expected error on nil")
 	}
-	bad := &Repository{ID: "gemba", Path: "relative", DefaultBranch: "main"}
+	bad := &Repository{ID: "gemba", Path: "relative", DefaultBranch: "main", BeadPrefix: "gm"}
 	if err := reg.Register(bad); err == nil {
 		t.Error("expected validation error on relative path")
 	}
@@ -204,7 +206,7 @@ func TestRepositoryRegistry_RegisterValidates(t *testing.T) {
 func TestRepositoryRegistry_ListAscending(t *testing.T) {
 	reg := NewRepositoryRegistry()
 	for _, id := range []string{"infra", "frontend", "gemba"} {
-		_ = reg.Register(&Repository{ID: RepositoryID(id), Path: "/abs/" + id, DefaultBranch: "main"})
+		_ = reg.Register(&Repository{ID: RepositoryID(id), Path: "/abs/" + id, DefaultBranch: "main", BeadPrefix: id[:2]})
 	}
 	got := reg.List()
 	want := []RepositoryID{"frontend", "gemba", "infra"}
@@ -221,10 +223,11 @@ func TestRepositoryRegistry_ListAscending(t *testing.T) {
 func TestLoadRepositoryRegistry_PopulatesAll(t *testing.T) {
 	dir := t.TempDir()
 	writeRepoFile(t, dir, "gemba.toml", minimalRepoTOML)
-	writeRepoFile(t, dir, "infra.toml",
-		strings.ReplaceAll(strings.ReplaceAll(minimalRepoTOML,
-			`"gemba"`, `"infra"`),
-			`/tmp/repos/gemba`, `/tmp/repos/infra`))
+	infraTOML := minimalRepoTOML
+	infraTOML = strings.ReplaceAll(infraTOML, `"gemba"`, `"infra"`)
+	infraTOML = strings.ReplaceAll(infraTOML, `/tmp/repos/gemba`, `/tmp/repos/infra`)
+	infraTOML = strings.ReplaceAll(infraTOML, `bead_prefix = "gm"`, `bead_prefix = "in"`)
+	writeRepoFile(t, dir, "infra.toml", infraTOML)
 
 	reg, err := LoadRepositoryRegistry(dir)
 	if err != nil {
@@ -587,8 +590,109 @@ func TestWorkItem_OmitemptyBranches(t *testing.T) {
 	}
 }
 
+// gm-d2ts: BeadPrefix shape rules.
+func TestRepository_ValidateBeadPrefix(t *testing.T) {
+	cases := []struct {
+		name    string
+		prefix  string
+		wantSub string // "" = expect nil
+	}{
+		{"empty", "", "must not be empty"},
+		{"too short", "g", "2-8"},
+		{"too long", "abcdefghi", "2-8"},
+		{"uppercase rejected", "Gm", "invalid character"},
+		{"underscore rejected", "g_m", "invalid character"},
+		{"slash rejected", "g/m", "invalid character"},
+		{"valid 2-char", "gm", ""},
+		{"valid with digit", "g1", ""},
+		{"valid with hyphen", "g-m", ""},
+		{"valid 8-char", "frontend", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := Repository{
+				ID:            "x",
+				Path:          "/abs",
+				DefaultBranch: "main",
+				BeadPrefix:    c.prefix,
+			}
+			err := r.Validate()
+			if c.wantSub == "" {
+				if err != nil {
+					t.Errorf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), c.wantSub) {
+				t.Errorf("err = %v, want substring %q", err, c.wantSub)
+			}
+		})
+	}
+}
+
+// Registering two repositories that share a prefix is an error —
+// uniqueness is the load-bearing property of per-repo prefixes.
+func TestRepositoryRegistry_RejectsDuplicatePrefix(t *testing.T) {
+	reg := NewRepositoryRegistry()
+	a := &Repository{ID: "frontend", Path: "/abs/fe", DefaultBranch: "main", BeadPrefix: "fe"}
+	b := &Repository{ID: "feed", Path: "/abs/feed", DefaultBranch: "main", BeadPrefix: "fe"}
+	if err := reg.Register(a); err != nil {
+		t.Fatalf("first Register: %v", err)
+	}
+	err := reg.Register(b)
+	if err == nil {
+		t.Fatal("expected duplicate-prefix error")
+	}
+	if !strings.Contains(err.Error(), `bead_prefix "fe" already claimed`) {
+		t.Errorf("err = %v, want duplicate-prefix detail", err)
+	}
+}
+
+// GetByPrefix routes to the right repository.
+func TestRepositoryRegistry_GetByPrefix(t *testing.T) {
+	reg := NewRepositoryRegistry()
+	for _, r := range []*Repository{
+		{ID: "frontend", Path: "/abs/fe", DefaultBranch: "main", BeadPrefix: "fe"},
+		{ID: "backend", Path: "/abs/be", DefaultBranch: "main", BeadPrefix: "be"},
+	} {
+		if err := reg.Register(r); err != nil {
+			t.Fatalf("Register %q: %v", r.ID, err)
+		}
+	}
+	got, ok := reg.GetByPrefix("fe")
+	if !ok || got.ID != "frontend" {
+		t.Errorf("GetByPrefix(fe) = (%v, %v), want frontend/true", got, ok)
+	}
+	if _, ok := reg.GetByPrefix("ghost"); ok {
+		t.Error("GetByPrefix(ghost) should report false")
+	}
+}
+
+// LoadRepositoryRegistry returns a clear error when two TOML files
+// declare the same prefix.
+func TestLoadRepositoryRegistry_RejectsDuplicatePrefix(t *testing.T) {
+	dir := t.TempDir()
+	writeRepoFile(t, dir, "alpha.toml", `id = "alpha"
+path = "/abs/alpha"
+default_branch = "main"
+bead_prefix = "fe"
+`)
+	writeRepoFile(t, dir, "beta.toml", `id = "beta"
+path = "/abs/beta"
+default_branch = "main"
+bead_prefix = "fe"
+`)
+	_, err := LoadRepositoryRegistry(dir)
+	if err == nil || !strings.Contains(err.Error(), "already claimed") {
+		t.Errorf("err = %v, want duplicate-prefix error", err)
+	}
+}
+
 func TestRepositoryUnspecified_RejectedByValidate(t *testing.T) {
-	r := Repository{ID: RepositoryUnspecified, Path: "/abs", DefaultBranch: "main"}
+	r := Repository{ID: RepositoryUnspecified, Path: "/abs", DefaultBranch: "main", BeadPrefix: "gm"}
 	if err := r.Validate(); err == nil {
 		t.Error("RepositoryUnspecified should fail Validate")
 	}

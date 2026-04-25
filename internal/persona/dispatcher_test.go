@@ -71,6 +71,7 @@ func newTestDispatcher(t *testing.T, opts ...DispatcherOption) *Dispatcher {
 		ID:            "gemba",
 		Path:          "/repos/gemba",
 		DefaultBranch: "main",
+		BeadPrefix:    "gm",
 	})
 	// Deterministic time + ids so tests can assert exact audit-log
 	// partitioning and don't race on rand.

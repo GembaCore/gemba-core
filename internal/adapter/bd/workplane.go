@@ -33,6 +33,15 @@ type Config struct {
 	// Operators override this only if their beads rig stores a different
 	// format in Description (rare).
 	DescriptionFormat string
+
+	// Repositories, when non-nil, enables prefix-based repository
+	// routing (gm-d2ts). On every WorkItem read, if a bead carries no
+	// explicit `repo:*` label, the adaptor splits its bd id at the
+	// first hyphen and looks up the prefix in this registry. A match
+	// populates PrimaryRepositoryID + RepositoryIDs from the
+	// resolved [core.Repository.ID]. Nil keeps legacy behavior
+	// (operators get repo association only via explicit labels).
+	Repositories *core.RepositoryRegistry
 }
 
 // WorkPlane is the Beads-backed core.WorkPlane implementation
@@ -50,6 +59,7 @@ type WorkPlane struct {
 	prefix            string
 	descriptionFormat string
 	emitter           *core.WorkPlaneEmitter
+	repos             *core.RepositoryRegistry // gm-d2ts; nil = no prefix routing
 }
 
 // NewWorkPlane returns a WorkPlane shelling to the `bd` binary on PATH.
@@ -81,6 +91,7 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 		prefix:            defaultPrefix,
 		descriptionFormat: format,
 		emitter:           core.NewWorkPlaneEmitter(),
+		repos:             cfg.Repositories,
 	}, nil
 }
 
@@ -241,7 +252,7 @@ func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([
 	}
 	items := make([]core.WorkItem, 0, len(beads))
 	for i := range beads {
-		wi := beads[i].toWorkItem(w.prefix)
+		wi := beads[i].toWorkItem(w.prefix, w.repos)
 		if !matchesFilter(wi, f) {
 			continue
 		}
@@ -336,7 +347,7 @@ func (w *WorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.W
 		return core.WorkItem{}, core.NewAdaptorError(core.KindSessionNotFound,
 			"beads: bead %q not found", native)
 	}
-	return beads[0].toWorkItem(w.prefix), nil
+	return beads[0].toWorkItem(w.prefix, w.repos), nil
 }
 
 // CreateWorkItem creates a new bead via `bd create --json`. Caller-
@@ -403,7 +414,7 @@ func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.
 	if err != nil {
 		return core.WorkItem{}, err
 	}
-	wiOut := bead.toWorkItem(w.prefix)
+	wiOut := bead.toWorkItem(w.prefix, w.repos)
 	w.emit(core.WorkItemEventCreated, wiOut)
 	return wiOut, nil
 }

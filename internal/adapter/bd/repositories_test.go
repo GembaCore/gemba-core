@@ -118,12 +118,115 @@ func TestBeadToWorkItem_PopulatesRepositoryFields(t *testing.T) {
 		IssueType: "epic",
 		Labels:    []string{"area:capability", "repo:frontend", "repo:backend"},
 	}
-	wi := b.toWorkItem("gm")
+	wi := b.toWorkItem("gm", nil)
 	if wi.PrimaryRepositoryID != "frontend" {
 		t.Errorf("primary = %q, want frontend", wi.PrimaryRepositoryID)
 	}
 	if len(wi.RepositoryIDs) != 2 {
 		t.Fatalf("RepositoryIDs = %v, want 2 entries", wi.RepositoryIDs)
+	}
+}
+
+// gm-d2ts: prefixOf splits a bead id at the first hyphen.
+func TestPrefixOf(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"gm-e3", "gm"},
+		{"fe-bug-44", "fe"},
+		{"backend-1", "backend"},
+		{"e3", ""},
+		{"", ""},
+		{"-", ""},
+		{"-leading", ""},
+	}
+	for _, c := range cases {
+		if got := prefixOf(c.in); got != c.want {
+			t.Errorf("prefixOf(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// gm-d2ts: when a bead has no `repo:*` label and a registry is wired
+// in, the bd adaptor falls back to bead-id-prefix routing to populate
+// PrimaryRepositoryID + RepositoryIDs.
+func TestBeadToWorkItem_PrefixRoutingFallback(t *testing.T) {
+	reg := core.NewRepositoryRegistry()
+	if err := reg.Register(&core.Repository{
+		ID:            "frontend",
+		Path:          "/abs/fe",
+		DefaultBranch: "main",
+		BeadPrefix:    "fe",
+	}); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	b := &Bead{
+		ID:        "fe-e3",
+		Title:     "Plan view",
+		Status:    "open",
+		IssueType: "epic",
+		Labels:    []string{"area:capability"}, // no repo:* label
+	}
+	wi := b.toWorkItem("gm", reg)
+	if wi.PrimaryRepositoryID != "frontend" {
+		t.Errorf("PrimaryRepositoryID = %q, want frontend (prefix routing)", wi.PrimaryRepositoryID)
+	}
+	if len(wi.RepositoryIDs) != 1 || wi.RepositoryIDs[0] != "frontend" {
+		t.Errorf("RepositoryIDs = %v, want [frontend]", wi.RepositoryIDs)
+	}
+}
+
+// Explicit `repo:*` label wins over prefix routing — the operator's
+// intent is authoritative.
+func TestBeadToWorkItem_ExplicitLabelBeatsPrefixRouting(t *testing.T) {
+	reg := core.NewRepositoryRegistry()
+	for _, r := range []*core.Repository{
+		{ID: "frontend", Path: "/abs/fe", DefaultBranch: "main", BeadPrefix: "fe"},
+		{ID: "backend", Path: "/abs/be", DefaultBranch: "main", BeadPrefix: "be"},
+	} {
+		_ = reg.Register(r)
+	}
+	b := &Bead{
+		ID:        "fe-e3",
+		Title:     "Plan view",
+		Status:    "open",
+		IssueType: "epic",
+		Labels:    []string{"repo:backend"}, // explicit override
+	}
+	wi := b.toWorkItem("gm", reg)
+	if wi.PrimaryRepositoryID != "backend" {
+		t.Errorf("explicit label should win: got %q, want backend", wi.PrimaryRepositoryID)
+	}
+}
+
+// Without a registry (legacy callers), prefix routing is skipped and
+// the WorkItem keeps empty repository fields.
+func TestBeadToWorkItem_NoRegistryNoPrefixRouting(t *testing.T) {
+	b := &Bead{
+		ID:        "fe-e3",
+		Title:     "x",
+		Status:    "open",
+		IssueType: "epic",
+	}
+	wi := b.toWorkItem("gm", nil)
+	if wi.PrimaryRepositoryID != "" {
+		t.Errorf("no-registry mode should leave repo empty: %q", wi.PrimaryRepositoryID)
+	}
+}
+
+// Unknown prefix in the registry → no match, empty fields.
+func TestBeadToWorkItem_UnknownPrefixLeavesFieldsEmpty(t *testing.T) {
+	reg := core.NewRepositoryRegistry()
+	_ = reg.Register(&core.Repository{
+		ID: "frontend", Path: "/abs/fe", DefaultBranch: "main", BeadPrefix: "fe",
+	})
+	b := &Bead{
+		ID:        "ghost-e3",
+		Title:     "x",
+		Status:    "open",
+		IssueType: "epic",
+	}
+	wi := b.toWorkItem("gm", reg)
+	if wi.PrimaryRepositoryID != "" {
+		t.Errorf("unknown prefix should leave repo empty: %q", wi.PrimaryRepositoryID)
 	}
 }
 
@@ -261,7 +364,7 @@ func TestBeadToWorkItem_PopulatesBranches(t *testing.T) {
 			"branch:backend:feature/plan-view-api",
 		},
 	}
-	wi := b.toWorkItem("gm")
+	wi := b.toWorkItem("gm", nil)
 	if len(wi.Branches) != 2 {
 		t.Fatalf("Branches = %v, want 2 entries", wi.Branches)
 	}
@@ -282,7 +385,7 @@ func TestBeadToWorkItem_NoRepoLabelsLeavesFieldsEmpty(t *testing.T) {
 		IssueType: "epic",
 		Labels:    []string{"area:capability"},
 	}
-	wi := b.toWorkItem("gm")
+	wi := b.toWorkItem("gm", nil)
 	if wi.PrimaryRepositoryID != "" {
 		t.Errorf("PrimaryRepositoryID = %q, want empty", wi.PrimaryRepositoryID)
 	}

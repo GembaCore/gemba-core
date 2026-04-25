@@ -14,6 +14,11 @@ path = "/Users/mikebengtson/gt/gemba/crew/mike3"
 default_branch = "main"
 url = "https://github.com/MikeBengtson/gemba.git"
 
+# Bead-id prefix for cross-repo disambiguation (gm-d2ts). Beads
+# filed against this repository use IDs like gm-e3, gm-518.
+# Uniqueness is enforced workspace-wide by the loader.
+bead_prefix = "gm"
+
 # Worktree pool for parallel polecats. Empty / omitted = single-worktree
 # mode (work happens in-place in `path`). Set this to ".worktrees" or
 # similar when running multiple agents concurrently against this repo.

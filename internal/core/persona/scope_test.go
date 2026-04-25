@@ -98,8 +98,8 @@ func TestResolveWorkingDir_Project(t *testing.T) {
 
 func TestResolveWorkingDir_Repository(t *testing.T) {
 	reg := newRepoRegistry(t,
-		&core.Repository{ID: "frontend", Path: "/repos/frontend", DefaultBranch: "main"},
-		&core.Repository{ID: "backend", Path: "/repos/backend", DefaultBranch: "main"},
+		&core.Repository{ID: "frontend", Path: "/repos/frontend", DefaultBranch: "main", BeadPrefix: "fe"},
+		&core.Repository{ID: "backend", Path: "/repos/backend", DefaultBranch: "main", BeadPrefix: "be"},
 	)
 	got, err := PersonaScope{Kind: ScopeRepository, RepositoryID: "frontend"}.ResolveWorkingDir("/work/gemba", reg, "")
 	if err != nil {
@@ -120,7 +120,7 @@ func TestResolveWorkingDir_RepositoryMissingFromRegistry(t *testing.T) {
 
 func TestResolveWorkingDir_AnyUsesOverride(t *testing.T) {
 	reg := newRepoRegistry(t,
-		&core.Repository{ID: "frontend", Path: "/repos/frontend", DefaultBranch: "main"},
+		&core.Repository{ID: "frontend", Path: "/repos/frontend", DefaultBranch: "main", BeadPrefix: "fe"},
 	)
 	got, err := PersonaScope{Kind: ScopeAny}.ResolveWorkingDir("/work", reg, "frontend")
 	if err != nil {
