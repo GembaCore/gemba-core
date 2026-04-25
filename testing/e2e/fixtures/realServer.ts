@@ -23,7 +23,7 @@
 // and tests fast. Tests reset bead state between runs via BdClient.
 
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createServer } from 'node:net';
@@ -97,12 +97,13 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   // bd init creates .beads/ in cwd. Use a unique short prefix so any
   // ids it stamps don't collide with the developer's local rigs if
   // a stray export ever leaks into a real workspace.
+  const prefix = `e2e${opts.workerIndex}`;
   try {
     execFileSync(
       bdBin,
       [
         'init',
-        '--prefix', `e2e${opts.workerIndex}`,
+        '--prefix', prefix,
         '--non-interactive',
         '--quiet',
         '--skip-agents',
@@ -117,6 +118,20 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   } catch (err) {
     rmSync(baseDir, { recursive: true, force: true });
     throw new Error(`bd init failed in ${baseDir}: ${(err as Error).message}`);
+  }
+
+  // gm-h4n post-condition: confirm bd init produced a genuinely
+  // isolated workspace. If bd somehow fell through to the shared
+  // :3307 server (the bug this guard defends against), metadata.json
+  // would show dolt_mode='server' OR a dolt_database that doesn't
+  // match our --prefix. Either signal means HOME-isolation didn't
+  // hold and the fixture is risking shared-state pollution; bail
+  // out before the test runs and writes more state.
+  try {
+    assertEmbeddedIsolation(join(baseDir, '.beads'), prefix);
+  } catch (err) {
+    rmSync(baseDir, { recursive: true, force: true });
+    throw err;
   }
 
   const port = await pickFreePort();
@@ -183,6 +198,66 @@ function defaultGembaBin(): string {
   // testing/e2e/fixtures/realServer.ts → repo root is two parents up.
   const here = dirname(fileURLToPath(import.meta.url));
   return resolve(here, '..', '..', '..', 'bin', 'gemba');
+}
+
+interface BeadsMetadata {
+  dolt_mode?: string;
+  dolt_database?: string;
+  dolt_server_host?: string;
+  dolt_server_port?: number;
+}
+
+// assertEmbeddedIsolation reads the .beads/metadata.json bd just
+// wrote and confirms it reflects a genuinely isolated workspace
+// (gm-h4n). Two failure modes the fixture absolutely must not let
+// through:
+//
+//   1. dolt_mode !== 'embedded' — bd registered a server connection
+//      somewhere, which means it found one. With HOME pointed at a
+//      tempdir there is no server to find, so seeing this means the
+//      isolation contract broke.
+//   2. dolt_database does not match the prefix we passed — bd's
+//      database name is derived from --prefix (with - → _). A
+//      mismatch suggests bd loaded a workspace from elsewhere
+//      (synced remote, fall-through to operator's real .beads).
+//
+// Either signal aborts the fixture before the test runs, converting
+// silent shared-state corruption into a loud, actionable failure.
+function assertEmbeddedIsolation(beadsDir: string, prefix: string): void {
+  const metaPath = join(beadsDir, 'metadata.json');
+  if (!existsSync(metaPath)) {
+    throw new Error(
+      `gm-h4n: bd init did not produce ${metaPath}. Isolation may have ` +
+        `redirected to a non-embedded backend; check HOME / BEADS_DIR env.`
+    );
+  }
+  let parsed: BeadsMetadata;
+  try {
+    parsed = JSON.parse(readFileSync(metaPath, 'utf8')) as BeadsMetadata;
+  } catch (err) {
+    throw new Error(
+      `gm-h4n: ${metaPath} is not parseable JSON: ${(err as Error).message}`
+    );
+  }
+  if (parsed.dolt_mode !== 'embedded') {
+    throw new Error(
+      `gm-h4n: bd init produced dolt_mode=${JSON.stringify(parsed.dolt_mode)} ` +
+        `(expected 'embedded'). HOME / BEADS_DIR isolation failed; the fixture ` +
+        `is at risk of writing into the shared :3307 Dolt server. ` +
+        `metadata.json: ${JSON.stringify(parsed)}`
+    );
+  }
+  // bd normalises - to _ in database names. Our prefix is 'e2e<N>'
+  // which has no hyphens, but be defensive in case the convention
+  // grows them.
+  const expectedDb = prefix.replace(/-/g, '_');
+  if (parsed.dolt_database !== expectedDb) {
+    throw new Error(
+      `gm-h4n: bd init produced dolt_database=${JSON.stringify(parsed.dolt_database)} ` +
+        `(expected ${JSON.stringify(expectedDb)}). bd may have synced from a ` +
+        `remote or fallen through to a different workspace.`
+    );
+  }
 }
 
 async function pickFreePort(): Promise<number> {
