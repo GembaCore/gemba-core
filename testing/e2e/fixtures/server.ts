@@ -17,7 +17,19 @@
 // stay backend-agnostic and run identically against either backend.
 
 import { test as base, expect, type Page, type Route } from '@playwright/test';
-import { spinRealServer, type RealServer } from './realServer';
+import { spinRealServer, type AuthMode, type RealServer } from './realServer';
+
+/**
+ * Options for the per-test authServer factory (gm-5v8v.12.1). Mirrors
+ * the parts of SpinOptions auth specs care about; everything else
+ * defaults from the fixture.
+ */
+export type AuthServerOptions = {
+  auth?: AuthMode;
+  listen?: string;
+  dangerouslySkipPermissions?: boolean;
+  expectBootFailure?: boolean;
+};
 import { BdClient } from './bdClient';
 import { createWorkPlane, type WorkPlaneStore } from './workplane';
 import { createSessionStore, type SessionStore } from './sessionStore';
@@ -99,6 +111,15 @@ type TestFixtures = {
    * specs are largely fixme contracts.
    */
   auth: AuthHandle;
+  /**
+   * Per-test factory for spinning a real `gemba serve` with custom
+   * auth / listen / yolo options (gm-5v8v.12.1). Each call creates a
+   * fresh isolated server; the fixture disposes them all at teardown.
+   * Specs that need a token-mode server use this instead of the
+   * worker-scoped realServer because each auth test wants its own
+   * config (different token, different mode, expected boot failure).
+   */
+  authServer: (opts?: AuthServerOptions) => Promise<RealServer>;
   /** Captured console errors + page errors for the current test. */
   consoleErrors: string[];
   /**
@@ -190,6 +211,25 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     // beforeEach. Default mirrors ui-spec §6.2.
     const handle = createModeHandle(DEFAULT_MODE);
     await use(handle);
+  },
+
+  authServer: async ({}, use, testInfo) => {
+    // gm-5v8v.12.1 — factory that spins a fresh isolated gemba serve
+    // per-call. Specs call it inside a test for the exact auth /
+    // listen / yolo combination they need; this fixture batches
+    // teardown so we never leak processes when a spec fails midway.
+    const spawned: RealServer[] = [];
+    await use(async (opts: AuthServerOptions = {}) => {
+      const server = await spinRealServer({
+        workerIndex: testInfo.workerIndex,
+        ...opts,
+      });
+      spawned.push(server);
+      return server;
+    });
+    for (const s of spawned) {
+      try { await s.dispose(); } catch { /* best-effort */ }
+    }
   },
 
   auth: async ({}, use) => {

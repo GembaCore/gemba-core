@@ -39,6 +39,20 @@ export type RealServer = {
   /** Server PID (mostly for diagnostics). */
   pid: number;
   /**
+   * Plaintext auth token captured from stderr when this server was
+   * spawned with `auth: 'token'` (gm-5v8v.12.1). Undefined under any
+   * other auth mode. Specs use it as `Authorization: Bearer <token>`.
+   */
+  authToken?: string;
+  /**
+   * Exit code captured when the spawn was deliberately allowed to
+   * fail (`expectBootFailure: true`). Undefined for normal long-
+   * lived servers since they don't exit until dispose.
+   */
+  exitCode?: number | null;
+  /** Exit signal under the same condition as `exitCode`. */
+  exitSignal?: NodeJS.Signals | null;
+  /**
    * Isolated env vars that confine bd to this tempdir (gm-h4n).
    * BdClient and any other bd-shelling code MUST inherit this env so
    * commands can't leak into the operator's real workspace.
@@ -50,6 +64,8 @@ export type RealServer = {
   dispose(): Promise<void>;
 };
 
+export type AuthMode = 'open' | 'token';
+
 export type SpinOptions = {
   /** Playwright worker index — used to label the tempdir. */
   workerIndex: number;
@@ -59,6 +75,33 @@ export type SpinOptions = {
   bdBin?: string;
   /** Boot timeout in ms. Defaults to 30s. */
   bootTimeoutMs?: number;
+
+  // gm-5v8v.12.1 — auth fixture options
+  /**
+   * Authentication mode. Default behavior (omit) maps to gemba's
+   * "auth open" default. Pass 'token' to spawn with --auth=token; the
+   * fixture parses the bootstrapped token from stderr and stamps it
+   * onto RealServer.authToken.
+   */
+  auth?: AuthMode;
+  /**
+   * Bind interface override. Default 127.0.0.1. Pass 0.0.0.0 (or
+   * similar) to test the gm-99g sanity gate that refuses to start an
+   * open-auth server on a non-loopback interface.
+   */
+  listen?: string;
+  /**
+   * Forward `--dangerously-skip-permissions` so /api/config returns
+   * yolo_available=true. Default false.
+   */
+  dangerouslySkipPermissions?: boolean;
+  /**
+   * If true, the spawn is expected to exit non-zero before /api/health
+   * goes green. The function returns a RealServer with authToken+
+   * baseURL undefined and exitCode set. Specs use this for the
+   * loopback / bind-policy negative tests (gm-99g).
+   */
+  expectBootFailure?: boolean;
 };
 
 /** Spin a real gemba serve instance against a per-worker beads workspace. */
@@ -134,37 +177,63 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     throw err;
   }
 
+  const listen = opts.listen ?? '127.0.0.1';
   const port = await pickFreePort();
-  const child = spawn(
-    gembaBin,
-    [
-      'serve',
-      '--listen', '127.0.0.1',
-      '--port', String(port),
-      '--beads-dir', baseDir,
-      '--worktrees-dir', worktreesDir,
-      '--quiet',
-    ],
-    {
-      cwd: baseDir,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      // gm-h4n: gemba serve shells to bd internally; that bd inherits
-      // this env, so the same HOME-isolation that protects bd init
-      // protects every WorkPlane subprocess from leaking into the
-      // shared :3307 server.
-      env: isolatedEnv,
-    }
-  );
+
+  const args = [
+    'serve',
+    '--listen', listen,
+    '--port', String(port),
+    '--beads-dir', baseDir,
+    '--worktrees-dir', worktreesDir,
+    '--quiet',
+  ];
+  if (opts.auth) {
+    args.push('--auth', opts.auth === 'open' ? 'none' : opts.auth);
+  }
+  if (opts.dangerouslySkipPermissions) {
+    args.push('--dangerously-skip-permissions');
+  }
+
+  const child = spawn(gembaBin, args, {
+    cwd: baseDir,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // gm-h4n: gemba serve shells to bd internally; that bd inherits
+    // this env, so the same HOME-isolation that protects bd init
+    // protects every WorkPlane subprocess from leaking into the
+    // shared :3307 server.
+    env: isolatedEnv,
+  });
 
   const stderrChunks: string[] = [];
   child.stderr?.on('data', (c) => stderrChunks.push(c.toString()));
   child.stdout?.on('data', () => {/* drained but ignored */});
 
-  const baseURL = `http://127.0.0.1:${port}`;
+  const baseURL = `http://${listen}:${port}`;
   let exited: { code: number | null; signal: NodeJS.Signals | null } | undefined;
   child.once('exit', (code, signal) => {
     exited = { code, signal };
   });
+
+  // gm-5v8v.12.1: expected-boot-failure path. Used for negative tests
+  // like the gm-99g sanity gate (--listen=0.0.0.0 + --auth=open must
+  // refuse to start). Wait for exit, do NOT poll /api/health, return
+  // with exitCode populated and baseURL undefined.
+  if (opts.expectBootFailure) {
+    const exitInfo = await waitForExit(child, bootTimeoutMs);
+    rmSync(baseDir, { recursive: true, force: true });
+    return {
+      baseURL: '',
+      beadsDir: baseDir,
+      worktreesDir,
+      pid: child.pid ?? -1,
+      env: isolatedEnv,
+      exitCode: exitInfo.code,
+      exitSignal: exitInfo.signal,
+      stderr: () => stderrChunks.join(''),
+      dispose: async () => { /* no-op — already cleaned */ },
+    };
+  }
 
   try {
     await waitForHealth(baseURL, bootTimeoutMs, () => exited);
@@ -176,12 +245,29 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     );
   }
 
+  // Parse the bootstrapped auth token from stderr when --auth=token.
+  // ensurePrimaryToken in cli/serve.go writes a recognizable banner
+  // with the literal "Token:" line; we grep that.
+  let authToken: string | undefined;
+  if (opts.auth === 'token') {
+    authToken = parseAuthTokenFromStderr(stderrChunks.join(''));
+    if (!authToken) {
+      child.kill('SIGKILL');
+      rmSync(baseDir, { recursive: true, force: true });
+      throw new Error(
+        `gemba serve --auth=token did not print a bootstrap token to stderr.\n` +
+          `stderr:\n${stderrChunks.join('') || '(empty)'}`
+      );
+    }
+  }
+
   let disposed = false;
   return {
     baseURL,
     beadsDir: baseDir,
     worktreesDir,
     pid: child.pid ?? -1,
+    authToken,
     env: isolatedEnv,
     stderr: () => stderrChunks.join(''),
     dispose: async () => {
@@ -191,6 +277,38 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
       rmSync(baseDir, { recursive: true, force: true });
     },
   };
+}
+
+// parseAuthTokenFromStderr greps the stderr buffer for the
+// "Token:  <plaintext>" line that ensurePrimaryToken writes (see
+// internal/cli/serve.go). Returns the token, or undefined if the
+// banner wasn't printed (rare — only happens when a hash file
+// already exists at startup, which doesn't apply in our tempdir).
+function parseAuthTokenFromStderr(buf: string): string | undefined {
+  const m = buf.match(/^\s*Token:\s+(\S+)\s*$/m);
+  return m ? m[1] : undefined;
+}
+
+// waitForExit resolves when the child exits, or rejects if the
+// timeout fires first. Used for expected-boot-failure spawns where
+// we WANT the exit and would rather see a clean error than hang.
+function waitForExit(
+  child: ChildProcess,
+  timeoutMs: number
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  if (child.exitCode !== null) {
+    return Promise.resolve({ code: child.exitCode, signal: child.signalCode });
+  }
+  return new Promise((resolveFn, rejectFn) => {
+    const timer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* gone */ }
+      rejectFn(new Error(`process did not exit within ${timeoutMs}ms`));
+    }, timeoutMs);
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer);
+      resolveFn({ code, signal });
+    });
+  });
 }
 
 function defaultGembaBin(): string {
@@ -294,8 +412,12 @@ async function waitForHealth(
     }
     try {
       const res = await fetch(`${baseURL}/api/health`);
-      if (res.ok) return;
-      lastErr = new Error(`/api/health returned ${res.status}`);
+      // ANY HTTP response — including 401 in --auth=token mode — proves
+      // the listener is bound and the auth middleware is engaged. Only
+      // network-level errors (ECONNREFUSED) mean we're still booting.
+      // Drain the body so the connection is released before the next poll.
+      await res.body?.cancel().catch(() => {});
+      return;
     } catch (err) {
       lastErr = err;
     }

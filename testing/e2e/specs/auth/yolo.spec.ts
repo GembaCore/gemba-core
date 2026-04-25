@@ -1,32 +1,37 @@
-// specs/auth/yolo.spec.ts (gm-5v8v.12).
+// specs/auth/yolo.spec.ts (gm-5v8v.12 / gm-5v8v.12.1).
 //
 // --dangerously-skip-permissions surfaces in /api/config as the
 // `yolo_available` boolean. The SPA reads it to gate yolo-mode
-// affordances (the dev "skip every confirmation" toggle). The flag
-// must default to false (server default) and only flip true when
-// the operator passes --dangerously-skip-permissions at startup.
+// affordances. The flag must default to false (server default) and
+// only flip true when the operator passes the flag at startup.
 
-import { test } from '../../fixtures/server';
+import { test, expect } from '../../fixtures/server';
 
-test.describe('YOLO availability flag @auth', () => {
-  test.fixme(
-    '@deep /api/config returns yolo_available=false when flag is unset',
-    () => {
-      /* fixme: spawn gemba serve without --dangerously-skip-permissions,
-         GET /api/config → assert body.yolo_available === false. The
-         server's default is the safe one; this pins it. */
-    }
-  );
+test.describe('@deep YOLO availability flag @auth', () => {
+  test.skip(({ backend }) => backend !== 'real', 'deep-only — needs a real listener');
 
-  test.fixme(
-    '@deep /api/config returns yolo_available=true when flag is set',
-    () => {
-      /* fixme: spawn gemba serve --dangerously-skip-permissions,
-         GET /api/config → body.yolo_available === true. Positive
-         control. */
-    }
-  );
+  test('/api/config returns yolo_available=false when flag is unset', async ({
+    authServer,
+  }) => {
+    const srv = await authServer({});
+    const res = await fetch(`${srv.baseURL}/api/config`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { yolo_available?: boolean };
+    expect(body.yolo_available).toBe(false);
+  });
 
+  test('/api/config returns yolo_available=true when flag is set', async ({
+    authServer,
+  }) => {
+    const srv = await authServer({ dangerouslySkipPermissions: true });
+    const res = await fetch(`${srv.baseURL}/api/config`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { yolo_available?: boolean };
+    expect(body.yolo_available).toBe(true);
+  });
+});
+
+test.describe('YOLO fake-mode @auth', () => {
   test.fixme(
     'fake: SPA hides YOLO affordances when /api/config returns yolo_available=false',
     () => {
