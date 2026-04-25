@@ -99,19 +99,50 @@ test.describe('WorkItemDrawer @route', () => {
     await expect(page.getByTestId('work-item-drawer-error')).toBeVisible();
   });
 
-  test.fixme('opens via double-click on a board card', async () => {
-    // Owned by gm-5v8v.5 (board specs) — needs board-card POM and
-    // fake WorkPlane seeded into the BoardPage list.
+  test('back button restores the previous bead in the nav stack', async ({
+    page,
+    workPlane,
+  }) => {
+    // The drawer pushes a new bead onto its internal stack when an
+    // edge target inside the Edges tab is clicked. Seed two beads
+    // with a "blocks" relationship so the relgroup renders a
+    // navigable target.
+    const a = build.workItem({
+      id: 'gm-stack-a',
+      title: 'Source bead',
+      relationships: [build.relationship('blocks', 'gm-stack-a', 'gm-stack-b')],
+    });
+    const b = build.workItem({ id: 'gm-stack-b', title: 'Target bead' });
+    workPlane.seed([a, b]);
+
+    const drawer = new WorkItemDrawerPO(page);
+    await drawer.openByDeepLink('gm-stack-a');
+    await expect(drawer.backButton).toHaveCount(0);
+
+    await drawer.selectTab('edges');
+    // The "blocks" relgroup wrapper carries its own testid; the
+    // inner navigation buttons are anchored by their bead-id text.
+    await page.getByTestId('relgroup-blocks').getByRole('button', { name: 'gm-stack-b' }).click();
+    await drawer.expectOpenWith('gm-stack-b');
+    await expect(drawer.backButton).toBeVisible();
+
+    await drawer.backButton.click();
+    await drawer.expectOpenWith('gm-stack-a');
+    await expect(drawer.backButton).toHaveCount(0);
   });
 
-  test.fixme('opens via the "o" hotkey on the focused card', async () => {
-    // Owned by gm-5v8v.4 (chrome / hotkeys) — needs the AppHotkeys
-    // helper to drive the chord and seed a focused selection.
-  });
-
-  test.fixme('back button restores previous bead in the nav stack', async () => {
-    // Needs the board to navigate between beads in the same drawer
-    // session; lands with gm-5v8v.5 (board specs) where the click
-    // path that grows the stack is exercised.
-  });
+  // The bead originally listed "double-click on a board card" and
+  // "open via 'o' hotkey" as fixmes. Both are noted but un-shipped:
+  //
+  //   - WorkItemCard exposes only onClick (single click), no
+  //     onDoubleClick. The board specs (gm-5v8v.5) cover the actual
+  //     row-click → drawer path.
+  //   - The 'o' / drawer-open hotkey is registered in DEFAULT_HOTKEYS
+  //     but no consumer wires useHotkey('drawer-open', ...) — pressing
+  //     'o' on the board today is a no-op. Re-adding here is gated on
+  //     the SPA wiring landing.
+  test.fixme(
+    'opens via the "o" hotkey on the focused card (SPA wiring not landed)',
+    async () => {}
+  );
 });
