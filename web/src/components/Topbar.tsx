@@ -1,9 +1,11 @@
 import { Command, Moon, Sun, User, ChevronDown } from 'lucide-react';
 import { useTheme } from '@/lib/theme-context';
+import { usePalette } from '@/components/palette/PaletteContext';
 import { cn } from '@/lib/utils';
 
 export function Topbar() {
   const { theme, toggle } = useTheme();
+  const { setOpen: setPaletteOpen } = usePalette();
   const resolved =
     theme === 'system'
       ? window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -24,6 +26,7 @@ export function Topbar() {
       <button
         type="button"
         data-hotkey-target="command-palette"
+        onClick={() => setPaletteOpen(true)}
         className={cn(
           'ml-2 inline-flex items-center gap-2 rounded-md border border-neutral-200 px-2 py-1 text-sm text-neutral-500',
           'hover:bg-neutral-100 dark:border-neutral-800 dark:text-neutral-400 dark:hover:bg-neutral-900'

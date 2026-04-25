@@ -74,3 +74,27 @@ Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
     return VIEWPORT_HEIGHT;
   },
 });
+
+// jsdom doesn't provide ResizeObserver, but cmdk (gm-e12.6 command
+// palette) constructs one in its layout effect to track virtualized
+// list height. A no-op stub satisfies the API contract — tests that
+// drive the palette assert on rendered items, not on resize behavior,
+// so an inert observer is sufficient.
+class NoopResizeObserver implements ResizeObserver {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  configurable: true,
+  writable: true,
+  value: NoopResizeObserver,
+});
+
+// jsdom doesn't implement Element.scrollIntoView. cmdk (and other
+// scroll-aware libs) call it when the active selection moves; a no-op
+// satisfies the contract since the tests don't assert on scroll
+// position. gm-e12.6.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = function () {};
+}
