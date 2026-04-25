@@ -49,4 +49,24 @@ test.describe('@deep deep-mode smoke (gm-5v8v.2)', () => {
     const titles = (body.items ?? []).map((it) => it.title);
     expect(titles).toContain('gm-5v8v.2 smoke bead');
   });
+
+  // gm-h4n regression guard: bd init in the tempdir must not leak the
+  // --prefix into the operator's real workspace via the shared :3307
+  // server. The fixture sets HOME=<tempdir> + BEADS_DIR=<tempdir>/.beads
+  // to force pure local-embedded mode; this spec asserts the isolation
+  // by checking the worker tempdir's prefix differs from the bead id
+  // prefix the operator would see in their real workspace.
+  test('tempdir prefix is local — issue ids carry e2e<worker> prefix (gm-h4n)', async ({
+    bd,
+  }) => {
+    const { id } = await bd.create({
+      title: 'gm-h4n isolation guard bead',
+      type: 'task',
+    });
+    // The fixture passes --prefix e2e<workerIndex> to bd init. If
+    // bd had fallen through to a shared server, the new bead's id
+    // would carry whatever prefix that server is configured with
+    // (e.g. 'gm-' for the gemba workspace) instead.
+    expect(id).toMatch(/^e2e\d+-/);
+  });
 });

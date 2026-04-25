@@ -38,6 +38,12 @@ export type RealServer = {
   worktreesDir: string;
   /** Server PID (mostly for diagnostics). */
   pid: number;
+  /**
+   * Isolated env vars that confine bd to this tempdir (gm-h4n).
+   * BdClient and any other bd-shelling code MUST inherit this env so
+   * commands can't leak into the operator's real workspace.
+   */
+  env: NodeJS.ProcessEnv;
   /** Captured server stderr — handy when a spec fails. */
   stderr(): string;
   /** Kill the server + remove the tempdir. Idempotent. */
@@ -72,6 +78,22 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   const worktreesDir = join(baseDir, 'worktrees');
   mkdirSync(worktreesDir, { recursive: true });
 
+  // gm-h4n: bd init can fall back to the shared :3307 Dolt server
+  // (~/.beads/shared-server/) when one exists, silently leaking the
+  // tempdir's --prefix into the operator's real workspace. Force pure
+  // local-embedded mode by hiding the shared-server discovery dir:
+  // override HOME to the tempdir so ~/.beads/ resolves to a fresh,
+  // empty path bd can't see anything in. Apply the same env to gemba
+  // serve below — its bd subprocesses inherit it.
+  const isolatedEnv = {
+    ...process.env,
+    HOME: baseDir,
+    PWD: baseDir,
+    // Belt-and-suspenders: explicitly point bd at the tempdir's
+    // workspace so it can't auto-discover anything else.
+    BEADS_DIR: join(baseDir, '.beads'),
+  };
+
   // bd init creates .beads/ in cwd. Use a unique short prefix so any
   // ids it stamps don't collide with the developer's local rigs if
   // a stray export ever leaks into a real workspace.
@@ -89,6 +111,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
       {
         cwd: baseDir,
         stdio: ['ignore', 'ignore', 'pipe'],
+        env: isolatedEnv,
       }
     );
   } catch (err) {
@@ -110,9 +133,11 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     {
       cwd: baseDir,
       stdio: ['ignore', 'pipe', 'pipe'],
-      // Detach so we can group-kill on dispose. Treat the child as a
-      // disposable resource; never inherit the parent's signals.
-      env: { ...process.env, PWD: baseDir },
+      // gm-h4n: gemba serve shells to bd internally; that bd inherits
+      // this env, so the same HOME-isolation that protects bd init
+      // protects every WorkPlane subprocess from leaking into the
+      // shared :3307 server.
+      env: isolatedEnv,
     }
   );
 
@@ -142,6 +167,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     beadsDir: baseDir,
     worktreesDir,
     pid: child.pid ?? -1,
+    env: isolatedEnv,
     stderr: () => stderrChunks.join(''),
     dispose: async () => {
       if (disposed) return;

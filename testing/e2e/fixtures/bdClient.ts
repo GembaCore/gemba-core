@@ -34,10 +34,22 @@ export type BdWorkItem = {
 export class BdClient {
   private readonly cwd: string;
   private readonly bin: string;
+  private readonly env: NodeJS.ProcessEnv;
 
-  constructor(opts: { beadsDir: string; bdBin?: string }) {
+  constructor(opts: {
+    beadsDir: string;
+    bdBin?: string;
+    /**
+     * Env to pass to every bd subprocess. MUST be the env returned by
+     * spinRealServer (carries HOME=<tempdir> isolation per gm-h4n).
+     * Defaults to process.env for tests that don't have a real server
+     * yet — those tests are responsible for their own isolation.
+     */
+    env?: NodeJS.ProcessEnv;
+  }) {
     this.cwd = opts.beadsDir;
     this.bin = opts.bdBin ?? 'bd';
+    this.env = opts.env ?? process.env;
   }
 
   /** Create a bead. Returns the new id. */
@@ -79,7 +91,7 @@ export class BdClient {
   private async run(args: string[]) {
     return execFileP(this.bin, args, {
       cwd: this.cwd,
-      env: process.env,
+      env: this.env,
       maxBuffer: 16 * 1024 * 1024,
     });
   }

@@ -118,7 +118,12 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       );
     }
     // Reset bead state between tests so specs are independent.
-    const client = new BdClient({ beadsDir: realServer.beadsDir });
+    // Inherit realServer.env so HOME/BEADS_DIR isolation (gm-h4n)
+    // applies to every bd command this client spawns.
+    const client = new BdClient({
+      beadsDir: realServer.beadsDir,
+      env: realServer.env,
+    });
     try {
       await use(client);
     } finally {
