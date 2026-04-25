@@ -16,7 +16,7 @@ func TestRunWritesFrame(t *testing.T) {
 	t.Setenv("GEMBA_AGENT_TYPE", "claude")
 	t.Setenv("GEMBA_HOOK_EVENT", "SessionStart")
 
-	err := run(bytes.NewBufferString(`{"turn_id":"t1","cwd":"/tmp/w"}`), []string{"gemba-bridge"})
+	err := run(bytes.NewBufferString(`{"turn_id":"t1","cwd":"/tmp/w"}`), &bytes.Buffer{}, []string{"gemba-bridge"})
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -58,10 +58,10 @@ func TestRunAppendsOnSecondInvocation(t *testing.T) {
 	t.Setenv("GEMBA_AGENT_TYPE", "claude")
 	t.Setenv("GEMBA_HOOK_EVENT", "SessionStart")
 
-	if err := run(bytes.NewBufferString(`{}`), []string{"gemba-bridge"}); err != nil {
+	if err := run(bytes.NewBufferString(`{}`), &bytes.Buffer{}, []string{"gemba-bridge"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(bytes.NewBufferString(`{}`), []string{"gemba-bridge"}); err != nil {
+	if err := run(bytes.NewBufferString(`{}`), &bytes.Buffer{}, []string{"gemba-bridge"}); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(home, ".gemba", "sessions", "s1.jsonl"))
@@ -79,7 +79,7 @@ func TestRunStoresRawWhenPayloadNotJSON(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("GEMBA_SESSION_ID", "s1")
 	t.Setenv("GEMBA_HOOK_EVENT", "RawEvent")
-	if err := run(bytes.NewBufferString("not-json"), []string{"gemba-bridge"}); err != nil {
+	if err := run(bytes.NewBufferString("not-json"), &bytes.Buffer{}, []string{"gemba-bridge"}); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(filepath.Join(home, ".gemba", "sessions", "s1.jsonl"))
@@ -97,7 +97,7 @@ func TestRunStoresRawWhenPayloadNotJSON(t *testing.T) {
 
 func TestRunRequiresSessionID(t *testing.T) {
 	t.Setenv("GEMBA_SESSION_ID", "")
-	err := run(bytes.NewBufferString(`{}`), []string{"gemba-bridge"})
+	err := run(bytes.NewBufferString(`{}`), &bytes.Buffer{}, []string{"gemba-bridge"})
 	if err == nil || !strings.Contains(err.Error(), "GEMBA_SESSION_ID") {
 		t.Errorf("want session id error, got %v", err)
 	}

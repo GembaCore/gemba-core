@@ -2,6 +2,7 @@ package persona
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/MikeBengtson/gemba/internal/core"
@@ -180,6 +181,117 @@ func TestDefaultToolingPaths_NotEmpty(t *testing.T) {
 	for _, must := range []string{"$HOME/.gitconfig", "$HOME/go/pkg/mod"} {
 		if !have[must] {
 			t.Errorf("default tooling missing %q", must)
+		}
+	}
+}
+
+// gm-eazw — AllowsRead / AllowsWrite Layer-2 enforcement decisions.
+
+func testEnv(values map[string]string) func(string) string {
+	return func(k string) string { return values[k] }
+}
+
+func TestSurface_AllowsWrite_HappyPath(t *testing.T) {
+	s := Surface{
+		Cwd:              "/work/repo",
+		AdditionalWrites: []string{"/scratch"},
+	}
+	for _, p := range []string{
+		"/work/repo",
+		"/work/repo/main.go",
+		"/work/repo/sub/dir/file.txt",
+		"/scratch",
+		"/scratch/notes.md",
+	} {
+		ok, reason := s.AllowsWrite(p, nil)
+		if !ok {
+			t.Errorf("AllowsWrite(%q) = (false, %q), want allow", p, reason)
+		}
+	}
+}
+
+func TestSurface_AllowsWrite_RejectsOutsideCwd(t *testing.T) {
+	s := Surface{Cwd: "/work/repo"}
+	for _, p := range []string{
+		"/work/other",
+		"/etc/passwd",
+		"/Users/mike/.aws/credentials",
+		"/work/repobackup", // false-prefix — must NOT match cwd
+	} {
+		ok, reason := s.AllowsWrite(p, nil)
+		if ok {
+			t.Errorf("AllowsWrite(%q) = allow, want deny", p)
+		}
+		if reason == "" {
+			t.Errorf("AllowsWrite(%q) deny but empty reason", p)
+		}
+	}
+}
+
+func TestSurface_AllowsRead_SiblingReadsAllowed(t *testing.T) {
+	s := Surface{
+		Cwd:          "/work/repo",
+		SiblingReads: []string{"/repos/sib"},
+	}
+	ok, _ := s.AllowsRead("/repos/sib/contracts/api.proto", nil)
+	if !ok {
+		t.Error("expected sibling-repo file to be readable")
+	}
+	// Same path should NOT be writable.
+	if w, _ := s.AllowsWrite("/repos/sib/contracts/api.proto", nil); w {
+		t.Error("sibling-repo file should not be writable")
+	}
+}
+
+func TestSurface_AllowsRead_ToolingPathsHonored(t *testing.T) {
+	s := Surface{
+		Cwd:          "/work/repo",
+		ToolingPaths: []string{"$HOME/.gitconfig", "$HOME/go/pkg/mod"},
+	}
+	env := testEnv(map[string]string{"HOME": "/Users/mike"})
+	for _, p := range []string{
+		"/Users/mike/.gitconfig",
+		"/Users/mike/go/pkg/mod/github.com/foo/bar@v1.2.3/x.go",
+	} {
+		if ok, reason := s.AllowsRead(p, env); !ok {
+			t.Errorf("AllowsRead(%q) = (false, %q), want allow", p, reason)
+		}
+	}
+	// Without env expansion, the literal pattern wouldn't match.
+	if ok, _ := s.AllowsRead("/Users/mike/.gitconfig", nil); ok {
+		t.Error("expected nil env to skip $HOME expansion → deny")
+	}
+}
+
+func TestSurface_AllowsRead_AdditionalReadsHonored(t *testing.T) {
+	s := Surface{
+		Cwd:             "/work/repo",
+		AdditionalReads: []string{"/notes/spec.md"},
+	}
+	if ok, _ := s.AllowsRead("/notes/spec.md", nil); !ok {
+		t.Error("expected AdditionalReads to allow exact match")
+	}
+	if ok, _ := s.AllowsRead("/notes/other.md", nil); ok {
+		t.Error("AdditionalReads should not allow unrelated sibling")
+	}
+}
+
+func TestSurface_AllowsRead_EmptyPathDenied(t *testing.T) {
+	s := Surface{Cwd: "/work/repo"}
+	if ok, _ := s.AllowsRead("", nil); ok {
+		t.Error("empty path must always deny")
+	}
+}
+
+func TestSurface_DenyReason_NamesWriteSurface(t *testing.T) {
+	s := Surface{
+		Cwd:              "/work/repo",
+		AdditionalWrites: []string{"/scratch"},
+	}
+	_, reason := s.AllowsWrite("/etc/passwd", nil)
+	for _, want := range []string{"/etc/passwd", "/work/repo", "/scratch", "write"} {
+		if !strings.Contains(reason, want) {
+			t.Errorf("reason missing %q: got %q", want, reason)
 		}
 	}
 }

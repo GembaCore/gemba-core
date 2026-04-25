@@ -47,14 +47,16 @@ type Frame struct {
 }
 
 func main() {
-	if err := run(os.Stdin, os.Args); err != nil {
+	if err := run(os.Stdin, os.Stdout, os.Args); err != nil {
 		fmt.Fprintln(os.Stderr, "gemba-bridge:", err)
 	}
 	// Always exit 0 — the caller's hook chain is more important than
-	// whether we persisted the frame.
+	// whether we persisted the frame. (gm-eazw deny path is the one
+	// exception: emitDeny writes hookSpecificOutput on stdout BEFORE
+	// returning, so Claude's hook contract is still satisfied.)
 }
 
-func run(stdin io.Reader, args []string) error {
+func run(stdin io.Reader, stdout io.Writer, args []string) error {
 	sessionID := os.Getenv("GEMBA_SESSION_ID")
 	agentType := os.Getenv("GEMBA_AGENT_TYPE")
 	if sessionID == "" {
@@ -75,6 +77,19 @@ func run(stdin io.Reader, args []string) error {
 	raw, err := io.ReadAll(io.LimitReader(bufio.NewReader(stdin), 1<<20))
 	if err != nil {
 		return fmt.Errorf("read stdin: %w", err)
+	}
+
+	// gm-eazw — Layer 2 enforcement. PreToolUse decisions happen here
+	// so the deny response lands on stdout before Claude's tool call
+	// fires. Other hooks fall through to the existing log path.
+	if hook == "PreToolUse" && len(raw) > 0 {
+		if allow, reason := enforcePreToolUse(raw, sessionID); !allow {
+			if err := emitDeny(stdout, reason); err != nil {
+				fmt.Fprintln(os.Stderr, "gemba-bridge: emit deny:", err)
+			}
+			// Continue logging the frame so the audit trail captures
+			// the rejected call too.
+		}
 	}
 
 	f := Frame{

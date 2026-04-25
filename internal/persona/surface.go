@@ -1,7 +1,11 @@
 package persona
 
 import (
+	"fmt"
+	"os"
+	"path"
 	"sort"
+	"strings"
 
 	"github.com/MikeBengtson/gemba/internal/core"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
@@ -59,6 +63,153 @@ type Surface struct {
 	// entries come first (situational > categorical) but the resolver
 	// de-duplicates so order doesn't change semantics.
 	AdditionalReads []string
+}
+
+// AllowsRead reports whether p is reachable through any of s's
+// read-allowed entries. The check is a glob/prefix match anchored at
+// each entry — `Cwd` matches the cwd itself plus anything below it,
+// `$HOME/.gitconfig` matches the file or any path that walks up from
+// it. Empty input always denies (gm-eazw — Layer 2 enforcement).
+//
+// The match honors $HOME / $GOPATH / $GOROOT expansion via env: tooling
+// paths shipped declarative (see DefaultToolingPaths) are normalized
+// against env at decision time so the hook compares concrete paths,
+// not envvar literals. Pass nil env to skip expansion (the resolver
+// expanded already, or the call doesn't need it).
+//
+// Returns (allowed, reason) — reason is empty on allow, a human-
+// readable explanation on deny that the bridge surfaces back to the
+// model. Reason names the closest miss (sibling repo? tooling path?
+// override?) so the model can reason about whether to ask for an
+// override or revise the path.
+func (s Surface) AllowsRead(p string, env func(string) string) (bool, string) {
+	if p == "" {
+		return false, "empty path"
+	}
+	target := normalize(p, env)
+	// Reads are the union of writes (cwd + AdditionalWrites) plus the
+	// pure-read entries. Walk in ascending specificity so the reason
+	// names the most-specific match.
+	if matchAny(target, s.Cwd, env) {
+		return true, ""
+	}
+	for _, w := range s.AdditionalWrites {
+		if matchAny(target, w, env) {
+			return true, ""
+		}
+	}
+	for _, sib := range s.SiblingReads {
+		if matchAny(target, sib, env) {
+			return true, ""
+		}
+	}
+	if s.WorkspaceMetadata != "" && matchAny(target, s.WorkspaceMetadata, env) {
+		return true, ""
+	}
+	for _, t := range s.ToolingPaths {
+		if matchAny(target, t, env) {
+			return true, ""
+		}
+	}
+	for _, r := range s.AdditionalReads {
+		if matchAny(target, r, env) {
+			return true, ""
+		}
+	}
+	return false, denyReason(target, "read", s)
+}
+
+// AllowsWrite reports whether p is writable. The write surface is a
+// strict subset of reads: only Cwd and AdditionalWrites count. Cwd
+// always wins; AdditionalWrites are operator-justified per-bead grants.
+func (s Surface) AllowsWrite(p string, env func(string) string) (bool, string) {
+	if p == "" {
+		return false, "empty path"
+	}
+	target := normalize(p, env)
+	if matchAny(target, s.Cwd, env) {
+		return true, ""
+	}
+	for _, w := range s.AdditionalWrites {
+		if matchAny(target, w, env) {
+			return true, ""
+		}
+	}
+	return false, denyReason(target, "write", s)
+}
+
+// matchAny reports whether target sits inside (or equals) the
+// allow-pattern. Patterns are absolute-prefix-style ("$HOME/.cargo"
+// matches "$HOME/.cargo" and "$HOME/.cargo/registry/index.crates.io").
+// A trailing "/" on the pattern is implied — we never match a
+// non-prefix-ending false positive ("/etc/foo" does NOT match
+// "/etc/foobar").
+func matchAny(target, pattern string, env func(string) string) bool {
+	if pattern == "" {
+		return false
+	}
+	pat := normalize(pattern, env)
+	if pat == "" {
+		return false
+	}
+	if target == pat {
+		return true
+	}
+	// Treat pattern as a directory prefix.
+	if !strings.HasSuffix(pat, "/") {
+		pat += "/"
+	}
+	return strings.HasPrefix(target, pat)
+}
+
+// normalize cleans a path and expands $HOME / $GOPATH / $GOROOT (and
+// any other envvar the caller provides via env). Returns the cleaned
+// absolute-style string. env may be nil — patterns that already use
+// concrete paths roundtrip unchanged.
+func normalize(p string, env func(string) string) string {
+	if p == "" {
+		return ""
+	}
+	if env != nil {
+		p = expandEnv(p, env)
+	}
+	return path.Clean(p)
+}
+
+func expandEnv(p string, env func(string) string) string {
+	if !strings.Contains(p, "$") {
+		return p
+	}
+	return os.Expand(p, env)
+}
+
+// denyReason builds the human-facing message returned to the model.
+// Names the intent (read/write) and the configured allow surface so
+// the operator can see at a glance whether the path is misspelled or
+// the surface is too tight.
+func denyReason(target, intent string, s Surface) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "path %q is outside this session's %s surface. ", target, intent)
+	if intent == "write" {
+		fmt.Fprintf(&b, "Allowed writes: %s", joinShort(s.AllowedWrites()))
+	} else {
+		fmt.Fprintf(&b, "Allowed reads: %s", joinShort(s.AllowedReads()))
+	}
+	b.WriteString(". To extend, add a `read:<glob>` or `write:<glob>` label to the bead, or ask the operator.")
+	return b.String()
+}
+
+// joinShort renders an allow list compactly so the deny reason fits
+// inside a single line. Drops past the first three entries with an
+// ellipsis count.
+func joinShort(in []string) string {
+	if len(in) == 0 {
+		return "(none)"
+	}
+	if len(in) <= 3 {
+		return strings.Join(in, ", ")
+	}
+	return strings.Join(in[:3], ", ") + fmt.Sprintf(" + %d more", len(in)-3)
 }
 
 // AllowedReads returns the union of every read-allowed path in s,
