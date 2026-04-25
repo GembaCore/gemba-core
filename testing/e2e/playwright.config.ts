@@ -179,8 +179,45 @@ const projects: Project[] = [
       ]
     : [pending('smoke-deep', { tier: 'smoke', backend: 'real', bead: 'gm-h4n' })]),
 
-  pending('chrome-deep',     { tier: 'chrome',      backend: 'real', bead: 'gm-5v8v.4'  }),
-  pending('route-deep',      { tier: 'route',       backend: 'real', bead: 'gm-5v8v.5/6/7/8/9' }),
+  // chrome-deep was a pending() placeholder. Chrome specs (sidebar /
+  // topbar / palette / hotkeys / help-overlay) are pure SPA-shell —
+  // none assert on real backend behavior, so a real-backend variant
+  // would just re-run the same fake assertions slower. The
+  // AdaptorBanner integration that *would* matter here is already
+  // covered by realtime-deep (gm-5v8v.10). Removed per gm-5v8v.18 —
+  // matrix-honesty over placeholder coverage.
+
+  // route-deep: drag → PATCH → session POST (board), JSONL import
+  // round-trip (grid), bd-create surfaces in drawer/dispatch
+  // (drawers/sessions). Each tier's specs already carry @deep tags
+  // for the load-bearing assertions. gm-5v8v.18.
+  ...(process.env.GEMBA_E2E_RUN_DEEP
+    ? [
+        {
+          name: 'route-deep',
+          testMatch: [
+            'board/**/*.spec.ts',
+            'drawers/**/*.spec.ts',
+            'grid/**/*.spec.ts',
+            'sessions/**/*.spec.ts',
+          ],
+          grep: /@deep/,
+          use: {
+            ...devices['Desktop Chrome'],
+            backend: 'real' as const,
+            extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
+          },
+          metadata: {
+            tier: 'route',
+            backend: 'real',
+            bead: 'gm-5v8v.5/6/8/9',
+            status: 'opt-in (gm-h4n)',
+          },
+          timeout: 60_000,
+          fullyParallel: false,
+        } satisfies Project,
+      ]
+    : [pending('route-deep', { tier: 'route', backend: 'real', bead: 'gm-5v8v.5/6/8/9' })]),
   // realtime-deep: full /events SSE end-to-end + POST /api/workitems/notify
   // dedupe (gm-5v8v.10). bd write → events.Hub → /events SSE → SPA
   // react-query invalidation. Tagged @deep so the dispatcher only
@@ -214,8 +251,57 @@ const projects: Project[] = [
         } satisfies Project,
       ]
     : [pending('realtime-deep', { tier: 'realtime', backend: 'real', bead: 'gm-5v8v.10' })]),
-  pending('modes-deep',      { tier: 'modes',       backend: 'real', bead: 'gm-5v8v.11' }),
-  pending('auth-deep',       { tier: 'auth',        backend: 'real', bead: 'gm-5v8v.12' }),
+  // modes-deep: workspace mode confirmation UX against a real server's
+  // X-GEMBA-Confirm nonce + audit trail. modes/* specs carry @deep
+  // tags for the load-bearing mode-respect assertions. gm-5v8v.18.
+  ...(process.env.GEMBA_E2E_RUN_DEEP
+    ? [
+        {
+          name: 'modes-deep',
+          testMatch: ['modes/**/*.spec.ts'],
+          grep: /@deep/,
+          use: {
+            ...devices['Desktop Chrome'],
+            backend: 'real' as const,
+            extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
+          },
+          metadata: {
+            tier: 'modes',
+            backend: 'real',
+            bead: 'gm-5v8v.11',
+            status: 'opt-in (gm-h4n)',
+          },
+          timeout: 60_000,
+          fullyParallel: false,
+        } satisfies Project,
+      ]
+    : [pending('modes-deep', { tier: 'modes', backend: 'real', bead: 'gm-5v8v.11' })]),
+  // auth-deep: token / cookie / middleware enforcement. Auth is
+  // backend-only by definition — fake-mode auth specs cover the
+  // login-form UI shape, deep-mode covers the bearer/cookie
+  // contract that lives in chi auth middleware. gm-5v8v.18.
+  ...(process.env.GEMBA_E2E_RUN_DEEP
+    ? [
+        {
+          name: 'auth-deep',
+          testMatch: ['auth/**/*.spec.ts'],
+          grep: /@deep/,
+          use: {
+            ...devices['Desktop Chrome'],
+            backend: 'real' as const,
+            extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
+          },
+          metadata: {
+            tier: 'auth',
+            backend: 'real',
+            bead: 'gm-5v8v.12',
+            status: 'opt-in (gm-h4n)',
+          },
+          timeout: 60_000,
+          fullyParallel: false,
+        } satisfies Project,
+      ]
+    : [pending('auth-deep', { tier: 'auth', backend: 'real', bead: 'gm-5v8v.12' })]),
   // error-deep: real-server JSON envelope contract for /api/* +
   // /events/* (gm-b2 / gm-xke). Tagged @deep so only the load-bearing
   // server-contract specs run here. Same gm-h4n gating as the rest of

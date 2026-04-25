@@ -70,12 +70,31 @@ testing can't generate orphan databases.
 `testIgnore: ['**/*']` until their child bead replaces the entry. This
 keeps the matrix visible without false-greens.
 
-| Project | Tier | Backend | Status |
+All projects in the table below are **active** — they pick up real
+spec files. Deep projects gate on `GEMBA_E2E_RUN_DEEP=1` until the
+upstream bd isolation fix lands (gm-h4n); without that flag they
+appear as `pending('...')` placeholders.
+
+| Project | Tier | Backend | Owning bead |
 |---|---|---|---|
-| `smoke-fake` | smoke | fake | **active** — routes / axe / instance_id (gm-5v8v.3) |
-| `smoke-deep` | smoke | real | **active** — same specs, real backend (gm-5v8v.3, blocked on gm-5v8v.2) |
-| `chrome-fake` / `route-fake` / `realtime-fake` / `modes-fake` / `error-fake` | chrome / route / realtime / modes / error | fake | pending |
-| `chrome-deep` / `route-deep` / `realtime-deep` / `modes-deep` / `error-deep` / `integration-deep` | full taxonomy | real | pending |
+| `smoke-fake` | smoke | fake | gm-5v8v.3 |
+| `smoke-deep` | smoke | real | gm-5v8v.3 (gated) |
+| `chrome-fake` | chrome | fake | gm-5v8v.4 |
+| `route-fake` | route | fake | gm-5v8v.5/6/8/9 |
+| `route-deep` | route | real | gm-5v8v.5/6/8/9 (gated) |
+| `realtime-fake` | realtime | fake | gm-5v8v.10 |
+| `realtime-deep` | realtime | real | gm-5v8v.10 (gated) |
+| `modes-fake` | modes | fake | gm-5v8v.11 |
+| `modes-deep` | modes | real | gm-5v8v.11 (gated) |
+| `auth-fake` | auth | fake | gm-5v8v.12 |
+| `auth-deep` | auth | real | gm-5v8v.12 (gated) |
+| `error-fake` | error | fake | gm-5v8v.13 |
+| `error-deep` | error | real | gm-5v8v.13 (gated) |
+| `integration-deep` | integration | real | gm-5v8v.15 (gated) |
+
+`chrome-deep` is intentionally absent — chrome specs are pure SPA-shell
+assertions; the AdaptorBanner integration that *would* matter against a
+real backend is already covered by `realtime-deep`. Removed in gm-5v8v.18.
 
 ## Tag convention
 
