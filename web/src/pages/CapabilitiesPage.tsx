@@ -48,7 +48,12 @@ type AdaptorsResponse = {
 function useAdaptorsHealth(): AdaptorStatus[] | undefined {
   const { data } = useQuery<AdaptorsResponse>({
     queryKey: ['adaptors'],
-    enabled: false, // SSE pump is the writer; we just read.
+    // The SSE pump in AdaptorBanner is the only writer; we never want
+    // useQuery to refetch here. enabled:false alone would emit a
+    // "No queryFn was passed" warning per react-query 5 — provide
+    // an empty fn to silence that without changing semantics.
+    queryFn: async () => ({ adaptors: [] }),
+    enabled: false,
   });
   return data?.adaptors;
 }

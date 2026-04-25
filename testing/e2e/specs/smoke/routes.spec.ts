@@ -47,13 +47,8 @@ const DEEP_LINKS = [
 // remove the entry when the bead closes. Keep this list short — the
 // whole point of smoke is to surface unfiltered console noise.
 const KNOWN_BUGS: Array<{ bead: string; match: (msg: string) => boolean }> = [
-  {
-    // CapabilitiesPage's useQuery({queryKey: ['adaptors'], enabled: false})
-    // surfaces a "No queryFn was passed" console.error from React
-    // Query 5. Tracked separately; affects /capabilities only.
-    bead: 'gm-pz1b',
-    match: (msg) => msg.includes('"adaptors"') && msg.includes('No queryFn was passed'),
-  },
+  // (empty — gm-pz1b's no-queryFn warning was fixed alongside this
+  // gate landing. Add new entries here only with a bead pointer.)
 ];
 
 function filterKnown(errors: string[]): string[] {
