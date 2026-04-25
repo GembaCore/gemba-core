@@ -2,10 +2,10 @@
 // @tanstack/react-table + @tanstack/react-virtual. Renders just the
 // visible rows so large backlogs (1k → 10k+ items) stay responsive.
 //
-// Scope for this slice: always-on core columns, column visibility
-// menu, row-click → onSelect. Out of scope (tracked on gm-e12.3):
-// saved filters, URL-hash sharing, manifest-derived extension
-// columns, JSONL import.
+// Scope: always-on core columns, column visibility menu, row-click →
+// onSelect, optional row-selection model with bulk-action hotkeys
+// (gm-5v8v.6.2). Out of scope (tracked on gm-e12.3): saved filters,
+// URL-hash sharing, manifest-derived extension columns, JSONL import.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -71,11 +71,6 @@ const ROW_HEIGHT = 36;
 // viewport so fast scrolls don't tear. 10 is the react-virtual
 // default; keep it explicit for clarity.
 const OVERSCAN = 10;
-
-export interface WorkItemGridProps {
-  rows: WorkItem[];
-  onSelect?: (id: string) => void;
-}
 
 const coreColumns: ColumnDef<WorkItem>[] = [
   {
@@ -327,19 +322,53 @@ export interface WorkItemGridPresetOptions {
   promptName?: () => string | null;
 }
 
+// Bulk actions the grid surfaces via keyboard chord or context menu.
+// 'edit' / 'defer' are explicit AC items on gm-5v8v.6.2; 'delete' is
+// reserved for the matching `*-x` chord and rendered in the context
+// menu so the surface is symmetric.
+export type BulkAction = 'edit' | 'defer' | 'delete';
+
 export interface WorkItemGridProps {
   rows: WorkItem[];
   onSelect?: (id: string) => void;
   presets?: WorkItemGridPresetOptions;
+  // When set, the grid renders a leading checkbox column and binds
+  // the bulk-action keyboard chords. The handler runs against the
+  // ids the grid currently has selected (the grid owns the
+  // selection state — callers don't need to track it).
+  onBulkAction?: (action: BulkAction, ids: string[]) => void;
 }
 
-export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
+interface ContextMenuState {
+  x: number;
+  y: number;
+  // The id the menu was triggered on. When the trigger row is
+  // already in the selection the menu acts on the whole selection;
+  // otherwise the trigger row replaces the selection so right-click
+  // on an unrelated row never silently inherits stale state.
+  rowId: string;
+}
+
+export function WorkItemGrid({
+  rows,
+  onSelect,
+  presets,
+  onBulkAction,
+}: WorkItemGridProps) {
   const [visibility, setVisibility] = useState<VisibilityState>(DEFAULT_VISIBILITY);
   const [menuOpen, setMenuOpen] = useState(false);
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
   const [userPresets, setUserPresets] = useState<GridPreset[]>(() =>
     presets ? loadUserPresets(presets.storageKey) : []
   );
+  const selectionEnabled = !!onBulkAction;
+  const [selection, setSelection] = useState<Set<string>>(() => new Set());
+  // Index of the most recently clicked row — anchor for shift-click
+  // range select. Reset whenever the row set changes so a filter
+  // rerender doesn't leave a stale anchor pointing past the array.
+  const lastIndexRef = useRef<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Keep user presets in sync with localStorage so a second tab
   // editing presets shows up after focus events. Low-friction: only
@@ -377,7 +406,141 @@ export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
     saveUserPresets(presets.storageKey, merged);
   };
 
-  const columns = useMemo(() => coreColumns, []);
+  // Reconcile selection against the current row set — when a filter
+  // narrows the row list (or the upstream query returns fewer items)
+  // any selected id no longer present must be dropped, otherwise a
+  // bulk action could fire against ids the user can't even see.
+  useEffect(() => {
+    if (!selectionEnabled) return;
+    setSelection((prev) => {
+      if (prev.size === 0) return prev;
+      const idSet = new Set(rows.map((r) => r.id));
+      let mutated = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (idSet.has(id)) next.add(id);
+        else mutated = true;
+      }
+      return mutated ? next : prev;
+    });
+    lastIndexRef.current = null;
+  }, [rows, selectionEnabled]);
+
+  const toggleOne = useCallback((id: string) => {
+    setSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectRange = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const [a, b] = fromIndex <= toIndex ? [fromIndex, toIndex] : [toIndex, fromIndex];
+      setSelection((prev) => {
+        const next = new Set(prev);
+        for (let i = a; i <= b; i++) {
+          const r = rows[i];
+          if (r) next.add(r.id);
+        }
+        return next;
+      });
+    },
+    [rows],
+  );
+
+  const selectOnly = useCallback((id: string) => {
+    setSelection(new Set([id]));
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelection(new Set());
+    lastIndexRef.current = null;
+  }, []);
+
+  const selectAllVisible = useCallback(() => {
+    setSelection(new Set(rows.map((r) => r.id)));
+  }, [rows]);
+
+  // Selected ids ordered by current row index so a bulk action sees
+  // the same order the user does. Cheap (O(n)) — filter over rows is
+  // fine even at 10k items because the bulk action is operator-paced.
+  const orderedSelection = useMemo(
+    () => rows.filter((r) => selection.has(r.id)).map((r) => r.id),
+    [rows, selection],
+  );
+
+  const fireBulk = useCallback(
+    (action: BulkAction, ids: string[] = orderedSelection) => {
+      if (!onBulkAction || ids.length === 0) return;
+      onBulkAction(action, ids);
+    },
+    [onBulkAction, orderedSelection],
+  );
+
+  // Keyboard chords land on the grid container so they only fire when
+  // the operator is interacting with the grid surface (not, say,
+  // typing in the global search box). Cmd+A and Cmd+D are
+  // browser-conventional (select-all-text, bookmark) — we
+  // preventDefault inside the grid scope so the SPA verb wins.
+  useEffect(() => {
+    if (!selectionEnabled) return;
+    const el = containerRef.current;
+    if (!el) return;
+    const onKey = (e: KeyboardEvent) => {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod) {
+        if (e.key === 'Escape' && selection.size > 0) {
+          clearSelection();
+          e.stopPropagation();
+        }
+        return;
+      }
+      const k = e.key.toLowerCase();
+      if (k === 'a') {
+        e.preventDefault();
+        selectAllVisible();
+      } else if (k === 'e') {
+        if (orderedSelection.length === 0) return;
+        e.preventDefault();
+        fireBulk('edit');
+      } else if (k === 'd') {
+        if (orderedSelection.length === 0) return;
+        e.preventDefault();
+        fireBulk('defer');
+      }
+    };
+    el.addEventListener('keydown', onKey);
+    return () => el.removeEventListener('keydown', onKey);
+  }, [
+    selectionEnabled,
+    selection.size,
+    orderedSelection,
+    selectAllVisible,
+    clearSelection,
+    fireBulk,
+  ]);
+
+  // Insert the selection checkbox as a fixed leading column when the
+  // caller wires up onBulkAction. It's intentionally not togglable via
+  // the columns menu (filtered out below) — the operator can't hide
+  // the very surface they need to make a selection.
+  const selectColumn = useMemo<ColumnDef<WorkItem>>(
+    () => ({
+      id: 'select',
+      header: () => null, // rendered manually below so it can intercept clicks
+      size: 36,
+      cell: () => null,
+      enableHiding: false,
+    }),
+    [],
+  );
+
+  const columns = useMemo(
+    () => (selectionEnabled ? [selectColumn, ...coreColumns] : coreColumns),
+    [selectionEnabled, selectColumn],
+  );
 
   // Inline-edit state (gm-5v8v.6.1). One cell editable at a time;
   // Esc cancels, Enter / blur commits via useUpdateWorkItem (which
@@ -475,8 +638,51 @@ export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
       ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end
       : 0;
 
+  const allVisibleSelected =
+    selectionEnabled && rows.length > 0 && rows.every((r) => selection.has(r.id));
+  const someVisibleSelected = selectionEnabled && selection.size > 0 && !allVisibleSelected;
+
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="work-item-grid">
+    <div
+      ref={containerRef}
+      tabIndex={selectionEnabled ? 0 : undefined}
+      className="flex h-full min-h-0 flex-col outline-none"
+      data-testid="work-item-grid"
+    >
+      {selectionEnabled && selection.size > 0 ? (
+        <div
+          className="flex items-center gap-3 border-b border-sky-200 bg-sky-50 px-3 py-1.5 text-xs text-sky-900 dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-200"
+          data-testid="grid-selection-bar"
+        >
+          <span data-testid="grid-selection-count">
+            {selection.size} selected
+          </span>
+          <button
+            type="button"
+            onClick={() => fireBulk('edit')}
+            className="rounded border border-sky-300 bg-white px-2 py-0.5 hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900 dark:hover:bg-sky-800"
+            data-testid="grid-bulk-edit"
+          >
+            Edit…
+          </button>
+          <button
+            type="button"
+            onClick={() => fireBulk('defer')}
+            className="rounded border border-sky-300 bg-white px-2 py-0.5 hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900 dark:hover:bg-sky-800"
+            data-testid="grid-bulk-defer"
+          >
+            Defer
+          </button>
+          <button
+            type="button"
+            onClick={clearSelection}
+            className="ml-auto text-sky-700 hover:underline dark:text-sky-300"
+            data-testid="grid-bulk-clear"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
       <div className="flex items-center justify-end gap-1 border-b border-neutral-200 bg-neutral-50 px-2 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950">
         {presets ? (
           <div className="relative">
@@ -543,20 +749,23 @@ export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
               className="absolute right-0 top-full z-10 mt-1 min-w-[160px] rounded border border-neutral-200 bg-white p-2 shadow-md dark:border-neutral-700 dark:bg-neutral-900"
               data-testid="grid-columns-menu"
             >
-              {table.getAllLeafColumns().map((col) => (
-                <label
-                  key={col.id}
-                  className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                >
-                  <input
-                    type="checkbox"
-                    checked={col.getIsVisible()}
-                    onChange={col.getToggleVisibilityHandler()}
-                    data-testid={`grid-column-${col.id}`}
-                  />
-                  <span>{String(col.columnDef.header)}</span>
-                </label>
-              ))}
+              {table
+                .getAllLeafColumns()
+                .filter((col) => col.id !== 'select')
+                .map((col) => (
+                  <label
+                    key={col.id}
+                    className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={col.getIsVisible()}
+                      onChange={col.getToggleVisibilityHandler()}
+                      data-testid={`grid-column-${col.id}`}
+                    />
+                    <span>{String(col.columnDef.header)}</span>
+                  </label>
+                ))}
             </div>
           ) : null}
         </div>
@@ -576,9 +785,23 @@ export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
                     style={{ width: header.getSize() }}
                     className="border-b border-neutral-200 px-4 py-2 font-medium dark:border-neutral-800"
                   >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(header.column.columnDef.header, header.getContext())}
+                    {header.column.id === 'select' ? (
+                      <input
+                        type="checkbox"
+                        aria-label="Select all visible rows"
+                        checked={allVisibleSelected}
+                        ref={(el) => {
+                          if (el) el.indeterminate = someVisibleSelected;
+                        }}
+                        onChange={() => {
+                          if (allVisibleSelected) clearSelection();
+                          else selectAllVisible();
+                        }}
+                        data-testid="grid-select-all"
+                      />
+                    ) : header.isPlaceholder ? null : (
+                      flexRender(header.column.columnDef.header, header.getContext())
+                    )}
                   </th>
                 ))}
               </tr>
@@ -592,15 +815,49 @@ export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
             ) : null}
             {virtualItems.map((vi) => {
               const row = visibleRows[vi.index];
+              const id = row.original.id;
+              const isSelected = selection.has(id);
+              const handleRowClick = (e: React.MouseEvent) => {
+                if (!selectionEnabled) {
+                  onSelect?.(id);
+                  return;
+                }
+                if (e.shiftKey && lastIndexRef.current !== null) {
+                  e.preventDefault();
+                  selectRange(lastIndexRef.current, vi.index);
+                  return;
+                }
+                if (e.metaKey || e.ctrlKey) {
+                  e.preventDefault();
+                  toggleOne(id);
+                  lastIndexRef.current = vi.index;
+                  return;
+                }
+                // Plain click — open the drawer; don't disturb the
+                // selection (operators want to peek without losing
+                // their multi-select).
+                onSelect?.(id);
+              };
+              const handleContextMenu = (e: React.MouseEvent) => {
+                if (!selectionEnabled) return;
+                e.preventDefault();
+                if (!selection.has(id)) selectOnly(id);
+                lastIndexRef.current = vi.index;
+                setContextMenu({ x: e.clientX, y: e.clientY, rowId: id });
+              };
               return (
                 <tr
                   key={row.id}
-                  onClick={() => onSelect?.(row.original.id)}
+                  onClick={handleRowClick}
+                  onContextMenu={handleContextMenu}
                   className={cn(
-                    'cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900'
+                    'cursor-pointer border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900',
+                    isSelected &&
+                      'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:hover:bg-sky-900/40',
                   )}
                   style={{ height: ROW_HEIGHT }}
-                  data-testid={`grid-row-${row.original.id}`}
+                  data-testid={`grid-row-${id}`}
+                  data-selected={isSelected || undefined}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td
@@ -608,7 +865,26 @@ export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
                       style={{ width: cell.column.getSize() }}
                       className="overflow-hidden whitespace-nowrap px-4 align-middle"
                     >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {cell.column.id === 'select' ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${id}`}
+                          checked={isSelected}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => {
+                            const native = e.nativeEvent as MouseEvent;
+                            if (native.shiftKey && lastIndexRef.current !== null) {
+                              selectRange(lastIndexRef.current, vi.index);
+                            } else {
+                              toggleOne(id);
+                            }
+                            lastIndexRef.current = vi.index;
+                          }}
+                          data-testid={`grid-row-checkbox-${id}`}
+                        />
+                      ) : (
+                        flexRender(cell.column.columnDef.cell, cell.getContext())
+                      )}
                     </td>
                   ))}
                 </tr>
@@ -625,7 +901,118 @@ export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
           </tbody>
         </table>
       </div>
+      {contextMenu ? (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          selectionCount={selection.size}
+          onClose={() => setContextMenu(null)}
+          onAction={(action) => {
+            setContextMenu(null);
+            if (action === 'select-all') selectAllVisible();
+            else if (action === 'clear') clearSelection();
+            else fireBulk(action);
+          }}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function ContextMenu({
+  x,
+  y,
+  selectionCount,
+  onClose,
+  onAction,
+}: {
+  x: number;
+  y: number;
+  selectionCount: number;
+  onClose: () => void;
+  onAction: (action: BulkAction | 'select-all' | 'clear') => void;
+}) {
+  // Click-outside + Escape close. Skip if the click lands inside the
+  // menu itself (the action handlers below already dismiss).
+  useEffect(() => {
+    const handlePointer = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest('[data-testid="grid-context-menu"]')) return;
+      onClose();
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      role="menu"
+      data-testid="grid-context-menu"
+      style={{ left: x, top: y }}
+      className="fixed z-50 min-w-[180px] rounded border border-neutral-200 bg-white p-1 text-xs shadow-md dark:border-neutral-700 dark:bg-neutral-900"
+    >
+      <ContextMenuItem
+        testid="grid-context-edit"
+        label={`Edit ${selectionCount}…`}
+        onClick={() => onAction('edit')}
+      />
+      <ContextMenuItem
+        testid="grid-context-defer"
+        label={`Defer ${selectionCount}`}
+        onClick={() => onAction('defer')}
+      />
+      <ContextMenuItem
+        testid="grid-context-delete"
+        label={`Delete ${selectionCount}`}
+        onClick={() => onAction('delete')}
+        danger
+      />
+      <div className="my-1 border-t border-neutral-200 dark:border-neutral-700" />
+      <ContextMenuItem
+        testid="grid-context-select-all"
+        label="Select all visible"
+        onClick={() => onAction('select-all')}
+      />
+      <ContextMenuItem
+        testid="grid-context-clear"
+        label="Clear selection"
+        onClick={() => onAction('clear')}
+      />
+    </div>
+  );
+}
+
+function ContextMenuItem({
+  label,
+  onClick,
+  testid,
+  danger,
+}: {
+  label: string;
+  onClick: () => void;
+  testid: string;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      data-testid={testid}
+      className={cn(
+        'block w-full rounded px-2 py-1 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800',
+        danger && 'text-rose-600 dark:text-rose-400',
+      )}
+    >
+      {label}
+    </button>
   );
 }
 

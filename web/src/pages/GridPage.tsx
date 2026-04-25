@@ -10,12 +10,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Upload } from 'lucide-react';
-import { useFilteredWorkItems } from '@/hooks/useWorkItems';
+import { useFilteredWorkItems, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { usePersistedFilter } from '@/hooks/usePersistedFilter';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
-import { WorkItemGrid } from '@/components/grid/WorkItemGrid';
+import { WorkItemGrid, type BulkAction } from '@/components/grid/WorkItemGrid';
 import { JsonlImportDialog } from '@/components/grid/JsonlImportDialog';
-import type { WorkItemListFilter } from '@/api/workItems';
+import { BulkEditDialog } from '@/components/grid/BulkEditDialog';
+import type { WorkItemListFilter, WorkItemPatch } from '@/api/workItems';
 import type { BacklogFilter } from '@/lib/backlogFilter';
 import {
   NAMED_VIEWS,
@@ -50,6 +51,40 @@ export function GridPage() {
   const [activeView, setActiveView] = useState<NamedView | null>(initialViewFromEnv);
   const [openId, setOpenId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [bulkEdit, setBulkEdit] = useState<{ ids: string[] } | null>(null);
+  const updateWorkItem = useUpdateWorkItem();
+
+  // applyBulkPatch fans the patch out across the selection. Each PATCH
+  // gets its own auto-minted nonce (api/workItems.ts) — the server
+  // dedupes per-id replays, so a double-applied dialog can't double-
+  // apply the change. We don't await the chain; the optimistic cache
+  // updates land per-mutation and the list invalidation happens once
+  // each mutation settles.
+  const applyBulkPatch = useCallback(
+    (ids: string[], patch: WorkItemPatch) => {
+      for (const id of ids) {
+        updateWorkItem.mutate({ id, patch });
+      }
+    },
+    [updateWorkItem],
+  );
+
+  const handleBulkAction = useCallback(
+    (action: BulkAction, ids: string[]) => {
+      if (action === 'edit') {
+        setBulkEdit({ ids });
+      } else if (action === 'defer') {
+        applyBulkPatch(ids, { state_category: 'backlog' });
+      } else if (action === 'delete') {
+        // No DELETE endpoint on the work-item surface yet; stub by
+        // marking canceled so the operator's intent is recorded
+        // without dropping data. Replace once a destructive endpoint
+        // lands.
+        applyBulkPatch(ids, { state_category: 'canceled' });
+      }
+    },
+    [applyBulkPatch],
+  );
 
   // Keep the URL `?view=` param + localStorage entry in sync with the
   // active view. URL wins on first paint (handled by initialViewFromEnv);
@@ -244,6 +279,7 @@ export function GridPage() {
             rows={rows}
             onSelect={setOpenId}
             presets={{ storageKey: PRESETS_STORAGE_KEY }}
+            onBulkAction={handleBulkAction}
           />
         )}
       </div>
@@ -253,6 +289,15 @@ export function GridPage() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         existing={data}
+      />
+      <BulkEditDialog
+        open={bulkEdit !== null}
+        ids={bulkEdit?.ids ?? []}
+        onClose={() => setBulkEdit(null)}
+        onApply={(patch) => {
+          if (bulkEdit) applyBulkPatch(bulkEdit.ids, patch);
+          setBulkEdit(null);
+        }}
       />
     </div>
   );
