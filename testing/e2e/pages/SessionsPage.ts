@@ -24,7 +24,7 @@ export class SessionsPage extends AppShell {
     this.table = page.getByTestId('sessions-table');
   }
 
-  async goto(): Promise<void> {
+  override async goto(): Promise<void> {
     await super.goto('/sessions');
     await this.expectShellRendered();
   }

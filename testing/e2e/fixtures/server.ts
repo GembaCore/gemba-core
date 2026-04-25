@@ -63,6 +63,14 @@ type TestFixtures = {
   escalationPlane: EscalationStore;
   /** Per-test in-memory Agents roster store. gm-5v8v.9. */
   agentPlane: AgentStore;
+  /**
+   * Per-test adaptor health state. gm-5v8v.10. Specs (mostly under
+   * specs/realtime/) call adaptorsState.set([{...degraded}]) BEFORE
+   * navigating; the fake-backend dispatcher serves both /api/adaptors
+   * and the /api/adaptors/stream initial frame from this state so the
+   * SPA paints the AdaptorBanner without needing live SSE pushes.
+   */
+  adaptorsState: AdaptorsState;
   /** Captured console errors + page errors for the current test. */
   consoleErrors: string[];
   /**
@@ -118,9 +126,23 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(store);
   },
 
-  page: async ({ page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane }, use) => {
+  adaptorsState: async ({}, use) => {
+    const state = createAdaptorsState();
+    await use(state);
+  },
+
+  page: async (
+    { page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState },
+    use
+  ) => {
     if (backend === 'fake') {
-      await installFakeBackend(page, { workPlane, sessionPlane, escalationPlane, agentPlane });
+      await installFakeBackend(page, {
+        workPlane,
+        sessionPlane,
+        escalationPlane,
+        agentPlane,
+        adaptorsState,
+      });
     } else {
       if (!realServer) {
         throw new Error('backend=real but realServer fixture is undefined');
@@ -181,11 +203,41 @@ export { expect };
 // with the empty shape the typed clients in web/src/api expect, so
 // every page renders its empty-state without a network error.
 
+// ── Adaptors-state fixture (gm-5v8v.10) ────────────────────────────
+//
+// AdaptorBanner reads /api/adaptors via SSE with a /api/adaptors snapshot
+// fallback. To exercise the banner under fake mode the spec needs a way
+// to seed the response; this small store is shared between the dispatcher
+// and the spec, mutated by the spec before it navigates.
+
+export type AdaptorStatus = {
+  name: string;
+  plane: 'work' | 'orchestration';
+  healthy: boolean;
+  reason?: string;
+};
+
+export type AdaptorsState = {
+  set(entries: AdaptorStatus[]): void;
+  get(): AdaptorStatus[];
+};
+
+function createAdaptorsState(): AdaptorsState {
+  let entries: AdaptorStatus[] = [];
+  return {
+    set: (next) => {
+      entries = [...next];
+    },
+    get: () => entries,
+  };
+}
+
 interface FakeStores {
   workPlane: WorkPlaneStore;
   sessionPlane: SessionStore;
   escalationPlane: EscalationStore;
   agentPlane: AgentStore;
+  adaptorsState: AdaptorsState;
 }
 
 async function installFakeBackend(page: Page, stores: FakeStores): Promise<void> {
@@ -207,7 +259,7 @@ function matchesEvents(p: string): boolean {
 }
 
 function dispatch(route: Route, stores: FakeStores): unknown {
-  const { workPlane, sessionPlane, escalationPlane, agentPlane } = stores;
+  const { workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState } = stores;
   const url = new URL(route.request().url());
   const path = url.pathname;
   const method = route.request().method();
@@ -227,7 +279,13 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   // pushes on this idle channel, so listeners stay subscribed without
   // surfacing console errors.
   if (path === '/events') return sse(': fake-backend idle\n\n');
-  if (path === '/api/adaptors/stream') return sse('data: {"adaptors":[]}\n\n');
+  if (path === '/api/adaptors/stream') {
+    // Single initial frame mirroring whatever the spec seeded into
+    // adaptorsState. The browser auto-reconnects on close; each
+    // reconnect re-reads the (possibly-mutated) state.
+    const payload = JSON.stringify({ adaptors: adaptorsState.get() });
+    return sse(`data: ${payload}\n\n`);
+  }
 
   // /api/work-items/:id — drawer reads happen through this surface.
   // Match this BEFORE the list endpoint so /api/work-items/gm-1 isn't
@@ -354,7 +412,7 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   }
   if (isPath(path, '/api/sprints')) return json({ items: [] });
   if (isPath(path, '/api/capabilities')) return json({});
-  if (isPath(path, '/api/adaptors')) return json({ adaptors: [] });
+  if (isPath(path, '/api/adaptors')) return json({ adaptors: adaptorsState.get() });
   if (isPath(path, '/api/health')) return json({ status: 'ok' });
 
   // Anything else under /api/* — the smoke tier hasn't pinned a

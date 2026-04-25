@@ -82,7 +82,19 @@ const projects: Project[] = [
     metadata: { tier: 'route', backend: 'fake', bead: 'gm-5v8v.5,6,8,9', status: 'active' },
     timeout: 30_000,
   },
-  pending('realtime-fake',   { tier: 'realtime',    backend: 'fake', bead: 'gm-5v8v.10' }),
+  // realtime-fake: AdaptorBanner + adaptors-stream specs (gm-5v8v.10).
+  // The SSE consumer chain is exercised in @deep mode against a real
+  // server — fake mode covers the snapshot fallback paths.
+  {
+    name: 'realtime-fake',
+    testMatch: ['realtime/**/*.spec.ts'],
+    use: {
+      ...devices['Desktop Chrome'],
+      extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
+    },
+    metadata: { tier: 'realtime', backend: 'fake', bead: 'gm-5v8v.10', status: 'active' },
+    timeout: 30_000,
+  },
   pending('modes-fake',      { tier: 'modes',       backend: 'fake', bead: 'gm-5v8v.11' }),
   pending('error-fake',      { tier: 'error',       backend: 'fake', bead: 'gm-5v8v.13' }),
 
@@ -127,7 +139,39 @@ const projects: Project[] = [
 
   pending('chrome-deep',     { tier: 'chrome',      backend: 'real', bead: 'gm-5v8v.4'  }),
   pending('route-deep',      { tier: 'route',       backend: 'real', bead: 'gm-5v8v.5/6/7/8/9' }),
-  pending('realtime-deep',   { tier: 'realtime',    backend: 'real', bead: 'gm-5v8v.10' }),
+  // realtime-deep: full /events SSE end-to-end + POST /api/workitems/notify
+  // dedupe (gm-5v8v.10). bd write → events.Hub → /events SSE → SPA
+  // react-query invalidation. Tagged @deep so the dispatcher only
+  // picks up the real-backend specs.
+  //
+  // GATED behind GEMBA_E2E_RUN_DEEP — matches smoke-deep convention.
+  // realServer.ts's tempdir bd init has a HOME-isolation guard
+  // (gm-h4n) that prevents shared :3307 leakage in this fixture, but
+  // until bd itself defends against fall-through (the upstream fix),
+  // the e2e CI lane stays on fake-only by default. Set
+  // GEMBA_E2E_RUN_DEEP=1 to opt in locally.
+  ...(process.env.GEMBA_E2E_RUN_DEEP
+    ? [
+        {
+          name: 'realtime-deep',
+          testMatch: ['realtime/**/*.spec.ts'],
+          grep: /@deep/,
+          use: {
+            ...devices['Desktop Chrome'],
+            backend: 'real' as const,
+            extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
+          },
+          metadata: {
+            tier: 'realtime',
+            backend: 'real',
+            bead: 'gm-5v8v.10',
+            status: 'opt-in (gm-h4n)',
+          },
+          timeout: 60_000,
+          fullyParallel: false,
+        } satisfies Project,
+      ]
+    : [pending('realtime-deep', { tier: 'realtime', backend: 'real', bead: 'gm-5v8v.10' })]),
   pending('modes-deep',      { tier: 'modes',       backend: 'real', bead: 'gm-5v8v.11' }),
   pending('error-deep',      { tier: 'error',       backend: 'real', bead: 'gm-5v8v.13' }),
   pending('integration-deep',{ tier: 'integration', backend: 'real', bead: 'gm-5v8v.15' }),

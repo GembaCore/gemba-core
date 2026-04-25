@@ -24,7 +24,7 @@ export class AgentsPage extends AppShell {
     this.drawer = page.getByTestId('agent-drawer');
   }
 
-  async goto(): Promise<void> {
+  override async goto(): Promise<void> {
     await super.goto('/agents');
     await this.expectShellRendered();
   }
