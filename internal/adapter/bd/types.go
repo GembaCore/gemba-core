@@ -152,18 +152,22 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 		}
 	}
 	branches := branchesFromLabels(b.Labels)
+	readPaths := readPathsFromLabels(b.Labels)
+	writePaths := writePathsFromLabels(b.Labels)
 	wi := core.WorkItem{
-		ID:                  id,
-		Kind:                kind,
-		Title:               b.Title,
-		Description:         b.Description,
-		Status:              b.Status,
-		StateCategory:       category,
-		Priority:            &priority,
-		PrimaryRepositoryID: primary,
-		RepositoryIDs:       repoIDs,
-		Branches:            branches,
-		Labels:              append([]string(nil), b.Labels...),
+		ID:                   id,
+		Kind:                 kind,
+		Title:                b.Title,
+		Description:          b.Description,
+		Status:               b.Status,
+		StateCategory:        category,
+		Priority:             &priority,
+		PrimaryRepositoryID:  primary,
+		RepositoryIDs:        repoIDs,
+		Branches:             branches,
+		AdditionalReadPaths:  readPaths,
+		AdditionalWritePaths: writePaths,
+		Labels:               append([]string(nil), b.Labels...),
 		// Relationships carries only the three core edges (blocks,
 		// parent_child, relates_to); the four extension edges plus the
 		// raw bd edge blob ride Custom["beads:dependencies"] /

@@ -147,6 +147,76 @@ func branchLabels(brs []core.BeadBranch) []string {
 	return out
 }
 
+// labelReadPrefix is the bd label that grants a bead read access to
+// a path outside the default surface (gm-v8vr). Format: `read:<glob>`.
+// Multiple labels yield multiple patterns; order is preserved.
+const labelReadPrefix = "read:"
+
+// labelWritePrefix grants write access. Very rare — the operator
+// MUST justify in bead notes. Format: `write:<glob>`.
+const labelWritePrefix = "write:"
+
+// readPathsFromLabels parses a bead's labels for `read:<glob>` entries
+// and returns the patterns in order. Empty entries (`read:`) and
+// duplicates are silently dropped; the resolver de-duplicates anyway
+// but keeping the parser clean keeps the round-trip readable.
+func readPathsFromLabels(labels []string) []string {
+	return pathsFromLabels(labels, labelReadPrefix)
+}
+
+// writePathsFromLabels mirrors readPathsFromLabels for `write:<glob>`.
+func writePathsFromLabels(labels []string) []string {
+	return pathsFromLabels(labels, labelWritePrefix)
+}
+
+func pathsFromLabels(labels []string, prefix string) []string {
+	if len(labels) == 0 {
+		return nil
+	}
+	var out []string
+	seen := make(map[string]bool)
+	for _, l := range labels {
+		if !strings.HasPrefix(l, prefix) {
+			continue
+		}
+		body := strings.TrimPrefix(l, prefix)
+		if body == "" || seen[body] {
+			continue
+		}
+		seen[body] = true
+		out = append(out, body)
+	}
+	return out
+}
+
+// readPathLabels is the inverse — turn a slice of glob patterns back
+// into `read:<glob>` labels. Used by the write path so a programmatic
+// update preserves AdditionalReadPaths across a round-trip.
+func readPathLabels(paths []string) []string {
+	return pathLabels(paths, labelReadPrefix)
+}
+
+// writePathLabels mirrors readPathLabels for write paths.
+func writePathLabels(paths []string) []string {
+	return pathLabels(paths, labelWritePrefix)
+}
+
+func pathLabels(paths []string, prefix string) []string {
+	if len(paths) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(paths))
+	emitted := make(map[string]bool)
+	for _, p := range paths {
+		if p == "" || emitted[p] {
+			continue
+		}
+		emitted[p] = true
+		out = append(out, prefix+p)
+	}
+	return out
+}
+
 // prefixOf returns the substring of beadID up to (but not including)
 // the first hyphen — the prefix used to route a bead to its
 // [core.Repository] when no explicit `repo:*` label is set (gm-d2ts).

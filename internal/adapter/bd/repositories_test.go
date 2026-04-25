@@ -230,6 +230,76 @@ func TestBeadToWorkItem_UnknownPrefixLeavesFieldsEmpty(t *testing.T) {
 	}
 }
 
+// gm-v8vr: read:<glob> + write:<glob> label projection.
+func TestReadPathsFromLabels(t *testing.T) {
+	got := readPathsFromLabels([]string{
+		"area:capability",
+		"read:~/.aws/credentials",
+		"read:",                   // skipped
+		"read:~/.aws/credentials", // dup, skipped
+		"read:/notes/spec.md",
+	})
+	want := []string{"~/.aws/credentials", "/notes/spec.md"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("[%d] got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestWritePathsFromLabels(t *testing.T) {
+	got := writePathsFromLabels([]string{"write:/scratch", "area:bug"})
+	if len(got) != 1 || got[0] != "/scratch" {
+		t.Errorf("got %v", got)
+	}
+}
+
+func TestReadPathLabels_Roundtrip(t *testing.T) {
+	in := []string{"~/.aws/credentials", "/notes/spec.md", "", "~/.aws/credentials"}
+	got := readPathLabels(in)
+	want := []string{"read:~/.aws/credentials", "read:/notes/spec.md"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	parsed := readPathsFromLabels(got)
+	if len(parsed) != 2 {
+		t.Errorf("round-trip lost: %v", parsed)
+	}
+}
+
+func TestWritePathLabels(t *testing.T) {
+	got := writePathLabels([]string{"/scratch", ""})
+	if len(got) != 1 || got[0] != "write:/scratch" {
+		t.Errorf("got %v", got)
+	}
+}
+
+// gm-v8vr end-to-end: bead with read: + write: labels projects onto
+// WorkItem.AdditionalReadPaths + AdditionalWritePaths.
+func TestBeadToWorkItem_PopulatesAdditionalPaths(t *testing.T) {
+	b := &Bead{
+		ID:        "e3",
+		Title:     "x",
+		Status:    "open",
+		IssueType: "epic",
+		Labels: []string{
+			"area:capability",
+			"read:~/.aws/credentials",
+			"write:/scratch",
+		},
+	}
+	wi := b.toWorkItem("gm", nil)
+	if len(wi.AdditionalReadPaths) != 1 || wi.AdditionalReadPaths[0] != "~/.aws/credentials" {
+		t.Errorf("AdditionalReadPaths = %v", wi.AdditionalReadPaths)
+	}
+	if len(wi.AdditionalWritePaths) != 1 || wi.AdditionalWritePaths[0] != "/scratch" {
+		t.Errorf("AdditionalWritePaths = %v", wi.AdditionalWritePaths)
+	}
+}
+
 // gm-ou02: branch:<repo>:<name> labels project onto BeadBranch entries.
 func TestBranchesFromLabels_Empty(t *testing.T) {
 	if got := branchesFromLabels(nil); got != nil {

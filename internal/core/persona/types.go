@@ -76,6 +76,17 @@ type PersonaScope struct {
 	// RepositoryID is the repo the persona is pinned to. Required iff
 	// Kind == ScopeRepository; forbidden otherwise.
 	RepositoryID core.RepositoryID `toml:"repository,omitempty" json:"repository,omitempty"`
+
+	// AdditionalReadPaths extends the default read surface for every
+	// consult invoking this persona (gm-v8vr). Glob-style patterns;
+	// add to the bead-level [core.WorkItem.AdditionalReadPaths]
+	// rather than replacing it — the resolver concatenates and
+	// de-duplicates. Use sparingly: a "Tests Coach" that legitimately
+	// needs to grep across all workspaces; a "Security Auditor" that
+	// must read `~/.ssh/known_hosts`. The cwd-constraint design
+	// (gm-v8vr) prefers per-bead overrides over per-persona ones —
+	// most needs are situational, not categorical.
+	AdditionalReadPaths []string `toml:"additional_read_paths,omitempty" json:"additional_read_paths,omitempty"`
 }
 
 // IsZero reports whether the scope is the zero value. Used by tests

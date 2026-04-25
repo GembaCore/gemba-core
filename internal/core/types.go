@@ -91,7 +91,23 @@ type WorkItem struct {
 	// default branch. When non-empty, the spawn path uses the
 	// explicit value for the named repo and errors on a missing entry
 	// for a repo in RepositoryIDs.
-	Branches      []BeadBranch       `json:"branches,omitempty"`
+	Branches []BeadBranch `json:"branches,omitempty"`
+
+	// AdditionalReadPaths extends the default read surface a session
+	// gets when working this bead (gm-v8vr). Glob-style patterns;
+	// resolved as additional read-only allowances on top of cwd +
+	// sibling Repository.Path entries + workspace .gemba/ + standard
+	// tooling whitelist. Used when a bead legitimately needs to peek
+	// outside the workspace surface — e.g. a polecat that has to
+	// reference vendored docs at `~/notes/` or a config file under
+	// `~/.aws/credentials` (which is sensitive: justify in bead
+	// notes). Surfaces in bd via labels of the form `read:<glob>`.
+	AdditionalReadPaths []string `json:"additional_read_paths,omitempty"`
+
+	// AdditionalWritePaths grants writes outside cwd. Very rare —
+	// the operator must justify in bead notes. Surfaces via labels
+	// `write:<glob>`.
+	AdditionalWritePaths []string `json:"additional_write_paths,omitempty"`
 	Kind          string             `json:"kind"`
 	Title         string            `json:"title"`
 	Description   string            `json:"description,omitempty"`

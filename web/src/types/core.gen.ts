@@ -242,6 +242,8 @@ export interface WorkItem {
   primary_repository_id?: RepositoryID;
   repository_ids?: RepositoryID[];
   branches?: BeadBranch[];
+  additional_read_paths?: string[];
+  additional_write_paths?: string[];
   kind: string;
   title: string;
   description?: string;
