@@ -47,8 +47,22 @@ const projects: Project[] = [
     timeout: 30_000,
   },
 
+  // chrome-fake — Sidebar / Topbar / Palette / Hotkeys / HelpOverlay
+  // / AdaptorBanner. Activated by gm-5v8v.4. Pure SPA-shell assertions
+  // — none of the chrome specs need a real backend, so there is no
+  // chrome-deep counterpart yet (the real-backend variant of
+  // AdaptorBanner integration belongs in gm-5v8v.10 realtime).
+  {
+    name: 'chrome-fake',
+    testMatch: ['chrome/**/*.spec.ts'],
+    use: {
+      ...devices['Desktop Chrome'],
+      extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
+    },
+    metadata: { tier: 'chrome', backend: 'fake', bead: 'gm-5v8v.4', status: 'active' },
+    timeout: 30_000,
+  },
   // ── Pending — enumerated for visibility, owned by sibling beads ────
-  pending('chrome-fake',     { tier: 'chrome',      backend: 'fake', bead: 'gm-5v8v.4'  }),
   // route-fake is partially active: gm-5v8v.8 lands the drawers slice
   // (specs/drawers/**), gm-5v8v.5 lands the board slice
   // (specs/board/**), gm-5v8v.6 lands the grid slice (specs/grid/**).

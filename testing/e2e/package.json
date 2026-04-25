@@ -4,10 +4,11 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "test": "playwright test --project=smoke-fake --project=route-fake",
+    "test": "playwright test --project=smoke-fake --project=chrome-fake --project=route-fake",
     "test:all": "playwright test",
     "test:smoke": "playwright test --project=smoke-fake",
     "test:smoke:deep": "playwright test --project=smoke-deep --workers=2",
+    "test:chrome": "playwright test --project=chrome-fake",
     "test:drawers": "playwright test --project=route-fake specs/drawers",
     "test:grid": "playwright test --project=route-fake specs/grid",
     "test:route": "playwright test --project=route-fake",
