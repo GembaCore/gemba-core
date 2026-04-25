@@ -4,45 +4,111 @@
 //
 //   'fake' — Playwright `page.route()` intercepts /api/** and /events
 //            with canned in-memory responses. Sub-second resets,
-//            parallelizes freely, no Go binary, no Dolt. This is the
-//            default and the only mode that ships in gm-5v8v.1.
+//            parallelizes freely, no Go binary, no Dolt. Default.
 //
-//   'real' — Real `gemba serve` + Dolt + bd. Implementation lives in
-//            gm-5v8v.2 (deep-mode backend infra). Until that lands,
-//            requesting backend=real throws so deep-tier projects
-//            can't accidentally green on faked data.
+//   'real' — Real `gemba serve` + bd + per-worker tempdir-isolated
+//            embedded Dolt. One server per worker (worker-scoped
+//            fixture); tests reset bead state between runs via the
+//            BdClient handle. Implementation in fixtures/realServer.ts
+//            (gm-5v8v.2).
 //
-// Specs that assert on backend behavior (writes, SSE round-trips,
-// auth) tag themselves @deep so the deep-* projects pick them up.
-// Specs that only render the SPA shell stay backend-agnostic.
+// Specs that assert on backend behavior tag themselves @deep so the
+// deep-* projects pick them up. Specs that only render the SPA shell
+// stay backend-agnostic and run identically against either backend.
 
 import { test as base, expect, type Page, type Route } from '@playwright/test';
+import { spinRealServer, type RealServer } from './realServer';
+import { BdClient } from './bdClient';
 
 export type Backend = 'fake' | 'real';
 
 const ENV_BACKEND = (process.env.GEMBA_E2E_BACKEND as Backend | undefined) ?? 'fake';
 
-type Fixtures = {
+type WorkerFixtures = {
+  /** The active backend for this worker. Set by the project's `use`. */
   backend: Backend;
-  // Captured console errors + page errors for the current test. The
-  // smoke spec asserts this is empty; richer specs filter by message.
-  consoleErrors: string[];
+  /**
+   * Real-server handle, lazily initialized when the worker is on the
+   * 'real' backend. Disposed at worker teardown. `undefined` when the
+   * worker is on the 'fake' backend.
+   */
+  realServer: RealServer | undefined;
 };
 
-export const test = base.extend<Fixtures>({
-  backend: [ENV_BACKEND, { option: true }],
+type TestFixtures = {
+  /** Captured console errors + page errors for the current test. */
+  consoleErrors: string[];
+  /**
+   * Server info exposed to specs. baseURL points at the active server
+   * (real or fake), beadsDir is non-empty only in 'real' mode.
+   */
+  serverInfo: { baseURL: string; backend: Backend; beadsDir?: string };
+  /**
+   * BdClient handle — only meaningful in 'real' mode. Tests can use
+   * this to seed beads via the bd CLI. Throws if accessed under 'fake'.
+   */
+  bd: BdClient;
+};
 
-  page: async ({ page, backend }, use) => {
+export const test = base.extend<TestFixtures, WorkerFixtures>({
+  // ── Worker scope ─────────────────────────────────────────────────
+  backend: [ENV_BACKEND, { option: true, scope: 'worker' }],
+
+  realServer: [
+    async ({ backend }, use, workerInfo) => {
+      if (backend !== 'real') {
+        await use(undefined);
+        return;
+      }
+      const server = await spinRealServer({ workerIndex: workerInfo.workerIndex });
+      try {
+        await use(server);
+      } finally {
+        await server.dispose();
+      }
+    },
+    { scope: 'worker' },
+  ],
+
+  // ── Test scope ───────────────────────────────────────────────────
+  page: async ({ page, backend, realServer }, use) => {
     if (backend === 'fake') {
       await installFakeBackend(page);
     } else {
-      // Real-backend wiring lands in gm-5v8v.2. Until then, fail
-      // loudly so we don't silently fall through to the fake stubs.
-      throw new Error(
-        `backend='real' is not implemented yet — see gm-5v8v.2 (deep-mode backend infra)`
-      );
+      if (!realServer) {
+        throw new Error('backend=real but realServer fixture is undefined');
+      }
+      // Override baseURL for this test's page navigations. The fake
+      // mode uses Playwright's project-level baseURL; the real mode
+      // points at the per-worker gemba listener.
+      await page.goto(realServer.baseURL);
     }
     await use(page);
+  },
+
+  serverInfo: async ({ backend, realServer, baseURL }, use) => {
+    if (backend === 'real') {
+      if (!realServer) throw new Error('backend=real but realServer is undefined');
+      await use({ baseURL: realServer.baseURL, backend, beadsDir: realServer.beadsDir });
+    } else {
+      await use({ baseURL: baseURL ?? 'http://localhost:5173', backend });
+    }
+  },
+
+  bd: async ({ backend, realServer }, use) => {
+    if (backend !== 'real' || !realServer) {
+      throw new Error(
+        'bd fixture is only available in deep mode (backend=real). ' +
+          'Tag the spec @deep and run under a *-deep project.'
+      );
+    }
+    // Reset bead state between tests so specs are independent.
+    const client = new BdClient({ beadsDir: realServer.beadsDir });
+    try {
+      await use(client);
+    } finally {
+      await client.resetAll().catch(() => {/* best-effort cleanup */});
+    }
   },
 
   consoleErrors: async ({ page }, use) => {
@@ -107,6 +173,7 @@ function dispatch(route: Route): unknown {
   if (isPath(path, '/api/agents')) return json({ items: [] });
   if (isPath(path, '/api/capabilities')) return json({});
   if (isPath(path, '/api/adaptors')) return json({ adaptors: [] });
+  if (isPath(path, '/api/health')) return json({ status: 'ok' });
 
   // Anything else under /api/* — the smoke tier hasn't pinned a
   // shape, so empty-object is enough for rendering.

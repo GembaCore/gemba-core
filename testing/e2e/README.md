@@ -44,10 +44,25 @@ testing/e2e/
 | Backend | What it is | When it runs |
 |---|---|---|
 | **fake** | `page.route()` intercepts `/api/**` + `/events` with empty-state JSON and an idle SSE stream. Sub-second resets. Parallelizes freely. No Go binary, no Dolt. | Every PR. |
-| **deep** | Real `gemba serve` + Dolt + bd. Worker isolation via Dolt-DB + worktree namespacing. Serialized to ≤2 workers. | Merge / nightly. Implementation in **gm-5v8v.2**. |
+| **deep** | Real `gemba serve` + bd + per-worker tempdir-isolated embedded Dolt. One server per worker; tests reset bead state between runs. Serialized to ≤2 workers. | Merge / nightly. Landed by **gm-5v8v.2**. |
 
-The fake backend is the current default. Set `GEMBA_E2E_BACKEND=real`
-once gm-5v8v.2 lands.
+The fake backend is the default for `pnpm test`. Use the deep
+matrix when a spec asserts on real backend behaviour (writes, SSE
+round-trips, Dolt reads):
+
+```bash
+make build                                 # produces bin/gemba
+pnpm --filter gemba-e2e test:smoke:deep    # smoke-deep only
+pnpm --filter gemba-e2e test:deep          # every @deep spec across the matrix
+```
+
+Per-worker isolation: each Playwright worker gets its own
+`mkdtemp` directory under `$TMPDIR`. Inside it, `bd init --prefix
+e2e<worker>` creates a fresh `.beads/` with an embedded Dolt
+engine local to that directory, then `gemba serve --beads-dir
+<td>` boots against it on a free port. Teardown rms the tempdir.
+The shared `:3307` Dolt server is never touched, so deep-mode
+testing can't generate orphan databases.
 
 ## Tiers and projects
 

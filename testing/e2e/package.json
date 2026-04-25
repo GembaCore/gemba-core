@@ -7,7 +7,8 @@
     "test": "playwright test --project=smoke-fake",
     "test:all": "playwright test",
     "test:smoke": "playwright test --project=smoke-fake",
-    "test:deep": "playwright test --grep @deep",
+    "test:smoke:deep": "playwright test --project=smoke-deep --workers=2",
+    "test:deep": "playwright test --grep @deep --workers=2",
     "typecheck": "tsc --noEmit",
     "report": "playwright show-report"
   },

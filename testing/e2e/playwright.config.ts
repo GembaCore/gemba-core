@@ -54,7 +54,29 @@ const projects: Project[] = [
   pending('modes-fake',      { tier: 'modes',       backend: 'fake', bead: 'gm-5v8v.11' }),
   pending('error-fake',      { tier: 'error',       backend: 'fake', bead: 'gm-5v8v.13' }),
 
-  pending('smoke-deep',      { tier: 'smoke',       backend: 'real', bead: 'gm-5v8v.3'  }),
+  // smoke-deep is the minimal proof that the real-backend fixture
+  // (gm-5v8v.2) works end to end: spin gemba serve against a
+  // tempdir-isolated bd workspace and assert /api/health is green.
+  // It greps @deep so it only runs specs explicitly tagged for the
+  // real backend.
+  {
+    name: 'smoke-deep',
+    testMatch: ['smoke/**/*.spec.ts'],
+    grep: /@deep/,
+    use: {
+      ...devices['Desktop Chrome'],
+      backend: 'real',
+      extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
+    },
+    metadata: { tier: 'smoke', backend: 'real', bead: 'gm-5v8v.2', status: 'active' },
+    // Real-backend specs cap at 60s/test — the per-worker server
+    // spinup amortizes across the whole worker.
+    timeout: 60_000,
+    // Run the deep tier serially within each worker. Cross-worker
+    // parallelism is capped at the script level via `--workers=2`.
+    fullyParallel: false,
+  },
+
   pending('chrome-deep',     { tier: 'chrome',      backend: 'real', bead: 'gm-5v8v.4'  }),
   pending('route-deep',      { tier: 'route',       backend: 'real', bead: 'gm-5v8v.5/6/7/8/9' }),
   pending('realtime-deep',   { tier: 'realtime',    backend: 'real', bead: 'gm-5v8v.10' }),
