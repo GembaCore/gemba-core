@@ -8,7 +8,9 @@
     "test:all": "playwright test",
     "test:smoke": "playwright test --project=smoke-fake",
     "test:smoke:deep": "playwright test --project=smoke-deep --workers=2",
-    "test:drawers": "playwright test --project=route-fake",
+    "test:drawers": "playwright test --project=route-fake specs/drawers",
+    "test:grid": "playwright test --project=route-fake specs/grid",
+    "test:route": "playwright test --project=route-fake",
     "test:deep": "playwright test --grep @deep --workers=2",
     "typecheck": "tsc --noEmit",
     "report": "playwright show-report"
