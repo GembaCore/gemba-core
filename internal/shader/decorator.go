@@ -24,12 +24,44 @@ import (
 // and whose writes run through Shader.EncodeForWrite. Passing a nil
 // shader is equivalent to passing core.NopShader{} — callers don't
 // need to special-case the no-shader path.
+//
+// Optional capabilities (currently core.WorkItemNotifier — gm-jqwf,
+// follow-up to gm-e4.3.2) are forwarded conditionally: if the inner
+// adaptor implements the optional interface, the returned wrapper
+// also implements it via direct delegation. Adaptors that don't
+// implement the optional surface get the bare decorator, so the
+// server-side type assertion still 409s correctly against opt-out
+// backends.
 func Wrap(inner core.WorkPlane, sh core.Shader) core.WorkPlane {
 	if sh == nil {
 		sh = core.NopShader{}
 	}
-	return &decorator{inner: inner, shader: sh}
+	d := &decorator{inner: inner, shader: sh}
+	if n, ok := inner.(core.WorkItemNotifier); ok {
+		return &notifyingDecorator{decorator: d, notifier: n}
+	}
+	return d
 }
+
+// notifyingDecorator is the WorkPlane wrapper used when the inner
+// adaptor implements core.WorkItemNotifier. NotifyExternal delegates
+// to the inner so the inner's emitter (the same one Subscribe pulls
+// from) is the one that publishes — preserving the in-process /
+// out-of-process indistinguishability the contract promises.
+type notifyingDecorator struct {
+	*decorator
+	notifier core.WorkItemNotifier
+}
+
+func (n *notifyingDecorator) NotifyExternal(ctx context.Context, id core.WorkItemID, source string) (core.WorkItem, string, error) {
+	return n.notifier.NotifyExternal(ctx, id, source)
+}
+
+// Compile-time guarantees that the wrapper satisfies both surfaces.
+var (
+	_ core.WorkPlane         = (*notifyingDecorator)(nil)
+	_ core.WorkItemNotifier  = (*notifyingDecorator)(nil)
+)
 
 type decorator struct {
 	inner  core.WorkPlane

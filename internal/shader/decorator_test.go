@@ -179,6 +179,69 @@ func TestWrap_Update_FetchesCurrentForKindContext(t *testing.T) {
 	}
 }
 
+// notifyingFake adds the optional core.WorkItemNotifier capability on
+// top of the FakeWorkPlane so we can exercise the conditional-forward
+// path in shader.Wrap. Production analogue is bd.WorkPlane.
+type notifyingFake struct {
+	*testadaptors.FakeWorkPlane
+	called int
+	wi     core.WorkItem
+	kind   string
+	err    error
+	gotID  core.WorkItemID
+	gotSrc string
+}
+
+func (n *notifyingFake) NotifyExternal(_ context.Context, id core.WorkItemID, source string) (core.WorkItem, string, error) {
+	n.called++
+	n.gotID = id
+	n.gotSrc = source
+	return n.wi, n.kind, n.err
+}
+
+// gm-jqwf: Wrap MUST forward the optional WorkItemNotifier capability
+// when the inner adaptor implements it. Before the fix the wrapper
+// hid the capability and POST /api/workitems/notify always returned
+// 409 in production despite bd.WorkPlane implementing it.
+func TestWrap_ForwardsWorkItemNotifier(t *testing.T) {
+	inner := &notifyingFake{
+		FakeWorkPlane: testadaptors.NewFakeWorkPlane(core.TransportAPI),
+		wi:            core.WorkItem{ID: "gm-foo", Status: "open", StateCategory: core.StateStarted},
+		kind:          core.WorkItemEventUpdated,
+	}
+	wrapped := shader.Wrap(inner, core.NopShader{})
+
+	notifier, ok := wrapped.(core.WorkItemNotifier)
+	if !ok {
+		t.Fatalf("wrapper does not satisfy core.WorkItemNotifier")
+	}
+	wi, kind, err := notifier.NotifyExternal(context.Background(), "gm-foo", "bd-git-hook")
+	if err != nil {
+		t.Fatalf("NotifyExternal: %v", err)
+	}
+	if kind != core.WorkItemEventUpdated {
+		t.Errorf("kind: want %q got %q", core.WorkItemEventUpdated, kind)
+	}
+	if wi.ID != "gm-foo" {
+		t.Errorf("wi.ID: got %q", wi.ID)
+	}
+	if inner.called != 1 || inner.gotID != "gm-foo" || inner.gotSrc != "bd-git-hook" {
+		t.Errorf("inner not called as expected: called=%d id=%q src=%q",
+			inner.called, inner.gotID, inner.gotSrc)
+	}
+}
+
+// gm-jqwf: an adaptor that doesn't implement WorkItemNotifier must
+// NOT be exposed as one through the wrapper — that's how the handler
+// 409s opt-out backends like the dolt read-only adaptor.
+func TestWrap_OmitsWorkItemNotifierWhenInnerOptsOut(t *testing.T) {
+	inner := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	wrapped := shader.Wrap(inner, core.NopShader{})
+	if _, ok := wrapped.(core.WorkItemNotifier); ok {
+		t.Fatalf("bare FakeWorkPlane shouldn't surface as WorkItemNotifier through the wrapper")
+	}
+}
+
 // Update without a Title patch skips the extra Get — keeps the hot
 // status-change path single-round-trip.
 func TestWrap_Update_NoTitle_SkipsGet(t *testing.T) {
