@@ -24,6 +24,7 @@ import { createSessionStore, type SessionStore } from './sessionStore';
 import { createEscalationStore, type EscalationStore } from './escalationStore';
 import { createAgentStore, type AgentStore } from './agentStore';
 import { createModeHandle, DEFAULT_MODE, type ModeHandle } from './modes';
+import { createAuthHandle, type AuthHandle } from './auth';
 import type { WorkItem } from '../../../web/src/types/core.gen';
 
 export type Backend = 'fake' | 'real';
@@ -81,6 +82,14 @@ type TestFixtures = {
    * yet, so all modes/* tests are fixme'd against that surface.
    */
   mode: ModeHandle;
+  /**
+   * Auth handle (gm-5v8v.12). Specs in specs/auth/** call setBearer
+   * / loginAs to drive the bearer-or-cookie middleware paths. Most
+   * meaningful auth tests are @deep — fake mode covers UI-side
+   * surfaces only. The SPA has no login form yet, so today's auth
+   * specs are largely fixme contracts.
+   */
+  auth: AuthHandle;
   /** Captured console errors + page errors for the current test. */
   consoleErrors: string[];
   /**
@@ -147,6 +156,14 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     // file's describe block, OR by mutating the handle inside a
     // beforeEach. Default mirrors ui-spec §6.2.
     const handle = createModeHandle(DEFAULT_MODE);
+    await use(handle);
+  },
+
+  auth: async ({}, use) => {
+    // Per-test auth state. Anonymous by default; specs that drive
+    // the token / cookie / loopback paths (specs/auth/**) call
+    // setBearer / loginAs explicitly.
+    const handle = createAuthHandle();
     await use(handle);
   },
 

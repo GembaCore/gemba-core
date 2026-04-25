@@ -111,6 +111,21 @@ const projects: Project[] = [
     metadata: { tier: 'modes', backend: 'fake', bead: 'gm-5v8v.11', status: 'active (all fixme)' },
     timeout: 30_000,
   },
+  // auth-fake (gm-5v8v.12) — the bead notes auth is a backend
+  // concern; the meaningful tests are @deep. Fake mode covers UI-side
+  // surfaces only (LoginPage, useConfig hook), neither of which the
+  // SPA has shipped today. The project is active so the contract
+  // fixmes surface in reports.
+  {
+    name: 'auth-fake',
+    testMatch: ['auth/**/*.spec.ts'],
+    use: {
+      ...devices['Desktop Chrome'],
+      extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
+    },
+    metadata: { tier: 'auth', backend: 'fake', bead: 'gm-5v8v.12', status: 'active (all fixme)' },
+    timeout: 30_000,
+  },
   // error-fake: 404 / network-error / pending. Inline alerts on per-
   // route fetch failures, NotFoundPage for unknown routes, banner
   // independence from per-API errors. gm-5v8v.13.
@@ -200,6 +215,7 @@ const projects: Project[] = [
       ]
     : [pending('realtime-deep', { tier: 'realtime', backend: 'real', bead: 'gm-5v8v.10' })]),
   pending('modes-deep',      { tier: 'modes',       backend: 'real', bead: 'gm-5v8v.11' }),
+  pending('auth-deep',       { tier: 'auth',        backend: 'real', bead: 'gm-5v8v.12' }),
   // error-deep: real-server JSON envelope contract for /api/* +
   // /events/* (gm-b2 / gm-xke). Tagged @deep so only the load-bearing
   // server-contract specs run here. Same gm-h4n gating as the rest of
