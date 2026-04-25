@@ -139,6 +139,21 @@ const projects: Project[] = [
     metadata: { tier: 'error', backend: 'fake', bead: 'gm-5v8v.13', status: 'active' },
     timeout: 30_000,
   },
+  // pending-fake: living specs for ui-spec §5 surfaces that haven't
+  // shipped yet (gm-5v8v.14). Every test in this tier is test.skip'd
+  // with a tracking note; the project exists so the runner enumerates
+  // them in reports rather than the gaps being invisible. When a SPA
+  // surface lands, un-skip the corresponding spec file.
+  {
+    name: 'pending-fake',
+    testMatch: ['pending/**/*.spec.ts'],
+    use: {
+      ...devices['Desktop Chrome'],
+      extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
+    },
+    metadata: { tier: 'pending', backend: 'fake', bead: 'gm-5v8v.14', status: 'living-spec catalog' },
+    timeout: 30_000,
+  },
 
   // smoke-deep is GATED until gm-h4n closes.
   //

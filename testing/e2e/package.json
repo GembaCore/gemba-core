@@ -21,6 +21,7 @@
     "test:modes:deep": "playwright test --project=modes-deep --workers=2",
     "test:auth:deep": "playwright test --project=auth-deep --workers=2",
     "test:integration:deep": "playwright test --project=integration-deep --workers=1",
+    "test:pending": "playwright test --project=pending-fake",
     "test:deep": "playwright test --grep @deep --workers=2",
     "typecheck": "tsc --noEmit",
     "report": "playwright show-report"
