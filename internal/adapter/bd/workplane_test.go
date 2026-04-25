@@ -996,6 +996,121 @@ func TestUpdateWorkItem_ExplicitStatusWinsOverStateCategory(t *testing.T) {
 	}
 }
 
+// gm-e4.3.2: NotifyExternal re-reads + publishes via the same emitter
+// path as in-process mutations. A subscriber sees the event with
+// WorkItemID matching the trigger and Kind derived from state.
+func TestBeadsNotifyExternalEmits(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title: "a task", Kind: "task", Status: "open",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+
+	// Subscribe AFTER CreateWorkItem so we don't have to drain its
+	// own emit. NotifyExternal should fire on this fresh channel.
+	ch, err := impl.Subscribe(ctx, core.WorkPlaneSubscribeFilter{})
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+
+	wi, kind, err := impl.NotifyExternal(ctx, created.ID, "test-source")
+	if err != nil {
+		t.Fatalf("NotifyExternal: %v", err)
+	}
+	if wi.ID != created.ID {
+		t.Errorf("re-read id = %q, want %q", wi.ID, created.ID)
+	}
+	if kind != core.WorkItemEventUpdated {
+		t.Errorf("kind = %q, want %q", kind, core.WorkItemEventUpdated)
+	}
+
+	select {
+	case ev := <-ch:
+		if ev.Kind != core.WorkItemEventUpdated {
+			t.Errorf("event kind = %q, want updated", ev.Kind)
+		}
+		if ev.WorkItemID != created.ID {
+			t.Errorf("event id = %q, want %q", ev.WorkItemID, created.ID)
+		}
+		// Source hint should land on the payload.
+		if got := ev.Payload["notify_source"]; got != "test-source" {
+			t.Errorf("notify_source payload = %v, want test-source", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for NotifyExternal event")
+	}
+}
+
+// NotifyExternal on a closed bead emits workitem_closed (terminal-
+// state detection mirrors UpdateWorkItem).
+func TestBeadsNotifyExternalEmitsClosedForTerminalState(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title: "x", Kind: "task", Status: "open",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+
+	// Out-of-band: update through the adaptor to put it in a terminal
+	// state (simulating a `bd update` from a terminal).
+	closed := "closed"
+	if _, err := impl.UpdateWorkItem(ctx, created.ID, core.WorkItemPatch{Status: &closed}); err != nil {
+		t.Fatalf("UpdateWorkItem: %v", err)
+	}
+
+	ch, _ := impl.Subscribe(ctx, core.WorkPlaneSubscribeFilter{})
+	_, kind, err := impl.NotifyExternal(ctx, created.ID, "")
+	if err != nil {
+		t.Fatalf("NotifyExternal: %v", err)
+	}
+	if kind != core.WorkItemEventClosed {
+		t.Errorf("kind = %q, want closed", kind)
+	}
+	select {
+	case ev := <-ch:
+		if ev.Kind != core.WorkItemEventClosed {
+			t.Errorf("event kind = %q, want closed", ev.Kind)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for closed event")
+	}
+}
+
+// NotifyExternal on a missing id surfaces session_not_found.
+func TestBeadsNotifyExternalNotFound(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx := context.Background()
+	_, _, err := impl.NotifyExternal(ctx, core.WorkItemID("ghost"), "")
+	if err == nil {
+		t.Fatal("expected error for unknown id")
+	}
+	ae := core.AsAdaptorError(err)
+	if ae == nil {
+		t.Fatalf("expected typed adaptor error, got %T: %v", err, err)
+	}
+	if ae.Kind != core.KindSessionNotFound {
+		t.Errorf("err Kind = %q, want session_not_found", ae.Kind)
+	}
+}
+
+// gm-e4.3.2: bd's WorkPlane satisfies core.WorkItemNotifier so the
+// HTTP handler's type assertion succeeds.
+func TestBeadsImplementsWorkItemNotifier(t *testing.T) {
+	var _ core.WorkItemNotifier = (*bd.WorkPlane)(nil)
+}
+
 // TestBeadsSubscribeEmitsOnMutations asserts the gm-e4.3.1 contract:
 // a CreateWorkItem / UpdateWorkItem (closing-status included) call
 // surfaces a WorkPlaneEvent on every live Subscribe channel. Exercises

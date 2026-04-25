@@ -69,6 +69,12 @@ type Router struct {
 	// of panicking on a nil deref. gm-e3.6.2.
 	metricsHandler http.Handler
 
+	// notifyDeduper coalesces same-id same-UpdatedAt POSTs to
+	// /api/workitems/notify so a misbehaving git hook or a
+	// double-fire of `bd update` doesn't double-publish events
+	// (gm-e4.3.2). Bounded FIFO; oldest entry evicted on insert.
+	notifyDeduper *notifyDeduper
+
 	mux http.Handler
 }
 
@@ -87,6 +93,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 	}
 	r.healthBus = registry.NewHealthBus(healthBusInterval, r.boundAdaptorStatuses)
 	r.eventsHub = events.NewHub(events.Config{})
+	r.notifyDeduper = newNotifyDeduper(0)
 
 	mux := chi.NewRouter()
 	mux.Use(middleware.RequestID)
@@ -198,6 +205,12 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Post("/work-items", r.createWorkItem)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Patch("/work-items/{id}", r.patchWorkItem)
+		// gm-e4.3.2: out-of-process notify endpoint. Auth-gated;
+		// NOT nonce-gated — the caller is server-internal plumbing
+		// (the bd post-commit git hook from gm-e4.3.3, ops scripts).
+		// Idempotency is per-(id, UpdatedAt) inside the handler so a
+		// retry storm does not double-publish.
+		api.Post("/workitems/notify", r.notifyWorkItem)
 		// gm-root.11: WorkPlane sprints — drives the SPA's SprintPicker.
 		// Adaptors with sprint_native=false return an empty list and the
 		// freeform editor takes over.

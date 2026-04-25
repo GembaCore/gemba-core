@@ -744,3 +744,25 @@ const (
 	WorkItemEventClosed           = "workitem_closed"
 	WorkItemEventEvidenceAttached = "workitem_evidence_attached"
 )
+
+// WorkItemNotifier is the optional interface a WorkPlane adaptor
+// implements when it can publish a [WorkPlaneEvent] for a mutation
+// that landed via an out-of-process writer (gm-e4.3.2). The HTTP
+// handler at POST /api/workitems/notify type-asserts the bound
+// adaptor to this interface; adaptors that don't implement it (the
+// dolt read-only adaptor, the noop adaptor) cause the endpoint to
+// return 409 capability_denied.
+//
+// Implementations re-read the WorkItem through the same path the
+// in-process UpdateWorkItem uses (no trust of caller-supplied
+// state), derive the kind from the persisted state, and Publish
+// through the same emitter so /events SSE subscribers receive an
+// event indistinguishable from in-process mutations.
+type WorkItemNotifier interface {
+	// NotifyExternal re-reads the WorkItem identified by id and
+	// publishes a workitem.* event. Returns the re-read WorkItem
+	// and the emitted kind ([WorkItemEventUpdated] or
+	// [WorkItemEventClosed]). source is an optional hint
+	// ("bd-git-hook", "ops-runbook") echoed onto the event payload.
+	NotifyExternal(ctx context.Context, id WorkItemID, source string) (WorkItem, string, error)
+}

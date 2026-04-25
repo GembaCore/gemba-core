@@ -577,18 +577,70 @@ func (w *WorkPlane) Subscribe(ctx context.Context, f core.WorkPlaneSubscribeFilt
 	return w.emitter.Subscribe(ctx, f), nil
 }
 
+// NotifyExternal publishes a workitem.* event for a mutation that
+// landed via an out-of-process bd writer (terminal `bd update`, the
+// post-commit git hook from gm-e4.3.3, etc.) rather than through this
+// adaptor's own UpdateWorkItem path (gm-e4.3.2).
+//
+// The endpoint is a dumb trigger — Gemba does NOT trust caller-
+// supplied state. We re-read the WorkItem through the same `bd show`
+// path UpdateWorkItem uses, derive the kind from the persisted
+// StateCategory (mirroring UpdateWorkItem's terminal-state detection),
+// and Publish through the same emitter so /events SSE subscribers
+// receive an event indistinguishable from the in-process case.
+//
+// Returns the re-read WorkItem and the emitted kind. The kind is
+// useful for the HTTP handler's response and audit-log row.
+//
+// `source` is an optional hint (e.g. "bd-git-hook") echoed onto the
+// emitted event's payload so subscribers can route on origin.
+//
+// Errors propagate verbatim from GetWorkItem — a missing id surfaces
+// as session_not_found, a bd-binary failure as adaptor_degraded.
+func (w *WorkPlane) NotifyExternal(
+	ctx context.Context, id core.WorkItemID, source string,
+) (core.WorkItem, string, error) {
+	wi, err := w.GetWorkItem(ctx, id)
+	if err != nil {
+		return core.WorkItem{}, "", err
+	}
+	kind := core.WorkItemEventUpdated
+	// Same terminal-state rule as UpdateWorkItem. Out-of-process
+	// closes (e.g. a polecat ran `bd close`) need to fan out as
+	// workitem_closed so the SPA invalidates ['beads'] correctly
+	// (gm-e12.2).
+	if wi.StateCategory == core.StateCompleted ||
+		wi.StateCategory == core.StateCanceled {
+		kind = core.WorkItemEventClosed
+	}
+	w.emitWithSource(kind, wi, source)
+	return wi, kind, nil
+}
+
 // emit publishes a WorkPlaneEvent after a successful mutation. Called
 // from CreateWorkItem / UpdateWorkItem.
 func (w *WorkPlane) emit(kind string, wi core.WorkItem) {
+	w.emitWithSource(kind, wi, "")
+}
+
+// emitWithSource is the underlying publish helper. The source string,
+// when non-empty, lands on the event payload as `notify_source` so
+// subscribers can distinguish events triggered by NotifyExternal from
+// in-process ones.
+func (w *WorkPlane) emitWithSource(kind string, wi core.WorkItem, source string) {
 	now := time.Now().UTC()
+	payload := map[string]any{
+		"after": wi,
+	}
+	if source != "" {
+		payload["notify_source"] = source
+	}
 	w.emitter.Publish(core.WorkPlaneEvent{
 		ID:         fmt.Sprintf("bd-%s-%d", wi.ID, now.UnixNano()),
 		Kind:       kind,
 		At:         now,
 		WorkItemID: wi.ID,
-		Payload: map[string]any{
-			"after": wi,
-		},
+		Payload:    payload,
 	})
 }
 
