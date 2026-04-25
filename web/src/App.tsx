@@ -4,6 +4,7 @@ import { BoardPage } from '@/pages/BoardPage';
 import { BacklogPage } from '@/pages/BacklogPage';
 import { GridPage } from '@/pages/GridPage';
 import { SessionsPage } from '@/pages/SessionsPage';
+import { AgentsPage } from '@/pages/AgentsPage';
 import {
   CapabilitiesPage,
   EscalationsPage,
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="/backlog" element={<BacklogPage />} />
         <Route path="/grid" element={<GridPage />} />
         <Route path="/sessions" element={<SessionsPage />} />
+        <Route path="/agents" element={<AgentsPage />} />
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />
         <Route path="/escalations" element={<EscalationsPage />} />

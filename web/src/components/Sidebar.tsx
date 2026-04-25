@@ -9,6 +9,7 @@ import {
   Mail,
   Table2,
   Terminal,
+  Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,7 @@ const items: Item[] = [
   { to: '/backlog', label: 'Backlog', Icon: ListTodo },
   { to: '/grid', label: 'Grid', Icon: Table2 },
   { to: '/sessions', label: 'Sessions', Icon: Terminal },
+  { to: '/agents', label: 'Agents', Icon: Users },
   { to: '/graph', label: 'Graph', Icon: Network },
   { to: '/insights', label: 'Insights', Icon: Sparkles },
   { to: '/escalations', label: 'Escalations', Icon: AlertTriangle },
