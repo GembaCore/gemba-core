@@ -242,7 +242,34 @@ const projects: Project[] = [
         } satisfies Project,
       ]
     : [pending('error-deep', { tier: 'error', backend: 'real', bead: 'gm-5v8v.13' })]),
-  pending('integration-deep',{ tier: 'integration', backend: 'real', bead: 'gm-5v8v.15' }),
+  // integration-deep — the migrated dispatch-chain spec (gm-5v8v.15).
+  // Same opt-in gate as smoke-deep: GEMBA_E2E_RUN_DEEP=1 flips it on.
+  // The CI nightly lane sets that flag; PR lanes don't run integration
+  // tests because each one boots a real gemba serve + spawns a pane.
+  ...(process.env.GEMBA_E2E_RUN_DEEP
+    ? [
+        {
+          name: 'integration-deep',
+          testMatch: ['integration/**/*.spec.ts'],
+          use: {
+            ...devices['Desktop Chrome'],
+            backend: 'real' as const,
+            extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
+          },
+          metadata: {
+            tier: 'integration',
+            backend: 'real',
+            bead: 'gm-5v8v.15',
+            status: 'opt-in (gm-h4n)',
+          },
+          // Dispatch chain end-to-end (drag → PATCH → session POST →
+          // tmux spawn → optional agent evidence) needs a generous
+          // budget; the agent half can take 3 minutes by itself.
+          timeout: 240_000,
+          fullyParallel: false,
+        } satisfies Project,
+      ]
+    : [pending('integration-deep', { tier: 'integration', backend: 'real', bead: 'gm-h4n' })]),
 ];
 
 export default defineConfig({

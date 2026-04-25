@@ -16,7 +16,9 @@
 //   - within-column drag = UserOrder reorder via PATCH
 //   - undo path
 //   - toast on success
-//   - port of scripts/e2e/hello-world.test.mjs into specs/integration
+//   - the dispatch chain (PATCH → POST /sessions → tmux → evidence) —
+//     covered end-to-end in specs/integration/dispatch-chain.spec.ts
+//     (gm-5v8v.15) under the integration-deep project
 
 import { expect, test } from '../../fixtures/server';
 import { BoardPage } from '../../pages/BoardPage';
@@ -73,11 +75,12 @@ test.fixme(
 );
 
 test.fixme(
-  'integration: port scripts/e2e/hello-world.test.mjs into specs/integration @deep',
+  'integration: dispatch-chain (drag → PATCH → session POST → tmux → evidence) @deep',
   () => {
-    /* fixme: gm-5v8v.15 owns the integration tier; the existing
-       dispatch-chain driver migrates there. Keeping a fixme stub
-       here so the migration is visible from the board spec list. */
+    /* fixme: full chain lives in specs/integration/dispatch-chain.spec.ts
+       (gm-5v8v.15). This stub stays so the board spec list still
+       advertises that drag-to-In-Progress goes deeper than the
+       PATCH the unit specs above assert. */
   }
 );
 

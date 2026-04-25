@@ -4,11 +4,11 @@ Companion to epic **gm-5v8v**. Records the architecture decisions made
 in conversation so future contributors can read this doc instead of
 re-deriving the answers.
 
-The library lives at `testing/e2e/` (filed by gm-5v8v.1). Today's
-single-script driver `scripts/e2e/hello-world.test.mjs` is **not** the
-library — it's the dispatch-chain prover that ran for gm-0i0d. Once
-the library lands, that driver migrates into `specs/integration/` as
-one of many tests.
+The library lives at `testing/e2e/` (filed by gm-5v8v.1). The
+single-script driver that ran for gm-0i0d
+(`scripts/e2e/hello-world.test.mjs`) was migrated into
+`testing/e2e/specs/integration/dispatch-chain.spec.ts` by gm-5v8v.15;
+the script directory has been removed.
 
 ---
 
@@ -424,7 +424,7 @@ will inherit them. Listed for visibility:
 ## References
 
 - Epic: gm-5v8v
-- Existing dispatch driver to migrate: `scripts/e2e/hello-world.test.mjs`
+- Migrated dispatch driver: `testing/e2e/specs/integration/dispatch-chain.spec.ts` (gm-5v8v.15)
 - Conformance audit pattern (mirrors the tier idea on the Go side):
   `testing/runner.go`
 - ui-spec / surface inventory bead: gm-p27 (closed gate)
