@@ -67,30 +67,44 @@ const projects: Project[] = [
   pending('modes-fake',      { tier: 'modes',       backend: 'fake', bead: 'gm-5v8v.11' }),
   pending('error-fake',      { tier: 'error',       backend: 'fake', bead: 'gm-5v8v.13' }),
 
-  // smoke-deep — runs every smoke spec against a real `gemba serve`
-  // booted on a tempdir-isolated bd workspace (gm-5v8v.2 wired the
-  // backend fixture; gm-5v8v.3 expanded the spec set to routes / axe
-  // / instance_id). Smoke specs are backend-agnostic by design, so
-  // the file list matches smoke-fake; we don't grep @deep here
-  // because that tag means "asserts on real-backend behaviour" and
-  // the smoke tier intentionally does not.
-  {
-    name: 'smoke-deep',
-    testMatch: ['smoke/**/*.spec.ts'],
-    use: {
-      ...devices['Desktop Chrome'],
-      backend: 'real',
-      extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
-    },
-    metadata: { tier: 'smoke', backend: 'real', bead: 'gm-5v8v.3', status: 'active' },
-    // Real-backend specs cap at 60s/test — the per-worker server
-    // spinup amortizes across the whole worker. Total project budget
-    // (<2min per gm-5v8v.3 DoD) is enforced at the runner level.
-    timeout: 60_000,
-    // Run the deep tier serially within each worker. Cross-worker
-    // parallelism is capped at the script level via `--workers=2`.
-    fullyParallel: false,
-  },
+  // smoke-deep is GATED until gm-h4n closes.
+  //
+  // gm-5v8v.2 landed the deep-mode backend infra and gm-5v8v.3
+  // expanded smoke-deep to the full route set. The shared problem:
+  // realServer.ts runs `bd init --prefix e2etest --non-interactive
+  // --quiet --skip-agents --skip-hooks` inside a tempdir, and bd
+  // init does NOT isolate from the shared :3307 Dolt server when
+  // there is no existing .beads in cwd (gm-h4n). Every run silently
+  // re-poisons the gemba workspace's issue_prefix and can drop rows
+  // sibling rigs depend on.
+  //
+  // The right fix lives in bd (proper isolation in bd init when
+  // run outside an existing .beads). Until that ships, this project
+  // is pending and the e2e CI lane runs only fake-backed projects.
+  // Set GEMBA_E2E_RUN_DEEP=1 to opt in locally for a one-off check
+  // — accept the pollution risk, restore from a sibling rig if it
+  // bites you.
+  ...(process.env.GEMBA_E2E_RUN_DEEP
+    ? [
+        {
+          name: 'smoke-deep',
+          testMatch: ['smoke/**/*.spec.ts'],
+          use: {
+            ...devices['Desktop Chrome'],
+            backend: 'real' as const,
+            extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
+          },
+          metadata: {
+            tier: 'smoke',
+            backend: 'real',
+            bead: 'gm-5v8v.3',
+            status: 'opt-in (gm-h4n)',
+          },
+          timeout: 60_000,
+          fullyParallel: false,
+        } satisfies Project,
+      ]
+    : [pending('smoke-deep', { tier: 'smoke', backend: 'real', bead: 'gm-h4n' })]),
 
   pending('chrome-deep',     { tier: 'chrome',      backend: 'real', bead: 'gm-5v8v.4'  }),
   pending('route-deep',      { tier: 'route',       backend: 'real', bead: 'gm-5v8v.5/6/7/8/9' }),
