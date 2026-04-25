@@ -1,0 +1,20 @@
+# Gemba's own repository — the canonical "this workspace's own
+# checkout" repository declared per gm-26n4. Filename stem MUST equal
+# the `id` field; the loader (internal/core/repository.go) enforces
+# this. WorkItems with RepositoryID = "gemba" point here.
+#
+# Path is intentionally absolute. Each operator's checkout will set
+# this to wherever they cloned the repo (the seed value here matches
+# the layout under Gas Town's standard rig directory). When Gemba
+# init writes this file in a fresh workspace, it pulls the absolute
+# path from the workspace dir.
+
+id = "gemba"
+path = "/Users/mikebengtson/gt/gemba/crew/mike3"
+default_branch = "main"
+url = "https://github.com/MikeBengtson/gemba.git"
+
+# Worktree pool for parallel polecats. Empty / omitted = single-worktree
+# mode (work happens in-place in `path`). Set this to ".worktrees" or
+# similar when running multiple agents concurrently against this repo.
+# worktrees_dir = ".worktrees"

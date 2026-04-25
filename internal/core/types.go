@@ -16,6 +16,20 @@ type WorkItemID string
 // "gemba/polecats/jasper", "langgraph/run-42/node-a").
 type AgentID string
 
+// RepositoryID is the slug naming a [Repository] inside a workspace
+// (gm-26n4). One workspace may hold many repositories; every WorkItem
+// is associated with exactly one. The slug appears as the second
+// segment of [WorkItemID] and as the filename stem of the
+// `.gemba/repositories/<id>.toml` file the Repository is loaded from.
+type RepositoryID string
+
+// RepositoryUnspecified is the sentinel value WorkItem.RepositoryID
+// takes when a bead was filed before repository tracking landed
+// (gm-26n4) or when an adaptor cannot derive a repository for a
+// native record. Spawn paths reject "unspecified" beads with a
+// caller-visible error so the operator backfills before working.
+const RepositoryUnspecified RepositoryID = "unspecified"
+
 // WorkItem is the adaptor-agnostic view of a unit of work. Every
 // WorkPlaneAdaptor must be able to project its native record (Beads
 // issue, Jira issue, GitHub issue, LangGraph task) onto this shape.
@@ -45,7 +59,14 @@ type AgentID string
 const KindMilestone = "milestone"
 
 type WorkItem struct {
-	ID            WorkItemID        `json:"id"`
+	ID WorkItemID `json:"id"`
+	// RepositoryID names the [Repository] this work item lives in
+	// (gm-26n4). The spawn path reads this to pick the working
+	// directory and worktree pool for an agent session. Empty (or
+	// [RepositoryUnspecified]) means the bead has not been backfilled
+	// since repository tracking landed; spawn rejects with a clear
+	// error so the operator sets it explicitly.
+	RepositoryID  RepositoryID      `json:"repository_id,omitempty"`
 	Kind          string            `json:"kind"`
 	Title         string            `json:"title"`
 	Description   string            `json:"description,omitempty"`
