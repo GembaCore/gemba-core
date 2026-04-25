@@ -187,6 +187,9 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Post("/sessions", r.startSession)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Delete("/sessions/{id}", r.endSession)
+		// gm-e7.3: live snapshot of a running session — currently a
+		// transcript tail from the backing pane. Read-only; no nonce.
+		api.Get("/sessions/{id}/peek", r.peekSession)
 		// gm-peg: list work items across the registered WorkPlane.
 		// Empty filter today — filtering / pagination land in later
 		// milestones.

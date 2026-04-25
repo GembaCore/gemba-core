@@ -248,8 +248,65 @@ func (o *OrchestrationPlane) updateSessionStatus(sessionID string, status core.S
 
 // EndSession lives in end.go (gm-native.12).
 
-func (*OrchestrationPlane) PeekSession(context.Context, string) (core.SessionPeek, error) {
-	return core.SessionPeek{}, unsupported("PeekSession")
+// peekDefaultLines is how many lines the adaptor asks the backend to
+// capture when a caller invokes PeekSession. Big enough to surface a
+// useful slice of the agent's recent output (a few screenfuls) but
+// small enough that a typical scrape stays well under the bead's
+// 200ms DoD even on a slow filesystem.
+const peekDefaultLines = 200
+
+// PeekSession returns the last peekDefaultLines lines from the backing
+// pane plus the live Session metadata. Behaviour:
+//
+//   - Backend nil → KindUnsupported (zero-config adaptor).
+//   - sessionID unknown to this adaptor → KindSessionNotFound.
+//   - Session record is missing pane_id (shouldn't happen for a session
+//     this adaptor created) → KindAdaptorDegraded with a clear message.
+//   - Backend CapturePane error → wrapped as KindAdaptorDegraded so the
+//     SPA banner can surface a typed envelope.
+//
+// gm-e7.3 / gm-native.16. Conformance Group B's PeekSession case is now
+// authoritative for this adaptor.
+func (o *OrchestrationPlane) PeekSession(ctx context.Context, sessionID string) (core.SessionPeek, error) {
+	if o.cfg.Backend == nil {
+		return core.SessionPeek{}, unsupported("PeekSession")
+	}
+
+	o.mu.Lock()
+	sess, ok := o.sessions[sessionID]
+	var paneID string
+	var status core.SessionStatus
+	if ok && sess != nil {
+		status = sess.Status
+		if v, vok := sess.ProviderMetadata["pane_id"]; vok {
+			if s, sok := v.(string); sok {
+				paneID = s
+			}
+		}
+	}
+	o.mu.Unlock()
+
+	if !ok {
+		return core.SessionPeek{}, core.NewAdaptorError(core.KindSessionNotFound,
+			"native: session %q not found", sessionID)
+	}
+	if paneID == "" {
+		return core.SessionPeek{}, core.NewAdaptorError(core.KindAdaptorDegraded,
+			"native: session %q is missing pane_id in provider metadata", sessionID)
+	}
+
+	transcript, err := o.cfg.Backend.CapturePane(ctx, paneID, peekDefaultLines)
+	if err != nil {
+		return core.SessionPeek{}, core.WrapAdaptorError(core.KindAdaptorDegraded, err,
+			"native: capture-pane on %s", paneID)
+	}
+
+	return core.SessionPeek{
+		SessionID:  sessionID,
+		Status:     status,
+		CapturedAt: time.Now().UTC(),
+		Transcript: transcript,
+	}, nil
 }
 
 // ListSessions returns a snapshot of every live session, filtered by f.

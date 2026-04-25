@@ -163,6 +163,31 @@ func (r *Router) endSession(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, sess)
 }
 
+// peekSession handles GET /api/sessions/{id}/peek. Returns a snapshot
+// of the live session — currently a transcript tail from the backing
+// pane (gm-e7.3). The endpoint is read-only (no nonce gate); it just
+// proxies the OrchestrationPlane's PeekSession method, which already
+// surfaces the typed envelopes (KindSessionNotFound, KindUnsupported,
+// KindAdaptorDegraded) the SPA's drawer differentiates on.
+func (r *Router) peekSession(w http.ResponseWriter, req *http.Request) {
+	if r.host == nil || r.host.OrchestrationPlane() == nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"adaptor_not_configured", "orchestration plane not configured")
+		return
+	}
+	id := chi.URLParam(req, "id")
+	if id == "" {
+		httperr.Write(w, http.StatusBadRequest, "bad_request", "session id required")
+		return
+	}
+	peek, err := r.host.OrchestrationPlane().PeekSession(req.Context(), id)
+	if err != nil {
+		httperr.WriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, peek)
+}
+
 // splitCSV splits "a,b,c" with whitespace trim. No fancy escapes —
 // SessionStatus values are bare lowercase identifiers.
 func splitCSV(s string) []string {

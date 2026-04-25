@@ -66,6 +66,9 @@ func RunOrchestrationConformance(t *testing.T, impl core.OrchestrationPlaneAdapt
 		t.Run("F_list_pending_requests_unknown_session_is_tagged", func(t *testing.T) {
 			probeListPendingRequestsUnknownTagged(t, impl, fixture.KnownMissingSessionID)
 		})
+		t.Run("F_peek_session_unknown_session_is_tagged", func(t *testing.T) {
+			probePeekSessionUnknownTagged(t, impl, fixture.KnownMissingSessionID)
+		})
 	}
 
 	if fixture.SessionStarter != nil {
@@ -75,6 +78,13 @@ func RunOrchestrationConformance(t *testing.T, impl core.OrchestrationPlaneAdapt
 		}
 		t.Run("B_list_pending_requests_returns_empty_slice", func(t *testing.T) {
 			probeListPendingRequestsEmpty(t, impl, sessionID)
+		})
+		// gm-e7.3: peek_session SHOULD return a populated SessionPeek
+		// for a live session whose adaptor declares any peek mode in
+		// its manifest. Runs before the end_session probes since they
+		// terminate the session.
+		t.Run("B_peek_session_returns_snapshot_for_live_session", func(t *testing.T) {
+			probePeekSessionLive(t, impl, sessionID)
 		})
 		t.Run("B_end_session_populates_close_reason", func(t *testing.T) {
 			probeEndSessionCloseReason(t, impl, sessionID)
@@ -146,6 +156,49 @@ func probeListPendingRequestsEmpty(t probeT, impl core.OrchestrationPlaneAdaptor
 	}
 	if len(reqs) != 0 {
 		t.Errorf("ListPendingRequests returned %d entries for a freshly-started session; want 0", len(reqs))
+	}
+}
+
+// probePeekSessionLive asserts the adaptor's PeekSession contract for
+// a session it knows about: returns a populated SessionPeek with the
+// matching SessionID and a non-zero CapturedAt. Adaptors are free to
+// leave Transcript / Screenshot / Structured empty if their declared
+// peek_modes don't apply, but the envelope itself MUST be present so
+// callers (the SPA's session drawer) can render even a "no transcript
+// available" placeholder reliably. gm-e7.3.
+func probePeekSessionLive(t probeT, impl core.OrchestrationPlaneAdaptor, sessionID string) {
+	t.Helper()
+	peek, err := impl.PeekSession(context.Background(), sessionID)
+	if err != nil {
+		t.Fatalf("PeekSession(%q): %v", sessionID, err)
+	}
+	if peek.SessionID != sessionID {
+		t.Errorf("PeekSession.SessionID: want %q got %q", sessionID, peek.SessionID)
+	}
+	if peek.CapturedAt.IsZero() {
+		t.Error("PeekSession.CapturedAt is zero; adaptor MUST populate the wall-clock the snapshot was taken")
+	}
+}
+
+// probePeekSessionUnknownTagged asserts that a peek against an id the
+// adaptor doesn't know about surfaces a typed KindSessionNotFound,
+// matching the rest of the session-lookup methods. gm-e7.3.
+func probePeekSessionUnknownTagged(t probeT, impl core.OrchestrationPlaneAdaptor, missing string) {
+	t.Helper()
+	_, err := impl.PeekSession(context.Background(), missing)
+	if err == nil {
+		t.Fatalf("PeekSession(%q) returned nil error for unknown session", missing)
+	}
+	if assertErr := core.AssertAdaptorError(err); assertErr != nil {
+		t.Errorf("PeekSession(%q): %v", missing, assertErr)
+		return
+	}
+	ae := core.AsAdaptorError(err)
+	// KindUnsupported is acceptable for adaptors whose backend
+	// genuinely can't peek. Otherwise the contract is SessionNotFound.
+	if ae.Kind != core.KindSessionNotFound && ae.Kind != core.KindUnsupported {
+		t.Errorf("PeekSession(%q): kind=%q, want %q (or %q for adaptors that can't peek at all)",
+			missing, ae.Kind, core.KindSessionNotFound, core.KindUnsupported)
 	}
 }
 
