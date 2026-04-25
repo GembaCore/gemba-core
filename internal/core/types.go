@@ -84,7 +84,15 @@ type WorkItem struct {
 	// PrimaryRepositoryID into a single-element slice for back-
 	// compat with the gm-26n4 single-repo shape.
 	RepositoryIDs []RepositoryID `json:"repository_ids,omitempty"`
-	Kind          string         `json:"kind"`
+
+	// Branches names the git branch this bead's work happens on, per
+	// repository (gm-ou02). When empty, the spawn path derives a
+	// branch as `<bead-id>-<slugified-title>` from each repo's
+	// default branch. When non-empty, the spawn path uses the
+	// explicit value for the named repo and errors on a missing entry
+	// for a repo in RepositoryIDs.
+	Branches      []BeadBranch       `json:"branches,omitempty"`
+	Kind          string             `json:"kind"`
 	Title         string            `json:"title"`
 	Description   string            `json:"description,omitempty"`
 	Status        string            `json:"status"`
@@ -106,6 +114,82 @@ type WorkItem struct {
 	// per-card; it is omitempty because the pure derivation also lets
 	// the UI recompute locally if a transport omits it.
 	Derived *DerivedSignals `json:"derived,omitempty"`
+}
+
+// BeadBranch maps a repository to the git branch this bead's work
+// happens on inside it (gm-ou02). A multi-repo bead may carry one
+// entry per touched repository; a single-repo bead typically carries
+// at most one. When the spawn path needs a branch for a polecat and
+// no entry matches, it derives one as `<bead-id>-<slugified-title>`
+// from the corresponding [Repository.DefaultBranch].
+type BeadBranch struct {
+	// RepositoryID names the repo this branch lives in. MUST appear
+	// in [WorkItem.RepositoryIDs] — entries for unknown repos are
+	// rejected by [WorkItem.ValidateBranches] to catch typos that
+	// would otherwise silently miss the spawn lookup.
+	RepositoryID RepositoryID `json:"repository_id"`
+
+	// Branch is the git branch name. Non-empty; whitespace is not
+	// trimmed (the operator is responsible for naming hygiene; the
+	// loader doesn't reformat).
+	Branch string `json:"branch"`
+}
+
+// ValidateBranches checks the per-repo branch mapping. Caller-safe
+// errors. Rules:
+//
+//   - Each entry's RepositoryID must be non-empty and present in
+//     [WorkItem.RepositoryIDs] (catches typos).
+//   - Branch must be non-empty.
+//   - At most one entry per RepositoryID — duplicates are rejected.
+//
+// Empty Branches is valid (the spawn path falls back to derivation).
+func (w WorkItem) ValidateBranches() error {
+	if len(w.Branches) == 0 {
+		return nil
+	}
+	repoIDs := make(map[RepositoryID]bool, len(w.RepositoryIDs))
+	for _, id := range w.RepositoryIDs {
+		repoIDs[id] = true
+	}
+	seen := make(map[RepositoryID]bool, len(w.Branches))
+	for _, br := range w.Branches {
+		if br.RepositoryID == "" {
+			return fmt.Errorf(
+				"work item %q: branches contains an entry with empty repository_id",
+				w.ID)
+		}
+		if br.Branch == "" {
+			return fmt.Errorf(
+				"work item %q: branches[%q].branch must not be empty",
+				w.ID, br.RepositoryID)
+		}
+		if seen[br.RepositoryID] {
+			return fmt.Errorf(
+				"work item %q: branches contains duplicate repository_id %q",
+				w.ID, br.RepositoryID)
+		}
+		seen[br.RepositoryID] = true
+		if !repoIDs[br.RepositoryID] {
+			return fmt.Errorf(
+				"work item %q: branches[%q] references repository %q not in repository_ids %v",
+				w.ID, br.RepositoryID, br.RepositoryID, w.RepositoryIDs)
+		}
+	}
+	return nil
+}
+
+// BranchFor returns the recorded branch for the given repository, if
+// any. The bool is false when no entry maps to id; the caller derives
+// a default in that case. Provided as a method so call sites in the
+// spawn driver read clearly.
+func (w WorkItem) BranchFor(id RepositoryID) (string, bool) {
+	for _, br := range w.Branches {
+		if br.RepositoryID == id {
+			return br.Branch, true
+		}
+	}
+	return "", false
 }
 
 // RepositoryID returns the primary repository id this work item is

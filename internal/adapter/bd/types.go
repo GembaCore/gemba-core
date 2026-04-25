@@ -142,6 +142,7 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 		kind = core.KindMilestone
 	}
 	primary, repos := repositoriesFromLabels(b.Labels)
+	branches := branchesFromLabels(b.Labels)
 	wi := core.WorkItem{
 		ID:                  id,
 		Kind:                kind,
@@ -152,6 +153,7 @@ func (b *Bead) toWorkItem(prefix string) core.WorkItem {
 		Priority:            &priority,
 		PrimaryRepositoryID: primary,
 		RepositoryIDs:       repos,
+		Branches:            branches,
 		Labels:              append([]string(nil), b.Labels...),
 		// Relationships carries only the three core edges (blocks,
 		// parent_child, relates_to); the four extension edges plus the

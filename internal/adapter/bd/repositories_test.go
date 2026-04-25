@@ -127,6 +127,150 @@ func TestBeadToWorkItem_PopulatesRepositoryFields(t *testing.T) {
 	}
 }
 
+// gm-ou02: branch:<repo>:<name> labels project onto BeadBranch entries.
+func TestBranchesFromLabels_Empty(t *testing.T) {
+	if got := branchesFromLabels(nil); got != nil {
+		t.Errorf("got %v, want nil", got)
+	}
+	if got := branchesFromLabels([]string{"area:capability"}); got != nil {
+		t.Errorf("non-branch labels should yield nil: %v", got)
+	}
+}
+
+func TestBranchesFromLabels_Single(t *testing.T) {
+	got := branchesFromLabels([]string{
+		"area:capability", "branch:gemba:feature/gm-e3",
+	})
+	if len(got) != 1 || got[0].RepositoryID != "gemba" || got[0].Branch != "feature/gm-e3" {
+		t.Errorf("got %+v, want [{gemba feature/gm-e3}]", got)
+	}
+}
+
+// Branch names with colons (some teams use them) survive — only the
+// FIRST colon after the prefix splits repo from branch.
+func TestBranchesFromLabels_ColonInBranchName(t *testing.T) {
+	got := branchesFromLabels([]string{"branch:frontend:user/jane:fix-bug-44"})
+	if len(got) != 1 {
+		t.Fatalf("got %d, want 1", len(got))
+	}
+	if got[0].Branch != "user/jane:fix-bug-44" {
+		t.Errorf("branch = %q, want user/jane:fix-bug-44", got[0].Branch)
+	}
+}
+
+func TestBranchesFromLabels_MultiRepo(t *testing.T) {
+	got := branchesFromLabels([]string{
+		"branch:backend:feature/x", "branch:frontend:feature/x-client",
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %d, want 2", len(got))
+	}
+	if got[0].RepositoryID != "backend" || got[1].RepositoryID != "frontend" {
+		t.Errorf("order lost: %+v", got)
+	}
+}
+
+// Malformed labels are silently dropped — the validator on WorkItem
+// is the right place to surface "your bd state is wrong".
+func TestBranchesFromLabels_DropsMalformed(t *testing.T) {
+	got := branchesFromLabels([]string{
+		"branch:",          // empty body
+		"branch:gemba",     // no colon-name
+		"branch:gemba:",    // empty branch
+		"branch::feature",  // empty repo
+		"branch:gemba:ok",  // valid — kept
+		"branch:gemba:dup", // duplicate repo — first wins
+	})
+	if len(got) != 1 || got[0].Branch != "ok" {
+		t.Errorf("got %+v, want [{gemba ok}]", got)
+	}
+}
+
+func TestBranchLabels_Empty(t *testing.T) {
+	if got := branchLabels(nil); got != nil {
+		t.Errorf("got %v, want nil", got)
+	}
+}
+
+func TestBranchLabels_Roundtrip(t *testing.T) {
+	in := []core.BeadBranch{
+		{RepositoryID: "backend", Branch: "feature/x"},
+		{RepositoryID: "frontend", Branch: "feature/x-client"},
+	}
+	got := branchLabels(in)
+	want := []string{
+		"branch:backend:feature/x",
+		"branch:frontend:feature/x-client",
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("[%d] got %q, want %q", i, got[i], want[i])
+		}
+	}
+	// Round-trip back: labels → BeadBranches → labels yields the
+	// same shape.
+	parsed := branchesFromLabels(got)
+	if len(parsed) != len(in) {
+		t.Errorf("round-trip lost entries: got %v, want %v", parsed, in)
+	}
+}
+
+func TestBranchLabels_DropsEmptyAndDuplicates(t *testing.T) {
+	got := branchLabels([]core.BeadBranch{
+		{RepositoryID: "", Branch: "x"},
+		{RepositoryID: "gemba", Branch: ""},
+		{RepositoryID: "gemba", Branch: "ok"},
+		{RepositoryID: "gemba", Branch: "dup"}, // dup repo — kept once
+	})
+	if len(got) != 1 || got[0] != "branch:gemba:ok" {
+		t.Errorf("got %v, want [branch:gemba:ok]", got)
+	}
+}
+
+func TestStripBranchLabels(t *testing.T) {
+	got := stripBranchLabels([]string{
+		"branch:gemba:x", "area:capability", "branch:frontend:y", "type:bug",
+	})
+	want := []string{"area:capability", "type:bug"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Errorf("[%d] got %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// End-to-end: a Bead with both repo:* AND branch:*:* labels projects
+// onto a WorkItem with both Repositories and Branches populated.
+func TestBeadToWorkItem_PopulatesBranches(t *testing.T) {
+	b := &Bead{
+		ID:        "e3",
+		Title:     "Plan view",
+		Status:    "open",
+		IssueType: "epic",
+		Labels: []string{
+			"area:capability",
+			"repo:frontend",
+			"repo:backend",
+			"branch:frontend:feature/plan-view",
+			"branch:backend:feature/plan-view-api",
+		},
+	}
+	wi := b.toWorkItem("gm")
+	if len(wi.Branches) != 2 {
+		t.Fatalf("Branches = %v, want 2 entries", wi.Branches)
+	}
+	// Branches validate against the populated RepositoryIDs.
+	if err := wi.ValidateBranches(); err != nil {
+		t.Errorf("ValidateBranches: %v", err)
+	}
+}
+
 // A bead with no repo:* labels projects onto a WorkItem with empty
 // repository fields — the spawn path is the right place to reject
 // such legacy beads.

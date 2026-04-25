@@ -81,6 +81,89 @@ func repositoryLabels(primary core.RepositoryID, ids []core.RepositoryID) []stri
 	return out
 }
 
+// labelBranchPrefix names the bd label that records the git branch
+// a bead's work happens on, per repository (gm-ou02). Format:
+// `branch:<repo>:<name>`. The `<name>` MAY contain colons (some
+// branch naming schemes use them); only the first colon after the
+// prefix splits repo from branch.
+//
+// Example: `branch:frontend:feature/gm-e3-plan-view`
+const labelBranchPrefix = "branch:"
+
+// branchesFromLabels parses a bead's labels and returns the per-
+// repository branch mapping. Order from the input slice is preserved
+// to keep round-trips stable. Duplicate entries for the same repo
+// (e.g. `branch:frontend:a` + `branch:frontend:b`) keep the FIRST
+// — [core.WorkItem.ValidateBranches] is the validator, this helper
+// is permissive on read so a bd state mid-edit doesn't 500.
+func branchesFromLabels(labels []string) []core.BeadBranch {
+	if len(labels) == 0 {
+		return nil
+	}
+	var out []core.BeadBranch
+	seen := make(map[core.RepositoryID]bool)
+	for _, l := range labels {
+		if !strings.HasPrefix(l, labelBranchPrefix) {
+			continue
+		}
+		body := strings.TrimPrefix(l, labelBranchPrefix)
+		// Only the FIRST colon splits repo from branch — branch
+		// names can contain colons.
+		idx := strings.IndexByte(body, ':')
+		if idx <= 0 || idx == len(body)-1 {
+			// "branch:" / "branch:repo" / "branch:repo:" — invalid
+			// shapes. Skip silently; the validator catches anything
+			// that snuck onto the WorkItem from another path.
+			continue
+		}
+		repo := core.RepositoryID(body[:idx])
+		name := body[idx+1:]
+		if repo == "" || name == "" || seen[repo] {
+			continue
+		}
+		seen[repo] = true
+		out = append(out, core.BeadBranch{RepositoryID: repo, Branch: name})
+	}
+	return out
+}
+
+// branchLabels is the inverse: given a [core.BeadBranch] slice,
+// produce the bd label slice that encodes it. Used on the write
+// path so a programmatic update preserves branch associations
+// across a round-trip.
+func branchLabels(brs []core.BeadBranch) []string {
+	if len(brs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(brs))
+	emitted := make(map[core.RepositoryID]bool)
+	for _, br := range brs {
+		if br.RepositoryID == "" || br.Branch == "" || emitted[br.RepositoryID] {
+			continue
+		}
+		emitted[br.RepositoryID] = true
+		out = append(out, labelBranchPrefix+string(br.RepositoryID)+":"+br.Branch)
+	}
+	return out
+}
+
+// stripBranchLabels returns in with every `branch:*` entry removed.
+// Used on the write path so a patch carrying a new branch mapping
+// authoritatively replaces stale labels rather than stacking on top.
+func stripBranchLabels(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, l := range in {
+		if strings.HasPrefix(l, labelBranchPrefix) {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
+}
+
 // stripRepositoryLabels returns in with every `repo:*` entry removed.
 // Mirrors stripAgentLabels — used on the write path so a patch
 // carrying new repository fields authoritatively replaces stale

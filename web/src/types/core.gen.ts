@@ -241,6 +241,7 @@ export interface WorkItem {
   id: WorkItemID;
   primary_repository_id?: RepositoryID;
   repository_ids?: RepositoryID[];
+  branches?: BeadBranch[];
   kind: string;
   title: string;
   description?: string;

@@ -416,6 +416,177 @@ func TestWorkItem_ValidateMultiRepoOK(t *testing.T) {
 	}
 }
 
+// gm-ou02: ValidateBranches accepts the legacy zero-state.
+func TestWorkItem_ValidateBranchesEmpty(t *testing.T) {
+	wi := WorkItem{ID: "gm-1"}
+	if err := wi.ValidateBranches(); err != nil {
+		t.Errorf("empty branches should be valid: %v", err)
+	}
+}
+
+// Single-repo bead with one branch entry validates cleanly.
+func TestWorkItem_ValidateBranchesSingleRepoOK(t *testing.T) {
+	wi := WorkItem{
+		ID:                  "gm-1",
+		PrimaryRepositoryID: "gemba",
+		RepositoryIDs:       []RepositoryID{"gemba"},
+		Branches: []BeadBranch{
+			{RepositoryID: "gemba", Branch: "feature/gm-e3"},
+		},
+	}
+	if err := wi.ValidateBranches(); err != nil {
+		t.Errorf("single-branch bead should be valid: %v", err)
+	}
+}
+
+// Multi-repo bead with one branch per repo validates cleanly.
+func TestWorkItem_ValidateBranchesMultiRepoOK(t *testing.T) {
+	wi := WorkItem{
+		ID:                  "gm-2",
+		PrimaryRepositoryID: "backend",
+		RepositoryIDs:       []RepositoryID{"frontend", "backend"},
+		Branches: []BeadBranch{
+			{RepositoryID: "backend", Branch: "feature/x"},
+			{RepositoryID: "frontend", Branch: "feature/x-client"},
+		},
+	}
+	if err := wi.ValidateBranches(); err != nil {
+		t.Errorf("multi-branch bead should be valid: %v", err)
+	}
+}
+
+// Multi-repo bead may declare a branch for a subset of repos — the
+// spawn path derives the rest. Validation accepts.
+func TestWorkItem_ValidateBranchesPartial(t *testing.T) {
+	wi := WorkItem{
+		ID:                  "gm-3",
+		PrimaryRepositoryID: "backend",
+		RepositoryIDs:       []RepositoryID{"frontend", "backend"},
+		Branches: []BeadBranch{
+			{RepositoryID: "backend", Branch: "feature/x"},
+		},
+	}
+	if err := wi.ValidateBranches(); err != nil {
+		t.Errorf("partial branch coverage should be valid: %v", err)
+	}
+}
+
+func TestWorkItem_ValidateBranchesRejects(t *testing.T) {
+	cases := []struct {
+		name    string
+		wi      WorkItem
+		wantSub string
+	}{
+		{
+			name: "empty repository_id",
+			wi: WorkItem{
+				ID:            "gm-1",
+				RepositoryIDs: []RepositoryID{"frontend"},
+				Branches:      []BeadBranch{{RepositoryID: "", Branch: "x"}},
+			},
+			wantSub: "empty repository_id",
+		},
+		{
+			name: "empty branch string",
+			wi: WorkItem{
+				ID:            "gm-1",
+				RepositoryIDs: []RepositoryID{"frontend"},
+				Branches:      []BeadBranch{{RepositoryID: "frontend", Branch: ""}},
+			},
+			wantSub: "branch must not be empty",
+		},
+		{
+			name: "duplicate repository_id",
+			wi: WorkItem{
+				ID:            "gm-1",
+				RepositoryIDs: []RepositoryID{"frontend"},
+				Branches: []BeadBranch{
+					{RepositoryID: "frontend", Branch: "a"},
+					{RepositoryID: "frontend", Branch: "b"},
+				},
+			},
+			wantSub: "duplicate repository_id",
+		},
+		{
+			name: "branch references unknown repo",
+			wi: WorkItem{
+				ID:            "gm-1",
+				RepositoryIDs: []RepositoryID{"frontend"},
+				Branches:      []BeadBranch{{RepositoryID: "ghost", Branch: "x"}},
+			},
+			wantSub: "not in repository_ids",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.wi.ValidateBranches()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), c.wantSub) {
+				t.Errorf("err = %v, want substring %q", err, c.wantSub)
+			}
+		})
+	}
+}
+
+// BranchFor accessor returns the recorded branch + true; missing
+// returns "" + false.
+func TestWorkItem_BranchFor(t *testing.T) {
+	wi := WorkItem{
+		Branches: []BeadBranch{{RepositoryID: "gemba", Branch: "feature/x"}},
+	}
+	if got, ok := wi.BranchFor("gemba"); !ok || got != "feature/x" {
+		t.Errorf("BranchFor(gemba) = (%q, %v); want (feature/x, true)", got, ok)
+	}
+	if got, ok := wi.BranchFor("ghost"); ok || got != "" {
+		t.Errorf("BranchFor(ghost) = (%q, %v); want empty/false", got, ok)
+	}
+}
+
+// Branches round-trip through JSON.
+func TestWorkItem_BranchesJSONRoundtrip(t *testing.T) {
+	wi := WorkItem{
+		ID:                  "gm-1",
+		PrimaryRepositoryID: "gemba",
+		RepositoryIDs:       []RepositoryID{"gemba"},
+		Branches:            []BeadBranch{{RepositoryID: "gemba", Branch: "feature/x"}},
+		Kind:                "epic",
+		Title:               "x",
+		Status:              "open",
+		StateCategory:       StateUnstarted,
+	}
+	body, err := json.Marshal(wi)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(body), `"branches":[{"repository_id":"gemba","branch":"feature/x"}]`) {
+		t.Errorf("branches missing or wrong shape: %s", body)
+	}
+	var got WorkItem
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(got.Branches) != 1 || got.Branches[0].Branch != "feature/x" {
+		t.Errorf("Branches lost: %+v", got.Branches)
+	}
+}
+
+// Empty Branches is omitted from JSON.
+func TestWorkItem_OmitemptyBranches(t *testing.T) {
+	wi := WorkItem{
+		ID:            "gm-1",
+		Kind:          "epic",
+		Title:         "x",
+		Status:        "open",
+		StateCategory: StateUnstarted,
+	}
+	body, _ := json.Marshal(wi)
+	if strings.Contains(string(body), "branches") {
+		t.Errorf("empty branches should be omitted: %s", body)
+	}
+}
+
 func TestRepositoryUnspecified_RejectedByValidate(t *testing.T) {
 	r := Repository{ID: RepositoryUnspecified, Path: "/abs", DefaultBranch: "main"}
 	if err := r.Validate(); err == nil {
