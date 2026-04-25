@@ -51,7 +51,7 @@ export function SessionsPage() {
   }, [sessions]);
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-testid="sessions-page">
       <header className="flex items-center justify-between border-b border-neutral-200 px-8 py-4 dark:border-neutral-800">
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Sessions</h1>
@@ -63,6 +63,7 @@ export function SessionsPage() {
           type="button"
           onClick={() => setDialogOpen(true)}
           data-hotkey-target="new-session"
+          data-testid="sessions-new"
           className="inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
         >
           <Play className="h-3.5 w-3.5" aria-hidden />
@@ -72,16 +73,22 @@ export function SessionsPage() {
 
       <div className="flex-1 overflow-auto">
         {error && (
-          <div className="m-8 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+          <div
+            data-testid="sessions-error"
+            className="m-8 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"
+          >
             {error.message}
           </div>
         )}
-        {isLoading && <EmptyState message="Loading…" />}
+        {isLoading && <EmptyState message="Loading…" testid="sessions-loading" />}
         {!isLoading && rows.length === 0 && (
-          <EmptyState message="No live sessions. Hit “New session” to dispatch one." />
+          <EmptyState
+            message="No live sessions. Hit “New session” to dispatch one."
+            testid="sessions-empty"
+          />
         )}
         {rows.length > 0 && (
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" data-testid="sessions-table">
             <thead className="sticky top-0 bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500 dark:bg-neutral-900 dark:text-neutral-400">
               <tr>
                 <Th>Bead</Th>
@@ -139,13 +146,18 @@ function Row({
   const beadID = typeof s.provider_metadata?.bead_id === 'string' ? s.provider_metadata.bead_id : s.assignment_id;
   const agent = typeof s.provider_metadata?.agent_type === 'string' ? s.provider_metadata.agent_type : s.agent_id;
   return (
-    <tr className="border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900/50">
+    <tr
+      data-testid={`session-row-${s.id}`}
+      data-status={s.status}
+      className="border-b border-neutral-100 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900/50"
+    >
       <Td>
         <span className="font-mono text-xs">{beadID}</span>
       </Td>
       <Td>{agent || '—'}</Td>
       <Td>
         <span
+          data-testid={`session-row-${s.id}-status`}
           className={
             'rounded-md px-2 py-0.5 text-xs ' +
             (terminal
@@ -165,6 +177,7 @@ function Row({
           <button
             type="button"
             onClick={onOpenEscalations}
+            data-testid={`session-row-${s.id}-escalations`}
             className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:hover:bg-amber-900"
             aria-label={`${escalationCount} open escalation${escalationCount === 1 ? '' : 's'}`}
           >
@@ -185,6 +198,7 @@ function Row({
             type="button"
             onClick={onEnd}
             disabled={ending}
+            data-testid={`session-row-${s.id}-end`}
             className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950"
           >
             <StopCircle className="h-3.5 w-3.5" aria-hidden />
@@ -202,9 +216,14 @@ function Th({ children }: { children?: React.ReactNode }) {
 function Td({ children }: { children?: React.ReactNode }) {
   return <td className="px-6 py-2 align-middle">{children}</td>;
 }
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ message, testid }: { message: string; testid?: string }) {
   return (
-    <div className="p-12 text-center text-sm text-neutral-500 dark:text-neutral-400">{message}</div>
+    <div
+      data-testid={testid}
+      className="p-12 text-center text-sm text-neutral-500 dark:text-neutral-400"
+    >
+      {message}
+    </div>
   );
 }
 

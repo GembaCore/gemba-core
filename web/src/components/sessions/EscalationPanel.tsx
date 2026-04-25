@@ -55,6 +55,7 @@ export function EscalationPanel({ sessionId, open, onClose }: EscalationPanelPro
       <div
         className="flex w-full max-w-2xl flex-col rounded-lg bg-white shadow-xl dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
+        data-testid="escalation-panel"
       >
         <header className="flex items-center justify-between border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
           <div>
@@ -142,7 +143,10 @@ function EscalationRow({ escalation }: EscalationRowProps) {
   const blocking = escalation.urgency === 'blocking';
 
   return (
-    <div className="rounded-md border border-neutral-200 p-4 dark:border-neutral-800">
+    <div
+      data-testid={`escalation-row-${escalation.id}`}
+      className="rounded-md border border-neutral-200 p-4 dark:border-neutral-800"
+    >
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="rounded-md bg-neutral-100 px-2 py-0.5 text-xs font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
@@ -189,6 +193,7 @@ function EscalationRow({ escalation }: EscalationRowProps) {
           type="button"
           onClick={() => fire('approve')}
           disabled={respond.isPending}
+          data-testid={`escalation-row-${escalation.id}-approve`}
           className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
         >
           <CheckCircle className="h-3.5 w-3.5" aria-hidden />
@@ -198,6 +203,7 @@ function EscalationRow({ escalation }: EscalationRowProps) {
           type="button"
           onClick={() => fire('deny')}
           disabled={respond.isPending}
+          data-testid={`escalation-row-${escalation.id}-deny`}
           className="inline-flex items-center gap-1 rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
         >
           <XCircle className="h-3.5 w-3.5" aria-hidden />

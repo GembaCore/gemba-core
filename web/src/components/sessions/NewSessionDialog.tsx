@@ -98,6 +98,7 @@ export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: 
       <div
         className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl dark:bg-neutral-900"
         onClick={(e) => e.stopPropagation()}
+        data-testid="new-session-dialog"
       >
         <h2 className="mb-4 text-lg font-semibold">New session</h2>
 
@@ -130,6 +131,7 @@ export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: 
               value={beadId}
               onChange={(e) => setBeadId(e.target.value)}
               size={6}
+              data-testid="new-session-bead"
               className="mb-4 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-800"
             >
               {beadOptions.length === 0 && (
@@ -152,6 +154,7 @@ export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: 
         <select
           value={agentType}
           onChange={(e) => setAgentType(e.target.value)}
+          data-testid="new-session-agent-type"
           className="mb-4 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800"
         >
           <option value="">Select an agent type…</option>
@@ -172,6 +175,7 @@ export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: 
           <button
             type="button"
             onClick={onClose}
+            data-testid="new-session-cancel"
             className="rounded-md px-3 py-1.5 text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
           >
             Cancel
@@ -180,6 +184,7 @@ export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: 
             type="button"
             onClick={submit}
             disabled={!canSubmit}
+            data-testid="new-session-submit"
             className="rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
           >
             {start.isPending ? 'Starting…' : 'Start session'}

@@ -62,20 +62,24 @@ const projects: Project[] = [
     metadata: { tier: 'chrome', backend: 'fake', bead: 'gm-5v8v.4', status: 'active' },
     timeout: 30_000,
   },
+
   // ── Pending — enumerated for visibility, owned by sibling beads ────
-  // route-fake is partially active: gm-5v8v.8 lands the drawers slice
-  // (specs/drawers/**), gm-5v8v.5 lands the board slice
-  // (specs/board/**), gm-5v8v.6 lands the grid slice (specs/grid/**).
-  // Sibling beads .7/.9 add their own testMatch entries here as they
-  // ship.
+  // route-fake is partially active: gm-5v8v.5 lands board/**,
+  // gm-5v8v.6 lands grid/**, gm-5v8v.8 lands drawers/**, gm-5v8v.9
+  // lands sessions/**. Sibling bead .7 adds graph/** when it ships.
   {
     name: 'route-fake',
-    testMatch: ['drawers/**/*.spec.ts', 'board/**/*.spec.ts', 'grid/**/*.spec.ts'],
+    testMatch: [
+      'board/**/*.spec.ts',
+      'drawers/**/*.spec.ts',
+      'grid/**/*.spec.ts',
+      'sessions/**/*.spec.ts',
+    ],
     use: {
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'route', backend: 'fake', bead: 'gm-5v8v.5,6,8', status: 'active' },
+    metadata: { tier: 'route', backend: 'fake', bead: 'gm-5v8v.5,6,8,9', status: 'active' },
     timeout: 30_000,
   },
   pending('realtime-fake',   { tier: 'realtime',    backend: 'fake', bead: 'gm-5v8v.10' }),

@@ -20,6 +20,9 @@ import { test as base, expect, type Page, type Route } from '@playwright/test';
 import { spinRealServer, type RealServer } from './realServer';
 import { BdClient } from './bdClient';
 import { createWorkPlane, type WorkPlaneStore } from './workplane';
+import { createSessionStore, type SessionStore } from './sessionStore';
+import { createEscalationStore, type EscalationStore } from './escalationStore';
+import { createAgentStore, type AgentStore } from './agentStore';
 import type { WorkItem } from '../../../web/src/types/core.gen';
 
 export type Backend = 'fake' | 'real';
@@ -46,6 +49,20 @@ type TestFixtures = {
    * tests use the `bd` fixture to seed via the bd CLI instead.
    */
   workPlane: WorkPlaneStore;
+  /**
+   * Per-test in-memory Sessions store. gm-5v8v.9. Same shape pattern
+   * as workPlane; the fake dispatcher reads from this for
+   * /api/sessions list + /api/sessions/:id detail/end. Only meaningful
+   * in fake mode.
+   */
+  sessionPlane: SessionStore;
+  /**
+   * Per-test in-memory Escalations store. gm-5v8v.9. Drives
+   * /api/escalations list + /api/escalations/:id/respond writeback.
+   */
+  escalationPlane: EscalationStore;
+  /** Per-test in-memory Agents roster store. gm-5v8v.9. */
+  agentPlane: AgentStore;
   /** Captured console errors + page errors for the current test. */
   consoleErrors: string[];
   /**
@@ -86,9 +103,24 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(store);
   },
 
-  page: async ({ page, backend, realServer, workPlane }, use) => {
+  sessionPlane: async ({}, use) => {
+    const store = createSessionStore();
+    await use(store);
+  },
+
+  escalationPlane: async ({}, use) => {
+    const store = createEscalationStore();
+    await use(store);
+  },
+
+  agentPlane: async ({}, use) => {
+    const store = createAgentStore();
+    await use(store);
+  },
+
+  page: async ({ page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane }, use) => {
     if (backend === 'fake') {
-      await installFakeBackend(page, workPlane);
+      await installFakeBackend(page, { workPlane, sessionPlane, escalationPlane, agentPlane });
     } else {
       if (!realServer) {
         throw new Error('backend=real but realServer fixture is undefined');
@@ -149,7 +181,14 @@ export { expect };
 // with the empty shape the typed clients in web/src/api expect, so
 // every page renders its empty-state without a network error.
 
-async function installFakeBackend(page: Page, workPlane: WorkPlaneStore): Promise<void> {
+interface FakeStores {
+  workPlane: WorkPlaneStore;
+  sessionPlane: SessionStore;
+  escalationPlane: EscalationStore;
+  agentPlane: AgentStore;
+}
+
+async function installFakeBackend(page: Page, stores: FakeStores): Promise<void> {
   // Single dispatcher keyed off URL.pathname. We do NOT use glob /
   // regex matchers because globs and regexes match the full URL
   // string — `**/api/**` would also catch Vite's dev-time module
@@ -159,7 +198,7 @@ async function installFakeBackend(page: Page, workPlane: WorkPlaneStore): Promis
   // root and removes route-ordering ambiguity.
   await page.route(
     (url) => new URL(url).pathname.startsWith('/api/') || matchesEvents(new URL(url).pathname),
-    (route) => dispatch(route, workPlane)
+    (route) => dispatch(route, stores)
   );
 }
 
@@ -167,9 +206,11 @@ function matchesEvents(p: string): boolean {
   return p === '/events';
 }
 
-function dispatch(route: Route, workPlane: WorkPlaneStore): unknown {
+function dispatch(route: Route, stores: FakeStores): unknown {
+  const { workPlane, sessionPlane, escalationPlane, agentPlane } = stores;
   const url = new URL(route.request().url());
   const path = url.pathname;
+  const method = route.request().method();
   const json = (data: unknown) => route.fulfill({ json: data });
   const notFound = (code: string, message: string) =>
     route.fulfill({ status: 404, json: { error: code, message } });
@@ -227,11 +268,91 @@ function dispatch(route: Route, workPlane: WorkPlaneStore): unknown {
     return json({ items, total: items.length });
   }
 
-  // Empty-state JSON for the typed clients in web/src/api.
-  if (isPath(path, '/api/sessions')) return json({ items: [] });
-  if (isPath(path, '/api/escalations')) return json({ items: [] });
+  // /api/sessions/:id and /api/sessions/:id/peek (gm-5v8v.9). The
+  // detail-or-end pattern has to match BEFORE the list endpoint so a
+  // path like /api/sessions/sess-1 isn't treated as a list query.
+  const peekMatch = path.match(/^\/api\/sessions\/([^/]+)\/peek$/);
+  if (peekMatch) {
+    const id = decodeURIComponent(peekMatch[1] ?? '');
+    const sess = sessionPlane.get(id);
+    if (!sess) return notFound('session_not_found', `session ${id} not found`);
+    return json({
+      session_id: id,
+      status: sess.status,
+      transcript_tail: '',
+      heartbeat: sess.last_heartbeat ?? null,
+    });
+  }
+  const sessionMatch = path.match(/^\/api\/sessions\/([^/]+)$/);
+  if (sessionMatch) {
+    const id = decodeURIComponent(sessionMatch[1] ?? '');
+    if (method === 'DELETE') {
+      // End: drop from the store and echo a 200. Real server returns
+      // 200 + the materialized session in its terminal state; we
+      // simulate that by handing back a synthetic terminal record.
+      const before = sessionPlane.get(id);
+      sessionPlane.remove(id);
+      if (!before) return notFound('session_not_found', `session ${id} not found`);
+      return json({
+        ...before,
+        status: 'completed',
+        ended_at: new Date().toISOString(),
+      });
+    }
+    const sess = sessionPlane.get(id);
+    if (sess) return json(sess);
+    return notFound('session_not_found', `session ${id} not found`);
+  }
+
+  if (isPath(path, '/api/sessions')) {
+    if (method === 'POST') {
+      // Mint a fake session id and persist it. The body shape is
+      // {bead_id, agent_type, title?, workspace?} — we echo enough of
+      // it back into provider_metadata that the SessionsPage row
+      // renders meaningfully.
+      const body = parseBody(route.request().postData());
+      const id = `sess-fake-${sessionPlane.list().length + 1}`;
+      const now = new Date().toISOString();
+      const session = {
+        id,
+        assignment_id: typeof body.bead_id === 'string' ? body.bead_id : 'gm-fake',
+        agent_id: typeof body.agent_type === 'string' ? body.agent_type : 'agent',
+        status: 'initializing' as const,
+        started_at: now,
+        provider_metadata: {
+          bead_id: body.bead_id,
+          agent_type: body.agent_type,
+          worktree: '/tmp/fake-worktree',
+        },
+      };
+      sessionPlane.add(session);
+      return json(session);
+    }
+    const items = sessionPlane.list();
+    return json({ sessions: items, total: items.length });
+  }
+
+  // /api/escalations/:id/respond (gm-native.13)
+  const respondMatch = path.match(/^\/api\/escalations\/([^/]+)\/respond$/);
+  if (respondMatch && method === 'POST') {
+    const id = decodeURIComponent(respondMatch[1] ?? '');
+    const body = parseBody(route.request().postData());
+    escalationPlane.resolve(id, body);
+    return json({ id, state: 'resolved' });
+  }
+  if (isPath(path, '/api/escalations')) {
+    // The SPA scopes per-session via ?assignment_id=... so the fake
+    // mirrors that filter when present.
+    const assignmentId = url.searchParams.get('assignment_id') ?? undefined;
+    const items = escalationPlane.list(assignmentId);
+    return json({ escalations: items, total: items.length });
+  }
+
+  if (isPath(path, '/api/agents')) {
+    const items = agentPlane.list();
+    return json({ agents: items, total: items.length });
+  }
   if (isPath(path, '/api/sprints')) return json({ items: [] });
-  if (isPath(path, '/api/agents')) return json({ items: [] });
   if (isPath(path, '/api/capabilities')) return json({});
   if (isPath(path, '/api/adaptors')) return json({ adaptors: [] });
   if (isPath(path, '/api/health')) return json({ status: 'ok' });
@@ -244,4 +365,18 @@ function dispatch(route: Route, workPlane: WorkPlaneStore): unknown {
 // Matches `${prefix}`, `${prefix}/...`, or `${prefix}?...`.
 function isPath(path: string, prefix: string): boolean {
   return path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`);
+}
+
+// parseBody safely decodes a request's postData. Specs poke the fake
+// dispatcher with arbitrary JSON; non-JSON or empty bodies fall back
+// to an empty object so the dispatcher can keep its shape-agnostic
+// switch tidy.
+function parseBody(raw: string | null): Record<string, unknown> {
+  if (!raw) return {};
+  try {
+    const v = JSON.parse(raw);
+    return typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
