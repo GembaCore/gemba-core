@@ -8,6 +8,7 @@
 
 export type WorkItemID = string;
 export type AgentID = string;
+export type RepositoryID = string;
 
 export type StateCategory =
   | "backlog"
@@ -237,6 +238,14 @@ export interface DerivedSignals {
   review_pending: boolean;
 }
 
+// BeadBranch maps a repository to the git branch a bead's work
+// happens on inside it (gm-ou02). Empty WorkItem.branches falls back
+// to a derived branch name.
+export interface BeadBranch {
+  repository_id: RepositoryID;
+  branch: string;
+}
+
 export interface WorkItem {
   id: WorkItemID;
   primary_repository_id?: RepositoryID;
@@ -261,6 +270,19 @@ export interface WorkItem {
   updated_at: string;
   custom?: Record<string, unknown>;
   derived?: DerivedSignals | null;
+}
+
+// Repository is one git repository associated with the workspace
+// (gm-26n4). Path is the canonical worktree root; BeadPrefix
+// (gm-d2ts) is the prefix bead ids use to identify this repo in
+// cross-repo contexts.
+export interface Repository {
+  id: RepositoryID;
+  path: string;
+  default_branch: string;
+  url?: string;
+  worktrees_dir?: string;
+  bead_prefix: string;
 }
 
 // Flags is the flat-boolean projection of a CapabilityManifest intended
