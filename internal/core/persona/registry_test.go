@@ -14,6 +14,9 @@ role = "Tester"
 description = "fixture"
 system_prompt = "You are a test."
 
+[scope]
+kind = "project"
+
 [model]
 vendor = "anthropic"
 model = "claude-haiku-4-5"
@@ -113,6 +116,109 @@ variety = "manager"`, 1)
 	}
 	if !strings.Contains(err.Error(), "mutation_authority") {
 		t.Errorf("error = %v, want mention of mutation_authority", err)
+	}
+}
+
+// gm-k2jn: scope is required on every persona file. A file that
+// omits [scope] fails to load.
+func TestScope_RequiredOnLoad(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.ReplaceAll(minimalTOML, `[scope]
+kind = "project"`, "")
+	path := writeFile(t, dir, "tester.toml", body)
+	_, err := LoadFile(path)
+	if err == nil {
+		t.Fatal("expected error: missing scope")
+	}
+	if !strings.Contains(err.Error(), "scope.kind is required") {
+		t.Errorf("error = %v, want scope.kind required", err)
+	}
+}
+
+// scope.repository must be present when scope.kind=repository.
+func TestScope_RepositoryKindRequiresRepoID(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.ReplaceAll(minimalTOML,
+		`[scope]
+kind = "project"`,
+		`[scope]
+kind = "repository"`)
+	path := writeFile(t, dir, "tester.toml", body)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "scope.repository required") {
+		t.Errorf("err = %v, want scope.repository required", err)
+	}
+}
+
+// scope.repository must be EMPTY when scope.kind != repository.
+func TestScope_NonRepositoryKindForbidsRepoID(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.ReplaceAll(minimalTOML,
+		`[scope]
+kind = "project"`,
+		`[scope]
+kind = "project"
+repository = "should-not-be-here"`)
+	path := writeFile(t, dir, "tester.toml", body)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "scope.repository must be empty") {
+		t.Errorf("err = %v, want scope.repository must be empty", err)
+	}
+}
+
+// scope.kind must be one of the three known values.
+func TestScope_UnknownKindRejected(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.ReplaceAll(minimalTOML,
+		`[scope]
+kind = "project"`,
+		`[scope]
+kind = "everywhere"`)
+	path := writeFile(t, dir, "tester.toml", body)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "unknown scope.kind") {
+		t.Errorf("err = %v, want unknown-kind error", err)
+	}
+}
+
+// Manager + scope=any is rejected — mutation must bind to project or
+// a named repository, otherwise mutation_scope.paths can't bind to a
+// real filesystem location.
+func TestScope_ManagerForbidsScopeAny(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.ReplaceAll(minimalTOML,
+		`[scope]
+kind = "project"`,
+		`variety = "manager"
+mutation_authority = ["docs_edit"]
+[scope]
+kind = "any"`)
+	path := writeFile(t, dir, "tester.toml", body)
+	_, err := LoadFile(path)
+	if err == nil || !strings.Contains(err.Error(), "must not declare scope.kind=any") {
+		t.Errorf("err = %v, want manager+any rejection", err)
+	}
+}
+
+// scope=repository accepted with a non-empty repository id.
+func TestScope_RepositoryKindAccepted(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.ReplaceAll(minimalTOML,
+		`[scope]
+kind = "project"`,
+		`[scope]
+kind = "repository"
+repository = "frontend"`)
+	path := writeFile(t, dir, "tester.toml", body)
+	p, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if p.Scope.Kind != ScopeRepository {
+		t.Errorf("Scope.Kind = %q, want repository", p.Scope.Kind)
+	}
+	if p.Scope.RepositoryID != "frontend" {
+		t.Errorf("Scope.RepositoryID = %q, want frontend", p.Scope.RepositoryID)
 	}
 }
 

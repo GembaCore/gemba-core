@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/MikeBengtson/gemba/internal/core"
 )
 
 // Variety classifies the persona's authority over workspace state.
@@ -36,6 +38,126 @@ func (v Variety) Validate() error {
 	}
 }
 
+// ScopeKind names the breadth of a persona's reach across the
+// repositories of its workspace (gm-k2jn / gm-26n4). Required on every
+// persona file — the loader rejects a missing scope so a misconfigured
+// Manager cannot silently span repos it has no business touching.
+type ScopeKind string
+
+const (
+	// ScopeProject — the persona consults across all repositories of
+	// the workspace. cwd at spawn = the project root (read-only by
+	// default; Manager mutation_scope.paths bind to this root). The PM
+	// is the canonical project-scope persona.
+	ScopeProject ScopeKind = "project"
+
+	// ScopeRepository — the persona is pinned to one repository named
+	// in [PersonaScope.RepositoryID]. cwd at spawn = that repo's
+	// primary worktree. The SPA surfaces the persona only in views
+	// that already have repository context (bead detail, repo-scoped
+	// Plan view, file diff).
+	ScopeRepository ScopeKind = "repository"
+
+	// ScopeAny — the caller picks the repository per consult. The SPA
+	// renders these in a generic picker with a required repo selector
+	// before invocation; never surfaces them context-free.
+	ScopeAny ScopeKind = "any"
+)
+
+// PersonaScope declares where in the workspace a persona reaches. It
+// is a required block on every persona TOML — the load path fails on
+// omission so a misconfigured persona cannot silently span repos it
+// has no business touching. Named PersonaScope (not just Scope) to
+// avoid collision with [MutationScope] on the same struct.
+type PersonaScope struct {
+	// Kind is "project", "repository", or "any". Required.
+	Kind ScopeKind `toml:"kind" json:"kind"`
+
+	// RepositoryID is the repo the persona is pinned to. Required iff
+	// Kind == ScopeRepository; forbidden otherwise.
+	RepositoryID core.RepositoryID `toml:"repository,omitempty" json:"repository,omitempty"`
+}
+
+// IsZero reports whether the scope is the zero value. Used by tests
+// that construct a Persona programmatically; production loads always
+// populate Kind because Validate rejects empty.
+func (s PersonaScope) IsZero() bool {
+	return s.Kind == "" && s.RepositoryID == ""
+}
+
+// ResolveWorkingDir returns the absolute filesystem path the
+// dispatcher should spawn a Claude Code session in for this scope
+// (gm-k2jn / gm-26n4 / gm-twp2). The resolver implements the cwd
+// policy locked on 2026-04-25:
+//
+//   - ScopeProject    → workspaceDir (the directory containing .gemba/).
+//     The persona is told via preamble that it has no source repo;
+//     promptctx providers carry the cross-repo state.
+//   - ScopeRepository → repos.Get(s.RepositoryID).Path. Spawning fails
+//     if the repo is not registered.
+//   - ScopeAny        → callerOverride (must be non-nil + registered).
+//     The HTTP layer requires a `repo` query parameter on consults
+//     to a scope=any persona; this method is where that parameter
+//     binds.
+//
+// Returns an error rather than panicking on missing/invalid input
+// so the dispatcher can surface a 400 to the caller cleanly.
+func (s PersonaScope) ResolveWorkingDir(workspaceDir string, repos *core.RepositoryRegistry, callerOverride core.RepositoryID) (string, error) {
+	if strings.TrimSpace(workspaceDir) == "" {
+		return "", fmt.Errorf("persona/scope: workspaceDir must not be empty")
+	}
+	switch s.Kind {
+	case ScopeProject:
+		return workspaceDir, nil
+	case ScopeRepository:
+		if repos == nil {
+			return "", fmt.Errorf("persona/scope: repository registry required for scope=repository")
+		}
+		repo, ok := repos.Get(s.RepositoryID)
+		if !ok {
+			return "", fmt.Errorf("persona/scope: repository %q not registered", s.RepositoryID)
+		}
+		return repo.Path, nil
+	case ScopeAny:
+		if strings.TrimSpace(string(callerOverride)) == "" {
+			return "", fmt.Errorf("persona/scope: scope=any requires a repository override from the caller")
+		}
+		if repos == nil {
+			return "", fmt.Errorf("persona/scope: repository registry required for scope=any")
+		}
+		repo, ok := repos.Get(callerOverride)
+		if !ok {
+			return "", fmt.Errorf("persona/scope: repository override %q not registered", callerOverride)
+		}
+		return repo.Path, nil
+	default:
+		return "", fmt.Errorf("persona/scope: unknown kind %q", s.Kind)
+	}
+}
+
+// Validate checks that the scope is well-formed:
+//   - Kind required and ∈ {project, repository, any}
+//   - RepositoryID required iff Kind == repository
+//   - RepositoryID forbidden when Kind != repository (catches typos)
+func (s PersonaScope) Validate() error {
+	switch s.Kind {
+	case "":
+		return fmt.Errorf("persona: scope.kind is required (project | repository | any)")
+	case ScopeProject, ScopeAny:
+		if s.RepositoryID != "" {
+			return fmt.Errorf("persona: scope.repository must be empty when scope.kind=%q", s.Kind)
+		}
+		return nil
+	case ScopeRepository:
+		if strings.TrimSpace(string(s.RepositoryID)) == "" {
+			return fmt.Errorf("persona: scope.repository required when scope.kind=%q", s.Kind)
+		}
+		return nil
+	default:
+		return fmt.Errorf("persona: unknown scope.kind %q (want project | repository | any)", s.Kind)
+	}
+}
+
 // Persona is the parsed form of a `.gemba/personas/<id>.toml` file.
 // Field tags drive both TOML and JSON encoding; the struct is
 // deliberately flat-with-substructs so user-authored files stay
@@ -58,6 +180,13 @@ type Persona struct {
 	// Variety is Coach or Manager. Empty defaults to Coach via
 	// normalize so a minimal TOML file is still valid.
 	Variety Variety `toml:"variety" json:"variety"`
+
+	// Scope declares the persona's reach across workspace repositories
+	// (gm-k2jn). REQUIRED on every persona file — the loader rejects
+	// omission. The dispatcher reads Scope.Kind to pick the working
+	// directory at spawn time; the SPA reads it to decide where to
+	// surface the persona contextually vs globally.
+	Scope PersonaScope `toml:"scope" json:"scope"`
 
 	// Description is one-paragraph free-form copy shown in the
 	// persona picker. No length cap; the UI clips for display.
@@ -186,6 +315,15 @@ func (p Persona) Validate() error {
 	}
 	if err := p.Variety.Validate(); err != nil {
 		return fmt.Errorf("persona %q: %w", p.ID, err)
+	}
+	if err := p.Scope.Validate(); err != nil {
+		return fmt.Errorf("persona %q: %w", p.ID, err)
+	}
+	if p.Variety == VarietyManager && p.Scope.Kind == ScopeAny {
+		// A Manager mutates state. Without a repo (or project) anchor
+		// for [MutationScope.Paths], the mutation cannot be bounded
+		// safely. Coaches with scope=any are fine — they propose only.
+		return fmt.Errorf("persona %q: manager variety must not declare scope.kind=any (mutation must bind to project or named repository)", p.ID)
 	}
 	if strings.TrimSpace(p.Model.Vendor) == "" {
 		return fmt.Errorf("persona %q: model.vendor must not be empty", p.ID)

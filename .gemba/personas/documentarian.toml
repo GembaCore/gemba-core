@@ -79,6 +79,14 @@ You never:
   surface it as a SuggestedAction instead.
 """
 
+# Scope (gm-k2jn): docs/ and .gemba/context/ live across all
+# repositories in v1, so this Manager is project-scope. Mutation is
+# bounded by mutation_scope.paths below, evaluated from the workspace
+# root. Narrowing to a single repository would mean per-repo docs
+# Managers, which is a follow-up (gm-57b roster expansion).
+[scope]
+kind = "project"
+
 [mutation_scope]
 paths = [
   "docs/**",

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikeBengtson/gemba/internal/core"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 )
 
@@ -50,6 +51,7 @@ func dispatcherPersona() *corepersona.Persona {
 		Name:         "PM",
 		Role:         "Project Manager",
 		Variety:      corepersona.VarietyCoach,
+		Scope:        corepersona.PersonaScope{Kind: corepersona.ScopeProject},
 		Skills:       []string{"epic_order"},
 		SystemPrompt: "You are {{role}} for {{workspace_name}}.",
 	}
@@ -64,6 +66,12 @@ func dispatcherSkill() validatingFakeSkill {
 func newTestDispatcher(t *testing.T, opts ...DispatcherOption) *Dispatcher {
 	t.Helper()
 	log := NewAuditLog(t.TempDir())
+	repos := core.NewRepositoryRegistry()
+	_ = repos.Register(&core.Repository{
+		ID:            "gemba",
+		Path:          "/repos/gemba",
+		DefaultBranch: "main",
+	})
 	// Deterministic time + ids so tests can assert exact audit-log
 	// partitioning and don't race on rand.
 	defaultOpts := []DispatcherOption{
@@ -71,6 +79,8 @@ func newTestDispatcher(t *testing.T, opts ...DispatcherOption) *Dispatcher {
 			return time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC)
 		}),
 		WithIDFunc(func() string { return "consult-test-1" }),
+		WithWorkspaceDir("/work/gemba"),
+		WithRepositoryRegistry(repos),
 	}
 	d := NewDispatcher(log, append(defaultOpts, opts...)...)
 	return d
@@ -94,6 +104,13 @@ func TestDispatcher_BeginRegistersSession(t *testing.T) {
 	}
 	if c.ID != "consult-test-1" {
 		t.Errorf("ID = %q, want consult-test-1", c.ID)
+	}
+	// gm-k2jn: project-scope persona resolves to workspaceDir.
+	if c.WorkingDir != "/work/gemba" {
+		t.Errorf("WorkingDir = %q, want /work/gemba", c.WorkingDir)
+	}
+	if c.RepositoryID != "" {
+		t.Errorf("RepositoryID = %q, want empty for project-scope", c.RepositoryID)
 	}
 	if c.PersonaID != "project-manager" || c.SkillID != "epic_order" {
 		t.Errorf("ids: %+v", c)
@@ -399,6 +416,7 @@ func TestDispatcher_NoAuditLogStillReturnsRecord(t *testing.T) {
 	d := NewDispatcher(nil,
 		WithClock(func() time.Time { return time.Date(2026, 4, 25, 12, 0, 0, 0, time.UTC) }),
 		WithIDFunc(func() string { return "c-x" }),
+		WithWorkspaceDir("/work/gemba"),
 	)
 	c, err := d.Begin(validBeginRequest())
 	if err != nil {
@@ -431,6 +449,7 @@ func TestDispatcher_ListNewestFirst(t *testing.T) {
 			idCounter++
 			return "c-" + string(rune('a'+idCounter-1))
 		}),
+		WithWorkspaceDir("/work/gemba"),
 	)
 	for range times {
 		if _, err := d.Begin(validBeginRequest()); err != nil {
@@ -447,6 +466,78 @@ func TestDispatcher_ListNewestFirst(t *testing.T) {
 		if c.ID != wantOrder[i] {
 			t.Errorf("[%d] = %q, want %q", i, c.ID, wantOrder[i])
 		}
+	}
+}
+
+// gm-k2jn: scope=repository persona binds to the named repo's Path.
+func TestDispatcher_BeginResolvesRepositoryScope(t *testing.T) {
+	d := newTestDispatcher(t)
+	req := validBeginRequest()
+	p := dispatcherPersona()
+	p.Scope = corepersona.PersonaScope{
+		Kind:         corepersona.ScopeRepository,
+		RepositoryID: "gemba",
+	}
+	req.Persona = p
+	c, err := d.Begin(req)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if c.WorkingDir != "/repos/gemba" {
+		t.Errorf("WorkingDir = %q, want /repos/gemba", c.WorkingDir)
+	}
+	if c.RepositoryID != "gemba" {
+		t.Errorf("RepositoryID = %q, want gemba", c.RepositoryID)
+	}
+}
+
+// scope=repository against an unregistered repo fails Begin.
+func TestDispatcher_BeginRejectsUnregisteredRepo(t *testing.T) {
+	d := newTestDispatcher(t)
+	req := validBeginRequest()
+	p := dispatcherPersona()
+	p.Scope = corepersona.PersonaScope{
+		Kind:         corepersona.ScopeRepository,
+		RepositoryID: "ghost",
+	}
+	req.Persona = p
+	_, err := d.Begin(req)
+	if err == nil || !strings.Contains(err.Error(), "not registered") {
+		t.Errorf("err = %v, want unregistered-repo error", err)
+	}
+}
+
+// scope=any consult uses RepositoryOverride and surfaces the chosen
+// repo on the Consult.
+func TestDispatcher_BeginUsesRepositoryOverrideForScopeAny(t *testing.T) {
+	d := newTestDispatcher(t)
+	req := validBeginRequest()
+	p := dispatcherPersona()
+	p.Scope = corepersona.PersonaScope{Kind: corepersona.ScopeAny}
+	req.Persona = p
+	req.RepositoryOverride = "gemba"
+	c, err := d.Begin(req)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if c.WorkingDir != "/repos/gemba" {
+		t.Errorf("WorkingDir = %q, want /repos/gemba", c.WorkingDir)
+	}
+	if c.RepositoryID != "gemba" {
+		t.Errorf("RepositoryID = %q, want gemba", c.RepositoryID)
+	}
+}
+
+// scope=any without an override fails Begin.
+func TestDispatcher_BeginRejectsScopeAnyWithoutOverride(t *testing.T) {
+	d := newTestDispatcher(t)
+	req := validBeginRequest()
+	p := dispatcherPersona()
+	p.Scope = corepersona.PersonaScope{Kind: corepersona.ScopeAny}
+	req.Persona = p
+	_, err := d.Begin(req)
+	if err == nil || !strings.Contains(err.Error(), "requires a repository override") {
+		t.Errorf("err = %v, want override-required error", err)
 	}
 }
 

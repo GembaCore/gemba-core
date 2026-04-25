@@ -53,6 +53,13 @@ You will receive:
 Respond by emitting the `emit_ordering` tool call with an ordered array: exactly one `strategy` line first, zero or more `recommendation` lines in rank order, zero or more `warning`/`deferred` lines, exactly one `summary` line last.
 """
 
+# Scope (gm-k2jn): the PM is a project-scope advisor — sees every
+# repository in the workspace, never pinned to one. Spawned with
+# cwd = workspace root; promptctx providers feed it cross-repo state
+# (the PM doesn't read source files directly).
+[scope]
+kind = "project"
+
 [model]
 vendor = "anthropic"
 model = "claude-opus-4-7"

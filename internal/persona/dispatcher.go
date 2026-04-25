@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikeBengtson/gemba/internal/core"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 )
 
@@ -33,6 +34,10 @@ import (
 // serialises file writes internally.
 type Dispatcher struct {
 	auditLog *AuditLog
+	repos    *core.RepositoryRegistry
+	// workspaceDir is the directory containing .gemba/. Used as the
+	// cwd for project-scope persona consults (gm-k2jn). Absolute path.
+	workspaceDir string
 
 	mu       sync.RWMutex
 	sessions map[string]*Consult
@@ -56,6 +61,22 @@ func WithClock(now func() time.Time) DispatcherOption {
 // "consult-<utc-yyyymmddhhmmss>-<6 hex>".
 func WithIDFunc(fn func() string) DispatcherOption {
 	return func(d *Dispatcher) { d.newID = fn }
+}
+
+// WithRepositoryRegistry attaches the workspace's repository registry
+// (gm-26n4) so Begin can resolve persona-scope cwd at consult time.
+// Without this, scope=repository and scope=any consults will fail
+// Begin with a clear error.
+func WithRepositoryRegistry(repos *core.RepositoryRegistry) DispatcherOption {
+	return func(d *Dispatcher) { d.repos = repos }
+}
+
+// WithWorkspaceDir sets the cwd for project-scope consults
+// (gm-k2jn). Required when ANY persona in the workspace declares
+// scope=project; the dispatcher's Begin returns an error if this is
+// empty for such a consult.
+func WithWorkspaceDir(dir string) DispatcherOption {
+	return func(d *Dispatcher) { d.workspaceDir = dir }
 }
 
 // NewDispatcher returns a Dispatcher writing audit rows to the
@@ -108,6 +129,20 @@ type Consult struct {
 	StartedAt time.Time
 	EndedAt   time.Time
 	Status    ConsultStatus
+
+	// WorkingDir is the absolute path the spawn driver will use as
+	// cwd for the Claude Code session (gm-k2jn). Resolved by Begin
+	// from the persona's [corepersona.PersonaScope]:
+	//   - scope=project    → the dispatcher's workspaceDir
+	//   - scope=repository → the registered Repository's Path
+	//   - scope=any        → the caller-supplied repository override's Path
+	WorkingDir string
+
+	// RepositoryID is the repository the consult is bound to (empty
+	// for project-scope). Stored separately from Scope so the SPA
+	// can surface "Working in <repo>" without walking the persona
+	// definition.
+	RepositoryID core.RepositoryID
 
 	// Composed is the rendered prompt pair. Stored on the consult so
 	// the spawn driver and the audit log share a single source of
@@ -178,6 +213,12 @@ type BeginRequest struct {
 	// duplicate.
 	Template TemplateValues
 
+	// RepositoryOverride binds a scope=any consult to a specific
+	// repository (gm-k2jn). Required when Persona.Scope.Kind is
+	// ScopeAny; ignored otherwise. The HTTP layer requires a `repo`
+	// query parameter on /api/v1/consult to populate this.
+	RepositoryOverride core.RepositoryID
+
 	// ProjectValues etc. are the per-call promptctx layer overrides.
 	// Pass-through to [Compose].
 	ProjectValues     []string
@@ -223,6 +264,16 @@ func (d *Dispatcher) Begin(req BeginRequest) (*Consult, error) {
 		return nil, fmt.Errorf("persona/dispatcher: validate input: %w", err)
 	}
 
+	// Resolve the cwd for the spawn driver. This is the load-bearing
+	// answer to gm-k2jn's "where does this persona run?" question and
+	// the same call that catches an unregistered repository early
+	// (before we sink the cost of prompt composition).
+	workingDir, err := req.Persona.Scope.ResolveWorkingDir(d.workspaceDir, d.repos, req.RepositoryOverride)
+	if err != nil {
+		return nil, fmt.Errorf("persona/dispatcher: resolve working dir: %w", err)
+	}
+	resolvedRepoID := repositoryFromScope(req.Persona.Scope, req.RepositoryOverride)
+
 	tmpl := req.Template
 	if tmpl.Role == "" {
 		tmpl.Role = req.Persona.Role
@@ -252,6 +303,8 @@ func (d *Dispatcher) Begin(req BeginRequest) (*Consult, error) {
 		Workspace:      req.Workspace,
 		StartedAt:      now,
 		Status:         StatusRunning,
+		WorkingDir:     workingDir,
+		RepositoryID:   resolvedRepoID,
 		Composed:       composed,
 		RawRequest:     append(json.RawMessage(nil), req.RawInput...),
 		ValidatedInput: validated,
@@ -448,6 +501,20 @@ func buildAuditRecord(c *Consult) (corepersona.PersonaConsultRecord, error) {
 		LatencyMs: c.LatencyMs,
 		Error:     c.Error,
 	}, nil
+}
+
+// repositoryFromScope picks the repository id that gets stored on
+// the Consult for "Working in <repo>" UI affordance. Project-scope
+// consults have no bound repo (empty); repository-scope consults
+// echo the scope's id; any-scope consults echo the caller override.
+func repositoryFromScope(s corepersona.PersonaScope, override core.RepositoryID) core.RepositoryID {
+	switch s.Kind {
+	case corepersona.ScopeRepository:
+		return s.RepositoryID
+	case corepersona.ScopeAny:
+		return override
+	}
+	return ""
 }
 
 // defaultConsultID returns a sortable, time-prefixed id with a 6-hex
