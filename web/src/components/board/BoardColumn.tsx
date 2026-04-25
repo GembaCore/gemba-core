@@ -32,7 +32,10 @@ export function BoardColumn({ category, label, items, onSelect }: BoardColumnPro
         <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-400">
           {label}
         </h2>
-        <span className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+        <span
+          data-testid={`board-column-${category}-count`}
+          className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
+        >
           {items.length}
         </span>
       </header>

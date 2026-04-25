@@ -50,16 +50,17 @@ const projects: Project[] = [
   // ── Pending — enumerated for visibility, owned by sibling beads ────
   pending('chrome-fake',     { tier: 'chrome',      backend: 'fake', bead: 'gm-5v8v.4'  }),
   // route-fake is partially active: gm-5v8v.8 lands the drawers slice
-  // (specs/drawers/**). Sibling beads .5/.6/.7/.9 add their own
-  // testMatch entries here as they ship.
+  // (specs/drawers/**), gm-5v8v.5 lands the board slice
+  // (specs/board/**). Sibling beads .6/.7/.9 add their own testMatch
+  // entries here as they ship.
   {
     name: 'route-fake',
-    testMatch: ['drawers/**/*.spec.ts'],
+    testMatch: ['drawers/**/*.spec.ts', 'board/**/*.spec.ts'],
     use: {
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'route', backend: 'fake', bead: 'gm-5v8v.8', status: 'active' },
+    metadata: { tier: 'route', backend: 'fake', bead: 'gm-5v8v.5,8', status: 'active' },
     timeout: 30_000,
   },
   pending('realtime-fake',   { tier: 'realtime',    backend: 'fake', bead: 'gm-5v8v.10' }),
