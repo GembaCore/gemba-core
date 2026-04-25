@@ -23,6 +23,7 @@ import { createWorkPlane, type WorkPlaneStore } from './workplane';
 import { createSessionStore, type SessionStore } from './sessionStore';
 import { createEscalationStore, type EscalationStore } from './escalationStore';
 import { createAgentStore, type AgentStore } from './agentStore';
+import { createModeHandle, DEFAULT_MODE, type ModeHandle } from './modes';
 import type { WorkItem } from '../../../web/src/types/core.gen';
 
 export type Backend = 'fake' | 'real';
@@ -71,6 +72,15 @@ type TestFixtures = {
    * SPA paints the AdaptorBanner without needing live SSE pushes.
    */
   adaptorsState: AdaptorsState;
+  /**
+   * Workspace mode (unsupervised / supervised / managed) for the
+   * current test (gm-5v8v.11). Defaults to 'supervised' per ui-spec
+   * §6.2. Specs override by setting `mode` on test.use(): see
+   * specs/modes/**.spec.ts. Currently a fixture without an active
+   * SPA consumer — the SPA hasn't grown mode-gated confirmation UX
+   * yet, so all modes/* tests are fixme'd against that surface.
+   */
+  mode: ModeHandle;
   /** Captured console errors + page errors for the current test. */
   consoleErrors: string[];
   /**
@@ -129,6 +139,15 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   adaptorsState: async ({}, use) => {
     const state = createAdaptorsState();
     await use(state);
+  },
+
+  mode: async ({}, use) => {
+    // Specs override the initial mode by setting WorkspaceMode on
+    // test.use({ mode: createModeHandle('managed') }) in the spec
+    // file's describe block, OR by mutating the handle inside a
+    // beforeEach. Default mirrors ui-spec §6.2.
+    const handle = createModeHandle(DEFAULT_MODE);
+    await use(handle);
   },
 
   page: async (

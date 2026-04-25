@@ -95,7 +95,22 @@ const projects: Project[] = [
     metadata: { tier: 'realtime', backend: 'fake', bead: 'gm-5v8v.10', status: 'active' },
     timeout: 30_000,
   },
-  pending('modes-fake',      { tier: 'modes',       backend: 'fake', bead: 'gm-5v8v.11' }),
+  // modes-fake (gm-5v8v.11) — every spec is currently fixme'd because
+  // the SPA hasn't shipped workspace-mode-gated UX (no Toaster, no
+  // typing-guard, no mode-gated confirmation dialog). The project is
+  // active so the contract files surface in playwright reports as
+  // skipped rather than vanishing inside testIgnore. Each fixme
+  // references the SPA surface that would unblock it.
+  {
+    name: 'modes-fake',
+    testMatch: ['modes/**/*.spec.ts'],
+    use: {
+      ...devices['Desktop Chrome'],
+      extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
+    },
+    metadata: { tier: 'modes', backend: 'fake', bead: 'gm-5v8v.11', status: 'active (all fixme)' },
+    timeout: 30_000,
+  },
   pending('error-fake',      { tier: 'error',       backend: 'fake', bead: 'gm-5v8v.13' }),
 
   // smoke-deep is GATED until gm-h4n closes.
