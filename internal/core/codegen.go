@@ -314,6 +314,18 @@ export const TRANSPORTS: readonly Transport[] = [
 // every CapabilityManifest.
 export type StateMap = Record<string, StateCategory>;
 
+// Free-form string aliases on CapabilityManifest fields. The Go side
+// constrains them with named values, but the SPA only renders / reads
+// them; widening to string keeps the file generable when new variants
+// land on the Go side without forcing a regen of every consuming
+// component. Bead gm-2xxa tracks tightening these into unions.
+export type SchemaEnforcement = string;
+export type QueryLanguage = string;
+export type VersioningTransport = string;
+export type ConcurrencyModel = string;
+export type AgentNativeAPI = string;
+export type OrchestratorHook = string;
+
 // AdaptorErrorKind is the closed discriminator every adaptor-boundary
 // error carries (gm-faz). The SPA branches on _kind + retryable; it
 // MUST NOT parse the human-readable message.
