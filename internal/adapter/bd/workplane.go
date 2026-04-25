@@ -645,9 +645,13 @@ func (w *WorkPlane) emitWithSource(kind string, wi core.WorkItem, source string)
 }
 
 // isNotFoundError reports whether err carries bd's "not found" signal.
-// bd exits non-zero with a stderr like "issue not found: gm-abc" when
-// the id is unknown; we key off that substring so callers get a
-// properly-tagged session_not_found rather than a generic degraded.
+// bd's vocabulary has drifted across versions — older builds emit
+// "issue not found: gm-abc", current builds emit
+// `Error fetching <id>: no issue found matching "<id>"`, and a few
+// surfaces use "no such issue". We match all three so callers reliably
+// get session_not_found rather than the generic adaptor_degraded
+// envelope. gm-hif1 — surfaced when /api/workitems/notify on a real
+// bd backend was returning 503 instead of 404 for unknown ids.
 func isNotFoundError(err error) bool {
 	if err == nil {
 		return false
@@ -657,7 +661,9 @@ func isNotFoundError(err error) bool {
 		msg = msg + " " + string(exitErr.Stderr)
 	}
 	lower := strings.ToLower(msg)
-	return strings.Contains(lower, "not found") || strings.Contains(lower, "no such issue")
+	return strings.Contains(lower, "not found") ||
+		strings.Contains(lower, "no such issue") ||
+		strings.Contains(lower, "no issue found")
 }
 
 // wrapBdError normalizes a bd subprocess failure into the tagged

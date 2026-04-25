@@ -1111,6 +1111,45 @@ func TestBeadsImplementsWorkItemNotifier(t *testing.T) {
 	var _ core.WorkItemNotifier = (*bd.WorkPlane)(nil)
 }
 
+// gm-hif1: live bd 0.x emits 'no issue found matching "<id>"' for an
+// unknown id — phrasing the original isNotFoundError regex didn't
+// match. Without this case-coverage, /api/workitems/notify against a
+// real bd backend returns 503 adaptor_degraded instead of 404
+// session_not_found. This test pins the new phrasing so a future
+// version drift forces an explicit decision rather than silently
+// regressing the wire contract.
+func TestBeads_GetWorkItem_NewBdNotFoundPhrasing_IsSessionNotFound(t *testing.T) {
+	cases := []struct {
+		name string
+		msg  string
+	}{
+		{"new (no issue found matching)", `Error fetching gm-ghost: no issue found matching "gm-ghost"`},
+		{"old (issue not found)", "bd: issue not found: gm-ghost"},
+		{"variant (no such issue)", "bd error: no such issue gm-ghost"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := func(_ context.Context, _ ...string) ([]byte, error) {
+				return nil, &fakeExitError{stderr: []byte(tc.msg + "\n")}
+			}
+			impl := bd.NewWorkPlaneWithRunner(runner, "")
+			_, err := impl.GetWorkItem(context.Background(),
+				core.WorkItemID("gemba/gemba/gm-ghost"))
+			if err == nil {
+				t.Fatalf("expected error")
+			}
+			ae := core.AsAdaptorError(err)
+			if ae == nil {
+				t.Fatalf("expected typed adaptor error, got %T: %v", err, err)
+			}
+			if ae.Kind != core.KindSessionNotFound {
+				t.Errorf("err.Kind = %q, want session_not_found (msg=%q)",
+					ae.Kind, tc.msg)
+			}
+		})
+	}
+}
+
 // TestBeadsSubscribeEmitsOnMutations asserts the gm-e4.3.1 contract:
 // a CreateWorkItem / UpdateWorkItem (closing-status included) call
 // surfaces a WorkPlaneEvent on every live Subscribe channel. Exercises
