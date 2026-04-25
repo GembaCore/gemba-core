@@ -23,6 +23,10 @@ web/node_modules/
 # Frontend
 web/.vite/
 .vite/
+node_modules/
+testing/e2e/test-results/
+testing/e2e/playwright-report/
+testing/e2e/playwright/.cache/
 
 # Editor / OS
 .DS_Store
