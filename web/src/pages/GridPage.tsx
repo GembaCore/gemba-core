@@ -2,8 +2,13 @@
 // column visibility presets enabled. Shares the filter chip bar +
 // persistence mechanism with BacklogPage but uses its own storage
 // keys so the two views remember their own last-used state.
+//
+// gm-5v8v.6.3: ui-spec §6.8 named default views — Staged / In
+// Progress / Blocked / Ready to stage / Recently Done — exposed via
+// a view-picker chip group above the existing filter chips. Active
+// view persists in the URL hash (?view=...) and localStorage.
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Upload } from 'lucide-react';
 import { useFilteredWorkItems } from '@/hooks/useWorkItems';
 import { usePersistedFilter } from '@/hooks/usePersistedFilter';
@@ -12,11 +17,22 @@ import { WorkItemGrid } from '@/components/grid/WorkItemGrid';
 import { JsonlImportDialog } from '@/components/grid/JsonlImportDialog';
 import type { WorkItemListFilter } from '@/api/workItems';
 import type { BacklogFilter } from '@/lib/backlogFilter';
+import {
+  NAMED_VIEWS,
+  VIEW_FILTERS,
+  VIEW_LABELS,
+  VIEW_POST_FILTERS,
+  VIEW_SORTS,
+  isKnownView,
+  type NamedView,
+} from '@/lib/gridViews';
 import { STATE_CATEGORIES, type StateCategory } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 
 const FILTER_STORAGE_KEY = 'gemba.grid.filter';
 const PRESETS_STORAGE_KEY = 'gemba.grid.column-presets';
+const VIEW_STORAGE_KEY = 'gemba.grid.view';
+const VIEW_QUERY_PARAM = 'view';
 
 const KIND_CHIPS = ['task', 'bug', 'epic'] as const;
 
@@ -31,8 +47,67 @@ const STATE_LABELS: Record<StateCategory, string> = {
 
 export function GridPage() {
   const [filter, setFilter] = usePersistedFilter(FILTER_STORAGE_KEY);
+  const [activeView, setActiveView] = useState<NamedView | null>(initialViewFromEnv);
   const [openId, setOpenId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+
+  // Keep the URL `?view=` param + localStorage entry in sync with the
+  // active view. URL wins on first paint (handled by initialViewFromEnv);
+  // every subsequent change writes both sinks. window.history.replaceState
+  // (not pushState) so toggling views doesn't pollute browser history.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (activeView) {
+      url.searchParams.set(VIEW_QUERY_PARAM, activeView);
+      safeSet(VIEW_STORAGE_KEY, activeView);
+    } else {
+      url.searchParams.delete(VIEW_QUERY_PARAM);
+      safeSet(VIEW_STORAGE_KEY, '');
+    }
+    if (url.toString() !== window.location.href) {
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [activeView]);
+
+  const applyView = useCallback(
+    (next: NamedView | null) => {
+      if (next === null) {
+        // Clearing the view also drops the filter so the operator
+        // sees the full unfiltered set — clicking a view chip a
+        // second time is the natural "show me everything" gesture.
+        setActiveView(null);
+        setFilter({ state_category: [], kind: [], search: filter.search });
+        return;
+      }
+      // Each view ships a base filter preset; the search box is
+      // preserved across view switches so a typed query keeps the
+      // operator's working set intact.
+      const preset = VIEW_FILTERS[next];
+      setFilter({ ...preset, search: filter.search });
+      setActiveView(next);
+    },
+    [filter.search, setFilter]
+  );
+
+  // First-mount: if the URL or storage seeded an active view, apply
+  // its base filter preset so the visible rows match what the chip
+  // promised. Without this, ?view=staged would light up the chip but
+  // leave the filter at its default-staged-state default and nothing
+  // would render.
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+    if (activeView !== null) {
+      const preset = VIEW_FILTERS[activeView];
+      setFilter({ ...preset, search: filter.search });
+    }
+    // Run once at mount; activeView/filter changes after this go
+    // through applyView / patch / patchSearch which already handle
+    // state correctly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const apiFilter = useMemo<WorkItemListFilter>(() => {
     const f: WorkItemListFilter = {};
@@ -45,11 +120,24 @@ export function GridPage() {
 
   const rows = useMemo(() => {
     const needle = filter.search.trim().toLowerCase();
-    if (!needle) return data;
-    return data.filter((it) => it.title.toLowerCase().includes(needle));
-  }, [data, filter.search]);
+    let out = needle ? data.filter((it) => it.title.toLowerCase().includes(needle)) : data;
+    if (activeView) {
+      const post = VIEW_POST_FILTERS[activeView];
+      if (post) out = out.filter(post);
+      const sort = VIEW_SORTS[activeView];
+      if (sort) out = [...out].sort(sort);
+    }
+    return out;
+  }, [data, filter.search, activeView]);
 
-  const patch = (p: Partial<BacklogFilter>) => setFilter({ ...filter, ...p });
+  // A manual chip toggle (state, kind) clears the active view since
+  // the operator is hand-tuning the filter. The view picker continues
+  // to highlight whichever preset most-recently won.
+  const patch = (p: Partial<BacklogFilter>) => {
+    setActiveView(null);
+    setFilter({ ...filter, ...p });
+  };
+  const patchSearch = (search: string) => setFilter({ ...filter, search });
   const toggle = <T extends string>(arr: T[], v: T): T[] =>
     arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
 
@@ -73,6 +161,23 @@ export function GridPage() {
         </button>
       </header>
 
+      <div
+        className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-6 py-3 text-xs dark:border-neutral-800"
+        data-testid="grid-views"
+      >
+        <FilterGroup label="View">
+          {NAMED_VIEWS.map((v) => (
+            <Chip
+              key={v}
+              active={activeView === v}
+              onClick={() => applyView(activeView === v ? null : v)}
+              testid={`grid-view-${v}`}
+            >
+              {VIEW_LABELS[v]}
+            </Chip>
+          ))}
+        </FilterGroup>
+      </div>
       <div
         className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-6 py-3 text-xs dark:border-neutral-800"
         data-testid="grid-filters"
@@ -105,7 +210,7 @@ export function GridPage() {
           <Search className="absolute left-2 h-3 w-3 text-neutral-400" aria-hidden />
           <input
             value={filter.search}
-            onChange={(e) => patch({ search: e.target.value })}
+            onChange={(e) => patchSearch(e.target.value)}
             placeholder="Search titles…"
             className="w-56 rounded border border-neutral-300 bg-white py-1 pl-7 pr-2 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
             data-testid="grid-search"
@@ -151,6 +256,36 @@ export function GridPage() {
       />
     </div>
   );
+}
+
+// initialViewFromEnv resolves the starting view at mount time:
+// URL ?view= wins (shareable links), falling back to localStorage,
+// then null (no view active). Mirrors usePersistedFilter's priority.
+function initialViewFromEnv(): NamedView | null {
+  if (typeof window === 'undefined') return null;
+  const url = new URL(window.location.href);
+  const fromQuery = isKnownView(url.searchParams.get(VIEW_QUERY_PARAM));
+  if (fromQuery) return fromQuery;
+  return isKnownView(safeGet(VIEW_STORAGE_KEY));
+}
+
+function safeGet(key: string): string | null {
+  try {
+    return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeSet(key: string, value: string): void {
+  try {
+    if (typeof window !== 'undefined') {
+      if (value) window.localStorage.setItem(key, value);
+      else window.localStorage.removeItem(key);
+    }
+  } catch {
+    /* see safeGet */
+  }
 }
 
 function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {

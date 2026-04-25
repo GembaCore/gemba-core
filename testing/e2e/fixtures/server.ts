@@ -325,7 +325,18 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   }
 
   if (isPath(path, '/api/work-items')) {
-    const items = workPlane.list();
+    let items = workPlane.list();
+    // Honor state_category / kind query params so view-driven filters
+    // (gm-5v8v.6.3) actually narrow under fake mode. Empty params
+    // mean "no filter" — match the SPA's omit-when-empty contract.
+    const stateCats = url.searchParams.getAll('state_category');
+    const kinds = url.searchParams.getAll('kind');
+    if (stateCats.length > 0) {
+      items = items.filter((it) => stateCats.includes(it.state_category));
+    }
+    if (kinds.length > 0) {
+      items = items.filter((it) => kinds.includes(it.kind));
+    }
     if (route.request().method() === 'POST') {
       // Pretend the create succeeded with a synthetic id; specs that
       // assert on persistence tag themselves @deep so this branch

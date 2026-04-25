@@ -26,11 +26,11 @@ test.fixme(
 test.fixme(
   'dismissing the dialog cancels the mutation (no PATCH fires) @modes',
   () => {
-    /* fixme: "cancel button → no PATCH" is the property that
-       distinguishes managed from supervised — supervised's
-       destructive dialog also confirms but mutation is already in
-       flight. Pin via page.waitForRequest('**/api/work-items/*',
-       { method: 'PATCH', timeout: 1000 }) and assert it times out. */
+    // fixme: "cancel button → no PATCH" is the property that
+    // distinguishes managed from supervised — supervised's
+    // destructive dialog also confirms but mutation is already in
+    // flight. Pin via page.waitForRequest matching /api/work-items/...
+    // with method=PATCH timeout=1000 and assert it times out.
   }
 );
 
