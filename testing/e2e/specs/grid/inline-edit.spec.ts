@@ -1,4 +1,4 @@
-// specs/grid/inline-edit.spec.ts — gm-5v8v.6 (in progress)
+// specs/grid/inline-edit.spec.ts — gm-5v8v.6 (closed)
 //
 // Inline-edit is named on the bead but does NOT exist in
 // WorkItemGrid yet (gm-e12.3.1 ships row-click → drawer). The
@@ -7,9 +7,8 @@
 // testids — exercising those lives in
 // specs/drawers/workitem-drawer.spec.ts under gm-5v8v.8.
 //
-// When the grid grows true cell editing (single-click activates an
-// editor inline, Escape cancels, Enter PATCHes), the fixmes below
-// graduate to real specs.
+// Tracking: gm-5v8v.6.1 (feat(spa): WorkItemGrid in-cell editing).
+// Un-fixme each test below when that bead closes.
 
 import { test } from '../../fixtures/server';
 

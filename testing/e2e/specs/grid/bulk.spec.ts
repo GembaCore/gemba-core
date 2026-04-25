@@ -1,10 +1,12 @@
-// specs/grid/bulk.spec.ts — gm-5v8v.6 (in progress)
+// specs/grid/bulk.spec.ts — gm-5v8v.6 (closed)
 //
 // Bulk actions (Cmd-E edit / Cmd-D defer / right-click on selection)
 // are named on the bead but the WorkItemGrid currently has no
 // selection model — rows render as a single click target that opens
-// the drawer. There's no SPA child bead landing bulk yet; these
-// fixmes track the surface we'd cover when it does.
+// the drawer.
+//
+// Tracking: gm-5v8v.6.2 (feat(spa): WorkItemGrid row selection +
+// bulk actions). Un-fixme each test below when that bead closes.
 
 import { test } from '../../fixtures/server';
 

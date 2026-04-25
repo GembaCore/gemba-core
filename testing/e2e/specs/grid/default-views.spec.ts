@@ -1,4 +1,4 @@
-// specs/grid/default-views.spec.ts — gm-5v8v.6 (in progress)
+// specs/grid/default-views.spec.ts — gm-5v8v.6 (closed)
 //
 // ui-spec §6.8 calls for canonical default views in the grid:
 // "Staged", "In Progress", "Blocked", "Ready to stage", "Recently
@@ -6,9 +6,8 @@
 // (one click = one state) and a search input — there is no concept
 // of a named, shareable view URL yet.
 //
-// When the SPA grows the named-views surface (likely a child of
-// gm-e12.3), these fixmes graduate to real specs that exercise
-// each view's chip arrangement + URL params.
+// Tracking: gm-5v8v.6.3 (feat(spa): GridPage named default views).
+// Un-fixme each test below when that bead closes.
 
 import { test } from '../../fixtures/server';
 
