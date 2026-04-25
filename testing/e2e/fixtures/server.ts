@@ -19,6 +19,8 @@
 import { test as base, expect, type Page, type Route } from '@playwright/test';
 import { spinRealServer, type RealServer } from './realServer';
 import { BdClient } from './bdClient';
+import { createWorkPlane, type WorkPlaneStore } from './workplane';
+import type { WorkItem } from '../../../web/src/types/core.gen';
 
 export type Backend = 'fake' | 'real';
 
@@ -36,6 +38,14 @@ type WorkerFixtures = {
 };
 
 type TestFixtures = {
+  /**
+   * Per-test in-memory WorkPlane. Specs call workPlane.seed([...]) to
+   * populate items; the fake-backend dispatcher reads from this same
+   * instance so /api/work-items + /api/work-items/:id reflect what the
+   * spec asked for. Only meaningful in 'fake' mode — in 'real' mode
+   * tests use the `bd` fixture to seed via the bd CLI instead.
+   */
+  workPlane: WorkPlaneStore;
   /** Captured console errors + page errors for the current test. */
   consoleErrors: string[];
   /**
@@ -71,9 +81,14 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   ],
 
   // ── Test scope ───────────────────────────────────────────────────
-  page: async ({ page, backend, realServer }, use) => {
+  workPlane: async ({}, use) => {
+    const store = createWorkPlane();
+    await use(store);
+  },
+
+  page: async ({ page, backend, realServer, workPlane }, use) => {
     if (backend === 'fake') {
-      await installFakeBackend(page);
+      await installFakeBackend(page, workPlane);
     } else {
       if (!realServer) {
         throw new Error('backend=real but realServer fixture is undefined');
@@ -129,7 +144,7 @@ export { expect };
 // with the empty shape the typed clients in web/src/api expect, so
 // every page renders its empty-state without a network error.
 
-async function installFakeBackend(page: Page): Promise<void> {
+async function installFakeBackend(page: Page, workPlane: WorkPlaneStore): Promise<void> {
   // Single dispatcher keyed off URL.pathname. We do NOT use glob /
   // regex matchers because globs and regexes match the full URL
   // string — `**/api/**` would also catch Vite's dev-time module
@@ -139,7 +154,7 @@ async function installFakeBackend(page: Page): Promise<void> {
   // root and removes route-ordering ambiguity.
   await page.route(
     (url) => new URL(url).pathname.startsWith('/api/') || matchesEvents(new URL(url).pathname),
-    (route) => dispatch(route)
+    (route) => dispatch(route, workPlane)
   );
 }
 
@@ -147,9 +162,12 @@ function matchesEvents(p: string): boolean {
   return p === '/events';
 }
 
-function dispatch(route: Route): unknown {
-  const path = new URL(route.request().url()).pathname;
+function dispatch(route: Route, workPlane: WorkPlaneStore): unknown {
+  const url = new URL(route.request().url());
+  const path = url.pathname;
   const json = (data: unknown) => route.fulfill({ json: data });
+  const notFound = (code: string, message: string) =>
+    route.fulfill({ status: 404, json: { error: code, message } });
   const sse = (body: string) =>
     route.fulfill({
       status: 200,
@@ -165,8 +183,46 @@ function dispatch(route: Route): unknown {
   if (path === '/events') return sse(': fake-backend idle\n\n');
   if (path === '/api/adaptors/stream') return sse('data: {"adaptors":[]}\n\n');
 
+  // /api/work-items/:id — drawer reads happen through this surface.
+  // Match this BEFORE the list endpoint so /api/work-items/gm-1 isn't
+  // treated as an items query.
+  const itemMatch = path.match(/^\/api\/work-items\/([^/]+)$/);
+  if (itemMatch) {
+    const id = decodeURIComponent(itemMatch[1] ?? '');
+    if (route.request().method() === 'PATCH') {
+      // Mutations: echo the seeded item back so optimistic update
+      // settles. A richer fake (apply patch to store) is a follow-up.
+      const existing = workPlane.get(id);
+      if (existing) return json(existing);
+      return notFound('session_not_found', `work item ${id} not found`);
+    }
+    const wi = workPlane.get(id);
+    if (wi) return json(wi);
+    return notFound('session_not_found', `work item ${id} not found`);
+  }
+
+  if (isPath(path, '/api/work-items')) {
+    const items = workPlane.list();
+    if (route.request().method() === 'POST') {
+      // Pretend the create succeeded with a synthetic id; specs that
+      // assert on persistence tag themselves @deep so this branch
+      // only runs in fake mode.
+      const fake: WorkItem = {
+        id: `fake-${items.length + 1}`,
+        kind: 'task',
+        title: 'fake-created',
+        status: 'open',
+        state_category: 'unstarted',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      workPlane.add(fake);
+      return json(fake);
+    }
+    return json({ items, total: items.length });
+  }
+
   // Empty-state JSON for the typed clients in web/src/api.
-  if (isPath(path, '/api/work-items')) return json({ items: [], total: 0 });
   if (isPath(path, '/api/sessions')) return json({ items: [] });
   if (isPath(path, '/api/escalations')) return json({ items: [] });
   if (isPath(path, '/api/sprints')) return json({ items: [] });

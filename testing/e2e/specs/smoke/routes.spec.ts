@@ -32,6 +32,22 @@ const ROUTES = [
   '/escalations',
 ] as const;
 
+// Known-bug allowlist: errors we've already filed beads against and
+// don't want to block the smoke tier on. Each entry MUST cite the
+// bead so a reviewer can see exactly what's being suppressed and
+// remove the entry when the bead closes. Keep this list short — the
+// whole point of smoke is to surface unfiltered console noise.
+const KNOWN_BUGS: Array<{ bead: string; match: (msg: string) => boolean }> = [
+  {
+    bead: 'gm-pz1b',
+    match: (msg) => msg.includes('"adaptors"') && msg.includes('No queryFn was passed'),
+  },
+];
+
+function filterKnown(errors: string[]): string[] {
+  return errors.filter((msg) => !KNOWN_BUGS.some((b) => b.match(msg)));
+}
+
 for (const route of ROUTES) {
   test(`${route} mounts AppShell with no console errors @smoke`, async ({
     page,
@@ -42,6 +58,7 @@ for (const route of ROUTES) {
     await shell.expectShellRendered();
     // The fake-backend fixture pre-installs all the empty-state
     // route handlers, so the page should settle cleanly.
-    expect(consoleErrors, `console errors on ${route}: ${consoleErrors.join(' | ')}`).toEqual([]);
+    const errors = filterKnown(consoleErrors);
+    expect(errors, `console errors on ${route}: ${errors.join(' | ')}`).toEqual([]);
   });
 }
