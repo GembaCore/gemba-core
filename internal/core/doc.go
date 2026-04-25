@@ -12,10 +12,10 @@
 //
 // "Workspace" and "project" are interchangeable terminology in code and docs;
 // the codebase uses workspace because it predates the project concept and the
-// organizing principle is the same. WorkItem.RepositoryID is the load-bearing
-// link from a bead to the on-disk reality (path, default branch, worktree pool)
-// the spawn path uses to launch agent sessions in the right cwd. Existing
-// beads filed before gm-26n4 use [RepositoryUnspecified]; the spawn path
+// organizing principle is the same. A WorkItem can span multiple repositories
+// (gm-kdh3): WorkItem.RepositoryIDs lists every repo it touches and
+// WorkItem.PrimaryRepositoryID is the spawn-cwd anchor. Existing beads filed
+// before gm-26n4 use [RepositoryUnspecified] or empty fields; the spawn path
 // rejects polecat work on those until the operator backfills.
 //
 // Contents:

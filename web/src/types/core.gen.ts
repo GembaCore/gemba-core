@@ -239,7 +239,8 @@ export interface DerivedSignals {
 
 export interface WorkItem {
   id: WorkItemID;
-  repository_id?: RepositoryID;
+  primary_repository_id?: RepositoryID;
+  repository_ids?: RepositoryID[];
   kind: string;
   title: string;
   description?: string;

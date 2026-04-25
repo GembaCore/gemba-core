@@ -237,33 +237,41 @@ func TestLoadRepositoryRegistry_PopulatesAll(t *testing.T) {
 
 func TestWorkItem_RepositoryIDJSONRoundtrip(t *testing.T) {
 	wi := WorkItem{
-		ID:            "gemba/gemba/gm-e3",
-		RepositoryID:  "gemba",
-		Kind:          "epic",
-		Title:         "Plan view",
-		Status:        "open",
-		StateCategory: StateUnstarted,
+		ID:                  "gemba/gemba/gm-e3",
+		PrimaryRepositoryID: "gemba",
+		RepositoryIDs:       []RepositoryID{"gemba"},
+		Kind:                "epic",
+		Title:               "Plan view",
+		Status:              "open",
+		StateCategory:       StateUnstarted,
 	}
 	body, err := json.Marshal(wi)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if !strings.Contains(string(body), `"repository_id":"gemba"`) {
-		t.Errorf("repository_id not in JSON: %s", body)
+	if !strings.Contains(string(body), `"primary_repository_id":"gemba"`) {
+		t.Errorf("primary_repository_id not in JSON: %s", body)
+	}
+	if !strings.Contains(string(body), `"repository_ids":["gemba"]`) {
+		t.Errorf("repository_ids not in JSON: %s", body)
 	}
 
 	var got WorkItem
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.RepositoryID != "gemba" {
-		t.Errorf("RepositoryID = %q, want gemba", got.RepositoryID)
+	if got.PrimaryRepositoryID != "gemba" {
+		t.Errorf("PrimaryRepositoryID = %q, want gemba", got.PrimaryRepositoryID)
+	}
+	if got.RepositoryID() != "gemba" {
+		t.Errorf("RepositoryID() = %q, want gemba", got.RepositoryID())
 	}
 }
 
-func TestWorkItem_OmitemptyRepositoryID(t *testing.T) {
-	// Existing beads with no RepositoryID round-trip with the field
-	// omitted (omitempty) so wire payloads stay clean.
+func TestWorkItem_OmitemptyRepositoryFields(t *testing.T) {
+	// Existing beads with no repository fields round-trip with both
+	// keys omitted (omitempty) so wire payloads stay clean for legacy
+	// records.
 	wi := WorkItem{
 		ID:            "gemba/gemba/gm-e3",
 		Kind:          "epic",
@@ -272,8 +280,139 @@ func TestWorkItem_OmitemptyRepositoryID(t *testing.T) {
 		StateCategory: StateUnstarted,
 	}
 	body, _ := json.Marshal(wi)
-	if strings.Contains(string(body), "repository_id") {
-		t.Errorf("empty repository_id should be omitted: %s", body)
+	for _, key := range []string{"primary_repository_id", "repository_ids"} {
+		if strings.Contains(string(body), key) {
+			t.Errorf("empty %s should be omitted: %s", key, body)
+		}
+	}
+}
+
+// gm-kdh3: WorkItem.RepositoryID() returns the primary, equivalent
+// to the field accessor.
+func TestWorkItem_RepositoryIDMethodReturnsPrimary(t *testing.T) {
+	wi := WorkItem{PrimaryRepositoryID: "gemba"}
+	if got := wi.RepositoryID(); got != "gemba" {
+		t.Errorf("RepositoryID() = %q, want gemba", got)
+	}
+}
+
+// gm-kdh3: NormalizeRepositories auto-promotes a sole primary into a
+// single-element RepositoryIDs slice (back-compat with gm-26n4).
+func TestWorkItem_NormalizePromotesSolePrimary(t *testing.T) {
+	wi := WorkItem{PrimaryRepositoryID: "gemba"}
+	wi.NormalizeRepositories()
+	if len(wi.RepositoryIDs) != 1 || wi.RepositoryIDs[0] != "gemba" {
+		t.Errorf("expected RepositoryIDs=[gemba], got %v", wi.RepositoryIDs)
+	}
+}
+
+// Normalize is idempotent — running twice does not double the slice.
+func TestWorkItem_NormalizeIdempotent(t *testing.T) {
+	wi := WorkItem{PrimaryRepositoryID: "gemba"}
+	wi.NormalizeRepositories()
+	wi.NormalizeRepositories()
+	if len(wi.RepositoryIDs) != 1 {
+		t.Errorf("idempotent: got %d entries, want 1", len(wi.RepositoryIDs))
+	}
+}
+
+// Normalize leaves a multi-repo bead untouched.
+func TestWorkItem_NormalizeMultiRepoUntouched(t *testing.T) {
+	wi := WorkItem{
+		PrimaryRepositoryID: "frontend",
+		RepositoryIDs:       []RepositoryID{"frontend", "backend"},
+	}
+	wi.NormalizeRepositories()
+	if len(wi.RepositoryIDs) != 2 {
+		t.Errorf("normalize mutated multi-repo bead: %v", wi.RepositoryIDs)
+	}
+}
+
+// gm-kdh3: ValidateRepositories accepts the legacy zero-state — bead
+// has no repository info yet (the spawn path rejects later).
+func TestWorkItem_ValidateLegacyZeroState(t *testing.T) {
+	wi := WorkItem{ID: "gm-1"}
+	if err := wi.ValidateRepositories(); err != nil {
+		t.Errorf("zero state should be valid: %v", err)
+	}
+}
+
+func TestWorkItem_ValidateRejects(t *testing.T) {
+	cases := []struct {
+		name    string
+		wi      WorkItem
+		wantSub string
+	}{
+		{
+			name: "ids without primary",
+			wi: WorkItem{
+				ID:            "gm-1",
+				RepositoryIDs: []RepositoryID{"frontend"},
+			},
+			wantSub: "primary_repository_id is unset",
+		},
+		{
+			name: "primary not in ids",
+			wi: WorkItem{
+				ID:                  "gm-1",
+				PrimaryRepositoryID: "ghost",
+				RepositoryIDs:       []RepositoryID{"frontend", "backend"},
+			},
+			wantSub: "not present in repository_ids",
+		},
+		{
+			name: "duplicate id",
+			wi: WorkItem{
+				ID:                  "gm-1",
+				PrimaryRepositoryID: "frontend",
+				RepositoryIDs:       []RepositoryID{"frontend", "backend", "frontend"},
+			},
+			wantSub: "duplicate",
+		},
+		{
+			name: "empty entry",
+			wi: WorkItem{
+				ID:                  "gm-1",
+				PrimaryRepositoryID: "frontend",
+				RepositoryIDs:       []RepositoryID{"frontend", ""},
+			},
+			wantSub: "empty entry",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := c.wi.ValidateRepositories()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), c.wantSub) {
+				t.Errorf("err = %v, want substring %q", err, c.wantSub)
+			}
+		})
+	}
+}
+
+// Single-repo bead (post-normalize) validates cleanly.
+func TestWorkItem_ValidateSingleRepoOK(t *testing.T) {
+	wi := WorkItem{
+		ID:                  "gm-1",
+		PrimaryRepositoryID: "gemba",
+		RepositoryIDs:       []RepositoryID{"gemba"},
+	}
+	if err := wi.ValidateRepositories(); err != nil {
+		t.Errorf("single-repo bead should be valid: %v", err)
+	}
+}
+
+// Multi-repo bead validates when primary is in the list.
+func TestWorkItem_ValidateMultiRepoOK(t *testing.T) {
+	wi := WorkItem{
+		ID:                  "gm-2",
+		PrimaryRepositoryID: "backend",
+		RepositoryIDs:       []RepositoryID{"frontend", "backend"},
+	}
+	if err := wi.ValidateRepositories(); err != nil {
+		t.Errorf("multi-repo bead should be valid: %v", err)
 	}
 }
 

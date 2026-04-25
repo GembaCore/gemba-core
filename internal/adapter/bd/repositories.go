@@ -1,0 +1,100 @@
+package bd
+
+import (
+	"strings"
+
+	"github.com/MikeBengtson/gemba/internal/core"
+)
+
+// labelRepoPrefix is the bd label prefix that names a Repository the
+// bead is associated with (gm-kdh3). A bead may carry many `repo:*`
+// labels — one per repository it touches. The first one in the
+// slice becomes the bead's [core.WorkItem.PrimaryRepositoryID]; the
+// full list is preserved in order on RepositoryIDs.
+//
+// This convention keeps Beads as the source of truth — no schema
+// change required on the bd side. Operators add a repo via:
+//
+//	bd update <id> --label repo:frontend
+//
+// and the multi-repo polecat spawn path picks it up on next read.
+const labelRepoPrefix = "repo:"
+
+// repositoriesFromLabels parses a bead's labels and returns
+// (primary, all). Order from the input slice is preserved so the
+// "first repo wins" convention is stable across reads.
+//
+// Returns (RepositoryUnspecified, nil) when no `repo:*` label is
+// present; the spawn path sees this as the legacy / unbackfilled
+// case and rejects polecat work with a clear error. (Empty IDs are
+// silently skipped — `repo:` with no id is treated as if the label
+// were absent.)
+func repositoriesFromLabels(labels []string) (core.RepositoryID, []core.RepositoryID) {
+	if len(labels) == 0 {
+		return "", nil
+	}
+	var primary core.RepositoryID
+	var ids []core.RepositoryID
+	seen := make(map[core.RepositoryID]bool)
+	for _, l := range labels {
+		if !strings.HasPrefix(l, labelRepoPrefix) {
+			continue
+		}
+		id := core.RepositoryID(strings.TrimPrefix(l, labelRepoPrefix))
+		if id == "" || seen[id] {
+			// Empty id, or duplicate label like
+			// "repo:frontend" + "repo:frontend": skip the duplicate
+			// silently. Validation lives on WorkItem.
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+		if primary == "" {
+			primary = id
+		}
+	}
+	return primary, ids
+}
+
+// repositoryLabels is the inverse: given a [core.WorkItem]'s
+// repository fields, produce the bd label slice that encodes them.
+// Used on the write path so a programmatic update preserves repo
+// associations across a round-trip. Order: PrimaryRepositoryID
+// first, then any other RepositoryIDs in their declared order.
+func repositoryLabels(primary core.RepositoryID, ids []core.RepositoryID) []string {
+	if primary == "" && len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ids)+1)
+	emitted := make(map[core.RepositoryID]bool)
+	if primary != "" {
+		out = append(out, labelRepoPrefix+string(primary))
+		emitted[primary] = true
+	}
+	for _, id := range ids {
+		if id == "" || emitted[id] {
+			continue
+		}
+		out = append(out, labelRepoPrefix+string(id))
+		emitted[id] = true
+	}
+	return out
+}
+
+// stripRepositoryLabels returns in with every `repo:*` entry removed.
+// Mirrors stripAgentLabels — used on the write path so a patch
+// carrying new repository fields authoritatively replaces stale
+// labels rather than stacking on top of them.
+func stripRepositoryLabels(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, l := range in {
+		if strings.HasPrefix(l, labelRepoPrefix) {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
+}

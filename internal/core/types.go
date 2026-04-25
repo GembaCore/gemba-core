@@ -1,7 +1,10 @@
 // Package core: see doc.go for the overview.
 package core
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // WorkItemID is the workspace-qualified identifier for a work item.
 // Format is "<workspace>/<repo>/<native-id>" (e.g. "gemba/gemba/gm-e3.1",
@@ -23,11 +26,12 @@ type AgentID string
 // `.gemba/repositories/<id>.toml` file the Repository is loaded from.
 type RepositoryID string
 
-// RepositoryUnspecified is the sentinel value WorkItem.RepositoryID
-// takes when a bead was filed before repository tracking landed
-// (gm-26n4) or when an adaptor cannot derive a repository for a
-// native record. Spawn paths reject "unspecified" beads with a
-// caller-visible error so the operator backfills before working.
+// RepositoryUnspecified is the sentinel value
+// [WorkItem.PrimaryRepositoryID] takes when a bead was filed before
+// repository tracking landed (gm-26n4) or when an adaptor cannot
+// derive a repository for a native record. Spawn paths reject
+// "unspecified" beads with a caller-visible error so the operator
+// backfills before working.
 const RepositoryUnspecified RepositoryID = "unspecified"
 
 // WorkItem is the adaptor-agnostic view of a unit of work. Every
@@ -60,14 +64,27 @@ const KindMilestone = "milestone"
 
 type WorkItem struct {
 	ID WorkItemID `json:"id"`
-	// RepositoryID names the [Repository] this work item lives in
-	// (gm-26n4). The spawn path reads this to pick the working
-	// directory and worktree pool for an agent session. Empty (or
-	// [RepositoryUnspecified]) means the bead has not been backfilled
-	// since repository tracking landed; spawn rejects with a clear
-	// error so the operator sets it explicitly.
-	RepositoryID  RepositoryID      `json:"repository_id,omitempty"`
-	Kind          string            `json:"kind"`
+	// PrimaryRepositoryID names the [Repository] this work item lives
+	// in primarily (gm-kdh3). The spawn path reads this to pick the
+	// working directory and worktree pool for an agent session.
+	// Empty (or [RepositoryUnspecified]) means the bead has not been
+	// backfilled since repository tracking landed; spawn rejects with
+	// a clear error so the operator sets it explicitly. Use the
+	// [WorkItem.RepositoryID] method (no arg) when you only need the
+	// primary id and don't care about plurality.
+	PrimaryRepositoryID RepositoryID `json:"primary_repository_id,omitempty"`
+
+	// RepositoryIDs lists every [Repository] this work item touches
+	// (gm-kdh3). A multi-repo bead — common for cross-cutting work
+	// like a backend API change with a frontend client update — has
+	// more than one entry. Validation rules:
+	//   - PrimaryRepositoryID, when set, MUST appear in this slice
+	//   - this slice non-empty + PrimaryRepositoryID empty is invalid
+	// [WorkItem.NormalizeRepositories] auto-promotes a sole
+	// PrimaryRepositoryID into a single-element slice for back-
+	// compat with the gm-26n4 single-repo shape.
+	RepositoryIDs []RepositoryID `json:"repository_ids,omitempty"`
+	Kind          string         `json:"kind"`
 	Title         string            `json:"title"`
 	Description   string            `json:"description,omitempty"`
 	Status        string            `json:"status"`
@@ -89,6 +106,82 @@ type WorkItem struct {
 	// per-card; it is omitempty because the pure derivation also lets
 	// the UI recompute locally if a transport omits it.
 	Derived *DerivedSignals `json:"derived,omitempty"`
+}
+
+// RepositoryID returns the primary repository id this work item is
+// bound to (gm-kdh3). Convenience accessor for callers that don't
+// care about multi-repo plurality — the spawn path's cwd selection
+// always uses the primary, never a non-primary entry. Equivalent to
+// [WorkItem.PrimaryRepositoryID]; provided as a method so call sites
+// read clearly when intent is "the repository", not "the field".
+func (w WorkItem) RepositoryID() RepositoryID { return w.PrimaryRepositoryID }
+
+// NormalizeRepositories enforces invariants that the JSON wire shape
+// alone cannot. Called by every adaptor projecting a native record
+// onto WorkItem so callers downstream (spawn, registry, validation)
+// see a coherent state.
+//
+// Rules:
+//
+//   - When RepositoryIDs is empty AND PrimaryRepositoryID is set,
+//     auto-promote PrimaryRepositoryID into RepositoryIDs as a
+//     single-element slice. Preserves back-compat with the gm-26n4
+//     single-repo shape (callers that only set the primary still
+//     produce a valid multi-repo bead).
+//   - Otherwise, fields are left untouched. ValidateRepositories
+//     surfaces any remaining inconsistencies as errors.
+func (w *WorkItem) NormalizeRepositories() {
+	if len(w.RepositoryIDs) == 0 && w.PrimaryRepositoryID != "" {
+		w.RepositoryIDs = []RepositoryID{w.PrimaryRepositoryID}
+	}
+}
+
+// ValidateRepositories checks that the multi-repo fields are
+// internally consistent. Caller-safe error messages — surface
+// directly via HTTP 400 / bd CLI errors. Does NOT check that the
+// referenced repositories exist in any registry; that's the spawn
+// path's job and the right place to fail when a checkout is missing.
+//
+// Returns nil for the zero case (legacy beads with no repository
+// information yet) — those are valid at the schema level; the spawn
+// path enforces a non-empty repository at consult time.
+func (w WorkItem) ValidateRepositories() error {
+	if len(w.RepositoryIDs) == 0 && w.PrimaryRepositoryID == "" {
+		// Legacy / unbackfilled bead. Schema-valid; spawn will
+		// reject when actually trying to launch a polecat.
+		return nil
+	}
+	if len(w.RepositoryIDs) > 0 && w.PrimaryRepositoryID == "" {
+		return fmt.Errorf(
+			"work item %q: repository_ids is non-empty but primary_repository_id is unset",
+			w.ID)
+	}
+	if len(w.RepositoryIDs) > 0 {
+		seen := make(map[RepositoryID]bool, len(w.RepositoryIDs))
+		var found bool
+		for _, id := range w.RepositoryIDs {
+			if id == "" {
+				return fmt.Errorf(
+					"work item %q: repository_ids contains an empty entry",
+					w.ID)
+			}
+			if seen[id] {
+				return fmt.Errorf(
+					"work item %q: repository_ids contains duplicate %q",
+					w.ID, id)
+			}
+			seen[id] = true
+			if id == w.PrimaryRepositoryID {
+				found = true
+			}
+		}
+		if !found {
+			return fmt.Errorf(
+				"work item %q: primary_repository_id %q not present in repository_ids %v",
+				w.ID, w.PrimaryRepositoryID, w.RepositoryIDs)
+		}
+	}
+	return nil
 }
 
 // AgentKind distinguishes an automated agent from a human operator.

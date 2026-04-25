@@ -14,10 +14,10 @@ import (
 
 // Repository is one git repository associated with a workspace
 // (gm-26n4). A workspace (≡ project) holds one beads database and
-// ONE-OR-MORE repositories. Every [WorkItem] is associated with
-// exactly one [Repository] via [WorkItem.RepositoryID]; the spawn
-// path reads that field to pick the working directory and worktree
-// pool for an agent session.
+// ONE-OR-MORE repositories. Every [WorkItem] is associated with one
+// or more [Repository]s via [WorkItem.RepositoryIDs] (gm-kdh3); the
+// spawn path reads [WorkItem.PrimaryRepositoryID] to pick the working
+// directory and worktree pool for an agent session.
 //
 // Repository is the on-disk reality (path, branch, origin); the
 // abstract notion of "what work this is" stays on WorkItem. Splitting
@@ -29,8 +29,9 @@ import (
 type Repository struct {
 	// ID is the slug ("gemba", "frontend", "infra"). Matches the
 	// filename stem of the `.gemba/repositories/<id>.toml` file the
-	// repository was loaded from. Used as the value of
-	// [WorkItem.RepositoryID].
+	// repository was loaded from. Appears as an entry in
+	// [WorkItem.RepositoryIDs] and (when applicable) as the value of
+	// [WorkItem.PrimaryRepositoryID].
 	ID RepositoryID `toml:"id" json:"id"`
 
 	// Path is the absolute filesystem path to the canonical worktree
