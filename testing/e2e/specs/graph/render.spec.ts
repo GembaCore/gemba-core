@@ -80,14 +80,55 @@ test.describe('GraphPage @route', () => {
     await drawer.expectOpenWith('gm-g-click');
   });
 
-  test.fixme(
-    'granularity toggle: Epic at zoom out, WorkItem at zoom in',
-    async () => {
-      // The bead names a per-zoom-level granularity switch ("node-per-
-      // WorkItem at zoom in, Epic at zoom out"). GraphPage.tsx today
-      // only exposes Cycles / Critical-path toggles — there's no
-      // aggregation layer that swaps the rendered node set based on
-      // zoom. SPA work needed before this fixme can lift.
-    }
-  );
+  test('granularity toggle rolls items up to enclosing Epics (gm-ndb6)', async ({
+    page,
+    workPlane,
+  }) => {
+    // Two Epics, each with one task; cross-Epic blocks edge between
+    // their tasks. The bead's wording predicts a zoom-driven switch;
+    // shipping pivots on an explicit toggle button instead so the
+    // operator stays in control of when aggregation happens.
+    workPlane.seed([
+      build.epic({ id: 'gm-ep-1', title: 'Alpha epic' }),
+      build.epic({ id: 'gm-ep-2', title: 'Beta epic' }),
+      build.workItem({
+        id: 'gm-ep-1-task',
+        title: 'Alpha task',
+        relationships: [
+          build.parentChild('gm-ep-1', 'gm-ep-1-task'),
+          build.relationship('blocks', 'gm-ep-1-task', 'gm-ep-2-task'),
+        ],
+      }),
+      build.workItem({
+        id: 'gm-ep-2-task',
+        title: 'Beta task',
+        relationships: [build.parentChild('gm-ep-2', 'gm-ep-2-task')],
+      }),
+    ]);
+
+    const graph = new GraphPage(page);
+    await graph.goto();
+
+    // Items mode (default): every WorkItem renders.
+    await expect(graph.canvas).toHaveAttribute('data-granularity', 'items');
+    await expect(graph.node('gm-ep-1')).toBeVisible();
+    await expect(graph.node('gm-ep-1-task')).toBeVisible();
+    await expect(graph.node('gm-ep-2-task')).toBeVisible();
+
+    // Flip to Epics. Granularity attribute reflects + only Epic
+    // nodes render. The blocks edge between the tasks aggregates
+    // to an Epic→Epic edge.
+    await page.getByTestId('graph-toggle-granularity').click();
+    await expect(graph.canvas).toHaveAttribute('data-granularity', 'epics');
+    await expect(graph.node('gm-ep-1')).toBeVisible();
+    await expect(graph.node('gm-ep-2')).toBeVisible();
+    await expect(graph.node('gm-ep-1-task')).toHaveCount(0);
+    await expect(graph.node('gm-ep-2-task')).toHaveCount(0);
+    await expect(graph.edgeById('gm-ep-1', 'gm-ep-2', 'blocks')).toHaveCount(1);
+
+    // Flip back — items reappear.
+    await page.getByTestId('graph-toggle-granularity').click();
+    await expect(graph.canvas).toHaveAttribute('data-granularity', 'items');
+    await expect(graph.node('gm-ep-1-task')).toBeVisible();
+  });
 });

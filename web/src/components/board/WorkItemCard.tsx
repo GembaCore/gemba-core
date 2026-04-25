@@ -66,6 +66,13 @@ export function WorkItemCard({ item, onSelect }: WorkItemCardProps) {
   // and a keydown handler that treats Enter / Space as activation.
   const handleKeyDown = onSelect
     ? (e: KeyboardEvent<HTMLElement>) => {
+        // gm-fqiw: 'o' opens the drawer; mirrors EpicCard so a single
+        // chord opens whichever card is focused, regardless of kind.
+        if (e.key === 'o' || e.key === 'O') {
+          e.preventDefault();
+          onSelect(item.id);
+          return;
+        }
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           onSelect(item.id);

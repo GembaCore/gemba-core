@@ -19,6 +19,11 @@ export interface WorkItemNodeData {
   // haven't changed when the cycle/critical-path mode toggles.
   inCycle?: boolean;
   onCriticalPath?: boolean;
+  // hoverRelated is true for the hovered node + every direct
+  // neighbour through any edge (gm-qdqu). Pure passthrough — the
+  // node renders a data-hover-related attribute that specs / styling
+  // can hook into.
+  hoverRelated?: boolean;
 }
 
 const STATE_PIP: Record<StateCategory, string> = {
@@ -45,6 +50,7 @@ export function WorkItemNode({ data }: NodeProps<WorkItemNodeData>) {
       data-testid={`graph-node-${data.id}`}
       data-in-cycle={data.inCycle || undefined}
       data-on-critical-path={data.onCriticalPath || undefined}
+      data-hover-related={data.hoverRelated || undefined}
     >
       <Handle type="target" position={Position.Left} className="!bg-neutral-400" />
       <span

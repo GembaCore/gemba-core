@@ -187,9 +187,11 @@ describe('WorkItemDrawer', () => {
     expect(screen.getByText('gm-dep1')).toBeTruthy();
     expect(screen.getByText('gm-dep2')).toBeTruthy();
 
-    // Evidence tab
+    // Evidence is a Summary-tab table per ui-spec §5.7 (gm-g9t1) —
+    // it renders inline at the bottom of the description tab pane,
+    // no separate tab. Switch back to description and assert.
     act(() => {
-      screen.getByTestId('drawer-tab-evidence').click();
+      screen.getByTestId('drawer-tab-description').click();
     });
     expect(screen.getByTestId('section-evidence')).toBeTruthy();
     expect(screen.getByText('implements drawer')).toBeTruthy();

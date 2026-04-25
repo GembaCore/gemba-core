@@ -6,10 +6,11 @@
 
 import { type Locator, type Page, expect } from '@playwright/test';
 
+// Evidence is a Summary-tab inline section per ui-spec §5.7
+// (gm-g9t1) — no standalone tab.
 export type DrawerTab =
   | 'description'
   | 'edges'
-  | 'evidence'
   | 'dod'
   | 'sprint'
   | 'activity'

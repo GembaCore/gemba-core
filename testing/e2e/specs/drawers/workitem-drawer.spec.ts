@@ -51,7 +51,7 @@ test.describe('WorkItemDrawer @route', () => {
     await drawer.closeViaButton();
   });
 
-  test('renders the tablist with the standard six tabs', async ({ page, workPlane }) => {
+  test('renders the tablist with the standard five tabs (Evidence is inline on Summary)', async ({ page, workPlane }) => {
     const id = 'gm-test-tabs';
     workPlane.seed([build.workItem({ id })]);
 
@@ -59,7 +59,9 @@ test.describe('WorkItemDrawer @route', () => {
     await drawer.openByDeepLink(id);
 
     await expect(drawer.tabs).toBeVisible();
-    for (const tab of ['description', 'edges', 'evidence', 'dod', 'sprint', 'activity'] as const) {
+    // Evidence is folded into the Summary/description tab per
+    // ui-spec §5.7 (gm-g9t1) — no standalone evidence tab.
+    for (const tab of ['description', 'edges', 'dod', 'sprint', 'activity'] as const) {
       await expect(drawer.tab(tab)).toBeVisible();
     }
   });
@@ -131,18 +133,25 @@ test.describe('WorkItemDrawer @route', () => {
     await expect(drawer.backButton).toHaveCount(0);
   });
 
-  // The bead originally listed "double-click on a board card" and
-  // "open via 'o' hotkey" as fixmes. Both are noted but un-shipped:
-  //
-  //   - WorkItemCard exposes only onClick (single click), no
-  //     onDoubleClick. The board specs (gm-5v8v.5) cover the actual
-  //     row-click → drawer path.
-  //   - The 'o' / drawer-open hotkey is registered in DEFAULT_HOTKEYS
-  //     but no consumer wires useHotkey('drawer-open', ...) — pressing
-  //     'o' on the board today is a no-op. Re-adding here is gated on
-  //     the SPA wiring landing.
-  test.fixme(
-    'opens via the "o" hotkey on the focused card (SPA wiring not landed)',
-    async () => {}
-  );
+  test('opens via the "o" hotkey on the focused card (gm-fqiw)', async ({
+    page,
+    workPlane,
+  }) => {
+    // Workitem-flat view (?view=workitem) renders WorkItemCard — its
+    // keydown handler treats `o` as drawer-open (gm-fqiw). Seed a
+    // single bead, focus the card, press 'o', assert the drawer
+    // opens with the seeded id.
+    const id = 'gm-hot-o';
+    workPlane.seed([build.workItem({ id, title: 'Hotkey o target' })]);
+
+    const drawer = new WorkItemDrawerPO(page);
+    await page.goto('/board?view=workitem');
+    // The card carries data-work-item-id and role=button; locate by
+    // the id attribute (no card-level testid on the SPA side).
+    const card = page.locator(`[data-work-item-id="${id}"]`);
+    await expect(card).toBeVisible();
+    await card.focus();
+    await page.keyboard.press('o');
+    await drawer.expectOpenWith(id);
+  });
 });

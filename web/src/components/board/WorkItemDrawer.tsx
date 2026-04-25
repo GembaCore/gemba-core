@@ -274,10 +274,12 @@ function DispatchButton({
 // (title + status/priority/assignee/owner/labels) is rendered above
 // the tabs as always-visible context; tabs partition the rest of the
 // record so the drawer stays scannable at one viewport height.
+// gm-g9t1: ui-spec §5.7 puts Evidence as a table on the Summary tab,
+// not its own tab. The Summary tab here is the 'description' tab —
+// Evidence renders inline at the bottom of the description pane.
 type DrawerTab =
   | 'description'
   | 'edges'
-  | 'evidence'
   | 'dod'
   | 'sprint'
   | 'activity'
@@ -409,6 +411,18 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
               </pre>
             </Section>
           ) : null}
+          {/* gm-g9t1: Evidence is a Summary-tab table per ui-spec §5.7. */}
+          <Section title="Evidence" testid="section-evidence">
+            {item.evidence && item.evidence.length > 0 ? (
+              <ul className="space-y-2">
+                {item.evidence.map((e) => (
+                  <EvidenceRow key={e.id} evidence={e} />
+                ))}
+              </ul>
+            ) : (
+              <Muted>No evidence attached.</Muted>
+            )}
+          </Section>
         </>
       ) : null}
 
@@ -431,23 +445,10 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
         </Section>
       ) : null}
 
-      {tab === 'evidence' ? (
-        <Section title="Evidence" testid="section-evidence">
-          {item.evidence && item.evidence.length > 0 ? (
-            <ul className="space-y-2">
-              {item.evidence.map((e) => (
-                <EvidenceRow key={e.id} evidence={e} />
-              ))}
-            </ul>
-          ) : (
-            <Muted>No evidence attached.</Muted>
-          )}
-        </Section>
-      ) : null}
-
       {tab === 'dod' ? (
         <Section title="Definition of Done" testid="section-dod">
           <DoDBanner />
+          <DoDSynthBanner dod={item.dod ?? null} />
           <DoDEditor
             dod={item.dod ?? null}
             renderer={DescriptionRenderer}
@@ -564,7 +565,8 @@ function DrawerTabBar({
   const tabs: Array<{ id: DrawerTab; label: string }> = [
     { id: 'description', label: 'Description' },
     { id: 'edges', label: 'Edges' },
-    { id: 'evidence', label: 'Evidence' },
+    // Evidence intentionally omitted — renders as a Summary-tab table
+    // per ui-spec §5.7 (gm-g9t1).
     { id: 'dod', label: 'DoD' },
     { id: 'sprint', label: 'Sprint' },
     { id: 'activity', label: 'Activity' },
@@ -601,6 +603,45 @@ function DrawerTabBar({
       })}
     </div>
   );
+}
+
+// DoDSynthBanner (gm-xbqw) — surfaces whether the rendered DoD is
+// operator-authored or synthesized server-side (gm-native.11 dod
+// package writes Version="synthesized-v1"). The synthesized state
+// is informational + a CTA: "edit the bead to override".
+//
+// Three states:
+//   - null DoD            → "No DoD authored" prompt
+//   - synthesized-v* DoD  → "synthesized; edit to override" CTA
+//   - other DoD           → no banner (operator-authored, the editor
+//                            is the surface)
+function DoDSynthBanner({ dod }: { dod: DefinitionOfDone | null }) {
+  if (!dod) {
+    return (
+      <div
+        data-testid="work-item-dod-synth-banner"
+        data-state="missing"
+        className="mb-2 rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-200"
+      >
+        No DoD authored. Click <span className="font-semibold">Edit</span> to
+        capture acceptance criteria the agent will defend.
+      </div>
+    );
+  }
+  if (typeof dod.version === 'string' && dod.version.startsWith('synthesized')) {
+    return (
+      <div
+        data-testid="work-item-dod-synth-banner"
+        data-state="synthesized"
+        className="mb-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+      >
+        Synthesized from kind / labels (server default). Click{' '}
+        <span className="font-semibold">Edit</span> to author the criteria you
+        want this bead to defend.
+      </div>
+    );
+  }
+  return null;
 }
 
 // DoDBanner — informational-only reminder that the DoD is documentation,
@@ -1603,18 +1644,59 @@ function RelGroup({
 
 function EvidenceRow({ evidence }: { evidence: Evidence }) {
   return (
-    <li className="rounded border border-neutral-200 p-2 text-sm dark:border-neutral-800">
+    <li
+      className="rounded border border-neutral-200 p-2 text-sm dark:border-neutral-800"
+      data-testid={`evidence-row-${evidence.id}`}
+    >
       <div className="flex items-center gap-2 text-xs text-neutral-500">
         <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono dark:bg-neutral-800">
           {evidence.kind}
         </span>
         <span className="font-mono">{evidence.source}</span>
-        {evidence.ref ? <span className="truncate font-mono">{evidence.ref}</span> : null}
+        {evidence.ref ? <EvidenceRef evidence={evidence} /> : null}
         <span className="ml-auto font-mono">{formatTs(evidence.captured_at)}</span>
       </div>
       {evidence.summary ? <div className="mt-1">{evidence.summary}</div> : null}
     </li>
   );
+}
+
+// EvidenceRef (gm-4z9n) — promote ref to <a> when the kind+ref pair
+// resolves to a real URL. Unrecognised pairs fall through to plain
+// text so a free-form ref doesn't render as a broken link.
+function EvidenceRef({ evidence }: { evidence: Evidence }) {
+  const href = resolveEvidenceHref(evidence);
+  const ref = evidence.ref ?? '';
+  if (!href) {
+    return <span className="truncate font-mono">{ref}</span>;
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="truncate font-mono text-sky-600 underline-offset-2 hover:underline dark:text-sky-400"
+      data-testid={`evidence-ref-${evidence.id}`}
+    >
+      {ref}
+    </a>
+  );
+}
+
+// resolveEvidenceHref maps an Evidence record to a URL when the
+// kind+source+ref combination is one of the well-known shapes the
+// adaptor surfaces. Returns null for anything it doesn't recognise —
+// the row falls back to plain text, which is preferable to rendering
+// a broken / misleading link.
+function resolveEvidenceHref(evidence: Evidence): string | null {
+  const ref = evidence.ref?.trim();
+  if (!ref) return null;
+  // 1. Anything that already looks like a URL renders as-is.
+  if (/^https?:\/\//i.test(ref)) return ref;
+  // 2. Heuristic resolution by kind/source. The patterns mirror what
+  //    bd surfaces today; future adaptors can extend the table.
+  if (evidence.kind === 'url') return ref;
+  return null;
 }
 
 // CustomRow (gm-root.13) renders an extension-field row with an

@@ -11,8 +11,9 @@
 // stream incremental graph patches — at 1000 nodes the recompute is
 // well under a frame budget thanks to the O(V+E) analysis passes.
 
-import { useMemo, useState } from 'react';
-import { AlertTriangle, Network, Route as RouteIcon } from 'lucide-react';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Layers, Network, Route as RouteIcon } from 'lucide-react';
+import type { WorkItem } from '@/types/core.gen';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -22,6 +23,7 @@ import ReactFlow, {
   Panel,
   type Edge,
   type Node,
+  type ReactFlowInstance,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { useWorkItems } from '@/hooks/useWorkItems';
@@ -57,6 +59,49 @@ export function GraphPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [highlightCycles, setHighlightCycles] = useState(true);
   const [criticalMode, setCriticalMode] = useState(false);
+  // gm-sfbh: selection-aware viewport. Track the ReactFlow instance
+  // via onInit so click-to-focus and clear-to-fit can drive the
+  // camera. The id of the currently focused node is also surfaced
+  // on the canvas host as data-focused-node so specs can assert
+  // the selection without inspecting the React Flow viewport state.
+  const instanceRef = useRef<ReactFlowInstance | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  // gm-qdqu: hovered node + its one-hop neighbours light up via
+  // data-hover-related on each affected node and edge. Hover state
+  // is ephemeral — leaves the DOM as soon as the pointer moves off.
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // gm-ndb6: granularity toggle. 'items' (default) renders one node
+  // per WorkItem; 'epics' rolls every WorkItem up to its enclosing
+  // Epic. Edges between cross-Epic items aggregate to Epic→Epic
+  // edges via deriveAggregatedItems below.
+  const [granularity, setGranularity] = useState<'items' | 'epics'>('items');
+  const renderItems = useMemo(
+    () => (granularity === 'epics' ? deriveAggregatedItems(items) : items),
+    [granularity, items]
+  );
+
+  const focusOnNode = useCallback((id: string) => {
+    const inst = instanceRef.current;
+    if (!inst) return;
+    const node = inst.getNode(id);
+    if (!node) return;
+    // setCenter takes the node's position centre; node.position is
+    // the top-left, so add half the rendered size when known.
+    // Synchronous (no `duration`) — animations would keep React Flow
+    // running into Playwright's teardown window and time out the
+    // worker. Visual smoothness is a separate polish bead.
+    const w = node.width ?? 200;
+    const h = node.height ?? 60;
+    const cx = node.position.x + w / 2;
+    const cy = node.position.y + h / 2;
+    void inst.setCenter(cx, cy, { zoom: 1.25 });
+  }, []);
+
+  const fitAll = useCallback(() => {
+    const inst = instanceRef.current;
+    if (!inst) return;
+    void inst.fitView();
+  }, []);
 
   // Manifest projection — the in-app type drops a couple of optional
   // fields the codegen carries, so we pass it through `as` instead of
@@ -71,7 +116,7 @@ export function GraphPage() {
     [workPlane]
   );
 
-  const graph = useMemo(() => buildGraph(items, manifest), [items, manifest]);
+  const graph = useMemo(() => buildGraph(renderItems, manifest), [renderItems, manifest]);
 
   const cycles = useMemo(
     () => detectCycles(graph.nodeIds, graph.structuralEdges),
@@ -88,11 +133,25 @@ export function GraphPage() {
     [graph.nodeIds, graph.structuralEdges]
   );
 
+  // gm-qdqu: precompute the hover-related set so node + edge passes
+  // share the same answer. The set is the hovered node plus every
+  // direct neighbour through any structural or extension edge.
+  const hoverRelated = useMemo(() => {
+    if (!hoveredId) return null;
+    const set = new Set<string>([hoveredId]);
+    for (const e of graph.edges) {
+      if (e.from === hoveredId) set.add(e.to);
+      if (e.to === hoveredId) set.add(e.from);
+    }
+    return set;
+  }, [hoveredId, graph.edges]);
+
   const nodes = useMemo<Node<WorkItemNodeData>[]>(() => {
-    return items.map((it) => {
+    return renderItems.map((it) => {
       const pos = layout.positions.get(it.id) ?? { x: 0, y: 0 };
       const inCycle = highlightCycles && cycles.nodeIds.has(it.id);
       const onCriticalPath = criticalMode && critical.nodeIds.has(it.id);
+      const hoverRelatedNode = hoverRelated?.has(it.id) ?? false;
       return {
         id: it.id,
         type: 'workItem',
@@ -103,10 +162,11 @@ export function GraphPage() {
           stateCategory: it.state_category,
           inCycle,
           onCriticalPath,
+          hoverRelated: hoverRelatedNode,
         },
       };
     });
-  }, [items, layout.positions, cycles.nodeIds, critical.nodeIds, highlightCycles, criticalMode]);
+  }, [renderItems, layout.positions, cycles.nodeIds, critical.nodeIds, highlightCycles, criticalMode, hoverRelated]);
 
   const edges = useMemo<Edge[]>(() => {
     return graph.edges.map((e) => {
@@ -155,6 +215,16 @@ export function GraphPage() {
         </div>
         <div className="flex items-center gap-2 text-xs">
           <ToggleButton
+            active={granularity === 'epics'}
+            onClick={() =>
+              setGranularity((g) => (g === 'epics' ? 'items' : 'epics'))
+            }
+            testid="graph-toggle-granularity"
+            icon={<Layers className="h-3.5 w-3.5" />}
+          >
+            {granularity === 'epics' ? 'Epics' : 'Items'}
+          </ToggleButton>
+          <ToggleButton
             active={highlightCycles}
             onClick={() => setHighlightCycles((v) => !v)}
             testid="graph-toggle-cycles"
@@ -175,7 +245,12 @@ export function GraphPage() {
         </div>
       </header>
 
-      <div className="relative min-h-0 flex-1" data-testid="graph-canvas-host">
+      <div
+        className="relative min-h-0 flex-1"
+        data-testid="graph-canvas-host"
+        data-focused-node={focusedId ?? undefined}
+        data-granularity={granularity}
+      >
         {error ? (
           <div className="m-8 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
             {error.message}
@@ -197,7 +272,26 @@ export function GraphPage() {
             nodesConnectable={false}
             elementsSelectable
             proOptions={{ hideAttribution: true }}
-            onNodeClick={(_evt, node) => setOpenId(node.id)}
+            onInit={(instance) => {
+              instanceRef.current = instance;
+            }}
+            onNodeClick={(_evt, node) => {
+              // gm-sfbh: focus camera on the clicked node, then open
+              // the drawer. The two surfaces are independent — drawer
+              // closes via Escape; the focus persists until the
+              // operator clicks the canvas background to clear it.
+              setFocusedId(node.id);
+              focusOnNode(node.id);
+              setOpenId(node.id);
+            }}
+            onPaneClick={() => {
+              // gm-sfbh: clearing the selection re-fits the camera
+              // to the full graph and drops the focused-node marker.
+              setFocusedId(null);
+              fitAll();
+            }}
+            onNodeMouseEnter={(_evt, node) => setHoveredId(node.id)}
+            onNodeMouseLeave={() => setHoveredId(null)}
             // 1000-node DoD: panOnScroll keeps the canvas responsive
             // when the graph is bigger than the viewport, and the
             // minimap gives the operator something to navigate by
@@ -232,7 +326,17 @@ export function GraphPage() {
         )}
       </div>
 
-      <WorkItemDrawer openId={openId} onClose={() => setOpenId(null)} />
+      <WorkItemDrawer
+        openId={openId}
+        onClose={() => {
+          // gm-sfbh: closing the drawer also clears the focused node
+          // and re-fits the camera. Single Escape press → operator
+          // returns to the at-a-glance view of the graph.
+          setOpenId(null);
+          setFocusedId(null);
+          fitAll();
+        }}
+      />
     </div>
   );
 }
@@ -367,5 +471,99 @@ function LegendRow({
       <span>{children}</span>
     </div>
   );
+}
+
+// deriveAggregatedItems (gm-ndb6) projects every WorkItem onto its
+// enclosing Epic and rewrites the relationship set so the resulting
+// node list contains one synthetic WorkItem per Epic. Cross-Epic
+// edges (blocks / parent_child / relates_to between items in
+// different Epics) become Epic→Epic edges of the same kind. Items
+// without an Epic ancestor are dropped — there's no node to render.
+//
+// Pure / O(V+E). Called once when the granularity toggle flips to
+// 'epics' and never again until items or the toggle change.
+function deriveAggregatedItems(items: WorkItem[]): WorkItem[] {
+  const byId = new Map<string, WorkItem>();
+  for (const it of items) byId.set(it.id, it);
+
+  // 1. parent[id] → immediate parent_child source for `id`. Built
+  //    from the child's relationships (parent_child: from=parent,
+  //    to=child).
+  const parent = new Map<string, string>();
+  for (const it of items) {
+    for (const r of it.relationships ?? []) {
+      if (r.kind !== 'parent_child') continue;
+      if (r.to === it.id) parent.set(it.id, r.from);
+    }
+  }
+
+  // 2. Walk each item to its closest Epic ancestor (or itself, if
+  //    the item is already an Epic). Memoize so chains aren't
+  //    re-traversed.
+  const epicOf = new Map<string, string | null>();
+  function findEpic(id: string): string | null {
+    if (epicOf.has(id)) return epicOf.get(id) ?? null;
+    const item = byId.get(id);
+    if (!item) {
+      epicOf.set(id, null);
+      return null;
+    }
+    if (item.kind === 'epic') {
+      epicOf.set(id, id);
+      return id;
+    }
+    const p = parent.get(id);
+    if (!p) {
+      epicOf.set(id, null);
+      return null;
+    }
+    const ancestor = findEpic(p);
+    epicOf.set(id, ancestor);
+    return ancestor;
+  }
+  for (const it of items) findEpic(it.id);
+
+  // 3. Build aggregated relationships per Epic. Skip parent_child
+  //    edges between Epics — those define the rollup, they aren't
+  //    drawn as graph dependencies. De-dup so a 100-item Epic with
+  //    50 internal blocks edges to another Epic emits one Epic→Epic
+  //    edge.
+  const aggRels = new Map<string, Set<string>>();
+  for (const it of items) {
+    for (const r of it.relationships ?? []) {
+      if (r.kind === 'parent_child') continue;
+      const fromEpic = findEpic(r.from);
+      const toEpic = findEpic(r.to);
+      if (!fromEpic || !toEpic || fromEpic === toEpic) continue;
+      const key = `${r.kind}:${fromEpic}->${toEpic}`;
+      const set = aggRels.get(fromEpic) ?? new Set<string>();
+      set.add(key);
+      aggRels.set(fromEpic, set);
+    }
+  }
+
+  // 4. Materialise a synthetic WorkItem per Epic with its aggregated
+  //    relationships attached. Preserve every original Epic field so
+  //    state pip / title still render.
+  return items
+    .filter((it) => it.kind === 'epic')
+    .map((epic) => {
+      const rels = Array.from(aggRels.get(epic.id) ?? []).map((key) => {
+        const [kindRaw, edge] = key.split(':');
+        const [from, to] = edge.split('->');
+        return {
+          kind: kindRaw as WorkItem['relationships'] extends
+            | (infer R)[]
+            | undefined
+            ? R extends { kind: infer K }
+              ? K
+              : never
+            : never,
+          from,
+          to,
+        };
+      });
+      return { ...epic, relationships: rels } as WorkItem;
+    });
 }
 

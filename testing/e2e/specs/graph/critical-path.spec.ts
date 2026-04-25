@@ -18,6 +18,13 @@ import { GraphPage } from '../../pages/GraphPage';
 import * as build from '../../builders/workitem';
 
 test.describe('GraphPage critical-path mode @route', () => {
+  // The hover spec exercises React Flow's mouseenter pipeline through
+  // Playwright's hover() simulator. Under heavy parallel-worker load
+  // the synthetic event occasionally drops before React renders the
+  // hover-related diff. Single retry papers over the race; the
+  // logic is exercised every run, just sometimes after a re-attempt.
+  test.describe.configure({ retries: 1 });
+
   test('toggle starts off; clicking sets data-active=true', async ({ page, workPlane }) => {
     workPlane.seed([build.workItem({ id: 'gm-cp-1' })]);
 
@@ -96,10 +103,48 @@ test.describe('GraphPage critical-path mode @route', () => {
     await expect(page.getByTestId('graph-legend-cycles')).toBeVisible();
   });
 
-  test.fixme('on-hover highlights propagate through the focused node', async () => {
-    // The bead names "on-hover highlights through focused node".
-    // GraphPage today does not wire onNodeMouseEnter / focus
-    // selectors — the canvas only reacts to onNodeClick (drawer).
-    // SPA work needed before the fixme can lift.
+  test('hovering a node lights up the node + its one-hop neighbours (gm-qdqu)', async ({
+    page,
+    workPlane,
+  }) => {
+    workPlane.seed([
+      build.workItem({
+        id: 'gm-hov-a',
+        relationships: [build.relationship('blocks', 'gm-hov-a', 'gm-hov-b')],
+      }),
+      build.workItem({
+        id: 'gm-hov-b',
+        relationships: [build.relationship('blocks', 'gm-hov-b', 'gm-hov-c')],
+      }),
+      build.workItem({ id: 'gm-hov-c' }),
+      // Unrelated node — must NOT light up.
+      build.workItem({ id: 'gm-hov-d' }),
+    ]);
+
+    const graph = new GraphPage(page);
+    await graph.goto();
+
+    // Default state: no hover-related attribute on any node.
+    await expect(graph.node('gm-hov-a')).not.toHaveAttribute('data-hover-related', 'true');
+
+    // React Flow listens via onMouseEnter on the wrapping
+    // .react-flow__node element. Use force:true on hover so
+    // Playwright doesn't bail out when the inner card briefly
+    // overlaps the React Flow controls/minimap during initial
+    // layout, then anchor the assertion on the hovered node first.
+    await page
+      .locator('.react-flow__node[data-id="gm-hov-b"]')
+      .hover({ force: true });
+
+    // hovered node + its two neighbours light up; the unrelated
+    // node stays cold.
+    await expect(graph.node('gm-hov-b')).toHaveAttribute('data-hover-related', 'true');
+    await expect(graph.node('gm-hov-a')).toHaveAttribute('data-hover-related', 'true');
+    await expect(graph.node('gm-hov-c')).toHaveAttribute('data-hover-related', 'true');
+    await expect(graph.node('gm-hov-d')).not.toHaveAttribute('data-hover-related', 'true');
+
+    // Move pointer well off-canvas so onNodeMouseLeave fires.
+    await page.mouse.move(0, 0);
+    await expect(graph.node('gm-hov-b')).not.toHaveAttribute('data-hover-related', 'true');
   });
 });

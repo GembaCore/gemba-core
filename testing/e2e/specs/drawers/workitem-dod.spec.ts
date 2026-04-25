@@ -66,15 +66,65 @@ test.describe('WorkItemDrawer DoD tab @route', () => {
     await page.getByTestId('work-item-dod-criterion-0-down').click();
   });
 
-  test.fixme(
-    'synthesized DoD shows "operator-authored" call-to-action',
-    async () => {
-      // The bead names a synthesized vs operator-authored banner;
-      // the SPA today only renders the informational DoDBanner
-      // (gating-vs-documentation). When the SPA grows the synth path,
-      // this fixme lifts.
-    }
-  );
+  test('synthesized DoD shows the "edit to override" banner (gm-xbqw)', async ({
+    page,
+    workPlane,
+  }) => {
+    const id = 'gm-dod-synth';
+    workPlane.seed([
+      build.workItem({
+        id,
+        // gm-native.11's dod.Synthesize stamps Version="synthesized-v1";
+        // the SPA banner reads dod.version.startsWith('synthesized').
+        dod: build.dod(['code pushed; CI green'], { version: 'synthesized-v1' }),
+      }),
+    ]);
+
+    const drawer = new WorkItemDrawerPO(page);
+    await drawer.openByDeepLink(id);
+    await drawer.selectTab('dod');
+
+    const banner = page.getByTestId('work-item-dod-synth-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute('data-state', 'synthesized');
+    await expect(banner).toContainText('Synthesized');
+    await expect(banner).toContainText('Edit');
+  });
+
+  test('missing DoD shows the "no DoD authored" banner (gm-xbqw)', async ({
+    page,
+    workPlane,
+  }) => {
+    const id = 'gm-dod-missing';
+    workPlane.seed([build.workItem({ id, dod: undefined })]);
+
+    const drawer = new WorkItemDrawerPO(page);
+    await drawer.openByDeepLink(id);
+    await drawer.selectTab('dod');
+
+    const banner = page.getByTestId('work-item-dod-synth-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toHaveAttribute('data-state', 'missing');
+  });
+
+  test('operator-authored DoD does NOT show the synth banner (gm-xbqw)', async ({
+    page,
+    workPlane,
+  }) => {
+    const id = 'gm-dod-authored';
+    workPlane.seed([
+      build.workItem({
+        id,
+        dod: build.dod(['operator wrote this'], { version: 'v1' }),
+      }),
+    ]);
+
+    const drawer = new WorkItemDrawerPO(page);
+    await drawer.openByDeepLink(id);
+    await drawer.selectTab('dod');
+
+    await expect(page.getByTestId('work-item-dod-synth-banner')).toHaveCount(0);
+  });
 
   test.fixme('save round-trip persists DoD @deep', async () => {
     // gm-5v8v.2 — the fake-mode PATCH handler echoes the existing

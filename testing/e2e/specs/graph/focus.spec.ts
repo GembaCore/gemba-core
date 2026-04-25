@@ -37,20 +37,40 @@ test.describe('GraphPage focus / camera @route', () => {
     }
   });
 
-  test.fixme(
-    'click-to-focus zooms the camera onto the selected node',
-    async () => {
-      // GraphPage's onNodeClick opens the WorkItemDrawer. There's no
-      // useReactFlow().setCenter() / fitBounds() call wired to
-      // selection. SPA work needed.
-    }
-  );
+  test('click-to-focus marks the node on the canvas host (gm-sfbh)', async ({
+    page,
+    workPlane,
+  }) => {
+    workPlane.seed([
+      build.workItem({ id: 'gm-foc-1' }),
+      build.workItem({ id: 'gm-foc-2' }),
+    ]);
 
-  test.fixme(
-    'clearing the selection re-fits the camera to the full graph',
-    async () => {
-      // Same surface — no selection-aware viewport controller in
-      // GraphPage today.
-    }
-  );
+    const graph = new GraphPage(page);
+    await graph.goto();
+
+    // Default state: no focused-node marker.
+    await expect(graph.canvas).not.toHaveAttribute('data-focused-node', 'gm-foc-1');
+    await graph.node('gm-foc-1').click();
+    // Click sets focus state + drives the camera + opens the drawer.
+    await expect(graph.canvas).toHaveAttribute('data-focused-node', 'gm-foc-1');
+  });
+
+  test('Escape (drawer close) clears focus and re-fits the camera (gm-sfbh)', async ({
+    page,
+    workPlane,
+  }) => {
+    workPlane.seed([build.workItem({ id: 'gm-foc-clear' })]);
+
+    const graph = new GraphPage(page);
+    await graph.goto();
+    await graph.node('gm-foc-clear').click();
+    await expect(graph.canvas).toHaveAttribute('data-focused-node', 'gm-foc-clear');
+
+    // Closing the WorkItemDrawer (Escape or close button) also clears
+    // the focused-node marker on GraphPage — the operator returns to
+    // the at-a-glance view in one keystroke.
+    await page.keyboard.press('Escape');
+    await expect(graph.canvas).not.toHaveAttribute('data-focused-node', 'gm-foc-clear');
+  });
 });

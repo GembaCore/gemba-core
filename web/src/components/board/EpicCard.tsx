@@ -86,19 +86,23 @@ export function EpicCard({ item, childCounts, onSelect, draggable }: EpicCardPro
   // In draggable mode dnd-kit's KeyboardSensor claims Space/Enter on
   // the draggable wrapper to run the keyboard-drag cycle (Space =
   // start, arrows = move, Space/Enter = drop). Handling the same keys
-  // here would race that sensor and surface-open-drawer instead of
-  // drag — so keyboard drawer-open collapses to pointer double-click
-  // (ui-spec §4.5). Tracked as a follow-up if operators want a
-  // keyboard drawer shortcut.
-  const handleKeyDown =
-    !draggable && onSelect
-      ? (e: KeyboardEvent<HTMLElement>) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onSelect(item.id);
-          }
+  // here would race the sensor — so we use `o` as the keyboard
+  // drawer-open shortcut (gm-fqiw, mirrors DEFAULT_HOTKEYS' drawer-open
+  // entry). When not draggable, Enter / Space stay wired so non-board
+  // contexts (Backlog list etc.) keep their familiar shortcut.
+  const handleKeyDown = onSelect
+    ? (e: KeyboardEvent<HTMLElement>) => {
+        if (e.key === 'o' || e.key === 'O') {
+          e.preventDefault();
+          onSelect(item.id);
+          return;
         }
-      : undefined;
+        if (!draggable && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault();
+          onSelect(item.id);
+        }
+      }
+    : undefined;
 
   return (
     <article
