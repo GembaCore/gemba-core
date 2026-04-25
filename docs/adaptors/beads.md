@@ -119,3 +119,102 @@ All writes shell out to the public `bd` CLI. The adaptor never touches
 `.beads/*.db` directly — that store's shape changes across `bd`
 versions, and the CLI is the stable contract. This rule is asserted by
 conformance group F.
+
+## Cross-process mutations — the post-write hook (gm-e4.3.3)
+
+`bd` mutations made *outside* the running `gemba serve` process — a
+terminal `bd close gm-foo`, an ops runbook, a second editor pane —
+don't flow through the in-process `core.WorkPlaneEmitter`, so /events
+SSE subscribers wouldn't see them without help. The fix is a small
+post-write hook installed alongside `bd` that POSTs the changed bead's
+id at `/api/workitems/notify` (gm-e4.3.2). Gemba re-reads the bead
+through its bound WorkPlane and publishes a normal `workitem.*`
+GembaEvent — same kind, same envelope, same SSE path as in-process
+mutations.
+
+### Wire shape
+
+The hook is a dumb trigger; the body is intentionally minimal.
+
+```http
+POST /api/workitems/notify
+Content-Type: application/json
+Authorization: Bearer <token>     # only if --auth=token is on
+{
+  "work_item_id": "gemba/gemba/gm-foo",
+  "source":       "bd-git-hook"     # optional — echoed onto the event payload
+}
+```
+
+Gemba ignores any other state in the body — the canonical bead is
+re-read from the WorkPlane on every notify, so a stale or maliciously
+crafted body cannot poison the cache. The handler returns `200 OK`
+with `{work_item_id, kind, skipped?}` so the hook can log what landed.
+
+### Idempotency
+
+The handler dedupes on `(work_item_id, UpdatedAt)`. A duplicate POST
+for the same bead at the same `UpdatedAt` returns `200 OK` with
+`skipped: true` and does NOT republish. This means a hook-side retry
+loop is safe; a re-run after a real mutation still publishes (the
+`UpdatedAt` advances).
+
+The dedup window is bounded (FIFO, 1024 entries by default). On
+overflow the oldest id evicts and the next notify for that id will
+re-emit — false-negative on the dedup, never a false-positive on the
+event. Operators don't need to tune this.
+
+### Installing the hook
+
+> **Status (2026-04-25)**: the hook itself ships in the upstream `beads`
+> repo (gm-e4.3.3 upstream PR — the gemba-side bead is for docs and a
+> skipped integration test). When that PR lands, the install path is
+> `bd hooks install --gemba-url ... --gemba-auth ...`; the section
+> below describes the contract the hook is required to honour.
+
+The hook is invoked by `bd` after every successful write that touches
+a bead's `UpdatedAt`. It reads two values from its environment:
+
+| Variable             | Required | Meaning                                              |
+| -------------------- | -------- | ---------------------------------------------------- |
+| `GEMBA_NOTIFY_URL`   | yes      | Base URL of `gemba serve`, e.g. `http://localhost:7666`. |
+| `GEMBA_NOTIFY_AUTH`  | only when `--auth=token` | Bearer token mounted on every request. |
+
+Without `GEMBA_NOTIFY_URL` set, the hook is a no-op — the same `bd`
+binary works on a machine that doesn't run gemba locally.
+
+### Fail-open contract
+
+A hook-side error (gemba is down, network drops, auth misconfigured)
+**MUST NOT** fail the underlying `bd` mutation. The hook logs to
+stderr and exits 0. This is non-negotiable: the operator's terminal
+write is authoritative, and the SSE pump is a convenience. A loud
+warning on stderr is the upper bound on user-visible breakage.
+
+### Verifying the round trip
+
+In one terminal, watch the SSE stream:
+
+```bash
+curl -N http://localhost:7666/events?topics=workitem.*
+```
+
+In a second terminal, mutate a bead:
+
+```bash
+bd close gm-foo
+```
+
+Within ~250ms the first terminal should print a `workitem.closed` (or
+`workitem.updated`) event with the bead's canonical id. If nothing
+arrives:
+
+* Check `GEMBA_NOTIFY_URL` is set in the second terminal's env.
+* Check `gemba serve` is running on that URL.
+* Run `bd hooks list` to confirm the gemba hook is installed.
+* Tail `gemba serve`'s log — auth failures and adaptor-degraded errors
+  surface there.
+
+The post-write hook is the only piece of cross-process plumbing
+between `bd` and `gemba`. Anything more sophisticated (Dolt binlog
+tail, polling shim) would replace this hook, not stack on top of it.
