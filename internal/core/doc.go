@@ -21,7 +21,8 @@
 // Contents:
 //
 //   - types.go          WorkItem, AgentRef, Relationship, Evidence (+ their enums)
-//   - repository.go     Repository, RepositoryID, RepositoryRegistry (gm-26n4)
+//   - repository.go     Repository, RepositoryID, RepositoryRegistry (gm-26n4),
+//                       BeadPrefix routing (gm-d2ts), auto-derive (gm-i4bd)
 //   - state.go          StateCategory ∈ backlog|unstarted|started|completed|canceled
 //   - derived.go        DerivedSignals + Derive(item, escalations, manifest) — pure
 //   - dod.go            DefinitionOfDone (informational-only; never blocks)

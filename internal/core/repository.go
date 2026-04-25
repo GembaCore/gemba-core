@@ -5,12 +5,30 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/BurntSushi/toml"
 )
+
+// runGit invokes `git -C <dir> <args...>` and returns trimmed stdout
+// or an error wrapping the stderr output. Centralized so the
+// auto-derive path's git interactions share one error shape.
+func runGit(dir string, args ...string) (string, error) {
+	full := append([]string{"-C", dir}, args...)
+	cmd := exec.Command("git", full...)
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return "", fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, string(ee.Stderr))
+		}
+		return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+	}
+	return string(out), nil
+}
 
 // Repository is one git repository associated with a workspace
 // (gm-26n4). A workspace (≡ project) holds one beads database and
@@ -231,6 +249,12 @@ func NewRepositoryRegistry() *RepositoryRegistry {
 // repository TOML file under dir. Uses Register so prefix uniqueness
 // is enforced as files load (a workspace with two repos sharing a
 // prefix is unbootable — the second registration fails).
+//
+// When dir is empty (no TOMLs) AND the workspace appears to be a git
+// repository, [LoadRepositoryRegistryWithAutoDerive] is the right
+// entry point — it materializes a default Repository so single-repo
+// workspaces don't require operator-authored TOML files (gm-i4bd).
+// LoadRepositoryRegistry alone leaves the registry empty.
 func LoadRepositoryRegistry(dir string) (*RepositoryRegistry, error) {
 	repos, err := LoadRepositoriesDir(dir)
 	if err != nil {
@@ -250,6 +274,200 @@ func LoadRepositoryRegistry(dir string) (*RepositoryRegistry, error) {
 		}
 	}
 	return reg, nil
+}
+
+// LoadRepositoryRegistryWithAutoDerive is the entry point that spares
+// the common case (one workspace = one repository) the boilerplate of
+// authoring `.gemba/repositories/<id>.toml` (gm-i4bd).
+//
+// Behavior:
+//
+//  1. If repositoriesDir contains any *.toml file, defer to
+//     [LoadRepositoryRegistry]. Operator-authored config wins; no
+//     auto-derive happens. This is the multi-repo path.
+//
+//  2. Else, if workspaceDir contains a `.git/` directory, materialize
+//     a single Repository with:
+//
+//       - ID            = lowercased basename of workspaceDir (sanitized)
+//       - Path          = workspaceDir (made absolute)
+//       - DefaultBranch = HEAD's symbolic-ref short name; "main" on error
+//       - URL           = `git remote get-url origin`; empty on error
+//       - BeadPrefix    = first 2 lowercase letters of the ID; "wp" fallback
+//
+//     The result is a one-Repository registry the rest of Gemba treats
+//     identically to an operator-declared single-repo workspace. The
+//     auto-derived Repository is marked internally so the SPA can
+//     surface "auto-detected" badging (a `gemba repo persist` CLI to
+//     materialize a real .toml is a follow-up bead).
+//
+//  3. Else, return an empty registry. The workspace has no repos; the
+//     spawn path will reject any consult that requires one with a
+//     clear error.
+//
+// gitRunner is the function used to invoke git. Pass nil to use
+// [DefaultGitRunner] (shells to `git`); tests inject a fake.
+func LoadRepositoryRegistryWithAutoDerive(repositoriesDir, workspaceDir string, gitRunner GitRunner) (*RepositoryRegistry, error) {
+	repos, err := LoadRepositoriesDir(repositoriesDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(repos) > 0 {
+		// Operator-authored config — never override.
+		return LoadRepositoryRegistry(repositoriesDir)
+	}
+
+	// No declared repositories. Try to auto-derive one from the
+	// workspace dir.
+	if workspaceDir == "" {
+		return NewRepositoryRegistry(), nil
+	}
+	if !hasGitDir(workspaceDir) {
+		return NewRepositoryRegistry(), nil
+	}
+
+	repo, err := deriveRepositoryFromWorkspace(workspaceDir, gitRunner)
+	if err != nil {
+		return nil, err
+	}
+	reg := NewRepositoryRegistry()
+	if err := reg.Register(repo); err != nil {
+		return nil, err
+	}
+	return reg, nil
+}
+
+// GitRunner is the small interface deriveRepositoryFromWorkspace
+// uses to read git state. The default shells to the `git` binary;
+// tests inject a fake to avoid filesystem + subprocess setup.
+type GitRunner interface {
+	// SymbolicRef returns the current branch (e.g. "main"). An empty
+	// string + nil error means "detached HEAD" (rare in workspace
+	// roots); the caller falls back to "main".
+	SymbolicRef(workspaceDir string) (string, error)
+	// RemoteURL returns the URL of the named remote (typically
+	// "origin"). An empty string + nil error means the remote is not
+	// configured.
+	RemoteURL(workspaceDir, remote string) (string, error)
+}
+
+// DefaultGitRunner shells to the `git` binary on PATH. Returned
+// errors include the git stderr output for diagnosis.
+type DefaultGitRunner struct{}
+
+// SymbolicRef runs `git -C <dir> symbolic-ref --short HEAD`.
+func (DefaultGitRunner) SymbolicRef(workspaceDir string) (string, error) {
+	out, err := runGit(workspaceDir, "symbolic-ref", "--short", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// RemoteURL runs `git -C <dir> remote get-url <remote>`.
+func (DefaultGitRunner) RemoteURL(workspaceDir, remote string) (string, error) {
+	out, err := runGit(workspaceDir, "remote", "get-url", remote)
+	if err != nil {
+		// Missing remote → treat as no error; caller leaves URL blank.
+		return "", nil
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// hasGitDir reports whether dir contains a `.git/` entry (file or
+// directory; submodules use a `.git` file pointing at gitdir).
+func hasGitDir(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, ".git"))
+	if err != nil {
+		return false
+	}
+	_ = info
+	return true
+}
+
+// deriveRepositoryFromWorkspace materializes a Repository by reading
+// git state in workspaceDir. The runner argument is the seam tests
+// inject. Returns a Repository that satisfies Validate so Register
+// accepts it without further work.
+func deriveRepositoryFromWorkspace(workspaceDir string, runner GitRunner) (*Repository, error) {
+	abs, err := filepath.Abs(workspaceDir)
+	if err != nil {
+		return nil, fmt.Errorf("repository: auto-derive: abs path: %w", err)
+	}
+	id := sanitizeRepositoryID(filepath.Base(abs))
+	if id == "" || id == RepositoryUnspecified {
+		// Edge: workspace dir basename was something like "/" or
+		// produced an unsafe id. Fall back to a stable name.
+		id = "workspace"
+	}
+
+	if runner == nil {
+		runner = DefaultGitRunner{}
+	}
+
+	branch := "main"
+	if got, err := runner.SymbolicRef(abs); err == nil && got != "" {
+		branch = got
+	}
+	url := ""
+	if got, err := runner.RemoteURL(abs, "origin"); err == nil {
+		url = got
+	}
+
+	prefix := derivePrefix(string(id))
+
+	repo := &Repository{
+		ID:            id,
+		Path:          abs,
+		DefaultBranch: branch,
+		URL:           url,
+		BeadPrefix:    prefix,
+	}
+	if err := repo.Validate(); err != nil {
+		return nil, fmt.Errorf("repository: auto-derive produced invalid repository: %w", err)
+	}
+	return repo, nil
+}
+
+// sanitizeRepositoryID lowercases s and replaces every
+// non-[a-z0-9-_] character with "-". Used by the auto-derive path
+// to turn an arbitrary directory basename into a usable RepositoryID.
+func sanitizeRepositoryID(s string) RepositoryID {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return RepositoryID(strings.Trim(b.String(), "-_"))
+}
+
+// derivePrefix produces a BeadPrefix from a repository id. The
+// derivation prefers the first 2 letters of the id (so "frontend"
+// → "fr") and falls back to "wp" (workspace prefix) when the id is
+// too short or has only non-letter characters at the head.
+func derivePrefix(id string) string {
+	letters := make([]byte, 0, 2)
+	for i := 0; i < len(id) && len(letters) < 2; i++ {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+			letters = append(letters, c)
+		case c >= '0' && c <= '9':
+			letters = append(letters, c)
+		}
+	}
+	if len(letters) < 2 {
+		return "wp"
+	}
+	return string(letters)
 }
 
 // Register adds r to the registry. Returns an error when r is nil,

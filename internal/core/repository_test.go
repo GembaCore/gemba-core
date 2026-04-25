@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -688,6 +689,190 @@ bead_prefix = "fe"
 	_, err := LoadRepositoryRegistry(dir)
 	if err == nil || !strings.Contains(err.Error(), "already claimed") {
 		t.Errorf("err = %v, want duplicate-prefix error", err)
+	}
+}
+
+// gm-i4bd: fakeGitRunner stands in for git CLI so auto-derive tests
+// don't require the workspace dir to actually be a git repo.
+type fakeGitRunner struct {
+	branch    string
+	branchErr error
+	url       string
+	urlErr    error
+}
+
+func (f fakeGitRunner) SymbolicRef(string) (string, error) {
+	return f.branch, f.branchErr
+}
+func (f fakeGitRunner) RemoteURL(string, string) (string, error) {
+	return f.url, f.urlErr
+}
+
+func TestSanitizeRepositoryID(t *testing.T) {
+	cases := []struct {
+		in   string
+		want RepositoryID
+	}{
+		{"gemba", "gemba"},
+		{"GEMBA", "gemba"},
+		{"my repo", "my-repo"},
+		{"my.repo!", "my-repo"},
+		{"---weird---", "weird"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := sanitizeRepositoryID(c.in); got != c.want {
+			t.Errorf("sanitizeRepositoryID(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDerivePrefix(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"gemba", "ge"},
+		{"frontend", "fr"},
+		{"a1", "a1"},
+		{"a", "wp"},     // too short
+		{"___", "wp"},   // no letters/digits
+		{"-x-y-z", "xy"}, // skips leading hyphens
+		{"", "wp"},
+	}
+	for _, c := range cases {
+		if got := derivePrefix(c.in); got != c.want {
+			t.Errorf("derivePrefix(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// gm-i4bd: with no repositories declared and a workspace dir
+// containing .git/, LoadRepositoryRegistryWithAutoDerive materializes
+// a single Repository.
+func TestLoadRepositoryRegistryWithAutoDerive_FiresOnEmptyWithGit(t *testing.T) {
+	wsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wsDir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	// Repositories dir does not exist — auto-derive should fire.
+	reposDir := filepath.Join(wsDir, ".gemba", "repositories")
+
+	runner := fakeGitRunner{branch: "develop", url: "git@github.com:x/y.git"}
+	reg, err := LoadRepositoryRegistryWithAutoDerive(reposDir, wsDir, runner)
+	if err != nil {
+		t.Fatalf("LoadRepositoryRegistryWithAutoDerive: %v", err)
+	}
+	if len(reg.List()) != 1 {
+		t.Fatalf("got %d repos, want 1", len(reg.List()))
+	}
+	r, _ := reg.Get(reg.List()[0])
+	if r.Path != wsDir {
+		t.Errorf("Path = %q, want %q", r.Path, wsDir)
+	}
+	if r.DefaultBranch != "develop" {
+		t.Errorf("DefaultBranch = %q, want develop", r.DefaultBranch)
+	}
+	if r.URL != "git@github.com:x/y.git" {
+		t.Errorf("URL = %q", r.URL)
+	}
+	if r.BeadPrefix == "" {
+		t.Error("BeadPrefix empty")
+	}
+}
+
+// Auto-derive falls back to "main" when symbolic-ref errors.
+func TestLoadRepositoryRegistryWithAutoDerive_DefaultBranchFallback(t *testing.T) {
+	wsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wsDir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	runner := fakeGitRunner{branchErr: fmt.Errorf("detached HEAD")}
+	reg, err := LoadRepositoryRegistryWithAutoDerive(
+		filepath.Join(wsDir, ".gemba", "repositories"), wsDir, runner)
+	if err != nil {
+		t.Fatalf("LoadRepositoryRegistryWithAutoDerive: %v", err)
+	}
+	r, _ := reg.Get(reg.List()[0])
+	if r.DefaultBranch != "main" {
+		t.Errorf("DefaultBranch = %q, want main fallback", r.DefaultBranch)
+	}
+}
+
+// Auto-derive empty URL when remote get-url errors (no origin).
+func TestLoadRepositoryRegistryWithAutoDerive_URLFallback(t *testing.T) {
+	wsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wsDir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	runner := fakeGitRunner{branch: "main", urlErr: fmt.Errorf("no origin")}
+	reg, _ := LoadRepositoryRegistryWithAutoDerive(
+		filepath.Join(wsDir, ".gemba", "repositories"), wsDir, runner)
+	r, _ := reg.Get(reg.List()[0])
+	if r.URL != "" {
+		t.Errorf("URL = %q, want empty", r.URL)
+	}
+}
+
+// Auto-derive does NOT fire when ANY *.toml is present in repositoriesDir.
+func TestLoadRepositoryRegistryWithAutoDerive_DoesNotFireWhenTOMLDeclared(t *testing.T) {
+	wsDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(wsDir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	reposDir := filepath.Join(wsDir, ".gemba", "repositories")
+	if err := os.MkdirAll(reposDir, 0o755); err != nil {
+		t.Fatalf("mkdir reposDir: %v", err)
+	}
+	writeRepoFile(t, reposDir, "gemba.toml", strings.ReplaceAll(
+		minimalRepoTOML, `/tmp/repos/gemba`, wsDir))
+
+	runner := fakeGitRunner{branch: "ignored"}
+	reg, err := LoadRepositoryRegistryWithAutoDerive(reposDir, wsDir, runner)
+	if err != nil {
+		t.Fatalf("LoadRepositoryRegistryWithAutoDerive: %v", err)
+	}
+	if len(reg.List()) != 1 {
+		t.Fatalf("got %d repos, want 1", len(reg.List()))
+	}
+	r, _ := reg.Get(reg.List()[0])
+	// The TOML's declared branch is "main"; if auto-derive had fired,
+	// it would have used "ignored" from the runner.
+	if r.DefaultBranch != "main" {
+		t.Errorf("auto-derive overrode operator config: branch = %q", r.DefaultBranch)
+	}
+}
+
+// Auto-derive does NOT fire when workspace dir has no .git/.
+func TestLoadRepositoryRegistryWithAutoDerive_DoesNotFireWithoutGit(t *testing.T) {
+	wsDir := t.TempDir() // no .git/
+	reg, err := LoadRepositoryRegistryWithAutoDerive(
+		filepath.Join(wsDir, ".gemba", "repositories"), wsDir, fakeGitRunner{})
+	if err != nil {
+		t.Fatalf("LoadRepositoryRegistryWithAutoDerive: %v", err)
+	}
+	if len(reg.List()) != 0 {
+		t.Errorf("expected empty registry, got %d", len(reg.List()))
+	}
+}
+
+// Auto-derive does NOT fire when workspaceDir is empty.
+func TestLoadRepositoryRegistryWithAutoDerive_EmptyWorkspaceDir(t *testing.T) {
+	reg, err := LoadRepositoryRegistryWithAutoDerive(t.TempDir(), "", fakeGitRunner{})
+	if err != nil {
+		t.Fatalf("LoadRepositoryRegistryWithAutoDerive: %v", err)
+	}
+	if len(reg.List()) != 0 {
+		t.Errorf("expected empty registry, got %d", len(reg.List()))
+	}
+}
+
+// Derived Repository registers cleanly (passes Validate on its own).
+func TestDeriveRepositoryFromWorkspace_PassesValidate(t *testing.T) {
+	wsDir := t.TempDir()
+	r, err := deriveRepositoryFromWorkspace(wsDir, fakeGitRunner{branch: "main"})
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	if err := r.Validate(); err != nil {
+		t.Errorf("derived repo failed Validate: %v", err)
 	}
 }
 
