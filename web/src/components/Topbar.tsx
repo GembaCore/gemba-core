@@ -35,7 +35,7 @@ export function Topbar() {
       >
         <Command className="h-3.5 w-3.5" />
         <span>Search or command…</span>
-        <kbd className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-mono text-neutral-500 dark:bg-neutral-800 dark:text-neutral-400">
+        <kbd className="ml-2 rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-mono text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
           ⌘K
         </kbd>
       </button>

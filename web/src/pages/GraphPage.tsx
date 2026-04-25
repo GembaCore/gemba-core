@@ -263,7 +263,7 @@ function ToggleButton({
       className={cn(
         'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 transition-colors',
         active
-          ? 'border-sky-500 bg-sky-500 text-white'
+          ? 'border-sky-700 bg-sky-700 text-white'
           : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800'
       )}
     >

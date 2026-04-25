@@ -30,13 +30,7 @@ const ROUTES = [
 // beads id so the waiver stays auditable. Remove the rule here once
 // the linked bead closes — that turns the rule back into a smoke
 // regression target.
-const IGNORED_RULES: readonly string[] = [
-  // gm-4chm — Tailwind neutral-500 text on neutral-100 backgrounds
-  // (e.g. the ⌘K kbd hint in the topbar) lands at 4.34:1 contrast
-  // where WCAG AA wants 4.5:1. Systemic across smoke routes; tracked
-  // as a design-token fix in the linked bead.
-  'color-contrast',
-];
+const IGNORED_RULES: readonly string[] = [];
 
 for (const route of ROUTES) {
   test(`${route} passes axe-core (serious+) @smoke`, async ({ page }) => {
