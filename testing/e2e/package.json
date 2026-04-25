@@ -14,6 +14,8 @@
     "test:route": "playwright test --project=route-fake",
     "test:realtime": "playwright test --project=realtime-fake",
     "test:realtime:deep": "playwright test --project=realtime-deep --workers=2",
+    "test:error": "playwright test --project=error-fake",
+    "test:error:deep": "playwright test --project=error-deep --workers=2",
     "test:deep": "playwright test --grep @deep --workers=2",
     "typecheck": "tsc --noEmit",
     "report": "playwright show-report"

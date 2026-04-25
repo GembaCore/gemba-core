@@ -111,7 +111,19 @@ const projects: Project[] = [
     metadata: { tier: 'modes', backend: 'fake', bead: 'gm-5v8v.11', status: 'active (all fixme)' },
     timeout: 30_000,
   },
-  pending('error-fake',      { tier: 'error',       backend: 'fake', bead: 'gm-5v8v.13' }),
+  // error-fake: 404 / network-error / pending. Inline alerts on per-
+  // route fetch failures, NotFoundPage for unknown routes, banner
+  // independence from per-API errors. gm-5v8v.13.
+  {
+    name: 'error-fake',
+    testMatch: ['error/**/*.spec.ts'],
+    use: {
+      ...devices['Desktop Chrome'],
+      extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
+    },
+    metadata: { tier: 'error', backend: 'fake', bead: 'gm-5v8v.13', status: 'active' },
+    timeout: 30_000,
+  },
 
   // smoke-deep is GATED until gm-h4n closes.
   //
@@ -188,7 +200,32 @@ const projects: Project[] = [
       ]
     : [pending('realtime-deep', { tier: 'realtime', backend: 'real', bead: 'gm-5v8v.10' })]),
   pending('modes-deep',      { tier: 'modes',       backend: 'real', bead: 'gm-5v8v.11' }),
-  pending('error-deep',      { tier: 'error',       backend: 'real', bead: 'gm-5v8v.13' }),
+  // error-deep: real-server JSON envelope contract for /api/* +
+  // /events/* (gm-b2 / gm-xke). Tagged @deep so only the load-bearing
+  // server-contract specs run here. Same gm-h4n gating as the rest of
+  // the deep matrix.
+  ...(process.env.GEMBA_E2E_RUN_DEEP
+    ? [
+        {
+          name: 'error-deep',
+          testMatch: ['error/**/*.spec.ts'],
+          grep: /@deep/,
+          use: {
+            ...devices['Desktop Chrome'],
+            backend: 'real' as const,
+            extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
+          },
+          metadata: {
+            tier: 'error',
+            backend: 'real',
+            bead: 'gm-5v8v.13',
+            status: 'opt-in (gm-h4n)',
+          },
+          timeout: 60_000,
+          fullyParallel: false,
+        } satisfies Project,
+      ]
+    : [pending('error-deep', { tier: 'error', backend: 'real', bead: 'gm-5v8v.13' })]),
   pending('integration-deep',{ tier: 'integration', backend: 'real', bead: 'gm-5v8v.15' }),
 ];
 
