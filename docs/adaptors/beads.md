@@ -243,17 +243,46 @@ echo gm-foo | gemba-bd-hook --stdin
 gemba-bd-hook --from-dolt-diff HEAD~1
 ```
 
-Three install patterns (until the upstream PR lands):
+Four install patterns work today (in decreasing order of coverage):
+
+- **Watch mode** (recommended; gm-1890) — long-running daemon:
+
+  ```bash
+  GEMBA_NOTIFY_URL=http://localhost:7666 \
+    gemba-bd-hook --watch ~/gt/gemba/.beads &
+  ```
+
+  fsnotify on `<bd-dir>/issues.jsonl` (bd's auto-export target,
+  enabled by default). Catches every bd write within ~3s of the
+  auto-export throttle window — including bare `bd update` and
+  any other tool that goes through bd's public API. Exits cleanly
+  on SIGINT / SIGTERM. Use a systemd unit / launchd plist / `&` in
+  a tmux session per operator preference.
+
+- **Git post-commit hook** (gm-1890) — drop a one-line
+  `.git/hooks/post-commit` that calls this binary:
+
+  ```bash
+  gemba-bd-hook --install-git-hook ~/gt/gemba
+  ```
+
+  The installer follows `.git`-as-file pointers (worktrees,
+  submodules) and is idempotent. Fires only on `git commit` in the
+  source repo — narrowest coverage, but useful for teams that auto-
+  commit `.beads/issues.jsonl` after every bd write.
 
 - **Cron** — `* * * * *  cd <bd-dir> && gemba-bd-hook
   --from-dolt-diff HEAD~1`. Coarse-grained (1-minute lag); catches
-  everything regardless of caller.
+  everything regardless of caller. No daemon process required.
+
 - **Wrapper alias** — alias `bd` to a shell function that calls the
   real `bd`, captures the exit, and on success calls
   `gemba-bd-hook --from-dolt-diff HEAD~1`. Catches terminal
-  invocations; misses other tools.
+  invocations; misses other tools. Useful when a daemon-style
+  process isn't desirable.
+
 - **Manual** — append `gemba-bd-hook --id <id>` to any script that
-  already detects bd writes.
+  already detects bd writes. Lowest-friction one-off.
 
 Fail-open is the default. Pass `--strict` for paths where a silent
 drop would hide real problems. With `GEMBA_NOTIFY_URL` unset the

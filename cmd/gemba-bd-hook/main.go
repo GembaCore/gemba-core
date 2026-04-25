@@ -18,6 +18,8 @@
 //	gemba-bd-hook --id gm-foo [--id gm-bar ...]
 //	gemba-bd-hook --stdin                 # reads ids one per line from stdin
 //	gemba-bd-hook --from-dolt-diff HEAD~1 # parses `dolt diff <ref> issues` for changed ids
+//	gemba-bd-hook --watch <bd-dir>        # daemon: fsnotify on issues.jsonl (gm-1890)
+//	gemba-bd-hook --install-git-hook <repo> # drops .git/hooks/post-commit (gm-1890)
 //
 // Configuration via env (or flags as overrides):
 //
@@ -66,19 +68,28 @@ func (i *idFlag) Set(v string) error { *i = append(*i, v); return nil }
 
 func main() {
 	var (
-		ids        idFlag
-		fromStdin  bool
-		fromDolt   string
-		urlFlag    string
-		authFlag   string
-		sourceFlag string
-		strict     bool
-		timeout    time.Duration
+		ids         idFlag
+		fromStdin   bool
+		fromDolt    string
+		watchDir    string
+		installRepo string
+		installBin  string
+		urlFlag     string
+		authFlag    string
+		sourceFlag  string
+		strict      bool
+		timeout     time.Duration
 	)
 	flag.Var(&ids, "id", "work-item id to notify; repeat for multiple")
 	flag.BoolVar(&fromStdin, "stdin", false, "read ids from stdin, one per line")
 	flag.StringVar(&fromDolt, "from-dolt-diff", "",
 		"detect ids from `dolt diff <ref> issues`; pass the ref to compare against (e.g. HEAD~1)")
+	flag.StringVar(&watchDir, "watch", "",
+		"daemon mode: watch <bd-dir>/issues.jsonl with fsnotify and post on change (gm-1890)")
+	flag.StringVar(&installRepo, "install-git-hook", "",
+		"install a .git/hooks/post-commit script in <repo-path> that calls this binary (gm-1890)")
+	flag.StringVar(&installBin, "install-bin-path", "",
+		"absolute path of gemba-bd-hook to record in the installed hook (default: looked up via PATH at runtime)")
 	flag.StringVar(&urlFlag, "url", "", "gemba server base URL (overrides $GEMBA_NOTIFY_URL)")
 	flag.StringVar(&authFlag, "auth", "", "bearer token (overrides $GEMBA_NOTIFY_AUTH)")
 	flag.StringVar(&sourceFlag, "source", "", "source hint on the emitted event payload (default $GEMBA_NOTIFY_SOURCE or \"bd-hook\")")
@@ -86,7 +97,28 @@ func main() {
 	flag.DurationVar(&timeout, "timeout", defaultTimeout, "per-request HTTP timeout")
 	flag.Parse()
 
+	// --install-git-hook is a one-shot side effect; handle before
+	// the runtime config + id-collection logic so an installer
+	// invocation doesn't require GEMBA_NOTIFY_URL to be set.
+	if installRepo != "" {
+		hookPath, err := installGitHook(installRepo, installBin)
+		if err != nil {
+			fatal("install-git-hook: %v", err)
+		}
+		fmt.Printf("installed post-commit hook at %s\n", hookPath)
+		return
+	}
+
 	cfg := loadConfig(urlFlag, authFlag, sourceFlag)
+	client := &http.Client{Timeout: timeout}
+
+	// --watch is a long-running daemon. Branch before the one-shot
+	// id-collection path; runWatch handles its own cfg.URL == "" /
+	// strict semantics.
+	if watchDir != "" {
+		os.Exit(runWatch(context.Background(), cfg, client, watchDir, strict, cfg.Source))
+	}
+
 	if cfg.URL == "" {
 		// Fail-open default: no URL configured = no-op. The upstream bd
 		// PR's hook script invokes this unconditionally; operators who
@@ -113,7 +145,6 @@ func main() {
 		return
 	}
 
-	client := &http.Client{Timeout: timeout}
 	failed := notifyAll(context.Background(), client, cfg, collected)
 	if failed > 0 && strict {
 		os.Exit(1)
