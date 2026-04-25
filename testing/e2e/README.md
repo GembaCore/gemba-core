@@ -119,6 +119,40 @@ pnpm report                        # open last HTML report
 GEMBA_E2E_NO_WEBSERVER=1 GEMBA_E2E_BASE_URL=http://localhost:5173 pnpm test
 ```
 
+## CI lanes
+
+`.github/workflows/e2e.yml` runs three lanes against the project
+matrix above. Each lane targets a budget so PR review stays fast and
+the deeper coverage runs where it can afford to. Source of truth for
+the lane wiring is the workflow file; this table documents intent.
+
+| Lane | Trigger | Projects | Budget |
+|---|---|---|---|
+| `pr-fast` | `pull_request` | `smoke-fake` + `chrome-fake` + `route-fake` + `smoke-deep` | ≤ 5 min |
+| `merge` | `push` to `main` | every fake project + `smoke-deep` / `chrome-deep` / `route-deep` / `realtime-deep` | ≤ 15 min |
+| `nightly` | `schedule` 06:00 UTC | full matrix (all fake + every deep + `integration-deep`) | ≤ 30 min |
+| `dispatch` | `workflow_dispatch` | operator-chosen `inputs.project` (or full matrix when empty) | ≤ 30 min |
+
+Notes:
+
+- All lanes pre-build `bin/gemba` (deep tier needs it) and cache the
+  Playwright browser binary under `~/.cache/ms-playwright` keyed off
+  `pnpm-lock.yaml`.
+- `GEMBA_E2E_RUN_DEEP=1` is set in CI so the `smoke-deep` project
+  flips from `pending(...)` to its real configuration. CI runners
+  are ephemeral so the gm-h4n bd-init pollution risk doesn't bite —
+  see the comment in `playwright.config.ts`.
+- HTML report is uploaded as a per-lane artifact (`playwright-report-<lane>`).
+  Trace + video + screenshot dirs upload only on failure
+  (`playwright-traces-<lane>`, retention 7-14 days).
+- `dispatch` accepts a `project` input (single project name) and a
+  `run_deep` boolean. Use it to re-run a single project against a
+  ref without waiting for the full lane.
+- Pending deep projects (`chrome-deep`, `route-deep`, `realtime-deep`)
+  are listed in the `merge` lane today but `testIgnore` everything
+  until their child bead activates them. Naming them now avoids a
+  workflow edit at activation time.
+
 ## Selector strategy
 
 Prefer existing `data-testid` attributes — the SPA already ships ~179

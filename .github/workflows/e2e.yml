@@ -1,0 +1,348 @@
+name: E2E
+
+# Three lanes mapped to the project taxonomy in
+# testing/e2e/playwright.config.ts (see testing/e2e/README.md):
+#
+#   pr-fast — every fake project + smoke-deep        (~2-3 min)
+#   merge   — every fake project + the deep tiers    (~8-10 min)
+#             that have stable infra (smoke-deep
+#             plus chrome-deep / route-deep /
+#             realtime-deep as those activate)
+#   nightly — the full deep matrix incl. integration (~25 min)
+#
+# workflow_dispatch lets an operator re-run a single project on demand.
+
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'testing/e2e/**'
+      - 'cmd/gemba/**'
+      - 'internal/**'
+      - 'embed.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'Makefile'
+      - '.github/workflows/e2e.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'web/**'
+      - 'testing/e2e/**'
+      - 'cmd/gemba/**'
+      - 'internal/**'
+      - 'embed.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'Makefile'
+      - '.github/workflows/e2e.yml'
+  schedule:
+    # 06:00 UTC nightly — runs the full deep matrix.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Single Playwright project (e.g. smoke-fake, chrome-deep). Empty = full matrix.'
+        required: false
+        type: string
+        default: ''
+      run_deep:
+        description: 'Enable deep-mode projects (sets GEMBA_E2E_RUN_DEEP=1).'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  # Cancel in-flight runs on the same ref when a new push lands. The
+  # nightly schedule keys off the workflow event, so it never fights
+  # with PR runs.
+  group: e2e-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Force-color helps when a step's output streams unwrapped to the
+  # default GitHub log surface.
+  FORCE_COLOR: '1'
+
+jobs:
+  pr-fast:
+    name: pr-fast (fake + smoke-deep)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build gemba binary
+        # The deep-backend fixture (testing/e2e/fixtures/realServer.ts)
+        # reaches for ../../bin/gemba; pre-build so the deep-tier
+        # projects don't pay it on first test.
+        run: make build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter gemba-e2e exec playwright install --with-deps chromium
+
+      - name: Run PR-fast lane
+        env:
+          # Enables smoke-deep in playwright.config.ts. The deep tier
+          # in CI is safe — the runner is ephemeral and the deep
+          # fixture isolates beads state in tempdirs (see gm-h4n note
+          # in testing/e2e/playwright.config.ts).
+          GEMBA_E2E_RUN_DEEP: '1'
+        run: |
+          pnpm --filter gemba-e2e exec playwright test \
+            --project=smoke-fake \
+            --project=chrome-fake \
+            --project=route-fake \
+            --project=smoke-deep
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-pr-fast
+          path: testing/e2e/playwright-report
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload trace artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-pr-fast
+          # Playwright writes trace + video + screenshot under
+          # test-results/<test>/. Only keep on failure — the dirs
+          # can be hundreds of MB on a flake-storm.
+          path: testing/e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  merge:
+    name: merge (fake + deep tiers)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build gemba binary
+        run: make build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter gemba-e2e exec playwright install --with-deps chromium
+
+      - name: Run merge lane
+        env:
+          GEMBA_E2E_RUN_DEEP: '1'
+        run: |
+          # Pending deep projects (chrome-deep, route-deep,
+          # realtime-deep) have testIgnore=['**/*'] today, so naming
+          # them is a no-op until the matching child bead activates
+          # them. Listing them now lets the lane "just work" without
+          # a workflow edit at activation time.
+          pnpm --filter gemba-e2e exec playwright test \
+            --project=smoke-fake \
+            --project=chrome-fake \
+            --project=route-fake \
+            --project=smoke-deep \
+            --project=chrome-deep \
+            --project=route-deep \
+            --project=realtime-deep \
+            --workers=2
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-merge
+          path: testing/e2e/playwright-report
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload trace artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-merge
+          path: testing/e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
+  nightly:
+    name: nightly (full deep matrix)
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build gemba binary
+        run: make build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter gemba-e2e exec playwright install --with-deps chromium
+
+      - name: Run nightly lane (full matrix)
+        env:
+          GEMBA_E2E_RUN_DEEP: '1'
+        run: pnpm --filter gemba-e2e exec playwright test --workers=2
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-nightly
+          path: testing/e2e/playwright-report
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Upload trace artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-nightly
+          path: testing/e2e/test-results
+          retention-days: 14
+          if-no-files-found: ignore
+
+  dispatch:
+    name: on-demand (${{ inputs.project || 'full matrix' }})
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Build gemba binary
+        run: make build
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter gemba-e2e exec playwright install --with-deps chromium
+
+      - name: Run dispatch lane
+        env:
+          GEMBA_E2E_RUN_DEEP: ${{ inputs.run_deep && '1' || '' }}
+        run: |
+          if [ -n "${{ inputs.project }}" ]; then
+            pnpm --filter gemba-e2e exec playwright test \
+              --project="${{ inputs.project }}" --workers=2
+          else
+            pnpm --filter gemba-e2e exec playwright test --workers=2
+          fi
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-dispatch
+          path: testing/e2e/playwright-report
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload trace artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-dispatch
+          path: testing/e2e/test-results
+          retention-days: 7
+          if-no-files-found: ignore
