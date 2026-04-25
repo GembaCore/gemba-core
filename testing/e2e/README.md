@@ -24,7 +24,7 @@ testing/e2e/
     dragdrop.ts               # @dnd-kit pointer choreography (stub → gm-5v8v.5)
     hotkeys.ts                # 33-chord helper (stub → gm-5v8v.4)
   specs/
-    smoke/                    # gm-5v8v.1   — routes load (this scaffold)
+    smoke/                    # gm-5v8v.3   — routes / axe / instance_id
     chrome/                   # gm-5v8v.4   — sidebar/topbar/palette/hotkeys/banner
     board/                    # gm-5v8v.5
     grid/                     # gm-5v8v.6
@@ -72,9 +72,10 @@ keeps the matrix visible without false-greens.
 
 | Project | Tier | Backend | Status |
 |---|---|---|---|
-| `smoke-fake` | smoke | fake | **active** (this scaffold) |
+| `smoke-fake` | smoke | fake | **active** — routes / axe / instance_id (gm-5v8v.3) |
+| `smoke-deep` | smoke | real | **active** — same specs, real backend (gm-5v8v.3, blocked on gm-5v8v.2) |
 | `chrome-fake` / `route-fake` / `realtime-fake` / `modes-fake` / `error-fake` | chrome / route / realtime / modes / error | fake | pending |
-| `smoke-deep` / `chrome-deep` / `route-deep` / `realtime-deep` / `modes-deep` / `error-deep` / `integration-deep` | full taxonomy | real | pending |
+| `chrome-deep` / `route-deep` / `realtime-deep` / `modes-deep` / `error-deep` / `integration-deep` | full taxonomy | real | pending |
 
 ## Tag convention
 

@@ -67,23 +67,25 @@ const projects: Project[] = [
   pending('modes-fake',      { tier: 'modes',       backend: 'fake', bead: 'gm-5v8v.11' }),
   pending('error-fake',      { tier: 'error',       backend: 'fake', bead: 'gm-5v8v.13' }),
 
-  // smoke-deep is the minimal proof that the real-backend fixture
-  // (gm-5v8v.2) works end to end: spin gemba serve against a
-  // tempdir-isolated bd workspace and assert /api/health is green.
-  // It greps @deep so it only runs specs explicitly tagged for the
-  // real backend.
+  // smoke-deep — runs every smoke spec against a real `gemba serve`
+  // booted on a tempdir-isolated bd workspace (gm-5v8v.2 wired the
+  // backend fixture; gm-5v8v.3 expanded the spec set to routes / axe
+  // / instance_id). Smoke specs are backend-agnostic by design, so
+  // the file list matches smoke-fake; we don't grep @deep here
+  // because that tag means "asserts on real-backend behaviour" and
+  // the smoke tier intentionally does not.
   {
     name: 'smoke-deep',
     testMatch: ['smoke/**/*.spec.ts'],
-    grep: /@deep/,
     use: {
       ...devices['Desktop Chrome'],
       backend: 'real',
       extraHTTPHeaders: { 'x-gemba-e2e': 'real' },
     },
-    metadata: { tier: 'smoke', backend: 'real', bead: 'gm-5v8v.2', status: 'active' },
+    metadata: { tier: 'smoke', backend: 'real', bead: 'gm-5v8v.3', status: 'active' },
     // Real-backend specs cap at 60s/test — the per-worker server
-    // spinup amortizes across the whole worker.
+    // spinup amortizes across the whole worker. Total project budget
+    // (<2min per gm-5v8v.3 DoD) is enforced at the runner level.
     timeout: 60_000,
     // Run the deep tier serially within each worker. Cross-worker
     // parallelism is capped at the script level via `--workers=2`.
