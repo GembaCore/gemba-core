@@ -7,18 +7,49 @@
 // saved filters, URL-hash sharing, manifest-derived extension
 // columns, JSONL import.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   flexRender,
   getCoreRowModel,
   useReactTable,
   type ColumnDef,
+  type RowData,
   type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { Bookmark, SlidersHorizontal, Trash2 } from 'lucide-react';
-import type { StateCategory, WorkItem } from '@/types/core.gen';
+import { useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+
+// EditableColumnId is the closed set of columns that participate in
+// inline editing (gm-5v8v.6.1). Other columns stay read-only — id
+// is server-owned, kind / sprint / labels / updated / assignee live
+// in the drawer where the multi-step editors are.
+type EditableColumnId = 'title' | 'priority' | 'state';
+
+interface GridEditState {
+  rowId: string;
+  columnId: EditableColumnId;
+}
+
+// GridMeta is the per-table state we hand to cell renderers via
+// react-table's `meta` channel. Keeping the column defs module-scope
+// (so react-table's row-model is stable across renders) means the
+// closure can't reach component state directly — meta is the bridge.
+interface GridMeta {
+  editing: GridEditState | null;
+  startEdit: (rowId: string, columnId: EditableColumnId) => void;
+  cancelEdit: () => void;
+  commit: (rowId: string, columnId: EditableColumnId, value: string) => void;
+}
+
+// Augment react-table's TableMeta so cell renderers can read GridMeta
+// without casting. Standard v8 pattern.
+declare module '@tanstack/react-table' {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface TableMeta<TData extends RowData> extends GridMeta {}
+}
 
 const STATE_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
@@ -61,7 +92,31 @@ const coreColumns: ColumnDef<WorkItem>[] = [
     header: 'Title',
     accessorFn: (r) => r.title,
     size: 480,
-    cell: ({ row }) => <span className="truncate">{row.original.title}</span>,
+    cell: ({ row, table }) => {
+      const meta = table.options.meta;
+      const isEditing =
+        meta?.editing?.rowId === row.original.id && meta.editing.columnId === 'title';
+      if (isEditing) {
+        return (
+          <CellTextEditor
+            columnId="title"
+            initial={row.original.title}
+            onCommit={(v) => meta!.commit(row.original.id, 'title', v)}
+            onCancel={() => meta!.cancelEdit()}
+          />
+        );
+      }
+      return (
+        <EditableCellSpan
+          rowId={row.original.id}
+          columnId="title"
+          onActivate={() => meta?.startEdit(row.original.id, 'title')}
+          className="truncate"
+        >
+          {row.original.title}
+        </EditableCellSpan>
+      );
+    },
   },
   {
     id: 'kind',
@@ -77,22 +132,67 @@ const coreColumns: ColumnDef<WorkItem>[] = [
     header: 'State',
     accessorFn: (r) => r.state_category,
     size: 112,
-    cell: ({ row }) => (
-      <span className="text-xs">
-        {STATE_LABELS[row.original.state_category] ?? row.original.state_category}
-      </span>
-    ),
+    cell: ({ row, table }) => {
+      const meta = table.options.meta;
+      const isEditing =
+        meta?.editing?.rowId === row.original.id && meta.editing.columnId === 'state';
+      if (isEditing) {
+        return (
+          <CellStateEditor
+            initial={row.original.state_category}
+            onCommit={(v) => meta!.commit(row.original.id, 'state', v)}
+            onCancel={() => meta!.cancelEdit()}
+          />
+        );
+      }
+      return (
+        <EditableCellSpan
+          rowId={row.original.id}
+          columnId="state"
+          onActivate={() => meta?.startEdit(row.original.id, 'state')}
+          className="text-xs"
+        >
+          {STATE_LABELS[row.original.state_category] ?? row.original.state_category}
+        </EditableCellSpan>
+      );
+    },
   },
   {
     id: 'priority',
     header: 'P',
     accessorFn: (r) => r.priority ?? null,
     size: 48,
-    cell: ({ row }) => (
-      <span className="font-mono text-xs text-neutral-700 dark:text-neutral-300">
-        {row.original.priority ?? '—'}
-      </span>
-    ),
+    cell: ({ row, table }) => {
+      const meta = table.options.meta;
+      const isEditing =
+        meta?.editing?.rowId === row.original.id && meta.editing.columnId === 'priority';
+      if (isEditing) {
+        return (
+          <CellTextEditor
+            columnId="priority"
+            // priority is a stored as `number | null`. The editor is a
+            // free-form text input; the commit path coerces empty → null
+            // and bare numerics → number. Anything else is rejected by
+            // the commit handler in the component (see startEdit below).
+            initial={row.original.priority == null ? '' : String(row.original.priority)}
+            onCommit={(v) => meta!.commit(row.original.id, 'priority', v)}
+            onCancel={() => meta!.cancelEdit()}
+            inputMode="numeric"
+            size={4}
+          />
+        );
+      }
+      return (
+        <EditableCellSpan
+          rowId={row.original.id}
+          columnId="priority"
+          onActivate={() => meta?.startEdit(row.original.id, 'priority')}
+          className="font-mono text-xs text-neutral-700 dark:text-neutral-300"
+        >
+          {row.original.priority ?? '—'}
+        </EditableCellSpan>
+      );
+    },
   },
   {
     id: 'assignee',
@@ -279,12 +379,83 @@ export function WorkItemGrid({ rows, onSelect, presets }: WorkItemGridProps) {
 
   const columns = useMemo(() => coreColumns, []);
 
+  // Inline-edit state (gm-5v8v.6.1). One cell editable at a time;
+  // Esc cancels, Enter / blur commits via useUpdateWorkItem (which
+  // owns the optimistic write + rollback on PATCH failure, so a
+  // failed commit reverts the cell automatically through the
+  // react-query cache the rows are derived from).
+  const [editing, setEditing] = useState<GridEditState | null>(null);
+  const updateWi = useUpdateWorkItem();
+
+  const startEdit = useCallback((rowId: string, columnId: EditableColumnId) => {
+    setEditing({ rowId, columnId });
+  }, []);
+  const cancelEdit = useCallback(() => setEditing(null), []);
+  const commit = useCallback(
+    (rowId: string, columnId: EditableColumnId, raw: string) => {
+      // Decode the raw editor string into the typed patch field. An
+      // unchanged value (same as the row's current state) shorts out
+      // before firing PATCH so a click-away on an unedited cell
+      // doesn't burn a network roundtrip.
+      const row = rows.find((r) => r.id === rowId);
+      if (!row) {
+        setEditing(null);
+        return;
+      }
+      if (columnId === 'title') {
+        const next = raw.trim();
+        if (next === '' || next === row.title) {
+          setEditing(null);
+          return;
+        }
+        updateWi.mutate({ id: rowId, patch: { title: next } });
+      } else if (columnId === 'priority') {
+        const trimmed = raw.trim();
+        let next: number | null;
+        if (trimmed === '') {
+          next = null;
+        } else {
+          const parsed = Number(trimmed);
+          if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+            // Reject non-numeric / negative input — bail without
+            // firing PATCH, leave editor open is wrong (operator
+            // already pressed Enter); cancel instead so the cell
+            // reverts to the old value visibly.
+            setEditing(null);
+            return;
+          }
+          next = parsed;
+        }
+        if (next === (row.priority ?? null)) {
+          setEditing(null);
+          return;
+        }
+        updateWi.mutate({ id: rowId, patch: { priority: next } });
+      } else if (columnId === 'state') {
+        const next = raw as StateCategory;
+        if (!STATE_CATEGORIES.includes(next) || next === row.state_category) {
+          setEditing(null);
+          return;
+        }
+        updateWi.mutate({ id: rowId, patch: { state_category: next } });
+      }
+      setEditing(null);
+    },
+    [rows, updateWi]
+  );
+
+  const meta = useMemo<GridMeta>(
+    () => ({ editing, startEdit, cancelEdit, commit }),
+    [editing, startEdit, cancelEdit, commit]
+  );
+
   const table = useReactTable({
     data: rows,
     columns,
     state: { columnVisibility: visibility },
     onColumnVisibilityChange: setVisibility,
     getCoreRowModel: getCoreRowModel(),
+    meta,
   });
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -515,4 +686,168 @@ function PresetRow({
 function defaultPromptName(): string | null {
   if (typeof window === 'undefined' || typeof window.prompt !== 'function') return null;
   return window.prompt('Preset name');
+}
+
+// ── Inline-edit components (gm-5v8v.6.1) ──────────────────────────
+
+// EditableCellSpan wraps a read-only cell in a click target that
+// stops propagation (so the row's onClick → drawer doesn't fire
+// when the operator means to edit the cell) and dispatches into the
+// grid's startEdit. The hover affordance is subtle but present — a
+// dotted underline on hover signals "click to edit" without
+// shouting.
+interface EditableCellSpanProps {
+  rowId: string;
+  columnId: EditableColumnId;
+  onActivate: () => void;
+  className?: string;
+  children: React.ReactNode;
+}
+function EditableCellSpan({
+  rowId,
+  columnId,
+  onActivate,
+  className,
+  children,
+}: EditableCellSpanProps) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      data-testid={`grid-cell-${rowId}-${columnId}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        onActivate();
+      }}
+      onKeyDown={(e) => {
+        // Enter from the focused cell ALSO opens the editor — keeps
+        // the keyboard-only operator on the same path.
+        if (e.key === 'Enter') {
+          e.stopPropagation();
+          onActivate();
+        }
+      }}
+      className={cn(
+        'inline-block cursor-text rounded px-0.5 hover:bg-neutral-100 hover:underline hover:decoration-dotted focus:bg-neutral-100 focus:outline-none dark:hover:bg-neutral-800 dark:focus:bg-neutral-800',
+        className
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+interface CellTextEditorProps {
+  columnId: EditableColumnId;
+  initial: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+  inputMode?: 'text' | 'numeric';
+  size?: number;
+}
+
+function CellTextEditor({
+  columnId,
+  initial,
+  onCommit,
+  onCancel,
+  inputMode = 'text',
+  size,
+}: CellTextEditorProps) {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLInputElement>(null);
+  // committedRef guards against a double-commit when the user hits
+  // Enter (which also blurs the input). Without it, the onBlur fires
+  // a second commit with the same value, which mostly is short-
+  // circuited by the equality check in `commit` but still costs a
+  // function call and a microtask.
+  const committedRef = useRef(false);
+
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.select();
+  }, []);
+
+  const tryCommit = (v: string) => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    onCommit(v);
+  };
+
+  return (
+    <input
+      ref={ref}
+      type="text"
+      inputMode={inputMode}
+      size={size}
+      data-testid={`grid-cell-editor-${columnId}`}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          tryCommit(value);
+        } else if (e.key === 'Escape') {
+          committedRef.current = true;
+          onCancel();
+        }
+      }}
+      onBlur={() => tryCommit(value)}
+      className="w-full rounded border border-sky-500 bg-white px-1 py-0.5 text-sm outline-none ring-1 ring-sky-200 dark:bg-neutral-900 dark:ring-sky-900"
+    />
+  );
+}
+
+interface CellStateEditorProps {
+  initial: StateCategory;
+  onCommit: (value: StateCategory) => void;
+  onCancel: () => void;
+}
+
+function CellStateEditor({ initial, onCommit, onCancel }: CellStateEditorProps) {
+  const ref = useRef<HTMLSelectElement>(null);
+  const committedRef = useRef(false);
+
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
+  const tryCommit = (v: StateCategory) => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    onCommit(v);
+  };
+
+  return (
+    <select
+      ref={ref}
+      data-testid="grid-cell-editor-state"
+      defaultValue={initial}
+      onChange={(e) => tryCommit(e.target.value as StateCategory)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          committedRef.current = true;
+          onCancel();
+        }
+      }}
+      onBlur={() => {
+        // If the operator clicked away without changing, the change
+        // event never fired; commit current value (which equals
+        // initial and short-circuits in the grid's commit path).
+        if (ref.current) {
+          tryCommit(ref.current.value as StateCategory);
+        }
+      }}
+      className="w-full rounded border border-sky-500 bg-white px-1 py-0.5 text-xs outline-none dark:bg-neutral-900"
+    >
+      {STATE_CATEGORIES.map((sc) => (
+        <option key={sc} value={sc}>
+          {STATE_LABELS[sc] ?? sc}
+        </option>
+      ))}
+    </select>
+  );
 }
