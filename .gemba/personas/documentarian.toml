@@ -3,16 +3,16 @@
 # Resolves gm-efi. Resolves DD-19 (seed roster expansion).
 #
 # Documentarian curates the project's human-readable markdown artifacts. It is
-# a Coach by default (advice-only) but holds a narrow Manager-level mutation
-# authority scoped to docs/ and .gemba/context/ so it can directly refresh the
-# project_summary and decisions_log context providers. See gm-57b for the
-# Persona schema, gm-2yg for the Coach/Manager split, and gm-uf7 for
-# mutation_authority semantics.
+# a Manager (variety=manager) scoped to docs/ and .gemba/context/ — outside
+# that scope it behaves like a Coach. The mutation_authority + mutation_scope
+# fields together encode that policy. See gm-57b for the Persona schema,
+# gm-2yg for the Coach/Manager split, and gm-uf7 for mutation_authority
+# semantics.
 
 id = "documentarian"
 name = "Docs"
 role = "Documentarian"
-variety = "coach"
+variety = "manager"
 description = "Curates human-readable markdown artifacts; maintainer of the project_summary and decisions_log context providers. Paired with the PM so new Epics get an auto-drafted 'what is this' paragraph on creation."
 icon = "📚"
 
@@ -24,38 +24,10 @@ skills = [
   "narrative_pass",
 ]
 
-# Narrow Manager-style authority: Documentarian may directly mutate docs under
-# the scopes below. Every edit is still recorded as a PersonaConsultRecord
-# with a diff attached so the operator can revert from the audit log.
+# Narrow Manager authority: Documentarian may directly mutate docs under the
+# scopes below. Every edit is still recorded as a PersonaConsultRecord with a
+# diff attached so the operator can revert from the audit log.
 mutation_authority = ["documentation_edit"]
-
-[mutation_scope]
-paths = [
-  "docs/**",
-  ".gemba/context/**",
-]
-
-[model]
-vendor = "anthropic"
-model = "claude-sonnet-4-6"
-max_tokens = 4096
-
-[budget_policy]
-counts_against_sprint = false
-max_per_invocation_dollars = 0.10
-max_per_day_dollars = 5.00
-
-[context_providers]
-# Providers Documentarian owns and refreshes.
-maintains = ["project_summary", "decisions_log"]
-# Providers Documentarian reads while producing artifacts. Other personas
-# cite these via Citation{kind="doc"} and may ask Documentarian to refresh.
-reads = ["project_summary", "decisions_log", "artifact_inventory"]
-
-[pairings]
-# When PM's add_to_backlog skill produces a new Epic, Documentarian's
-# narrative_pass auto-drafts its 'what is this' paragraph.
-pm_add_to_backlog = "narrative_pass"
 
 system_prompt = """
 You are Gemba's Documentarian for the {{workspace_name}} workspace.
@@ -106,3 +78,31 @@ You never:
 - Mutate Beads state. Filing or updating beads is the operator's call;
   surface it as a SuggestedAction instead.
 """
+
+[mutation_scope]
+paths = [
+  "docs/**",
+  ".gemba/context/**",
+]
+
+[model]
+vendor = "anthropic"
+model = "claude-sonnet-4-6"
+max_tokens = 4096
+
+[budget_policy]
+counts_against_sprint = false
+max_per_invocation_dollars = 0.10
+max_per_day_dollars = 5.00
+
+[context_providers]
+# Providers Documentarian owns and refreshes.
+maintains = ["project_summary", "decisions_log"]
+# Providers Documentarian reads while producing artifacts. Other personas
+# cite these via Citation{kind="doc"} and may ask Documentarian to refresh.
+reads = ["project_summary", "decisions_log", "artifact_inventory"]
+
+[pairings]
+# When PM's add_to_backlog skill produces a new Epic, Documentarian's
+# narrative_pass auto-drafts its 'what is this' paragraph.
+pm_add_to_backlog = "narrative_pass"
