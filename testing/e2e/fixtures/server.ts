@@ -134,6 +134,25 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   ],
 
   // ── Test scope ───────────────────────────────────────────────────
+
+  // baseURL override (gm-e5b / gm-j51y follow-up). In deep mode the
+  // per-worker realServer listens on a random port, but the project-
+  // level baseURL is the Vite dev server (localhost:5173). Without
+  // this override every page.goto('/foo') would resolve against Vite,
+  // whose /api/* proxy targets the default gemba port — not the per-
+  // worker one — so every API call would 500. Threading baseURL
+  // through as a fixture makes relative gotos resolve to the right
+  // host. Fake mode keeps the project default (Vite serves the SPA;
+  // /api requests are page.route()-intercepted before Vite's proxy
+  // can see them).
+  baseURL: async ({ baseURL, backend, realServer }, use) => {
+    if (backend === 'real' && realServer) {
+      await use(realServer.baseURL);
+    } else {
+      await use(baseURL);
+    }
+  },
+
   workPlane: async ({}, use) => {
     const store = createWorkPlane();
     await use(store);
@@ -198,10 +217,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       if (!realServer) {
         throw new Error('backend=real but realServer fixture is undefined');
       }
-      // Override baseURL for this test's page navigations. The fake
-      // mode uses Playwright's project-level baseURL; the real mode
-      // points at the per-worker gemba listener.
-      await page.goto(realServer.baseURL);
+      // realServer.baseURL is now threaded through the `baseURL`
+      // fixture above, so page.goto('/foo') resolves against the
+      // per-worker gemba listener automatically. Nothing to do here.
     }
     await use(page);
   },
