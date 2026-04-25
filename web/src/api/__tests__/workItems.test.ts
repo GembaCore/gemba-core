@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getWorkItem, listWorkItems, listWorkItemsEnvelope } from '../workItems';
+import {
+  CONFIRM_HEADER,
+  createWorkItem,
+  getWorkItem,
+  listWorkItems,
+  listWorkItemsEnvelope,
+} from '../workItems';
 import type { WorkItem } from '@/types/core.gen';
 
 const sampleItem: WorkItem = {
@@ -79,5 +85,40 @@ describe('listWorkItems / getWorkItem', () => {
   it('getWorkItem rejects empty id without hitting the network', async () => {
     await expect(getWorkItem('')).rejects.toThrow(/required/);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // gm-e12.3 — bulk-import callers depend on createWorkItem riding the
+  // X-GEMBA-Confirm contract per row. Pins the {item: input} envelope
+  // and the nonce header so a future helper refactor can't silently
+  // drop the replay-safety guarantee mid-batch.
+  it('createWorkItem POSTs the {item} envelope with the confirm nonce', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ ...sampleItem, id: 'gm-srv-7' }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    const out = await createWorkItem(
+      {
+        title: 'imported',
+        kind: 'task',
+        status: 'open',
+        state_category: 'backlog',
+      },
+      { nonce: 'nonce-test' }
+    );
+    expect(out.id).toBe('gm-srv-7');
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe('/api/work-items');
+    expect(init.method).toBe('POST');
+    expect(init.headers[CONFIRM_HEADER]).toBe('nonce-test');
+    expect(JSON.parse(init.body as string)).toEqual({
+      item: {
+        title: 'imported',
+        kind: 'task',
+        status: 'open',
+        state_category: 'backlog',
+      },
+    });
   });
 });

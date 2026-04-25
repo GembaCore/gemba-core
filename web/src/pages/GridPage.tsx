@@ -4,11 +4,12 @@
 // keys so the two views remember their own last-used state.
 
 import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Upload } from 'lucide-react';
 import { useFilteredWorkItems } from '@/hooks/useWorkItems';
 import { usePersistedFilter } from '@/hooks/usePersistedFilter';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
 import { WorkItemGrid } from '@/components/grid/WorkItemGrid';
+import { JsonlImportDialog } from '@/components/grid/JsonlImportDialog';
 import type { WorkItemListFilter } from '@/api/workItems';
 import type { BacklogFilter } from '@/lib/backlogFilter';
 import { STATE_CATEGORIES, type StateCategory } from '@/types/core.gen';
@@ -31,6 +32,7 @@ const STATE_LABELS: Record<StateCategory, string> = {
 export function GridPage() {
   const [filter, setFilter] = usePersistedFilter(FILTER_STORAGE_KEY);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const apiFilter = useMemo<WorkItemListFilter>(() => {
     const f: WorkItemListFilter = {};
@@ -53,11 +55,22 @@ export function GridPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
-        <h1 className="text-xl font-semibold tracking-tight">Grid</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Virtualized power-user view. Use presets to swap column layouts without retoggling.
-        </p>
+      <header className="flex items-start justify-between border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight">Grid</h1>
+          <p className="mt-1 text-sm text-neutral-500">
+            Virtualized power-user view. Use presets to swap column layouts without retoggling.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setImportOpen(true)}
+          className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+          data-testid="grid-import-jsonl"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          Import JSONL
+        </button>
       </header>
 
       <div
@@ -131,6 +144,11 @@ export function GridPage() {
       </div>
 
       <WorkItemDrawer openId={openId} onClose={() => setOpenId(null)} />
+      <JsonlImportDialog
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        existing={data}
+      />
     </div>
   );
 }

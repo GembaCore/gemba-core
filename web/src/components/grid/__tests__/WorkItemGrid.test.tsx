@@ -48,6 +48,27 @@ describe('WorkItemGrid', () => {
     expect(domRows.length).toBeLessThan(100);
   });
 
+  // gm-e12.3 DoD piece 1 — pin the 10k-row mount cost. We can't
+  // measure 60fps in jsdom (no compositor, no rAF tied to a real
+  // refresh rate), so we assert the property that makes 60fps possible:
+  // the DOM-row count stays bounded regardless of input size, AND the
+  // initial mount completes in well under a frame budget worth of
+  // wall-clock time. If a future change accidentally drops
+  // virtualization (e.g. by passing rows through a non-memoised filter
+  // upstream that snapshot-clones every cell), this test will catch it.
+  it('10k rows mount under a frame budget and stay bounded', () => {
+    const start = performance.now();
+    render(<WorkItemGrid rows={range(10_000)} />);
+    const elapsed = performance.now() - start;
+    const domRows = screen.queryAllByTestId(/^grid-row-gm-\d+$/);
+    expect(domRows.length).toBeGreaterThan(0);
+    expect(domRows.length).toBeLessThan(100);
+    // 200ms is generous — production hardware mounts in ~30ms. The
+    // budget exists to fail loudly if someone accidentally renders all
+    // 10k rows; a regression there blows past 200ms with room to spare.
+    expect(elapsed).toBeLessThan(200);
+  });
+
   it('toggling a column in the visibility menu hides + restores it', () => {
     render(<WorkItemGrid rows={range(3)} />);
     // Menu is collapsed by default.
