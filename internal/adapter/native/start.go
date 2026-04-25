@@ -189,12 +189,45 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 				InteractionMode:        agent.ResolvedInteractionMode(),
 			}, item)
 			if strat, err := preamble.Apply(workspace, agent, composed); err == nil && strat.FirstMessage != "" {
-				_ = o.cfg.Backend.SendKeys(ctx, pane.ID, strat.FirstMessage+" Enter")
+				go o.deliverFirstMessage(ctx, pane.ID, strat.FirstMessage)
 			}
 		}
 	}
 
 	return *sess, nil
+}
+
+// firstMessageBootDelay is how long we wait after spawning the agent
+// pane before injecting the preamble keystrokes. Empirically, Claude
+// Code's Ink TUI takes ~1.5–2.5s to render its splash and become ready
+// to accept input on a fresh worktree; the auto-mode banner can also
+// eat a single Enter while the input handler is still wiring up.
+// Picking 2.5s leaves margin without making the operator feel the
+// dispatch is slow. gm-4jsi.
+const firstMessageBootDelay = 2500 * time.Millisecond
+
+// firstMessageSubmitDelay is the gap between typing the preamble text
+// and pressing Enter. Splitting the two SendKeys calls (rather than
+// passing "<text> Enter" in one shot) gives Claude a moment to ingest
+// the typed bytes and exit any interstitial banner state before the
+// submit lands. gm-4jsi.
+const firstMessageSubmitDelay = 500 * time.Millisecond
+
+// deliverFirstMessage injects the preamble notification + Enter as
+// two distinct SendKeys calls separated by short delays. Runs in its
+// own goroutine so StartSession returns immediately; the operator sees
+// the spawn complete while the agent finishes booting.
+//
+// Context detached from the request: a session that survives the HTTP
+// request's lifetime should still finish its first turn.
+func (o *OrchestrationPlane) deliverFirstMessage(_ context.Context, paneID, text string) {
+	ctx := context.Background()
+	time.Sleep(firstMessageBootDelay)
+	if err := o.cfg.Backend.SendKeys(ctx, paneID, text); err != nil {
+		return
+	}
+	time.Sleep(firstMessageSubmitDelay)
+	_ = o.cfg.Backend.SendKeys(ctx, paneID, "Enter")
 }
 
 // lookupNonce reads the nonce table under the adaptor's lock.

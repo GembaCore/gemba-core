@@ -261,10 +261,13 @@ func TestListWorkItems_HappyPath_ReturnsEnvelope(t *testing.T) {
 	if env.Items[0].ID != "gm-1" || env.Items[1].ID != "gm-2" {
 		t.Fatalf("ids: want [gm-1 gm-2], got [%s %s]", env.Items[0].ID, env.Items[1].ID)
 	}
-	// No query string → zero-valued filter reaches the adaptor.
-	zero := core.WorkItemFilter{}
-	if !reflect.DeepEqual(gotFilter, zero) {
-		t.Fatalf("handler should pass zero-valued filter when no query params; got %+v", gotFilter)
+	// No query string → zero-valued filter except for the default limit
+	// applied by the handler (gm-nr67). Pin the limit so a future tweak
+	// surfaces here; the rest of the filter must remain pristine.
+	wantFilter := core.WorkItemFilter{Limit: defaultListLimit}
+	if !reflect.DeepEqual(gotFilter, wantFilter) {
+		t.Fatalf("handler should pass {Limit:%d} when no query params; got %+v",
+			defaultListLimit, gotFilter)
 	}
 }
 
@@ -343,6 +346,31 @@ func TestListWorkItems_UnknownStateCategoryReturns400(t *testing.T) {
 	}
 	if env["error"] != "bad_request" {
 		t.Errorf("want error=bad_request, got %v", env["error"])
+	}
+}
+
+// gm-nr67: omitting the limit query param applies the server's
+// defaultListLimit so the bd CLI's own 50-cap doesn't silently hide
+// newer / lower-priority items from the SPA. Pin the default so a
+// future tweak shows up in this test.
+func TestListWorkItems_DefaultLimitWhenOmitted(t *testing.T) {
+	var gotFilter core.WorkItemFilter
+	host := newProgrammableHostFull(t, nil,
+		func(_ context.Context, f core.WorkItemFilter) ([]core.WorkItem, error) {
+			gotFilter = f
+			return nil, nil
+		})
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/work-items", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	if gotFilter.Limit != defaultListLimit {
+		t.Errorf("default limit: want %d, got %d", defaultListLimit, gotFilter.Limit)
 	}
 }
 

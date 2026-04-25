@@ -90,17 +90,49 @@ export const TRANSPORTS: readonly Transport[] = [
 // every CapabilityManifest.
 export type StateMap = Record<string, StateCategory>;
 
-// Free-form string aliases on CapabilityManifest fields. The Go side
-// constrains them with named values, but the SPA only renders / reads
-// them; widening to string keeps the file generable when new variants
-// land on the Go side without forcing a regen of every consuming
-// component. Bead gm-2xxa tracks tightening these into unions.
-export type SchemaEnforcement = string;
-export type QueryLanguage = string;
-export type VersioningTransport = string;
-export type ConcurrencyModel = string;
-export type AgentNativeAPI = string;
-export type OrchestratorHook = string;
+// Capability-manifest string-literal enums (R1–R8 fields, gm-knrm).
+// Mirror the Go-side authoritative sets in internal/core/workplane.go;
+// keep in lockstep — the Validate() calls there enforce the same set.
+//
+// Generated as plain string-literal unions rather than full enums so
+// the SPA can pattern-match exhaustively. New variants must land in
+// both the Go const block AND here, in the same order, so the manifest
+// round-trip parity tests stay honest.
+export type SchemaEnforcement =
+  | "native"
+  | "synthesized";
+
+export type QueryLanguage =
+  | "filter-only"
+  | "jsonpath"
+  | "sql-subset"
+  | "graphql";
+
+export type VersioningTransport =
+  | "none"
+  | "git"
+  | "dolt"
+  | "jsonl"
+  | "native-sqlite-export";
+
+export type ConcurrencyModel =
+  | "optimistic"
+  | "mvcc"
+  | "git-merge"
+  | "dolt-merge";
+
+export type AgentNativeAPI =
+  | "cli"
+  | "json-api"
+  | "mcp"
+  | "rest-only";
+
+export type OrchestratorHook =
+  | "ready-set-subscribe"
+  | "claim-atomic"
+  | "escalation-ingest"
+  | "work-complete-ack"
+  | "pool-bulk-dispatch";
 
 // AdaptorErrorKind is the closed discriminator every adaptor-boundary
 // error carries (gm-faz). The SPA branches on _kind + retryable; it

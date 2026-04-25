@@ -75,6 +75,27 @@ func TestCoreTypesTSContainsEveryEnumString(t *testing.T) {
 		string(KindUnsupported), string(KindCapabilityDenied), string(KindAdaptorDegraded),
 		string(KindReadOnly),
 	}
+	// R1–R8 manifest enums (gm-knrm). Each authoritative set is sourced
+	// from workplane.go; if a new variant lands on the Go side, this
+	// test fails until the TS codegen mirrors it.
+	for _, v := range SchemaEnforcements {
+		enums = append(enums, string(v))
+	}
+	for _, v := range QueryLanguages {
+		enums = append(enums, string(v))
+	}
+	for _, v := range VersioningTransports {
+		enums = append(enums, string(v))
+	}
+	for _, v := range ConcurrencyModels {
+		enums = append(enums, string(v))
+	}
+	for _, v := range AgentNativeAPIs {
+		enums = append(enums, string(v))
+	}
+	for _, v := range OrchestratorHooks {
+		enums = append(enums, string(v))
+	}
 	for _, v := range enums {
 		if !strings.Contains(CoreTypesTS, `"`+v+`"`) {
 			t.Errorf("TS codegen missing enum literal %q", v)

@@ -101,9 +101,24 @@ func parseWorkItemFilter(q url.Values) (core.WorkItemFilter, error) {
 			}
 		}
 		f.Limit = n
+	} else {
+		// Default to a high cap when the caller doesn't specify (gm-nr67).
+		// The bd CLI's own default is 50, which silently hides newer /
+		// lower-priority items from the SPA's Board + Grid (which call
+		// without a limit). 1000 covers every realistic workspace today
+		// without unbounded blast radius. Proper pagination ships in a
+		// later milestone; this is the interim cap.
+		f.Limit = defaultListLimit
 	}
 	return f, nil
 }
+
+// defaultListLimit is the cap parseWorkItemFilter applies when the
+// caller didn't specify ?limit=. Picked to be larger than any realistic
+// workspace a single-tenant gemba instance manages today (cf. gm-e12.3
+// virtualised grid is 10k rows; we sit one order of magnitude under
+// that so a missing limit can't tank the server).
+const defaultListLimit = 1000
 
 // csvList flattens a slice of query values where each element may
 // itself be a comma-separated list. Empty entries are dropped.
