@@ -111,10 +111,13 @@ test.describe('EpicDrawer @route', () => {
   });
 
   test.fixme('inline state-change on member rows uses popover with valid transitions @deep', async () => {
-    // Owned by gm-5v8v.8 follow-up + gm-5v8v.2 (real-backend writes).
+    // Tracked under gm-ocx3 (SPA) — member rows are read-only today.
+    // Lifts when that bead closes.
   });
 
   test.fixme('Open in graph navigates to /graph with epic context @deep', async () => {
-    // Requires gm-5v8v.7 (graph specs) + the action button to exist.
+    // Tracked under gm-qoio (SPA) — EpicDrawer's actions toolbar
+    // doesn't expose an Open-in-graph button yet. Lifts when that
+    // bead closes.
   });
 });
