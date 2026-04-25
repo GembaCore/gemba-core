@@ -15,6 +15,7 @@
 import { test, expect } from '../../fixtures/server';
 import { GraphPage } from '../../pages/GraphPage';
 import * as build from '../../builders/workitem';
+import { workPlaneManifest } from '../../fixtures/capabilitiesPlane';
 
 // Mirror EDGE_STYLE from web/src/pages/GraphPage.tsx — but expressed
 // in the rgb() form the browser normalises to when reading
@@ -92,14 +93,49 @@ test.describe('GraphPage edge styling @route', () => {
     expect(await graph.edgeDash('gm-eg-a', 'gm-eg-b', 'relates_to')).not.toBe('');
   });
 
-  test.fixme(
-    'extension edges render dashed/muted under their adaptor heading',
-    async () => {
-      // Needs a WorkPlane manifest that declares an edge_extensions
-      // entry plus a WorkItem custom map carrying that key. Lifts when
-      // the fake-capabilities fixture grows a manifest seeder
-      // (parallel work to the OrchestrationPlane fixture extension
-      // tracked in agent-drawer.spec.ts).
-    }
-  );
+  test('extension edges render dashed/muted under their adaptor heading', async ({
+    page,
+    workPlane,
+    capabilitiesPlane,
+  }) => {
+    // The bd adaptor's extension surface is custom["beads:dependencies"];
+    // buildGraph consults manifest.adaptor_name + edge_extensions to
+    // decide whether to draw them. Seed a manifest that declares
+    // 'tracks' as an extension edge, then drop a tracks-row on the
+    // source bead.
+    capabilitiesPlane.setWorkPlane(
+      workPlaneManifest({
+        adaptor_name: 'beads',
+        edge_extensions: [
+          { name: 'tracks', directed: true, description: 'A tracks B' },
+        ],
+      })
+    );
+    workPlane.seed([
+      build.workItem({
+        id: 'gm-ext-from',
+        custom: {
+          'beads:dependencies': [
+            { type: 'tracks', from_bead_id: 'gm-ext-from', to_bead_id: 'gm-ext-to' },
+          ],
+        },
+      }),
+      build.workItem({ id: 'gm-ext-to' }),
+    ]);
+
+    const graph = new GraphPage(page);
+    await graph.goto();
+
+    const edge = graph.edgeById('gm-ext-from', 'gm-ext-to', 'tracks');
+    await expect(edge).toHaveCount(1);
+    // EXTENSION_EDGE_STYLE in GraphPage.tsx is rgb(139, 92, 246) +
+    // strokeDasharray '2 4'. Browser normalises hex to rgb on read.
+    expect(await graph.edgeStroke('gm-ext-from', 'gm-ext-to', 'tracks')).toBe(
+      'rgb(139, 92, 246)'
+    );
+    expect(await graph.edgeDash('gm-ext-from', 'gm-ext-to', 'tracks')).not.toBe('');
+    // Legend grows an "Extension" header listing each declared kind.
+    await expect(graph.legend).toContainText('Extension');
+    await expect(graph.legend).toContainText('tracks');
+  });
 });

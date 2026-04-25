@@ -23,6 +23,7 @@ import { createWorkPlane, type WorkPlaneStore } from './workplane';
 import { createSessionStore, type SessionStore } from './sessionStore';
 import { createEscalationStore, type EscalationStore } from './escalationStore';
 import { createAgentStore, type AgentStore } from './agentStore';
+import { createCapabilitiesPlane, type CapabilitiesPlane } from './capabilitiesPlane';
 import { createModeHandle, DEFAULT_MODE, type ModeHandle } from './modes';
 import { createAuthHandle, type AuthHandle } from './auth';
 import type { WorkItem } from '../../../web/src/types/core.gen';
@@ -65,6 +66,14 @@ type TestFixtures = {
   escalationPlane: EscalationStore;
   /** Per-test in-memory Agents roster store. gm-5v8v.9. */
   agentPlane: AgentStore;
+  /**
+   * Per-test capabilities envelope (gm-5v8v.7/.8 follow-up). Specs
+   * that need the SPA to see a non-empty WorkPlane / OrchestrationPlane
+   * manifest call capabilitiesPlane.set({...}) or the typed
+   * setWorkPlane / setOrchestrationPlane helpers BEFORE navigating.
+   * The fake-backend dispatcher serves /api/capabilities from this.
+   */
+  capabilitiesPlane: CapabilitiesPlane;
   /**
    * Per-test adaptor health state. gm-5v8v.10. Specs (mostly under
    * specs/realtime/) call adaptorsState.set([{...degraded}]) BEFORE
@@ -145,6 +154,11 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(store);
   },
 
+  capabilitiesPlane: async ({}, use) => {
+    const plane = createCapabilitiesPlane();
+    await use(plane);
+  },
+
   adaptorsState: async ({}, use) => {
     const state = createAdaptorsState();
     await use(state);
@@ -168,7 +182,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   page: async (
-    { page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState },
+    { page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane },
     use
   ) => {
     if (backend === 'fake') {
@@ -178,6 +192,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         escalationPlane,
         agentPlane,
         adaptorsState,
+        capabilitiesPlane,
       });
     } else {
       if (!realServer) {
@@ -274,6 +289,7 @@ interface FakeStores {
   escalationPlane: EscalationStore;
   agentPlane: AgentStore;
   adaptorsState: AdaptorsState;
+  capabilitiesPlane: CapabilitiesPlane;
 }
 
 async function installFakeBackend(page: Page, stores: FakeStores): Promise<void> {
@@ -295,7 +311,7 @@ function matchesEvents(p: string): boolean {
 }
 
 function dispatch(route: Route, stores: FakeStores): unknown {
-  const { workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState } = stores;
+  const { workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane } = stores;
   const url = new URL(route.request().url());
   const path = url.pathname;
   const method = route.request().method();
@@ -458,7 +474,7 @@ function dispatch(route: Route, stores: FakeStores): unknown {
     return json({ agents: items, total: items.length });
   }
   if (isPath(path, '/api/sprints')) return json({ items: [] });
-  if (isPath(path, '/api/capabilities')) return json({});
+  if (isPath(path, '/api/capabilities')) return json(capabilitiesPlane.get());
   if (isPath(path, '/api/adaptors')) return json({ adaptors: adaptorsState.get() });
   if (isPath(path, '/api/health')) return json({ status: 'ok' });
 

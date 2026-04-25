@@ -17,6 +17,7 @@
 import { test, expect } from '../../fixtures/server';
 import { GraphPage } from '../../pages/GraphPage';
 import * as build from '../../builders/workitem';
+import { workPlaneManifest } from '../../fixtures/capabilitiesPlane';
 
 test.describe('GraphPage dependency invariants @route', () => {
   test('blocks chain renders as ordered edges between adjacent beads', async ({
@@ -69,15 +70,37 @@ test.describe('GraphPage dependency invariants @route', () => {
     await expect(graph.edgeById('gm-pc-parent', 'gm-pc-child-2', 'parent_child')).toHaveCount(1);
   });
 
-  test.fixme(
-    'manifest-undeclared adaptor edges surface in the "edges hidden" legend row',
-    async () => {
-      // Needs a custom["beads:dependencies"]-style payload on the
-      // WorkItem plus a manifest with edge_extensions that doesn't
-      // declare the same kind. buildGraph() drops them and bumps
-      // droppedUndeclared, which the legend's
-      // graph-legend-dropped row reflects. Lifts when the
-      // capabilities fixture grows a manifest seeder.
-    }
-  );
+  test('manifest-undeclared adaptor edges surface in the "edges hidden" legend row', async ({
+    page,
+    workPlane,
+    capabilitiesPlane,
+  }) => {
+    // Manifest declares no extension edges; the WorkItem still
+    // carries a beads:dependencies row of an unknown kind. buildGraph
+    // bumps droppedUndeclared per dropped row and the legend exposes
+    // the count via graph-legend-dropped.
+    capabilitiesPlane.setWorkPlane(workPlaneManifest({ adaptor_name: 'beads' }));
+    workPlane.seed([
+      build.workItem({
+        id: 'gm-drop-from',
+        custom: {
+          'beads:dependencies': [
+            { type: 'undeclared_kind', from_bead_id: 'gm-drop-from', to_bead_id: 'gm-drop-to' },
+          ],
+        },
+      }),
+      build.workItem({ id: 'gm-drop-to' }),
+    ]);
+
+    const graph = new GraphPage(page);
+    await graph.goto();
+
+    await expect(page.getByTestId('graph-legend-dropped')).toBeVisible();
+    await expect(page.getByTestId('graph-legend-dropped')).toContainText('1 edge');
+    // The undeclared edge must NOT be drawn — the manifest gate is
+    // the whole point of droppedUndeclared.
+    await expect(
+      graph.edgeById('gm-drop-from', 'gm-drop-to', 'undeclared_kind')
+    ).toHaveCount(0);
+  });
 });

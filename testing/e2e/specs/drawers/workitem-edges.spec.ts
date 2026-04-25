@@ -36,8 +36,36 @@ test.describe('WorkItemDrawer Edges tab @route', () => {
     await expect(page.locator('[data-testid^="relgroup-"]').first()).toBeVisible();
   });
 
-  test.fixme('adaptor-extension edges appear under their own heading', async () => {
-    // Seed a custom["beads:dependencies"] payload on the work item
-    // and assert the relgroup-Adaptor-extensions node renders.
+  test('adaptor-extension edges appear under their own heading', async ({
+    page,
+    workPlane,
+  }) => {
+    // The drawer reads custom["beads:dependencies"] directly via
+    // extractExtensionEdges() (no manifest gate on this side — that
+    // gate lives in the graph build path). Seed a tracks-style
+    // entry as a {issue_id, kind} record and assert the
+    // "extension edges" relgroup renders with the target id.
+    const id = 'gm-ext-drawer';
+    workPlane.seed([
+      build.workItem({
+        id,
+        custom: {
+          'beads:dependencies': [
+            { issue_id: 'gm-ext-target', kind: 'tracks' },
+          ],
+        },
+      }),
+      build.workItem({ id: 'gm-ext-target' }),
+    ]);
+
+    const drawer = new WorkItemDrawerPO(page);
+    await drawer.openByDeepLink(id);
+    await drawer.selectTab('edges');
+
+    // The label "extension edges" → testid 'relgroup-extension-edges'
+    // (RelGroup replaces whitespace with hyphens).
+    const ext = page.getByTestId('relgroup-extension-edges');
+    await expect(ext).toBeVisible();
+    await expect(ext).toContainText('gm-ext-target');
   });
 });

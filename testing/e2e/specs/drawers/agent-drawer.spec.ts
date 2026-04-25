@@ -10,6 +10,7 @@ import { test, expect } from '../../fixtures/server';
 import { AgentsPage } from '../../pages/AgentsPage';
 import { agent, resetAgentIds } from '../../builders/agent';
 import { session, resetSessionIds } from '../../builders/session';
+import { orchestrationManifest } from '../../fixtures/capabilitiesPlane';
 
 test.beforeEach(() => {
   resetAgentIds();
@@ -109,20 +110,55 @@ test.describe('AgentDetailDrawer body @route', () => {
     await expect(ap.drawer).toHaveCount(0);
   });
 
-  test.fixme(
-    'transcript pane renders when OrchestrationPlane declares peek_modes=transcript',
-    async () => {
-      // gm-5uqu shipped TranscriptPane (testid agent-drawer-transcript)
-      // and it renders only when useCapabilities() returns an
-      // OrchestrationPlane manifest with peek_modes including
-      // 'transcript'. The current fake /api/capabilities returns {}
-      // (fixtures/server.ts), so there's no plane to declare.
-      //
-      // Lift requires extending the fake capabilities handler to
-      // accept a per-test seed (e.g. capabilitiesPlane.set({...})) —
-      // a small fixture extension that's worth doing as its own slice.
-    }
-  );
+  test('transcript pane renders when OrchestrationPlane declares peek_modes=transcript', async ({
+    page,
+    agentPlane,
+    sessionPlane,
+    capabilitiesPlane,
+  }) => {
+    // gm-5uqu shipped TranscriptPane; it renders only when
+    // useCapabilities() returns an OrchestrationPlane manifest whose
+    // peek_modes includes 'transcript'. With the capabilities fixture
+    // (gm-5v8v.7/.8 follow-up) we can finally seed that.
+    capabilitiesPlane.setOrchestrationPlane(
+      orchestrationManifest({ peek_modes: ['transcript'] })
+    );
+    agentPlane.seed([agent({ id: 'a-tx' })]);
+    sessionPlane.seed([
+      session({ id: 'sess-tx', agent_id: 'a-tx', status: 'working' }),
+    ]);
+
+    const ap = new AgentsPage(page);
+    await ap.goto();
+    await ap.tile('a-tx').click();
+
+    await expect(page.getByTestId('agent-drawer-transcript')).toBeVisible();
+    // Header label is part of the pane.
+    await expect(page.getByTestId('agent-drawer-transcript')).toContainText('Transcript');
+  });
+
+  test('transcript pane stays hidden when peek_modes omits transcript', async ({
+    page,
+    agentPlane,
+    sessionPlane,
+    capabilitiesPlane,
+  }) => {
+    // The capability gate is per-mode: declaring peek_modes=['screenshot']
+    // explicitly proves the gate fires on the missing 'transcript'
+    // entry, not on a null plane.
+    capabilitiesPlane.setOrchestrationPlane(
+      orchestrationManifest({ peek_modes: ['screenshot'] })
+    );
+    agentPlane.seed([agent({ id: 'a-no-tx' })]);
+    sessionPlane.seed([session({ id: 'sess-no-tx', agent_id: 'a-no-tx', status: 'working' })]);
+
+    const ap = new AgentsPage(page);
+    await ap.goto();
+    await ap.tile('a-no-tx').click();
+
+    await expect(ap.drawerSession()).toBeVisible();
+    await expect(page.getByTestId('agent-drawer-transcript')).toHaveCount(0);
+  });
 
   test.fixme('transcript content streams from /api/sessions/:id/peek @deep', async () => {
     // gm-5v8v.2 deep mode — once the bd-init isolation gate (gm-h4n)
