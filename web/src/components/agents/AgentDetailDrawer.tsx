@@ -8,11 +8,14 @@
 // this drawer stays kind-agnostic so the upstream bead can extend it
 // without rewriting the surface.
 
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Bot, User, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AgentRef } from '@/types/core.gen';
 import type { Session } from '@/api/sessions';
+import { useSessionPeek } from '@/hooks/useSessions';
+import { useCapabilities } from '@/capabilities/context-internal';
+import { ApiError } from '@/api/client';
 import { cn } from '@/lib/utils';
 
 export interface AgentDetailDrawerProps {
@@ -126,6 +129,7 @@ export function AgentDetailDrawer({ agent, session, onClose }: AgentDetailDrawer
                 </DetailRow>
               ) : null}
             </div>
+            <TranscriptPane sessionID={session.id} />
           </section>
         ) : (
           <section
@@ -147,4 +151,89 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
       <span className="min-w-0 truncate text-right">{children}</span>
     </div>
   );
+}
+
+// TranscriptPane is the live-peek surface (gm-5uqu). Pulls the last
+// captured transcript via /api/sessions/{id}/peek and re-fetches on
+// every ['sessions'] cache invalidation (the SSE pipeline fires on
+// session.transition / session.state_reported), so the operator sees
+// what their agent is currently saying without alt-tabbing to the
+// terminal.
+//
+// Capability gate: hides itself entirely when the bound
+// OrchestrationPlane manifest doesn't declare the 'transcript' peek
+// mode — for an adaptor that can't peek, "transcript unavailable" is
+// noise, not signal.
+//
+// Error gate: 404 / 503 / 501 / Unsupported render a single steady-
+// state line ("transcript unavailable") rather than the API's typed
+// envelope. The drawer is supervisory, not diagnostic.
+function TranscriptPane({ sessionID }: { sessionID: string }) {
+  const { orchestrationPlane } = useCapabilities();
+  const supportsTranscript =
+    !!orchestrationPlane?.peek_modes?.includes('transcript');
+
+  const { data, error, isLoading } = useSessionPeek(
+    supportsTranscript ? sessionID : null
+  );
+
+  // Auto-scroll to the bottom whenever new transcript content arrives —
+  // a tail like the operator's terminal would show.
+  const scrollerRef = useRef<HTMLPreElement | null>(null);
+  useLayoutEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [data?.transcript]);
+
+  if (!supportsTranscript) return null;
+
+  return (
+    <div
+      className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 dark:border-neutral-800 dark:bg-neutral-950"
+      data-testid="agent-drawer-transcript"
+    >
+      <header className="flex items-baseline justify-between border-b border-neutral-200 px-3 py-1.5 text-xs dark:border-neutral-800">
+        <span className="font-semibold uppercase tracking-wide text-neutral-500">
+          Transcript
+        </span>
+        {data?.captured_at ? (
+          <span
+            className="font-mono text-[10px] text-neutral-400"
+            data-testid="agent-drawer-transcript-captured-at"
+          >
+            captured {data.captured_at}
+          </span>
+        ) : null}
+      </header>
+      <pre
+        ref={scrollerRef}
+        className="m-0 max-h-64 overflow-auto whitespace-pre-wrap break-words p-3 font-mono text-xs leading-relaxed text-neutral-800 dark:text-neutral-200"
+      >
+        {transcriptBody({ isLoading, error, transcript: data?.transcript })}
+      </pre>
+    </div>
+  );
+}
+
+function transcriptBody({
+  isLoading,
+  error,
+  transcript,
+}: {
+  isLoading: boolean;
+  error: ApiError | null | undefined;
+  transcript: string | undefined;
+}): string {
+  if (error) {
+    // Treat every error as steady-state "no transcript" — the drawer
+    // is supervisory, not a debugger. ApiError covers the 404 / 503 /
+    // unsupported family; anything else falls through to the same
+    // string.
+    return 'Transcript unavailable.';
+  }
+  if (isLoading) return 'Loading…';
+  const text = transcript?.trimEnd();
+  if (!text) return 'No transcript content yet.';
+  return text;
 }

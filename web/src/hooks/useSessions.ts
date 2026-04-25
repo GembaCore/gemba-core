@@ -18,10 +18,12 @@ import {
 import {
   endSession,
   listSessions,
+  peekSession,
   startSession,
   type Session,
   type SessionEndMode,
   type SessionListFilter,
+  type SessionPeek,
   type StartSessionRequest,
 } from '@/api/sessions';
 import { ApiError } from '@/api/client';
@@ -30,6 +32,10 @@ export const sessionsKeys = {
   all: ['sessions'] as const,
   list: (filter?: SessionListFilter) =>
     [...sessionsKeys.all, normalizeFilter(filter)] as const,
+  // Peek shares the ['sessions'] prefix so a global invalidate (the
+  // SSE pipeline fires on session.transition / state_reported) also
+  // refetches every open peek. gm-5uqu.
+  peek: (id: string) => [...sessionsKeys.all, id, 'peek'] as const,
 };
 
 function normalizeFilter(f?: SessionListFilter): SessionListFilter {
@@ -52,6 +58,26 @@ export function useSessions(filter?: SessionListFilter): UseQueryResult<Session[
   return useQuery<Session[], ApiError>({
     queryKey: sessionsKeys.list(filter),
     queryFn: () => listSessions(filter),
+    retry,
+    staleTime: 2_500,
+  });
+}
+
+// useSessionPeek fetches the live transcript snapshot for a session
+// (gm-5uqu). Disabled when id is empty so the AgentDetailDrawer can
+// render the peek pane unconditionally and gate the call by passing a
+// nullable id. Refetches automatically on every ['sessions']
+// invalidation thanks to the shared key prefix, so transcript stays
+// inside the SSE-invalidation budget without a dedicated topic.
+//
+// Errors don't retry on degraded / not-found / unsupported — those are
+// rendered as steady-state "transcript unavailable" affordances rather
+// than transient failures worth re-trying.
+export function useSessionPeek(id: string | null | undefined): UseQueryResult<SessionPeek, ApiError> {
+  return useQuery<SessionPeek, ApiError>({
+    queryKey: id ? sessionsKeys.peek(id) : ['sessions', 'peek', 'disabled'],
+    queryFn: () => peekSession(id!),
+    enabled: Boolean(id),
     retry,
     staleTime: 2_500,
   });

@@ -88,6 +88,25 @@ export async function startSession(
   });
 }
 
+// SessionPeek mirrors core.SessionPeek (gm-e7.3). The wire shape is
+// the snapshot the OrchestrationPlane returns: id + live status + the
+// captured-at wall-clock + whichever of transcript/screenshot/structured
+// the adaptor's peek_modes declared. Callers tolerate any subset of
+// the optional fields.
+export interface SessionPeek {
+  session_id: string;
+  status: SessionStatus;
+  captured_at: string;
+  transcript?: string;
+  screenshot?: string;
+  structured?: Record<string, unknown>;
+}
+
+export async function peekSession(id: string): Promise<SessionPeek> {
+  if (!id) throw new Error('peekSession: id is required');
+  return apiFetch<SessionPeek>(`/sessions/${encodeURIComponent(id)}/peek`);
+}
+
 export async function endSession(
   id: string,
   mode: SessionEndMode = 'canceled',
