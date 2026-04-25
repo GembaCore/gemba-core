@@ -70,6 +70,14 @@ func translateClaude(f Frame) []core.OrchestrationEvent {
 		// channel, urgency, and body fields already stamped so the
 		// escalation index can insert without re-classifying.
 		return translateGembaAsk(f, base)
+	case "GembaSkillOutput":
+		// Persona skill emitted structured output (gm-twp2). Payload
+		// carries {skill_id, lines[]}. Surface as a generic
+		// skill_output_emitted event; the consult dispatcher consumes
+		// it via session-log tail rather than via the orchestrator
+		// fan-out, so the translator just makes it visible to other
+		// observers (audit log writer, SSE hub).
+		return translateGembaSkillOutput(f, base)
 
 	case "SessionStart":
 		base.Kind = "session_transition"
@@ -144,6 +152,11 @@ func translatePassthrough(f Frame) []core.OrchestrationEvent {
 	case "GembaAsk":
 		// gemba-ask is likewise agent-type agnostic.
 		return translateGembaAsk(f, base)
+	case "GembaSkillOutput":
+		// Persona skill emission is also agent-type agnostic — fire
+		// for any future MCP-capable agent that hasn't been explicitly
+		// wired.
+		return translateGembaSkillOutput(f, base)
 	case "SessionStart":
 		base.Kind = "session_transition"
 		base.Payload["status"] = "running"
@@ -230,6 +243,40 @@ func rawPayload(f Frame) map[string]any {
 		out["raw"] = f.PayloadRaw
 	}
 	return out
+}
+
+// translateGembaSkillOutput converts a GembaSkillOutput frame (written
+// by the gemba-mcp emit_skill_output tool) into a skill_output_emitted
+// event. The translator preserves the lines as raw payload — per-line
+// validation is the dispatcher's job, not this layer's, because each
+// skill defines its own line shape.
+func translateGembaSkillOutput(f Frame, base core.OrchestrationEvent) []core.OrchestrationEvent {
+	var p struct {
+		SkillID string            `json:"skill_id"`
+		Lines   []json.RawMessage `json:"lines"`
+	}
+	if len(f.Payload) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(f.Payload, &p); err != nil {
+		return nil
+	}
+	if p.SkillID == "" || len(p.Lines) == 0 {
+		return nil
+	}
+	base.Kind = "skill_output_emitted"
+	base.Payload["skill_id"] = p.SkillID
+	base.Payload["line_count"] = len(p.Lines)
+	// `lines` is preserved verbatim under its own key so downstream
+	// consumers (audit-log writer, SSE hub) can re-emit without
+	// re-walking the payload map. The map cast goes through any
+	// because OrchestrationEvent.Payload is map[string]any.
+	wireLines := make([]any, len(p.Lines))
+	for i, l := range p.Lines {
+		wireLines[i] = json.RawMessage(l)
+	}
+	base.Payload["lines"] = wireLines
+	return []core.OrchestrationEvent{base}
 }
 
 // classifyNotification inspects a Notification payload and decides

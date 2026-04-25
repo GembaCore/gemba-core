@@ -202,6 +202,80 @@ func TestTranslatePassthroughGembaAsk(t *testing.T) {
 	}
 }
 
+// gm-twp2: GembaSkillOutput frame produces a skill_output_emitted
+// event with skill_id, line_count, and verbatim raw lines. The
+// translator stays generic — per-line validation belongs to the
+// dispatcher.
+func TestTranslateClaudeGembaSkillOutput(t *testing.T) {
+	payload, _ := json.Marshal(map[string]any{
+		"skill_id": "epic_order",
+		"lines": []any{
+			map[string]any{"type": "strategy", "model": "claude-opus-4-7"},
+			map[string]any{"type": "summary"},
+		},
+	})
+	evs := translateClaude(Frame{
+		SessionID: "s1", Hook: "GembaSkillOutput", Payload: payload, EventID: "ev1",
+	})
+	if len(evs) != 1 {
+		t.Fatalf("want 1 event, got %d", len(evs))
+	}
+	if evs[0].Kind != "skill_output_emitted" {
+		t.Errorf("kind = %q, want skill_output_emitted", evs[0].Kind)
+	}
+	if evs[0].Payload["skill_id"] != "epic_order" {
+		t.Errorf("skill_id payload = %v", evs[0].Payload["skill_id"])
+	}
+	if got, ok := evs[0].Payload["line_count"].(int); !ok || got != 2 {
+		t.Errorf("line_count = %v, want 2", evs[0].Payload["line_count"])
+	}
+	lines, ok := evs[0].Payload["lines"].([]any)
+	if !ok {
+		t.Fatalf("lines payload = %T, want []any", evs[0].Payload["lines"])
+	}
+	if len(lines) != 2 {
+		t.Fatalf("lines = %d, want 2", len(lines))
+	}
+}
+
+// Empty payload → no event. Defensive: a hand-crafted frame with no
+// content must not produce a phantom event.
+func TestTranslateClaudeGembaSkillOutputEmpty(t *testing.T) {
+	if evs := translateClaude(Frame{
+		SessionID: "s1", Hook: "GembaSkillOutput",
+	}); len(evs) != 0 {
+		t.Errorf("empty-payload skill output must drop; got %+v", evs)
+	}
+}
+
+// Missing skill_id → drop. The dispatcher needs a skill id to pick
+// the right ValidateOutputLine; an emission without one is unusable.
+func TestTranslateClaudeGembaSkillOutputMissingSkillID(t *testing.T) {
+	payload, _ := json.Marshal(map[string]any{
+		"lines": []any{map[string]any{"type": "strategy"}},
+	})
+	if evs := translateClaude(Frame{
+		SessionID: "s1", Hook: "GembaSkillOutput", Payload: payload,
+	}); len(evs) != 0 {
+		t.Errorf("missing skill_id must drop; got %+v", evs)
+	}
+}
+
+// Passthrough translator picks up GembaSkillOutput too — agent-type-
+// agnostic, mirrors GembaAsk / GembaState.
+func TestTranslatePassthroughGembaSkillOutput(t *testing.T) {
+	payload, _ := json.Marshal(map[string]any{
+		"skill_id": "epic_order",
+		"lines":    []any{map[string]any{"type": "strategy"}},
+	})
+	evs := translatePassthrough(Frame{
+		SessionID: "s1", Hook: "GembaSkillOutput", Payload: payload,
+	})
+	if len(evs) != 1 || evs[0].Kind != "skill_output_emitted" {
+		t.Errorf("passthrough dropped GembaSkillOutput: %+v", evs)
+	}
+}
+
 func TestTranslatePassthroughGembaStateEmitsSessionStateReported(t *testing.T) {
 	payload, _ := json.Marshal(map[string]string{"state": "ready"})
 	evs := translatePassthrough(Frame{

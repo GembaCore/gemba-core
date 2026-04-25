@@ -10,6 +10,14 @@ web/node_modules/
 *.test
 *.out
 /vendor/
+# `go build ./cmd/<name>/...` drops the binary at repo root; ignore the
+# common ones rather than fight `go build`'s defaults.
+/gemba
+/gemba-ask
+/gemba-bridge
+/gemba-mcp
+/gemba-state
+/gen-core-types
 
 # Frontend
 web/.vite/

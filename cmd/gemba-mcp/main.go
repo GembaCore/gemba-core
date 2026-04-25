@@ -1,11 +1,19 @@
 // gemba-mcp is the MCP-tool sibling of gemba-ask + gemba-state
-// (gm-97w7.2). It exposes three tools Claude Code (or any other
+// (gm-97w7.2). It exposes four tools Claude Code (or any other
 // MCP-capable agent) can call with schema-validated arguments
 // instead of shelling out to the CLI binaries:
 //
 //	ask_question(role, text, bead_id?, title?)
 //	raise_blocker(role, text, bead_id?, title?)   # role MUST be "manager"
 //	report_state(state, bead_id?, note?)
+//	emit_skill_output(skill_id, lines)             # gm-twp2
+//
+// emit_skill_output is the structured-output channel for persona
+// consults. A persona-spawned session calls it with the array of
+// skill-defined output lines (e.g. strategy + recommendations +
+// summary for the PM's epic_order skill); the dispatcher tails the
+// session log, runs each line through skill.ValidateOutputLine, and
+// persists the PersonaConsultRecord audit row.
 //
 // Why an MCP server in addition to the CLIs:
 //
@@ -76,6 +84,17 @@ type statePayload struct {
 	Note   string `json:"note,omitempty"`
 }
 
+// skillOutputPayload is the body of a GembaSkillOutput frame. The
+// dispatcher reads `skill_id` to pick the right
+// persona.Skill.ValidateOutputLine, then walks `lines` in order. Lines
+// are kept as raw JSON so this binary stays import-isolated from the
+// internal/skills/* packages — every skill defines its own line shape
+// and this server is intentionally generic.
+type skillOutputPayload struct {
+	SkillID string            `json:"skill_id"`
+	Lines   []json.RawMessage `json:"lines"`
+}
+
 // ---------- tool input schemas (SDK infers JSON schema from these) --
 
 // AskQuestionInput is the schema every ask_question caller must match.
@@ -104,6 +123,19 @@ type ReportStateInput struct {
 	State  string `json:"state" jsonschema:"initializing | ready | working | prompting | stalled"`
 	BeadID string `json:"bead_id,omitempty" jsonschema:"bead id; recommended for state=working"`
 	Note   string `json:"note,omitempty" jsonschema:"free-form note for the operator log"`
+}
+
+// EmitSkillOutputInput is the schema every emit_skill_output caller
+// must match. The line shape varies per skill (the model is told the
+// shape via its skill prompt); this binary only checks that skill_id
+// is present and lines is non-empty. Per-line schema enforcement
+// happens in the dispatcher via skill.ValidateOutputLine — bad lines
+// land in the audit log as warning entries rather than failing the
+// tool call (which would lose every preceding good line in the same
+// emission).
+type EmitSkillOutputInput struct {
+	SkillID string `json:"skill_id" jsonschema:"the skill id this emission belongs to (e.g. epic_order)"`
+	Lines   []any  `json:"lines" jsonschema:"ordered array of skill-defined output lines (e.g. strategy first, then recommendations, then summary)"`
 }
 
 var validStates = map[string]bool{
@@ -148,6 +180,14 @@ func run() error {
 			"Call at every state boundary (ready / working / prompting / stalled).",
 	}, handleReportState)
 
+	mcp.AddTool(srv, &mcp.Tool{
+		Name: "emit_skill_output",
+		Description: "Emit a persona skill's structured output. Use this for skill consults " +
+			"(e.g. the PM's epic_order ranking). Pass skill_id plus an ordered array of " +
+			"line objects whose shape is defined by that skill's documented schema. " +
+			"The dispatcher validates each line and persists the audit-log row.",
+	}, handleEmitSkillOutput)
+
 	return srv.Run(context.Background(), &mcp.StdioTransport{})
 }
 
@@ -184,6 +224,15 @@ func handleReportState(
 		return toolError(err), nil, nil
 	}
 	return toolOK("state reported: " + in.State), nil, nil
+}
+
+func handleEmitSkillOutput(
+	_ context.Context, _ *mcp.CallToolRequest, in EmitSkillOutputInput,
+) (*mcp.CallToolResult, any, error) {
+	if err := writeSkillOutput(in.SkillID, in.Lines); err != nil {
+		return toolError(err), nil, nil
+	}
+	return toolOK(fmt.Sprintf("skill output emitted: skill_id=%s lines=%d", in.SkillID, len(in.Lines))), nil, nil
 }
 
 // ---------- frame writers (mirror the CLIs) ------------------------
@@ -229,6 +278,41 @@ func writeState(state, beadID, note string) error {
 		return err
 	}
 	return writeFrame("GembaState", sessionID, agentType, payload)
+}
+
+// writeSkillOutput composes a GembaSkillOutput frame and appends it to
+// the session log. The model is allowed (per skill prompt) to call
+// emit_skill_output more than once per session — each call writes one
+// frame, and the dispatcher concatenates frames in arrival order. This
+// keeps long emissions resilient: a model that paginates across two
+// calls still produces a coherent ordered stream.
+func writeSkillOutput(skillID string, lines []any) error {
+	if skillID == "" {
+		return errors.New("skill_id is required")
+	}
+	if len(lines) == 0 {
+		return errors.New("lines must not be empty")
+	}
+	sessionID, agentType, _, err := envContext()
+	if err != nil {
+		return err
+	}
+	rawLines := make([]json.RawMessage, len(lines))
+	for i, l := range lines {
+		b, err := json.Marshal(l)
+		if err != nil {
+			return fmt.Errorf("marshal line %d: %w", i, err)
+		}
+		rawLines[i] = b
+	}
+	payload, err := json.Marshal(skillOutputPayload{
+		SkillID: skillID,
+		Lines:   rawLines,
+	})
+	if err != nil {
+		return err
+	}
+	return writeFrame("GembaSkillOutput", sessionID, agentType, payload)
 }
 
 func writeFrame(hook, sessionID, agentType string, payload json.RawMessage) error {

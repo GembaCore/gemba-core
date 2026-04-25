@@ -193,6 +193,117 @@ func TestAskQuestionMissingSessionID(t *testing.T) {
 	}
 }
 
+// emit_skill_output happy path — writes one frame containing the full
+// lines array. Mode is irrelevant here (skill output is the model's
+// primary output channel, not an interruption).
+func TestEmitSkillOutputHappyPath(t *testing.T) {
+	path := setupSession(t, "balanced")
+	res, _, err := handleEmitSkillOutput(context.Background(), &mcp.CallToolRequest{}, EmitSkillOutputInput{
+		SkillID: "epic_order",
+		Lines: []any{
+			map[string]any{"type": "strategy", "model": "claude-opus-4-7"},
+			map[string]any{"type": "recommendation", "rank": 0, "epic_id": "gm-e3"},
+			map[string]any{"type": "summary"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if res == nil || res.IsError {
+		t.Fatalf("want success result; got %+v", res)
+	}
+	f := readSoleFrame(t, path)
+	if f.Hook != "GembaSkillOutput" {
+		t.Errorf("hook: got %q, want GembaSkillOutput", f.Hook)
+	}
+	var p skillOutputPayload
+	if err := json.Unmarshal(f.Payload, &p); err != nil {
+		t.Fatalf("payload: %v", err)
+	}
+	if p.SkillID != "epic_order" {
+		t.Errorf("skill_id = %q, want epic_order", p.SkillID)
+	}
+	if len(p.Lines) != 3 {
+		t.Fatalf("lines = %d, want 3", len(p.Lines))
+	}
+	// Each line must round-trip: the model emits objects, the frame
+	// stores raw JSON, the consumer decodes back to typed lines.
+	var first map[string]any
+	if err := json.Unmarshal(p.Lines[0], &first); err != nil {
+		t.Fatalf("line[0]: %v", err)
+	}
+	if first["type"] != "strategy" {
+		t.Errorf("line[0].type = %v, want strategy", first["type"])
+	}
+}
+
+// emit_skill_output rejects empty skill_id — the dispatcher would have
+// no way to pick the right ValidateOutputLine.
+func TestEmitSkillOutputRejectsEmptySkillID(t *testing.T) {
+	path := setupSession(t, "balanced")
+	res, _, err := handleEmitSkillOutput(context.Background(), &mcp.CallToolRequest{}, EmitSkillOutputInput{
+		SkillID: "",
+		Lines:   []any{map[string]any{"type": "strategy"}},
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("want IsError on empty skill_id")
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Error("session log should not exist after rejected call")
+	}
+}
+
+// emit_skill_output rejects empty lines — an emission with no content
+// is meaningless and would produce a zero-row audit entry.
+func TestEmitSkillOutputRejectsEmptyLines(t *testing.T) {
+	setupSession(t, "balanced")
+	res, _, err := handleEmitSkillOutput(context.Background(), &mcp.CallToolRequest{}, EmitSkillOutputInput{
+		SkillID: "epic_order",
+		Lines:   []any{},
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("want IsError on empty lines")
+	}
+}
+
+// emit_skill_output IS allowed in dangerous mode — structured output
+// is the model's primary deliverable, not an operator interruption.
+func TestEmitSkillOutputAllowedInDangerousMode(t *testing.T) {
+	path := setupSession(t, "dangerous")
+	res, _, err := handleEmitSkillOutput(context.Background(), &mcp.CallToolRequest{}, EmitSkillOutputInput{
+		SkillID: "epic_order",
+		Lines:   []any{map[string]any{"type": "strategy"}},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("emit should be allowed in dangerous: err=%v res=%+v", err, res)
+	}
+	_ = readSoleFrame(t, path)
+}
+
+// emit_skill_output requires GEMBA_SESSION_ID — same env contract as
+// every other tool.
+func TestEmitSkillOutputMissingSessionID(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("GEMBA_SESSION_ID", "")
+	t.Setenv("GEMBA_INTERACTION_MODE", "balanced")
+	res, _, err := handleEmitSkillOutput(context.Background(), &mcp.CallToolRequest{}, EmitSkillOutputInput{
+		SkillID: "epic_order",
+		Lines:   []any{map[string]any{"type": "strategy"}},
+	})
+	if err != nil {
+		t.Fatalf("handler error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("want IsError when GEMBA_SESSION_ID missing")
+	}
+}
+
 // Parity check: the frame shape produced by the MCP server is
 // structurally identical to what the CLI would emit for the same
 // semantic call. Downstream (bridge translator, escalation index)
