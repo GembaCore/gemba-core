@@ -10,6 +10,7 @@ import {
   Table2,
   Terminal,
   Users,
+  CircuitBoard,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,7 @@ const items: Item[] = [
   { to: '/grid', label: 'Grid', Icon: Table2 },
   { to: '/sessions', label: 'Sessions', Icon: Terminal },
   { to: '/agents', label: 'Agents', Icon: Users },
+  { to: '/coach', label: 'Coach', Icon: CircuitBoard },
   { to: '/graph', label: 'Graph', Icon: Network },
   { to: '/insights', label: 'Insights', Icon: Sparkles },
   { to: '/escalations', label: 'Escalations', Icon: AlertTriangle },

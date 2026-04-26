@@ -6,6 +6,7 @@ import { SessionsPage } from '@/pages/SessionsPage';
 import { AgentsPage } from '@/pages/AgentsPage';
 import { GraphPage } from '@/pages/GraphPage';
 import CapabilitiesPage from '@/pages/CapabilitiesPage';
+import { CoachPage } from '@/pages/CoachPage';
 import {
   EscalationsPage,
   HealthPage,
@@ -40,6 +41,7 @@ export default function App() {
         <Route path="/insights" element={<InsightsPage />} />
         <Route path="/escalations" element={<EscalationsPage />} />
         <Route path="/capabilities" element={<CapabilitiesPage />} />
+        <Route path="/coach" element={<CoachPage />} />
         {features.mail && <Route path="/mail" element={<MailPage />} />}
         <Route path="/health" element={<HealthPage />} />
         <Route path="*" element={<NotFoundPage />} />

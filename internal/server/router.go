@@ -235,6 +235,12 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/escalations", r.listEscalations)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/escalations/{id}/respond", r.respondEscalation)
+
+		// gm-s47n.6.1: coach-mode SPA grid. One server-side
+		// composition of every input the SPA needs — sessions,
+		// ready beads, conflict graph (file/workspace/semantic),
+		// affinity matrix, parallel-safe batches.
+		api.Get("/planner/coach", r.plannerCoach)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {
