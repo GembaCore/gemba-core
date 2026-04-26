@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/layouts/AppShell';
 import { BoardPage } from '@/pages/BoardPage';
-import { BacklogPage } from '@/pages/BacklogPage';
 import { GridPage } from '@/pages/GridPage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { AgentsPage } from '@/pages/AgentsPage';
@@ -27,7 +26,13 @@ export default function App() {
             segment and the dolt adaptor canonically prefixes ids with
             "<workspace>/<repo>/". useParams()['*'] surfaces the rest. */}
         <Route path="/board/*" element={<BoardPage />} />
-        <Route path="/backlog" element={<BacklogPage />} />
+        {/* /backlog folded into Board (gm-e12.19.1). Permanent
+            redirect so existing links and bookmarks resolve to the
+            Board's list mode + Backlog preset. */}
+        <Route
+          path="/backlog"
+          element={<Navigate to="/board?view=list&preset=backlog" replace />}
+        />
         <Route path="/grid" element={<GridPage />} />
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/agents" element={<AgentsPage />} />

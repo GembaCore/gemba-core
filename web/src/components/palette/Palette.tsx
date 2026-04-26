@@ -61,7 +61,9 @@ interface NavigateItem {
 
 const NAVIGATE_ITEMS: NavigateItem[] = [
   { id: 'nav-board', label: 'Board', keywords: 'board kanban epic swimlane', icon: ListTodo, to: '/board' },
-  { id: 'nav-backlog', label: 'Backlog', keywords: 'backlog list', icon: ClipboardList, to: '/backlog' },
+  // Backlog is a Board preset now (gm-e12.19.1) — palette routes
+  // straight to the list-mode + Backlog-preset URL.
+  { id: 'nav-backlog', label: 'Backlog', keywords: 'backlog list planning', icon: ClipboardList, to: '/board?view=list&preset=backlog' },
   { id: 'nav-grid', label: 'Grid', keywords: 'grid table rows', icon: Workflow, to: '/grid' },
   { id: 'nav-graph', label: 'Dependency graph', keywords: 'graph dependency network', icon: Network, to: '/graph' },
   { id: 'nav-agents', label: 'Agents', keywords: 'agents tiles', icon: Bot, to: '/agents' },

@@ -1,30 +1,27 @@
-// BacklogPage (gm-e12.9.1 / M2). Flat filterable list of WorkItems —
-// the "planning" surface. Ships ahead of the virtualized grid
-// (gm-e12.3) and the full backlog board (gm-e12.9): simple table, no
-// virtualization, state_category + kind filter chips, client-side
-// title search. Clicking a row opens the shared WorkItemDrawer.
+// BoardListView (gm-e12.19.1). Flat WorkItem list rendering for
+// Board's `view=list` mode. Replaces the standalone BacklogPage —
+// same chip-bar, search, and grid renderer, but driven by Board's
+// URL search params (?view=list&preset=…&state_category=…) instead
+// of the URL-hash + localStorage hybrid the old BacklogPage used.
 //
-// URL is intentionally minimal today: the route is /backlog with no
-// query-synced filter state. URL-synced filters + saved presets land
-// in follow-up beads once the UI spec settles (gm-p27).
+// Selection — ?bead=<id> — is owned by BoardPage so the WorkItemDrawer
+// stays a single instance regardless of view-mode.
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { Search } from 'lucide-react';
 import { useFilteredWorkItems } from '@/hooks/useWorkItems';
-import { usePersistedFilter } from '@/hooks/usePersistedFilter';
-import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
 import { WorkItemGrid } from '@/components/grid/WorkItemGrid';
 import type { WorkItemListFilter } from '@/api/workItems';
-import type { BacklogFilter } from '@/lib/backlogFilter';
-import { STATE_CATEGORIES, type StateCategory } from '@/types/core.gen';
+import {
+  BOARD_PRESET_FILTERS,
+  BOARD_PRESET_POST_FILTERS,
+  BOARD_PRESET_SORTS,
+  type BoardPreset,
+  type BoardPresetContext,
+} from '@/lib/boardPresets';
+import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 
-const STORAGE_KEY = 'gemba.backlog.filter';
-
-// Kinds we expose as chips. An adaptor can surface more via the
-// CapabilityManifest field_extensions slot once gm-e11.4 is fully
-// wired; until then the SPA hard-codes the three common-case kinds
-// every adaptor we ship supports.
 const KIND_CHIPS = ['task', 'bug', 'epic'] as const;
 
 const STATE_LABELS: Record<StateCategory, string> = {
@@ -36,54 +33,83 @@ const STATE_LABELS: Record<StateCategory, string> = {
   canceled: 'Canceled',
 };
 
-export function BacklogPage() {
-  const [backlogFilter, setBacklogFilter] = usePersistedFilter(STORAGE_KEY);
-  const [openId, setOpenId] = useState<string | null>(null);
+export interface BoardListViewProps {
+  preset: BoardPreset | null;
+  stateCategories: StateCategory[];
+  kinds: string[];
+  search: string;
+  onChangeStateCategories: (next: StateCategory[]) => void;
+  onChangeKinds: (next: string[]) => void;
+  onChangeSearch: (next: string) => void;
+  onSelectWorkItem: (id: string) => void;
+  presetContext?: BoardPresetContext;
+}
 
-  const stateFilter = backlogFilter.state_category;
-  const kindFilter = backlogFilter.kind;
-  const search = backlogFilter.search;
+export function BoardListView({
+  preset,
+  stateCategories,
+  kinds,
+  search,
+  onChangeStateCategories,
+  onChangeKinds,
+  onChangeSearch,
+  onSelectWorkItem,
+  presetContext,
+}: BoardListViewProps) {
+  // Effective filter = explicit chips, falling back to the preset's
+  // base filter when the operator hasn't touched a chip. Once they
+  // start toggling chips the URL carries explicit values and the
+  // preset stops contributing to the API filter (it still drives the
+  // post-filter so `mine` / `done-recent` keep working).
+  const effectiveStates =
+    stateCategories.length > 0
+      ? stateCategories
+      : preset
+        ? BOARD_PRESET_FILTERS[preset].state_category
+        : [];
+  const effectiveKinds =
+    kinds.length > 0 ? kinds : preset ? BOARD_PRESET_FILTERS[preset].kind : [];
 
   const apiFilter = useMemo<WorkItemListFilter>(() => {
     const f: WorkItemListFilter = {};
-    if (stateFilter.length > 0) f.state_category = stateFilter;
-    if (kindFilter.length > 0) f.kind = kindFilter;
+    if (effectiveStates.length > 0) f.state_category = effectiveStates;
+    if (effectiveKinds.length > 0) f.kind = effectiveKinds;
     return f;
-  }, [stateFilter, kindFilter]);
+  }, [effectiveStates, effectiveKinds]);
 
   const { data = [], isLoading, error } = useFilteredWorkItems(apiFilter);
 
   const filtered = useMemo(() => {
+    let rows = data;
+    if (preset) {
+      const post = BOARD_PRESET_POST_FILTERS[preset];
+      if (post) rows = rows.filter((it) => post(it, presetContext ?? {}));
+      const sort = BOARD_PRESET_SORTS[preset];
+      if (sort) rows = [...rows].sort(sort);
+    }
     const needle = search.trim().toLowerCase();
-    if (!needle) return data;
-    return data.filter((it) => it.title.toLowerCase().includes(needle));
-  }, [data, search]);
-
-  const patch = (p: Partial<BacklogFilter>) => setBacklogFilter({ ...backlogFilter, ...p });
+    if (needle) rows = rows.filter((it) => it.title.toLowerCase().includes(needle));
+    return rows;
+  }, [data, search, preset, presetContext]);
 
   const toggleArrayValue = <T extends string>(arr: T[], value: T): T[] =>
     arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <header className="border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
-        <h1 className="text-xl font-semibold tracking-tight">Backlog</h1>
-        <p className="mt-1 text-sm text-neutral-500">
-          Filterable list of every WorkItem the bound adaptor exposes.
-        </p>
-      </header>
-
+    <div className="flex h-full min-h-0 flex-col" data-testid="board-list">
       <div
         className="flex flex-wrap items-center gap-3 border-b border-neutral-200 px-6 py-3 text-xs dark:border-neutral-800"
-        data-testid="backlog-filters"
+        data-testid="board-list-filters"
       >
         <FilterGroup label="State">
           {STATE_CATEGORIES.map((sc) => (
             <Chip
               key={sc}
-              active={stateFilter.includes(sc)}
-              onClick={() => patch({ state_category: toggleArrayValue(stateFilter, sc) })}
-              testid={`backlog-state-${sc}`}
+              active={effectiveStates.includes(sc)}
+              onClick={() =>
+                onChangeStateCategories(toggleArrayValue(effectiveStates, sc))
+              }
+              testid={`board-list-state-${sc}`}
             >
               {STATE_LABELS[sc]}
             </Chip>
@@ -93,9 +119,9 @@ export function BacklogPage() {
           {KIND_CHIPS.map((k) => (
             <Chip
               key={k}
-              active={kindFilter.includes(k)}
-              onClick={() => patch({ kind: toggleArrayValue(kindFilter, k) })}
-              testid={`backlog-kind-${k}`}
+              active={effectiveKinds.includes(k)}
+              onClick={() => onChangeKinds(toggleArrayValue(effectiveKinds, k))}
+              testid={`board-list-kind-${k}`}
             >
               {k}
             </Chip>
@@ -105,17 +131,17 @@ export function BacklogPage() {
           <Search className="absolute left-2 h-3 w-3 text-neutral-400" aria-hidden />
           <input
             value={search}
-            onChange={(e) => patch({ search: e.target.value })}
+            onChange={(e) => onChangeSearch(e.target.value)}
             placeholder="Search titles…"
             className="w-56 rounded border border-neutral-300 bg-white py-1 pl-7 pr-2 text-sm dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-            data-testid="backlog-search"
+            data-testid="board-list-search"
           />
         </label>
       </div>
 
       <div
         className="flex items-center justify-between border-b border-neutral-200 px-6 py-2 text-xs text-neutral-500 dark:border-neutral-800"
-        data-testid="backlog-count"
+        data-testid="board-list-count"
       >
         <span>
           {data.length} item{data.length === 1 ? '' : 's'}
@@ -127,19 +153,23 @@ export function BacklogPage() {
         {isLoading ? (
           <div className="p-6 text-sm text-neutral-500">Loading…</div>
         ) : error ? (
-          <div className="p-6 text-sm text-rose-600 dark:text-rose-400" data-testid="backlog-error">
+          <div
+            className="p-6 text-sm text-rose-600 dark:text-rose-400"
+            data-testid="board-list-error"
+          >
             {error.message}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="p-6 text-sm text-neutral-500" data-testid="backlog-empty">
+          <div
+            className="p-6 text-sm text-neutral-500"
+            data-testid="board-list-empty"
+          >
             No work items match the current filters.
           </div>
         ) : (
-          <WorkItemGrid rows={filtered} onSelect={setOpenId} />
+          <WorkItemGrid rows={filtered as WorkItem[]} onSelect={onSelectWorkItem} />
         )}
       </div>
-
-      <WorkItemDrawer openId={openId} onClose={() => setOpenId(null)} />
     </div>
   );
 }
@@ -181,4 +211,3 @@ function Chip({
     </button>
   );
 }
-

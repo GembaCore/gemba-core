@@ -11,7 +11,9 @@ import { test, expect } from '../../fixtures/server';
 
 const NAV_HOTKEYS = [
   { key: '1', expected: /\/board$/ },
-  { key: '2', expected: /\/backlog$/ },
+  // gm-e12.19.1: '2' goes straight to Board's list mode + Backlog
+  // preset (the collapsed surface).
+  { key: '2', expected: /\/board\?view=list&preset=backlog$/ },
   { key: '3', expected: /\/graph$/ },
   { key: '4', expected: /\/insights$/ },
   { key: '5', expected: /\/escalations$/ },

@@ -23,7 +23,10 @@ export function AppHotkeys() {
 
   // Routes (1-5 numeric + named jumps)
   useHotkey('view-1', go('/board'));
-  useHotkey('view-2', go('/backlog'));
+  // 2 lands on Board's list mode with the Backlog preset — the
+  // collapsed surface that absorbed the standalone /backlog page
+  // (gm-e12.19.1).
+  useHotkey('view-2', go('/board?view=list&preset=backlog'));
   useHotkey('view-3', go('/graph'));
   useHotkey('view-4', go('/insights'));
   useHotkey('view-5', go('/escalations'));

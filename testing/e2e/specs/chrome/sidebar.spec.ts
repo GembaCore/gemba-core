@@ -8,9 +8,13 @@
 
 import { test, expect } from '../../fixtures/server';
 
+// gm-e12.19.1: "Backlog" sidebar item still points at /backlog but
+// the route is now a permanent redirect to Board's list mode +
+// Backlog preset. Click-then-URL assertion lands on the resolved
+// URL. The sidebar item itself is removed in gm-e12.19.3.
 const NAV_LINKS = [
   { label: 'Board', path: '/board' },
-  { label: 'Backlog', path: '/backlog' },
+  { label: 'Backlog', path: '/board\\?view=list&preset=backlog' },
   { label: 'Grid', path: '/grid' },
   { label: 'Sessions', path: '/sessions' },
   { label: 'Agents', path: '/agents' },

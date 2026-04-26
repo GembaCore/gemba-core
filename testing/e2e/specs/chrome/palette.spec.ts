@@ -65,7 +65,9 @@ test.describe('Command palette @chrome', () => {
 
     await dialog.getByRole('option', { name: /^Backlog$/ }).click();
 
-    await expect(page).toHaveURL(/\/backlog$/);
+    // gm-e12.19.1: Backlog palette item routes to Board's list mode +
+    // Backlog preset (the collapsed surface).
+    await expect(page).toHaveURL(/\/board\?view=list&preset=backlog$/);
     await expect(dialog).toBeHidden();
   });
 

@@ -114,8 +114,10 @@ describe('Palette', () => {
       fireEvent.click(item);
     });
 
+    // Backlog folded into Board (gm-e12.19.1) — palette routes to
+    // the list-mode + Backlog-preset URL on Board.
     await waitFor(() =>
-      expect(screen.getByTestId('loc').textContent).toBe('/backlog')
+      expect(screen.getByTestId('loc').textContent).toBe('/board?view=list&preset=backlog')
     );
     // Selecting an item closes the palette.
     expect(screen.queryByTestId('command-palette-input')).toBeNull();

@@ -34,7 +34,7 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
 
   // Views (1-5 numeric quick switch + named view jumps)
   { id: 'view-1', keys: ['1'], description: 'Board view', category: 'views' },
-  { id: 'view-2', keys: ['2'], description: 'Backlog view', category: 'views' },
+  { id: 'view-2', keys: ['2'], description: 'Backlog (Board list mode)', category: 'views' },
   { id: 'view-3', keys: ['3'], description: 'Graph view', category: 'views' },
   { id: 'view-4', keys: ['4'], description: 'Insights view', category: 'views' },
   { id: 'view-5', keys: ['5'], description: 'Escalations view', category: 'views' },
@@ -59,6 +59,14 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
     id: 'view-toggle-board',
     keys: ['Mod+W'],
     description: 'Toggle board view (Epic / Work item)',
+    category: 'views',
+  },
+  // Board: toggle list mode (former Backlog surface) ↔ kanban per
+  // ui-spec §4.10 (gm-e12.19.1).
+  {
+    id: 'view-toggle-list',
+    keys: ['Mod+Shift+L'],
+    description: 'Toggle board list mode (Kanban / List)',
     category: 'views',
   },
 
