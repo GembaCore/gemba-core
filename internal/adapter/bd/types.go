@@ -154,6 +154,11 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 	branches := branchesFromLabels(b.Labels)
 	readPaths := readPathsFromLabels(b.Labels)
 	writePaths := writePathsFromLabels(b.Labels)
+	// gm-s47n.1.1: Layer 0 enrichment from labels.
+	targets := targetsFromLabels(b.Labels)
+	concepts := conceptsFromLabels(b.Labels)
+	dispatch := dispatchStatusFromLabels(b.Labels)
+	size := estimatedSizeFromLabels(b.Labels)
 	wi := core.WorkItem{
 		ID:                   id,
 		Kind:                 kind,
@@ -168,6 +173,10 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 		AdditionalReadPaths:  readPaths,
 		AdditionalWritePaths: writePaths,
 		Labels:               append([]string(nil), b.Labels...),
+		Targets:              targets,
+		Concepts:             concepts,
+		DispatchStatus:       dispatch,
+		EstimatedSize:        size,
 		// Relationships carries only the three core edges (blocks,
 		// parent_child, relates_to); the four extension edges plus the
 		// raw bd edge blob ride Custom["beads:dependencies"] /

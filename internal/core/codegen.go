@@ -279,6 +279,34 @@ export type EvidenceKind =
   | "file"
   | "custom";
 
+export type DispatchStatus =
+  | ""
+  | "ready"
+  | "awaiting-design"
+  | "awaiting-vendor"
+  | "awaiting-review"
+  | "not-now";
+
+export const DISPATCH_STATUSES: readonly DispatchStatus[] = [
+  "ready",
+  "awaiting-design",
+  "awaiting-vendor",
+  "awaiting-review",
+  "not-now",
+] as const;
+
+export type EstimatedSize =
+  | ""
+  | "small"
+  | "medium"
+  | "large";
+
+export const ESTIMATED_SIZES: readonly EstimatedSize[] = [
+  "small",
+  "medium",
+  "large",
+] as const;
+
 // KIND_MILESTONE is the canonical WorkItem.kind token for milestones
 // (gm-root.3). WorkItem.kind is a free string because adaptors emit
 // kinds beyond the core's knowledge, so this is an exported constant

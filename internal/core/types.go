@@ -124,12 +124,129 @@ type WorkItem struct {
 	CreatedAt            time.Time         `json:"created_at"`
 	UpdatedAt            time.Time         `json:"updated_at"`
 	Custom               map[string]any    `json:"custom,omitempty"`
+
+	// Targets is the declared path-glob set the bead is expected to
+	// touch (gm-s47n.1.1, work-planning.md §4 Layer 0). Bd adaptors
+	// project this from "target:<glob>" labels; non-bd adaptors that
+	// have a typed extras column read it directly. Empty means "no
+	// targets declared" — the planner's conflict scorer treats that
+	// as wildcard-overlap and is appropriately pessimistic.
+	Targets []string `json:"targets,omitempty"`
+
+	// Concepts is the controlled-vocabulary tag set for the bead
+	// (gm-s47n.1.1). Tags come from internal/concepts (ladders the
+	// vocabulary governance pipeline produces). Bd adaptors project
+	// from "concept:<tag>" labels; the affinity scorer reads it to
+	// match beads against primed sessions.
+	Concepts []string `json:"concepts,omitempty"`
+
+	// DispatchStatus is the planner-facing soft-block enum
+	// (gm-s47n.1.1). The default DispatchReady is the only kind the
+	// planner's "what's next" surface treats as a candidate; the
+	// other values are visible in `bd list` but suppressed from
+	// auto-dispatch. The conflict scorer (Layer 3) ignores this —
+	// it's a selection signal, not a relationship signal.
+	DispatchStatus DispatchStatus `json:"dispatch_status,omitempty"`
+
+	// EstimatedSize is the calibration-loop bucket
+	// (work-planning.md §7.6, gm-s47n.1.1). Bootstrapped from
+	// description-length + DoD-line-count; the retrospective grades
+	// it against actual time-to-close so the heuristic gets sharper.
+	// Used by Layer 5 to compare bead size against session runway.
+	EstimatedSize EstimatedSize `json:"estimated_size,omitempty"`
+
 	// Derived carries UI-facing booleans computed by Derive from this
 	// item plus its open escalations (gm-gsh). Servers SHOULD populate
 	// it on every read so the UI does not have to rebuild the predicate
 	// per-card; it is omitempty because the pure derivation also lets
 	// the UI recompute locally if a transport omits it.
 	Derived *DerivedSignals `json:"derived,omitempty"`
+}
+
+// DispatchStatus is the planner soft-block enum (gm-s47n.1.1,
+// work-planning.md §4 Layer 0). The empty string is treated as
+// [DispatchReady] — the default for any bead that hasn't been
+// explicitly soft-blocked. The five non-empty values map onto the
+// vocabulary the operator types into a "dispatch:" label.
+type DispatchStatus string
+
+const (
+	// DispatchReady — the bead is eligible for auto-dispatch.
+	// Default when the field is unset; only DispatchReady beads
+	// appear in the planner's "what's next" surface.
+	DispatchReady DispatchStatus = "ready"
+	// DispatchAwaitingDesign — operator wants a design pass before
+	// the bead is dispatchable. Visible in `bd list`; suppressed
+	// from auto-dispatch.
+	DispatchAwaitingDesign DispatchStatus = "awaiting-design"
+	// DispatchAwaitingVendor — blocked on an external dependency
+	// outside the operator's control (vendor SDK, third-party API).
+	DispatchAwaitingVendor DispatchStatus = "awaiting-vendor"
+	// DispatchAwaitingReview — the bead's prior dispatch produced
+	// output that needs operator review before further work.
+	DispatchAwaitingReview DispatchStatus = "awaiting-review"
+	// DispatchNotNow — operator-specified deferral with no concrete
+	// trigger. Distinct from awaiting-* in that no automated event
+	// will lift the soft-block; the operator does it manually.
+	DispatchNotNow DispatchStatus = "not-now"
+)
+
+// IsValid reports whether s is one of the five canonical statuses
+// or the empty string (which the consumers normalise to
+// DispatchReady). Round-trippers reject anything else.
+func (s DispatchStatus) IsValid() bool {
+	switch s {
+	case "", DispatchReady, DispatchAwaitingDesign, DispatchAwaitingVendor,
+		DispatchAwaitingReview, DispatchNotNow:
+		return true
+	}
+	return false
+}
+
+// Effective returns DispatchReady when s is the empty string and
+// the value verbatim otherwise. Consumers (the planner's selection
+// pass, the SPA's dispatch chip) call this to avoid scattering the
+// "empty string means ready" rule across call sites.
+func (s DispatchStatus) Effective() DispatchStatus {
+	if s == "" {
+		return DispatchReady
+	}
+	return s
+}
+
+// EstimatedSize is the rough bucket the bead's complexity falls
+// into (gm-s47n.1.1). The empty string means "unestimated"; the
+// planner treats unestimated beads as [SizeMedium] for the purpose
+// of session-runway comparison so a missing estimate doesn't hide
+// a bead from auto-dispatch entirely.
+type EstimatedSize string
+
+const (
+	SizeSmall  EstimatedSize = "small"
+	SizeMedium EstimatedSize = "medium"
+	SizeLarge  EstimatedSize = "large"
+)
+
+// IsValid reports whether s is one of the three canonical sizes
+// or the empty string (unestimated).
+func (s EstimatedSize) IsValid() bool {
+	switch s {
+	case "", SizeSmall, SizeMedium, SizeLarge:
+		return true
+	}
+	return false
+}
+
+// Effective returns SizeMedium when s is the empty string and the
+// value verbatim otherwise. Mirrors [DispatchStatus.Effective] so
+// "unestimated bead" and "explicitly-medium bead" land at the same
+// runway-comparison input without scattering the default across
+// the planner.
+func (s EstimatedSize) Effective() EstimatedSize {
+	if s == "" {
+		return SizeMedium
+	}
+	return s
 }
 
 // BeadBranch maps a repository to the git branch this bead's work
