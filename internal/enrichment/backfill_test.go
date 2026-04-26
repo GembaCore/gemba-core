@@ -168,9 +168,9 @@ func TestBackfill_FilterRegexNarrowsScope(t *testing.T) {
 	store := NewMemoryStore(nil)
 	rep, err := Backfill(context.Background(), src,
 		&fakeExtractor{emit: map[string]Enrichment{
-			"gm-s47n-aaa": {Targets: []string{"a"}},
+			"gm-s47n-aaa":  {Targets: []string{"a"}},
 			"gm-other-bbb": {Targets: []string{"b"}},
-			"gm-s47n-ccc": {Targets: []string{"c"}},
+			"gm-s47n-ccc":  {Targets: []string{"c"}},
 		}}, store, BackfillOpts{FilterRegex: "^gm-s47n"})
 	if err != nil {
 		t.Fatal(err)

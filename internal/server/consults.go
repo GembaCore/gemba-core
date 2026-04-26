@@ -24,10 +24,13 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -76,12 +79,12 @@ type consultSummary struct {
 // drawer is fresh.
 type consultDetail struct {
 	consultSummary
-	Source            detailSource         `json:"source"`
-	Composed          persona.Composed     `json:"composed"`
-	ComposedPersisted bool                 `json:"composed_persisted"`
-	RawRequest        json.RawMessage      `json:"raw_request,omitempty"`
-	ValidatedLines    []any                `json:"validated_lines"`
-	LineErrors        []persona.LineError  `json:"line_errors,omitempty"`
+	Source            detailSource        `json:"source"`
+	Composed          persona.Composed    `json:"composed"`
+	ComposedPersisted bool                `json:"composed_persisted"`
+	RawRequest        json.RawMessage     `json:"raw_request,omitempty"`
+	ValidatedLines    []any               `json:"validated_lines"`
+	LineErrors        []persona.LineError `json:"line_errors,omitempty"`
 	// AppliedIdx lists the recommendation indexes the operator
 	// applied (POST /api/consults/:id/apply/:idx — separate slice).
 	// Only populated for audit-log records; live consults track

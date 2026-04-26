@@ -46,10 +46,10 @@ type Collector struct {
 	sessionSpawnTotal     prometheus.Counter
 	workspaceAcquireSecs  prometheus.Histogram
 
-	mu               sync.Mutex
-	workItemEntries  map[string]workItemEntry         // workitem id → enteredAt + state
-	workItemOrder    []string                         // FIFO of ids for bounded eviction
-	openEscalations  map[string]map[string]struct{}   // source_kind → set of open ids
+	mu              sync.Mutex
+	workItemEntries map[string]workItemEntry       // workitem id → enteredAt + state
+	workItemOrder   []string                       // FIFO of ids for bounded eviction
+	openEscalations map[string]map[string]struct{} // source_kind → set of open ids
 }
 
 type workItemEntry struct {

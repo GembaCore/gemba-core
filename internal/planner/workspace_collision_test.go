@@ -155,7 +155,7 @@ func TestWorkspaceCollisions_LiveSessionWithoutWorkspaceSkipped(t *testing.T) {
 	// A live session that hasn't fully materialised (Workspace is
 	// nil) MUST NOT crash or emit edges.
 	live := []OperationalContext{
-		{Session: &core.Session{ID: "sess-booting"}}, // no Workspace
+		{Session: &core.Session{ID: "sess-booting"}},                      // no Workspace
 		{Workspace: &core.Workspace{Repository: "gemba", Branch: "main"}}, // no Session
 	}
 	got := WorkspaceCollisions([]BeadTarget{

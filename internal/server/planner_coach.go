@@ -73,14 +73,14 @@ type coachAffinityRow struct {
 
 // coachResponse is the full envelope the SPA consumes.
 type coachResponse struct {
-	Sessions   []*planner.OperationalContext  `json:"sessions"`
-	ReadyBeads []coachReadyBead               `json:"ready_beads"`
-	Conflicts  []conflicts.Edge               `json:"conflicts"`
-	Workspace  []planner.WorkspaceCollision   `json:"workspace"`
-	Semantic   []planner.SemanticConflict     `json:"semantic"`
-	Affinity   []coachAffinityRow             `json:"affinity"`
-	Batches    []conflicts.Batch              `json:"batches"`
-	Notices    []string                       `json:"notices,omitempty"`
+	Sessions   []*planner.OperationalContext `json:"sessions"`
+	ReadyBeads []coachReadyBead              `json:"ready_beads"`
+	Conflicts  []conflicts.Edge              `json:"conflicts"`
+	Workspace  []planner.WorkspaceCollision  `json:"workspace"`
+	Semantic   []planner.SemanticConflict    `json:"semantic"`
+	Affinity   []coachAffinityRow            `json:"affinity"`
+	Batches    []conflicts.Batch             `json:"batches"`
+	Notices    []string                      `json:"notices,omitempty"`
 }
 
 func (r *Router) plannerCoach(w http.ResponseWriter, req *http.Request) {

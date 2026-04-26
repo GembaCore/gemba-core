@@ -32,10 +32,10 @@ import "sort"
 // Recycle thresholds — spec §5.5. Constants so callers + tests
 // reference the canonical values without re-typing them.
 const (
-	RecyclePressureThreshold      = 0.85
-	RecycleDriftThreshold         = 0.70
+	RecyclePressureThreshold         = 0.85
+	RecycleDriftThreshold            = 0.70
 	RecycleConceptOverlapMaxForDrift = 0.30
-	RecycleTimeOnTaskHours        = 4
+	RecycleTimeOnTaskHours           = 4
 )
 
 // RecycleReason is the structured why behind a recycle decision.
@@ -47,7 +47,7 @@ const (
 type RecycleReason string
 
 const (
-	RecycleOK             RecycleReason = "ok"
+	RecycleOK                  RecycleReason = "ok"
 	RecyclePressureBelowMedian RecycleReason = "context_pressure_high_affinity_below_median"
 	RecycleDriftAndMismatch    RecycleReason = "concept_drift_high_overlap_low"
 	RecycleTimeOnTaskNewArea   RecycleReason = "time_on_task_new_concept_area"
@@ -59,8 +59,8 @@ const (
 // numbers behind the call so coach-mode UI / audit logs can show
 // the operator exactly why the planner chose what it chose.
 type RecycleDecision struct {
-	Recycle      bool          `json:"recycle"`
-	Reason       RecycleReason `json:"reason"`
+	Recycle      bool           `json:"recycle"`
+	Reason       RecycleReason  `json:"reason"`
 	DriverScores RecycleDrivers `json:"drivers"`
 }
 

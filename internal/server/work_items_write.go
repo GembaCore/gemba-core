@@ -13,10 +13,11 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
-	"github.com/go-chi/chi/v5"
 )
 
 // createWorkItem is POST /api/work-items. Body MUST be the boundary

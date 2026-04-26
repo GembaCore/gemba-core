@@ -12,20 +12,20 @@
 // The package is split along the five gm-s47n.9.* sub-beads:
 //
 //   - triggers.go  (.9.1) Pure trigger evaluation: post-merge wave,
-//                  parallel-completion barrier, wall-clock floor,
-//                  drift signal from the source analysis backend
-//                  itself.
+//     parallel-completion barrier, wall-clock floor,
+//     drift signal from the source analysis backend
+//     itself.
 //   - demand.go    (.9.2) Synchronous pre-dispatch demand check —
-//                  does the planner have to block on a scan before
-//                  computing the next conflict graph?
+//     does the planner have to block on a scan before
+//     computing the next conflict graph?
 //   - scheduler.go (.9.3) Cooldown, coalescing, in-flight tracking,
-//                  manual override (RunNow / PauseAutoTriggers).
+//     manual override (RunNow / PauseAutoTriggers).
 //   - activity.go  (.9.4) ScanActivity record so a scan participates
-//                  in the workspace-conflict graph and lands in the
-//                  same activity log as dispatch + retrospective.
+//     in the workspace-conflict graph and lands in the
+//     same activity log as dispatch + retrospective.
 //   - grading.go   (.9.5) Trigger-grading from retrospective signals:
-//                  when a semantic conflict was missed, which trigger
-//                  should have fired and was it suppressed?
+//     when a semantic conflict was missed, which trigger
+//     should have fired and was it suppressed?
 //
 // Decoupling: the scheduler talks to source analysis through the
 // narrow [Rescanner] interface in this package, not through the

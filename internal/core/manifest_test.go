@@ -223,7 +223,7 @@ func TestValidate_AcceptsEmptyR1R8(t *testing.T) {
 // would silently mishandle downstream consumers.
 func TestValidate_RejectsUnknownEnums(t *testing.T) {
 	cases := []struct {
-		name  string
+		name   string
 		mutate func(*CapabilityManifest)
 	}{
 		{"schema_enforcement", func(m *CapabilityManifest) {

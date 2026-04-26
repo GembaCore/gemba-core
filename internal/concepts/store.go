@@ -15,10 +15,10 @@ import (
 // constants so the CLI, the SPA (when it lands), and any future
 // importer all hit the same files.
 const (
-	StoreDirName       = "concepts"
-	VocabularyFile     = "vocabulary.json"
-	SuggestionsFile    = "suggestions.json"
-	DecisionsLogFile   = "decisions.log"
+	StoreDirName     = "concepts"
+	VocabularyFile   = "vocabulary.json"
+	SuggestionsFile  = "suggestions.json"
+	DecisionsLogFile = "decisions.log"
 )
 
 // StoreDir returns the absolute concepts directory under the

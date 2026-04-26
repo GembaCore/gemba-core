@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/spf13/cobra"
+
+	"github.com/MikeBengtson/gemba/internal/auth"
 )
 
 func newAuthCmd() *cobra.Command {

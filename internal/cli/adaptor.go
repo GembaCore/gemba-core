@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/spf13/cobra"
+
+	"github.com/MikeBengtson/gemba/internal/core"
 )
 
 // newAdaptorCmd is the parent for `gemba adaptor …` subcommands. Today it

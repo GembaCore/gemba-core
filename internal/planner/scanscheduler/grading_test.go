@@ -15,8 +15,8 @@ func TestGrade_FreshIndexAttributesElsewhere(t *testing.T) {
 	now := t0()
 	s, _ := newSchedAt(now)
 	miss := MissedConflict{
-		Repo:        "gt",
-		ObservedAt:  now,
+		Repo:       "gt",
+		ObservedAt: now,
 		IndexedAtObservation: Freshness{
 			Repo:          "gt",
 			IndexedAt:     now.Add(-2 * time.Minute),

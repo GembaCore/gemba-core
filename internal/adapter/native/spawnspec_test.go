@@ -205,10 +205,10 @@ func TestParseMemory_Rejects(t *testing.T) {
 // UserNS assertion helper to avoid brittle literal comparison.
 func TestBuildSpawnSpec_UserNSMatchesProcess(t *testing.T) {
 	agent := agents.AgentType{
-		Name:     "c",
-		Binary:   "claude",
-		Preamble: agents.PreambleClaudeMD,
-		Hooks:    agents.HookNone,
+		Name:      "c",
+		Binary:    "claude",
+		Preamble:  agents.PreambleClaudeMD,
+		Hooks:     agents.HookNone,
 		Container: agents.ContainerSpec{Image: "img"},
 	}
 	spec, err := buildSpawnSpec(agent, "/ws", "s", "c", "t", nil)

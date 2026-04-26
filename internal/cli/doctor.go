@@ -7,9 +7,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	eventlog "github.com/MikeBengtson/gemba/internal/events/log"
-	"github.com/spf13/cobra"
 
 	// Registers the v1 adaptors via init() side effects. Doctor relies on
 	// these to enumerate what's available; new adaptors land by adding a

@@ -129,10 +129,10 @@ type SessionHealth struct {
 // snapshot serialises cleanly when the planner wants to surface a
 // degraded view.
 type OperationalContext struct {
-	Agent      *core.AgentRef     `json:"agent,omitempty"`
-	Session    *core.Session      `json:"session,omitempty"`
-	Workspace  *core.Workspace    `json:"workspace,omitempty"`
-	Assignment *core.Assignment   `json:"assignment,omitempty"`
-	Profile    *SessionProfile    `json:"profile,omitempty"`
-	Health     *SessionHealth     `json:"health,omitempty"`
+	Agent      *core.AgentRef   `json:"agent,omitempty"`
+	Session    *core.Session    `json:"session,omitempty"`
+	Workspace  *core.Workspace  `json:"workspace,omitempty"`
+	Assignment *core.Assignment `json:"assignment,omitempty"`
+	Profile    *SessionProfile  `json:"profile,omitempty"`
+	Health     *SessionHealth   `json:"health,omitempty"`
 }

@@ -15,9 +15,9 @@ import (
 //
 // Architecture seam:
 //
-//   spawned session → gemba-mcp emit_skill_output → bridge tail →
-//   OrchestrationEvent{Kind:"skill_output_emitted"} → events.Hub →
-//   FanFromHub → Dispatcher.Receive(consultID, lines)
+//	spawned session → gemba-mcp emit_skill_output → bridge tail →
+//	OrchestrationEvent{Kind:"skill_output_emitted"} → events.Hub →
+//	FanFromHub → Dispatcher.Receive(consultID, lines)
 //
 // The event's SessionID is treated as the consult id — the spawn
 // driver sets GEMBA_SESSION_ID = consult.ID so a frame from inside

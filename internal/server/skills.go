@@ -14,8 +14,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/go-chi/chi/v5"
+
+	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 )
 
 // skillSummary is the list-row shape — enough for a picker without

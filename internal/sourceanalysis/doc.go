@@ -10,9 +10,9 @@
 //
 //   - GitNexus: the rich one — uses the gitnexus index (gm-s47n.3.3).
 //   - Noop:     graceful-degradation default — every query returns
-//               an empty slice with [ErrUnavailable] in Describe so
-//               callers can decide whether to skip semantic conflict
-//               detection or surface a warning (gm-s47n.3.2).
+//     an empty slice with [ErrUnavailable] in Describe so
+//     callers can decide whether to skip semantic conflict
+//     detection or surface a warning (gm-s47n.3.2).
 //
 // The planner MUST handle either implementation transparently. When
 // source analysis is unavailable, target-glob conflict detection

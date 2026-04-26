@@ -10,8 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
 	"github.com/spf13/cobra"
+
+	"github.com/MikeBengtson/gemba/internal/planner"
 )
 
 func runDispatch(t *testing.T, args []string) string {

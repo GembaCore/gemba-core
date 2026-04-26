@@ -16,8 +16,8 @@ import (
 // importing internal/skills/epic_order.
 type validatingFakeSkill struct {
 	fakeSkill
-	inputErr   error
-	outputErr  error // returned for any line whose payload contains "bad":true
+	inputErr  error
+	outputErr error // returned for any line whose payload contains "bad":true
 }
 
 func (s validatingFakeSkill) ValidateInput(raw json.RawMessage) (any, error) {

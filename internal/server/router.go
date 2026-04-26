@@ -11,6 +11,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
@@ -18,8 +21,6 @@ import (
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 )
 
 // healthBusInterval is the ticker cadence for the registry HealthBus

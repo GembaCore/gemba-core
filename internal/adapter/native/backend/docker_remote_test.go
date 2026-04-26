@@ -28,13 +28,13 @@ func TestLocalMountWarning(t *testing.T) {
 		wantHit string // substring expected in warning, empty = no warning
 	}
 	cases := []tc{
-		{"/var/lib/gemba/ws", true, ""},         // portable absolute path
-		{"/var/lib/gemba/ws", false, ""},        // local mode skips warnings
-		{"~/work", true, "~"},                   // home dir leaks
-		{"$HOME/work", true, "env var"},         // env var leaks
-		{"./relative", true, "relative path"},   // relative leaks
-		{"~/work", false, ""},                   // local mode — no warning
-		{"", true, ""},                          // empty src — nothing to warn about
+		{"/var/lib/gemba/ws", true, ""},       // portable absolute path
+		{"/var/lib/gemba/ws", false, ""},      // local mode skips warnings
+		{"~/work", true, "~"},                 // home dir leaks
+		{"$HOME/work", true, "env var"},       // env var leaks
+		{"./relative", true, "relative path"}, // relative leaks
+		{"~/work", false, ""},                 // local mode — no warning
+		{"", true, ""},                        // empty src — nothing to warn about
 	}
 	for _, c := range cases {
 		got := LocalMountWarning(c.src, c.remote)

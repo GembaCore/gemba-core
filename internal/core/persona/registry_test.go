@@ -78,8 +78,10 @@ func TestLoadFile_RejectsMissingRequired(t *testing.T) {
 			wantSub: "model.vendor",
 		},
 		{
-			name:    "missing system_prompt",
-			mutate:  func(s string) string { return strings.ReplaceAll(s, `system_prompt = "You are a test."`, `system_prompt = ""`) },
+			name: "missing system_prompt",
+			mutate: func(s string) string {
+				return strings.ReplaceAll(s, `system_prompt = "You are a test."`, `system_prompt = ""`)
+			},
 			wantSub: "system_prompt",
 		},
 		{

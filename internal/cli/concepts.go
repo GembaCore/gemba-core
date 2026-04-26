@@ -16,10 +16,10 @@ import (
 // newConceptsCmd builds the `gemba concepts` subcommand tree.
 // Subcommands map onto the four gm-s47n.7.x beads:
 //
-//   bootstrap → .7.1 (initial vocabulary)
-//   drift     → .7.2 (detector)
-//   review / approve / reject → .7.3 (operator queue)
-//   apply driven by approve   → .7.4 (historical rewrite)
+//	bootstrap → .7.1 (initial vocabulary)
+//	drift     → .7.2 (detector)
+//	review / approve / reject → .7.3 (operator queue)
+//	apply driven by approve   → .7.4 (historical rewrite)
 //
 // All subcommands use the workspace root's .gemba/concepts/ store
 // (see internal/concepts/store.go for the layout).

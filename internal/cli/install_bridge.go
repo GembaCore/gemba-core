@@ -11,8 +11,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/install"
 	"github.com/spf13/cobra"
+
+	"github.com/MikeBengtson/gemba/internal/adapter/native/install"
 )
 
 // newInstallBridgeCmd registers the `gemba install-bridge` subcommand.

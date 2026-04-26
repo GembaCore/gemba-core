@@ -75,11 +75,11 @@ func TestCreateConsult_RegistryNotConfiguredReturns503(t *testing.T) {
 func TestCreateConsult_HappyPathReturns201Summary(t *testing.T) {
 	r, p := newConsultsPostRouter(t)
 	rec := postConsult(t, r, map[string]any{
-		"persona_id":     p.ID,
-		"skill_id":       epic_order.ID,
-		"workspace":      "gemba",
-		"raw_input":      validEpicOrderInput(t),
-		"guidance":       "favor unblocking UI work",
+		"persona_id": p.ID,
+		"skill_id":   epic_order.ID,
+		"workspace":  "gemba",
+		"raw_input":  validEpicOrderInput(t),
+		"guidance":   "favor unblocking UI work",
 		"template": map[string]any{
 			"workspace_name": "Gemba",
 			"project_prefix": "gm",
@@ -134,8 +134,8 @@ func TestCreateConsult_NonceReplayReturnsCachedResponse(t *testing.T) {
 func TestCreateConsult_RejectsMissingFields(t *testing.T) {
 	r, p := newConsultsPostRouter(t)
 	cases := map[string]map[string]any{
-		"missing-persona": {"skill_id": epic_order.ID, "workspace": "gemba", "raw_input": map[string]any{}},
-		"missing-skill":   {"persona_id": p.ID, "workspace": "gemba", "raw_input": map[string]any{}},
+		"missing-persona":   {"skill_id": epic_order.ID, "workspace": "gemba", "raw_input": map[string]any{}},
+		"missing-skill":     {"persona_id": p.ID, "workspace": "gemba", "raw_input": map[string]any{}},
 		"missing-workspace": {"persona_id": p.ID, "skill_id": epic_order.ID, "raw_input": map[string]any{}},
 		"missing-raw-input": {"persona_id": p.ID, "skill_id": epic_order.ID, "workspace": "gemba"},
 	}

@@ -57,8 +57,8 @@ func TestDetectDrift_UseRatioGuardsAgainstAsymmetry(t *testing.T) {
 		BeadConcepts{BeadID: "shared-2", Concepts: []string{"core", "fluke"}},
 	)
 	d := DetectDrift(beads, DriftOpts{
-		NearDuplicateJaccard:  0.2,  // very permissive — would otherwise flag
-		NearDuplicateUseRatio: 0.5,  // 2/8 = 0.25 < 0.5 → guard rejects
+		NearDuplicateJaccard:  0.2, // very permissive — would otherwise flag
+		NearDuplicateUseRatio: 0.5, // 2/8 = 0.25 < 0.5 → guard rejects
 	})
 	for _, nd := range d.NearDuplicates {
 		if (nd.A == "core" && nd.B == "fluke") || (nd.A == "fluke" && nd.B == "core") {

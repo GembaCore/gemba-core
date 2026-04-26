@@ -107,23 +107,23 @@ type WorkItem struct {
 	// AdditionalWritePaths grants writes outside cwd. Very rare —
 	// the operator must justify in bead notes. Surfaces via labels
 	// `write:<glob>`.
-	AdditionalWritePaths []string `json:"additional_write_paths,omitempty"`
-	Kind          string             `json:"kind"`
-	Title         string            `json:"title"`
-	Description   string            `json:"description,omitempty"`
-	Status        string            `json:"status"`
-	StateCategory StateCategory     `json:"state_category"`
-	Priority      *int              `json:"priority,omitempty"`
-	Owner         *AgentRef         `json:"owner,omitempty"`
-	Assignee      *AgentRef         `json:"assignee,omitempty"`
-	Labels        []string          `json:"labels,omitempty"`
-	Relationships []Relationship    `json:"relationships,omitempty"`
-	Evidence      []Evidence        `json:"evidence,omitempty"`
-	DoD           *DefinitionOfDone `json:"dod,omitempty"`
-	SprintID      *string           `json:"sprint_id,omitempty"`
-	CreatedAt     time.Time         `json:"created_at"`
-	UpdatedAt     time.Time         `json:"updated_at"`
-	Custom        map[string]any    `json:"custom,omitempty"`
+	AdditionalWritePaths []string          `json:"additional_write_paths,omitempty"`
+	Kind                 string            `json:"kind"`
+	Title                string            `json:"title"`
+	Description          string            `json:"description,omitempty"`
+	Status               string            `json:"status"`
+	StateCategory        StateCategory     `json:"state_category"`
+	Priority             *int              `json:"priority,omitempty"`
+	Owner                *AgentRef         `json:"owner,omitempty"`
+	Assignee             *AgentRef         `json:"assignee,omitempty"`
+	Labels               []string          `json:"labels,omitempty"`
+	Relationships        []Relationship    `json:"relationships,omitempty"`
+	Evidence             []Evidence        `json:"evidence,omitempty"`
+	DoD                  *DefinitionOfDone `json:"dod,omitempty"`
+	SprintID             *string           `json:"sprint_id,omitempty"`
+	CreatedAt            time.Time         `json:"created_at"`
+	UpdatedAt            time.Time         `json:"updated_at"`
+	Custom               map[string]any    `json:"custom,omitempty"`
 	// Derived carries UI-facing booleans computed by Derive from this
 	// item plus its open escalations (gm-gsh). Servers SHOULD populate
 	// it on every read so the UI does not have to rebuild the predicate

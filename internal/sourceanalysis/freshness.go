@@ -54,8 +54,8 @@ const DefaultFreshnessThreshold = 4 * time.Hour
 // Wire shape: stable JSON tags so the planner's audit / notices
 // payloads can carry the report without reinventing the schema.
 type FreshnessReport struct {
-	Backend   string        `json:"backend"`
-	Available bool          `json:"available"`
+	Backend   string `json:"backend"`
+	Available bool   `json:"available"`
 	// Stale is true when Available is true AND IndexUpdatedAt is
 	// non-zero AND the index is older than Threshold. False on
 	// every other path — including unavailable backends and
@@ -122,9 +122,9 @@ type freshGate struct {
 }
 
 type cachedReport struct {
-	report   FreshnessReport
-	caps     Capabilities
-	expires  time.Time
+	report  FreshnessReport
+	caps    Capabilities
+	expires time.Time
 }
 
 // FreshGateConfig configures NewFreshGate. Zero-value fields fall

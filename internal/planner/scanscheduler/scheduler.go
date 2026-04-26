@@ -22,12 +22,12 @@ type Scheduler struct {
 	cfg       Config
 	rescanner Rescanner
 
-	mu         sync.Mutex
-	cooldown   map[string]time.Time     // repo → last-completed scan
-	inFlight   map[string]*runningScan  // repo → currently-running scan
-	queued     map[string]Trigger       // repo → coalesced next trigger
+	mu          sync.Mutex
+	cooldown    map[string]time.Time    // repo → last-completed scan
+	inFlight    map[string]*runningScan // repo → currently-running scan
+	queued      map[string]Trigger      // repo → coalesced next trigger
 	pausedUntil time.Time               // override: suppress non-manual triggers
-	activities []ScanActivity           // ring buffer of recent scans (newest last)
+	activities  []ScanActivity          // ring buffer of recent scans (newest last)
 
 	// activitiesCap bounds the in-memory ring; older entries fall
 	// off when the cap is hit. The persistent activity log lives
@@ -38,9 +38,9 @@ type Scheduler struct {
 }
 
 type runningScan struct {
-	trigger Trigger
+	trigger   Trigger
 	startedAt time.Time
-	done    chan struct{}
+	done      chan struct{}
 }
 
 // Option tunes a Scheduler at construction. All have safe defaults.

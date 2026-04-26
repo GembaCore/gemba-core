@@ -59,8 +59,8 @@ func (n *notifyingDecorator) NotifyExternal(ctx context.Context, id core.WorkIte
 
 // Compile-time guarantees that the wrapper satisfies both surfaces.
 var (
-	_ core.WorkPlane         = (*notifyingDecorator)(nil)
-	_ core.WorkItemNotifier  = (*notifyingDecorator)(nil)
+	_ core.WorkPlane        = (*notifyingDecorator)(nil)
+	_ core.WorkItemNotifier = (*notifyingDecorator)(nil)
 )
 
 type decorator struct {

@@ -9,13 +9,13 @@ import (
 
 // Pattern is a glob target. The supported grammar:
 //
-//   foo/bar.go         literal path
-//   foo/*.go           single-segment wildcard
-//   foo/?ar.go         single-character wildcard
-//   foo/**             recursive prefix (matches foo, foo/x, foo/x/y/...)
-//   foo/**/bar.go      recursive with literal suffix (gm-s47n.4.1 v1
-//                      treats this as kindComplex — Maybe without FS)
-//   **                 entire tree
+//	foo/bar.go         literal path
+//	foo/*.go           single-segment wildcard
+//	foo/?ar.go         single-character wildcard
+//	foo/**             recursive prefix (matches foo, foo/x, foo/x/y/...)
+//	foo/**/bar.go      recursive with literal suffix (gm-s47n.4.1 v1
+//	                   treats this as kindComplex — Maybe without FS)
+//	**                 entire tree
 //
 // Character classes ([abc]) are NOT supported; if the bead authoring
 // pipeline grows them, add a kindComplex fallthrough that recognises

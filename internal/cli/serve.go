@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	gemba "github.com/MikeBengtson/gemba"
 	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
@@ -32,7 +34,6 @@ import (
 	"github.com/MikeBengtson/gemba/internal/shader/gastown"
 	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
-	"github.com/spf13/cobra"
 )
 
 func newServeCmd(b BuildInfo) *cobra.Command {

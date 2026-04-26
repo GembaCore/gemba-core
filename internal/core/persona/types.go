@@ -359,11 +359,11 @@ func (p Persona) Validate() error {
 // time. The dispatcher composes this from the HTTP `/api/v1/consult`
 // payload.
 type SkillRequest struct {
-	SkillID     string             `json:"skill_id"`
-	Workspace   string             `json:"workspace"`
-	Input       json.RawMessage    `json:"input"`
-	Guidance    string             `json:"guidance,omitempty"`
-	Constraints SkillConstraints   `json:"constraints,omitzero"`
+	SkillID     string           `json:"skill_id"`
+	Workspace   string           `json:"workspace"`
+	Input       json.RawMessage  `json:"input"`
+	Guidance    string           `json:"guidance,omitempty"`
+	Constraints SkillConstraints `json:"constraints,omitzero"`
 }
 
 // SkillConstraints carries caller-supplied limits the dispatcher
@@ -405,18 +405,18 @@ type TokenUsage struct {
 // log. Every consult — whether the operator applied a SuggestedAction
 // or not — produces exactly one record.
 type PersonaConsultRecord struct {
-	ID          string          `json:"id"`
-	PersonaID   string          `json:"persona_id"`
-	SkillID     string          `json:"skill_id"`
-	Workspace   string          `json:"workspace"`
-	StartedAt   time.Time       `json:"started_at"`
-	EndedAt     time.Time       `json:"ended_at"`
-	Request     json.RawMessage `json:"request"`
-	Response    json.RawMessage `json:"response,omitempty"`
-	Tokens      TokenUsage      `json:"tokens"`
-	Dollars     float64         `json:"dollars"`
-	Model       string          `json:"model"`
-	LatencyMs   int             `json:"latency_ms"`
-	AppliedIdx  []int           `json:"applied_idx,omitempty"`
-	Error       string          `json:"error,omitempty"`
+	ID         string          `json:"id"`
+	PersonaID  string          `json:"persona_id"`
+	SkillID    string          `json:"skill_id"`
+	Workspace  string          `json:"workspace"`
+	StartedAt  time.Time       `json:"started_at"`
+	EndedAt    time.Time       `json:"ended_at"`
+	Request    json.RawMessage `json:"request"`
+	Response   json.RawMessage `json:"response,omitempty"`
+	Tokens     TokenUsage      `json:"tokens"`
+	Dollars    float64         `json:"dollars"`
+	Model      string          `json:"model"`
+	LatencyMs  int             `json:"latency_ms"`
+	AppliedIdx []int           `json:"applied_idx,omitempty"`
+	Error      string          `json:"error,omitempty"`
 }

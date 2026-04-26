@@ -20,8 +20,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
 	"github.com/spf13/cobra"
+
+	"github.com/MikeBengtson/gemba/internal/planner"
 )
 
 // defaultPolicyFilePath is the conventional location for the

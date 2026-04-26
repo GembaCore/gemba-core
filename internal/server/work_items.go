@@ -7,9 +7,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
-	"github.com/go-chi/chi/v5"
 )
 
 // listWorkItems is the GET /api/work-items handler. It calls the

@@ -105,11 +105,11 @@ func NativeSpawn(op core.OrchestrationPlaneAdaptor, agentType string) SpawnFunc 
 				// uses it for worktree provisioning + pane title;
 				// the override below pins the session ID itself
 				// so bridge frames carry the right consult key.
-				"gemba:bead_id":              c.ID,
-				"gemba:agent_type":           agentType,
-				"gemba:workspace":            c.WorkingDir,
-				"gemba:session_id_override":  c.ID,
-				"gemba:title":                fmt.Sprintf("consult: %s · %s", c.PersonaID, c.SkillID),
+				"gemba:bead_id":             c.ID,
+				"gemba:agent_type":          agentType,
+				"gemba:workspace":           c.WorkingDir,
+				"gemba:session_id_override": c.ID,
+				"gemba:title":               fmt.Sprintf("consult: %s · %s", c.PersonaID, c.SkillID),
 			},
 		}
 		_, err := op.StartSession(ctx, c.ID, spec)

@@ -17,13 +17,13 @@ type fakeSkill struct {
 	prompt string
 }
 
-func (f fakeSkill) ID() string                                                  { return f.id }
-func (f fakeSkill) Name() string                                                { return f.id }
-func (f fakeSkill) Description() string                                         { return "test fake" }
-func (f fakeSkill) SkillPrompt() string                                         { return f.prompt }
-func (f fakeSkill) OutputTool() corepersona.ToolSpec                            { return corepersona.ToolSpec{} }
-func (f fakeSkill) ValidateInput(raw json.RawMessage) (any, error)              { return raw, nil }
-func (f fakeSkill) ValidateOutputLine(raw json.RawMessage) (any, error)         { return raw, nil }
+func (f fakeSkill) ID() string                                          { return f.id }
+func (f fakeSkill) Name() string                                        { return f.id }
+func (f fakeSkill) Description() string                                 { return "test fake" }
+func (f fakeSkill) SkillPrompt() string                                 { return f.prompt }
+func (f fakeSkill) OutputTool() corepersona.ToolSpec                    { return corepersona.ToolSpec{} }
+func (f fakeSkill) ValidateInput(raw json.RawMessage) (any, error)      { return raw, nil }
+func (f fakeSkill) ValidateOutputLine(raw json.RawMessage) (any, error) { return raw, nil }
 
 func samplePersona() *corepersona.Persona {
 	return &corepersona.Persona{
@@ -94,7 +94,7 @@ func TestCompose_HappyPath(t *testing.T) {
 				{"epic_id": "gm-e3", "title": "Plan view"},
 			},
 		},
-		Guidance: "focus on unblocking UI work",
+		Guidance:     "focus on unblocking UI work",
 		ProjectGoals: []string{"Ship Plan view by end of sprint."},
 	}
 	got, err := Compose(req)

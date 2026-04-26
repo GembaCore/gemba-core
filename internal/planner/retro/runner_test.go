@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/planner"

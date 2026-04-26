@@ -32,12 +32,13 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/planner"
 	"github.com/MikeBengtson/gemba/internal/planner/conflicts"
 	"github.com/MikeBengtson/gemba/internal/planner/targets"
 	"github.com/MikeBengtson/gemba/internal/sourceanalysis"
-	"github.com/spf13/cobra"
 )
 
 // PlannerInput is the wire shape both commands accept on stdin.
@@ -63,14 +64,14 @@ type PlannerInput struct {
 // the caller); BeadTarget is the routing-collision input for
 // workspace conflict.
 type PlannerInputBead struct {
-	ID           core.WorkItemID                `json:"id"`
-	Concepts     []planner.ConceptTag           `json:"concepts,omitempty"`
-	Targets      []string                       `json:"targets,omitempty"`
-	Repositories []string                       `json:"repositories,omitempty"`
-	Branch       string                         `json:"branch,omitempty"`
-	WorktreePath string                         `json:"worktree_path,omitempty"`
-	GlobPatterns []targets.Pattern              `json:"glob_patterns,omitempty"`
-	SemanticHits []sourceanalysis.Target        `json:"semantic_hits,omitempty"`
+	ID           core.WorkItemID         `json:"id"`
+	Concepts     []planner.ConceptTag    `json:"concepts,omitempty"`
+	Targets      []string                `json:"targets,omitempty"`
+	Repositories []string                `json:"repositories,omitempty"`
+	Branch       string                  `json:"branch,omitempty"`
+	WorktreePath string                  `json:"worktree_path,omitempty"`
+	GlobPatterns []targets.Pattern       `json:"glob_patterns,omitempty"`
+	SemanticHits []sourceanalysis.Target `json:"semantic_hits,omitempty"`
 }
 
 // newConflictsCmd builds `gemba conflicts`.
@@ -196,11 +197,11 @@ type PlannerJSONOut struct {
 }
 
 type ConflictsOut struct {
-	Edges                []conflicts.Edge                `json:"edges"`
-	Batches              []conflicts.Batch               `json:"batches"`
-	WorkspaceCollisions  []planner.WorkspaceCollision    `json:"workspace_collisions"`
-	SemanticConflicts    []planner.SemanticConflict      `json:"semantic_conflicts"`
-	Notices              []string                        `json:"notices,omitempty"`
+	Edges               []conflicts.Edge             `json:"edges"`
+	Batches             []conflicts.Batch            `json:"batches"`
+	WorkspaceCollisions []planner.WorkspaceCollision `json:"workspace_collisions"`
+	SemanticConflicts   []planner.SemanticConflict   `json:"semantic_conflicts"`
+	Notices             []string                     `json:"notices,omitempty"`
 }
 
 type AffinityOut struct {
@@ -208,10 +209,10 @@ type AffinityOut struct {
 }
 
 type AffinityRow struct {
-	BeadID    core.WorkItemID         `json:"bead_id"`
-	SessionID string                  `json:"session_id"`
-	AgentID   core.AgentID            `json:"agent_id,omitempty"`
-	Scores    planner.AffinityScores  `json:"scores"`
+	BeadID    core.WorkItemID        `json:"bead_id"`
+	SessionID string                 `json:"session_id"`
+	AgentID   core.AgentID           `json:"agent_id,omitempty"`
+	Scores    planner.AffinityScores `json:"scores"`
 }
 
 func runConflicts(cmd *cobra.Command, in *PlannerInput, asJSON bool) error {

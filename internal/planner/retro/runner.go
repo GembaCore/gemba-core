@@ -69,10 +69,10 @@ var ErrUnavailable = errors.New("retro: actuals unavailable")
 // the retrospective the "single most important feedback loop", which
 // means missing pieces should NEVER tank the dispatch path.
 type Runner struct {
-	Store      *Store
-	Declared   DeclaredSource
-	Actual     ActualSource
-	Profiles   planner.ProfileWriter
+	Store    *Store
+	Declared DeclaredSource
+	Actual   ActualSource
+	Profiles planner.ProfileWriter
 
 	// HalfLife passes through to RecordCompletion. Zero means
 	// planner.DefaultDecayHalfLife.

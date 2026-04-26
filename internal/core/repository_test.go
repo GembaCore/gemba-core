@@ -732,8 +732,8 @@ func TestDerivePrefix(t *testing.T) {
 		{"gemba", "ge"},
 		{"frontend", "fr"},
 		{"a1", "a1"},
-		{"a", "wp"},     // too short
-		{"___", "wp"},   // no letters/digits
+		{"a", "wp"},      // too short
+		{"___", "wp"},    // no letters/digits
 		{"-x-y-z", "xy"}, // skips leading hyphens
 		{"", "wp"},
 	}

@@ -11,9 +11,9 @@ import (
 // normalized lower-kebab-case so a bead carrying "React-Query"
 // matches a vocabulary term "react-query".
 type Term struct {
-	Name        string     `json:"name"`
-	Source      string     `json:"source"`
-	Description string     `json:"description,omitempty"`
+	Name        string `json:"name"`
+	Source      string `json:"source"`
+	Description string `json:"description,omitempty"`
 	// Aliases are names that merged into this term. Kept on the
 	// surviving term so lookups for the retired name still resolve
 	// without walking the suggestions log.

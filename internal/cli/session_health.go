@@ -21,9 +21,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/spf13/cobra"
 )
 
 // SessionHealthInput is the wire shape `gemba session-health`
@@ -32,8 +33,8 @@ import (
 // computation falls through to ConceptDrift=0 (treat as "no recent
 // drift signal"), still useful for the other two numbers.
 type SessionHealthInput struct {
-	Sessions     []SessionHealthEntry                                 `json:"sessions"`
-	BeadConcepts map[core.WorkItemID]map[planner.ConceptTag]float64   `json:"bead_concepts,omitempty"`
+	Sessions     []SessionHealthEntry                               `json:"sessions"`
+	BeadConcepts map[core.WorkItemID]map[planner.ConceptTag]float64 `json:"bead_concepts,omitempty"`
 	// Now overrides time.Now for deterministic test runs. RFC3339
 	// string. Empty → live wall clock.
 	Now string `json:"now,omitempty"`

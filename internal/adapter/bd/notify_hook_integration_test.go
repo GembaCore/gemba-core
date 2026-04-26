@@ -19,10 +19,10 @@ import (
 // against an httptest server playing the role of /api/workitems/notify
 // (gm-e4.3.3). Skipped by default — runs only when:
 //
-//   1. GEMBA_BD_HOOK_INTEG=1 is set in the environment, AND
-//   2. The gemba-bd-hook binary is reachable at GEMBA_BD_HOOK_BIN, or
-//      one is found via `make build` output at ./bin/gemba-bd-hook
-//      relative to the repo root.
+//  1. GEMBA_BD_HOOK_INTEG=1 is set in the environment, AND
+//  2. The gemba-bd-hook binary is reachable at GEMBA_BD_HOOK_BIN, or
+//     one is found via `make build` output at ./bin/gemba-bd-hook
+//     relative to the repo root.
 //
 // Lives under internal/adapter/bd_test (external test package) so it
 // doesn't pollute the unit-test surface and so the build dependency

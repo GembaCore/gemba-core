@@ -8,10 +8,11 @@ import (
 	"os"
 	"sync/atomic"
 
+	"github.com/spf13/cobra"
+
 	"github.com/MikeBengtson/gemba/internal/adapter/noop"
 	"github.com/MikeBengtson/gemba/internal/core"
 	gembatesting "github.com/MikeBengtson/gemba/testing"
-	"github.com/spf13/cobra"
 )
 
 // testFlags captures the `gemba adaptor test` flag surface. See the

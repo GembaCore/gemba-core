@@ -7,12 +7,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
-	"github.com/go-chi/chi/v5"
 )
 
 // gm-b1: /api/adaptors reports per-adaptor health with the shape the SPA

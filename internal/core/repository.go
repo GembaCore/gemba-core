@@ -233,8 +233,8 @@ func LoadRepositoriesDir(dir string) (map[RepositoryID]*Repository, error) {
 // concurrent reads thereafter — same contract as
 // [internal/core/persona.Registry].
 type RepositoryRegistry struct {
-	repos      map[RepositoryID]*Repository
-	byPrefix   map[string]*Repository // gm-d2ts: prefix → Repository
+	repos    map[RepositoryID]*Repository
+	byPrefix map[string]*Repository // gm-d2ts: prefix → Repository
 }
 
 // NewRepositoryRegistry returns an empty RepositoryRegistry.
@@ -289,11 +289,11 @@ func LoadRepositoryRegistry(dir string) (*RepositoryRegistry, error) {
 //  2. Else, if workspaceDir contains a `.git/` directory, materialize
 //     a single Repository with:
 //
-//       - ID            = lowercased basename of workspaceDir (sanitized)
-//       - Path          = workspaceDir (made absolute)
-//       - DefaultBranch = HEAD's symbolic-ref short name; "main" on error
-//       - URL           = `git remote get-url origin`; empty on error
-//       - BeadPrefix    = first 2 lowercase letters of the ID; "wp" fallback
+//     - ID            = lowercased basename of workspaceDir (sanitized)
+//     - Path          = workspaceDir (made absolute)
+//     - DefaultBranch = HEAD's symbolic-ref short name; "main" on error
+//     - URL           = `git remote get-url origin`; empty on error
+//     - BeadPrefix    = first 2 lowercase letters of the ID; "wp" fallback
 //
 //     The result is a one-Repository registry the rest of Gemba treats
 //     identically to an operator-declared single-repo workspace. The

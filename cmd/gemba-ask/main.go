@@ -94,10 +94,10 @@ type Frame struct {
 // changes modes mid-session, older in-flight asks keep their
 // original-mode urgency, which is the desired semantics.
 type GembaAskPayload struct {
-	Kind   string `json:"kind"`   // question | blocker
-	Role   string `json:"role"`   // coach | manager
+	Kind   string `json:"kind"` // question | blocker
+	Role   string `json:"role"` // coach | manager
 	Text   string `json:"text"`
-	Mode   string `json:"mode"`   // dangerous | balanced | cautious
+	Mode   string `json:"mode"` // dangerous | balanced | cautious
 	BeadID string `json:"bead_id,omitempty"`
 	Title  string `json:"title,omitempty"`
 }

@@ -139,11 +139,11 @@ type ClosedEpicSummary struct {
 // priorities. The PM is instructed: "an Epic that resolves an open
 // escalation jumps in rank."
 type EscalationSummary struct {
-	ID           string          `json:"id"`
-	Severity     string          `json:"severity"`
-	Title        string          `json:"title"`
-	BlockedEpic  core.WorkItemID `json:"blocked_epic,omitempty"`
-	OpenedAt     time.Time       `json:"opened_at,omitempty"`
+	ID          string          `json:"id"`
+	Severity    string          `json:"severity"`
+	Title       string          `json:"title"`
+	BlockedEpic core.WorkItemID `json:"blocked_epic,omitempty"`
+	OpenedAt    time.Time       `json:"opened_at,omitempty"`
 }
 
 // SprintContext is the budget envelope the PM reasons inside. Burn
@@ -196,14 +196,14 @@ type StrategyLine struct {
 // rank order. Confidence is on [0, 1]; the UI renders < 0.6 with a
 // "low confidence" treatment.
 type RecommendationLine struct {
-	Type             LineType         `json:"type"`
-	Rank             int              `json:"rank"`
-	EpicID           core.WorkItemID  `json:"epic_id"`
-	ParallelGroup    *string          `json:"parallel_group,omitempty"`
-	Confidence       float64          `json:"confidence"`
-	Rationale        string           `json:"rationale"`
-	EstimatedTokens  *int             `json:"estimated_tokens,omitempty"`
-	SuggestedAction  *SuggestedAction `json:"suggested_action,omitempty"`
+	Type            LineType         `json:"type"`
+	Rank            int              `json:"rank"`
+	EpicID          core.WorkItemID  `json:"epic_id"`
+	ParallelGroup   *string          `json:"parallel_group,omitempty"`
+	Confidence      float64          `json:"confidence"`
+	Rationale       string           `json:"rationale"`
+	EstimatedTokens *int             `json:"estimated_tokens,omitempty"`
+	SuggestedAction *SuggestedAction `json:"suggested_action,omitempty"`
 }
 
 // SuggestedAction is the verb+path the operator (or auto-approve, in

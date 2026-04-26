@@ -32,9 +32,9 @@ type HealthBus struct {
 	interval time.Duration
 	source   func() []AdaptorStatus
 
-	mu    sync.Mutex
-	subs  map[chan []AdaptorStatus]struct{}
-	snap  []AdaptorStatus
+	mu     sync.Mutex
+	subs   map[chan []AdaptorStatus]struct{}
+	snap   []AdaptorStatus
 	seeded bool
 
 	startMu sync.Mutex

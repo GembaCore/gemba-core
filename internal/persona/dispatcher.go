@@ -209,8 +209,8 @@ type LineError struct {
 // layer assembles it from the /api/v1/consult body plus the
 // resolved persona/skill from the registries.
 type BeginRequest struct {
-	Persona  *corepersona.Persona
-	Skill    corepersona.Skill
+	Persona   *corepersona.Persona
+	Skill     corepersona.Skill
 	Workspace string
 	RawInput  json.RawMessage
 	Guidance  string

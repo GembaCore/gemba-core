@@ -202,11 +202,11 @@ const (
 // the one invariant is that writes within the workspace do not escape
 // to corrupt another concurrent assignment's workspace.
 type Workspace struct {
-	ID               string                `json:"id"`
-	Kind             WorkspaceKind         `json:"kind"`
-	Repository       string                `json:"repository,omitempty"`
-	Branch           string                `json:"branch,omitempty"`
-	BaseSHA          string                `json:"base_sha,omitempty"`
+	ID         string        `json:"id"`
+	Kind       WorkspaceKind `json:"kind"`
+	Repository string        `json:"repository,omitempty"`
+	Branch     string        `json:"branch,omitempty"`
+	BaseSHA    string        `json:"base_sha,omitempty"`
 	// WorktreePath is the absolute filesystem path of the working
 	// copy when Kind == WorkspaceWorktree (gm-s47n.2.6). Empty for
 	// every other Kind. Promoted to a typed field so the planner

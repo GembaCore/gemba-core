@@ -38,8 +38,8 @@ func TestBeadsConformanceR1R8Audit(t *testing.T) {
 	// on this list unexpectedly starts passing (meaning the gap
 	// closed and the ledger should be updated).
 	knownGaps := map[string]string{
-		"B_update_patch_applies":  "bd CreateWorkItem ignores caller-supplied ID; UpdateWorkItem against that id is not-found (gap filed under gm-e6)",
-		"B_list_returns_created":  "bd CreateWorkItem ignores caller-supplied ID; ListWorkItems can't match it (gap filed under gm-e6)",
+		"B_update_patch_applies": "bd CreateWorkItem ignores caller-supplied ID; UpdateWorkItem against that id is not-found (gap filed under gm-e6)",
+		"B_list_returns_created": "bd CreateWorkItem ignores caller-supplied ID; ListWorkItems can't match it (gap filed under gm-e6)",
 	}
 
 	byName := map[string]gembatesting.GroupResult{}
@@ -89,10 +89,10 @@ func TestBeadsConformanceR1R8Audit(t *testing.T) {
 	// corresponding set of probes in Group K.
 	gK := byName["K"]
 	wantHookProbes := map[string]bool{
-		"K_ready_set_subscribe_latency":   false,
-		"K_claim_atomic":                  false,
-		"K_escalation_ingest_round_trip":  false,
-		"K_work_complete_ack":             false,
+		"K_ready_set_subscribe_latency":  false,
+		"K_claim_atomic":                 false,
+		"K_escalation_ingest_round_trip": false,
+		"K_work_complete_ack":            false,
 	}
 	for _, p := range gK.Probes {
 		if _, ok := wantHookProbes[p.Name]; ok {

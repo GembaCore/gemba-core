@@ -131,7 +131,7 @@ func TestTick_DispatchesHighestAffinityBead(t *testing.T) {
 		sessCtx("sess-1", "gemba", profile, &planner.SessionHealth{ContextPressure: 0.2}),
 	}
 	ready := []ReadyBead{
-		bead("gm-1", "gemba", "auth"),    // perfect concept match
+		bead("gm-1", "gemba", "auth"), // perfect concept match
 		bead("gm-2", "gemba", "unrelated"),
 	}
 	dsp := &fakeDispatcher{}

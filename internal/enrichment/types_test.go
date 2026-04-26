@@ -81,12 +81,12 @@ func TestEnrichment_IsZero(t *testing.T) {
 
 func TestNormalizeTarget(t *testing.T) {
 	cases := map[string]string{
-		"":                   "",
-		"   ":                "",
-		"./internal/auth":    "internal/auth",
-		"internal//auth/":    "internal/auth/",
-		"  /etc/foo  ":       "/etc/foo",
-		"web/src/App.tsx":    "web/src/App.tsx",
+		"":                "",
+		"   ":             "",
+		"./internal/auth": "internal/auth",
+		"internal//auth/": "internal/auth/",
+		"  /etc/foo  ":    "/etc/foo",
+		"web/src/App.tsx": "web/src/App.tsx",
 	}
 	for in, want := range cases {
 		if got := normalizeTarget(in); got != want {

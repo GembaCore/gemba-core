@@ -9,8 +9,8 @@ import (
 // for each bead — just the id and the current concept set. Both the
 // drift detector and the historical rewrite consume this shape.
 type BeadConcepts struct {
-	BeadID     string
-	Concepts   []string
+	BeadID   string
+	Concepts []string
 	// CreatedAt + ClosedAt feed the singleton-decay heuristic. Both
 	// optional; zero values disable the time-window filter.
 	CreatedAt time.Time

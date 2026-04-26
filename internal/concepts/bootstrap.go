@@ -169,9 +169,9 @@ func Bootstrap(ctx context.Context, root string, sources []BootstrapSource, opts
 // output.
 type BootstrapResult struct {
 	Total    int
-	Skipped  int                // candidates dropped because Max was hit
-	BySource []BootstrapBucket  // count of terms attributed per source
-	Errors   []BootstrapError   // per-source failures (other sources still ran)
+	Skipped  int               // candidates dropped because Max was hit
+	BySource []BootstrapBucket // count of terms attributed per source
+	Errors   []BootstrapError  // per-source failures (other sources still ran)
 }
 
 type BootstrapBucket struct {

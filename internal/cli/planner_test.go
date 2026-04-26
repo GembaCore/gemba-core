@@ -7,10 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/planner"
 	"github.com/MikeBengtson/gemba/internal/planner/targets"
-	"github.com/spf13/cobra"
 )
 
 func TestConflictsCmd_EmptyInputPrintsNoEdges(t *testing.T) {

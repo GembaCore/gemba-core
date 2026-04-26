@@ -25,13 +25,13 @@
 // evolve their payloads without breaking metrics.
 //
 //   - workitem.* events:    payload["state_category"] (string) names
-//                           the new state for state_duration_seconds.
+//     the new state for state_duration_seconds.
 //   - session.cost_sample:  payload["cost_dollars"] (float64) names
-//                           the dollar cost to add to the counter.
+//     the dollar cost to add to the counter.
 //   - escalation.opened:    payload["source_kind"] (string) groups
-//                           the open_count gauge.
+//     the open_count gauge.
 //   - workspace.acquired:   payload["acquire_duration_seconds"]
-//                           (float64) feeds the latency histogram.
+//     (float64) feeds the latency histogram.
 //
 // Cardinality:
 //

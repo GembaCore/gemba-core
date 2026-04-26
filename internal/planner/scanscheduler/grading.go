@@ -116,8 +116,8 @@ func (s *Scheduler) Grade(miss MissedConflict, recentActivities []ScanActivity) 
 		return GradeFinding{
 			IndexWasStale:     true,
 			SuppressedTrigger: TriggerPreDispatchDemand,
-			Reason: "candidates had no semantic-conflict history at dispatch but the conflict materialised post-hoc; consider extending the history window",
-			Suggestion: "broaden the CandidatesHaveSemanticHistory lookback to include adjacent concept areas",
+			Reason:            "candidates had no semantic-conflict history at dispatch but the conflict materialised post-hoc; consider extending the history window",
+			Suggestion:        "broaden the CandidatesHaveSemanticHistory lookback to include adjacent concept areas",
 		}
 	default:
 		return GradeFinding{
@@ -132,14 +132,14 @@ func (s *Scheduler) Grade(miss MissedConflict, recentActivities []ScanActivity) 
 // suspectSuppressedTrigger picks the most-likely trigger to blame
 // for the miss. The hierarchy:
 //
-//   1. Drift signal — the backend itself reported staleness; if its
-//      threshold hadn't been crossed but the gap was meaningful,
-//      that's the first thing to tune.
-//   2. Wall-clock floor — index was older than the floor at
-//      observation.
-//   3. Pre-dispatch demand — index was stale and a scan WOULD have
-//      fired if the demand check had recognised the candidate set
-//      as semantically risky.
+//  1. Drift signal — the backend itself reported staleness; if its
+//     threshold hadn't been crossed but the gap was meaningful,
+//     that's the first thing to tune.
+//  2. Wall-clock floor — index was older than the floor at
+//     observation.
+//  3. Pre-dispatch demand — index was stale and a scan WOULD have
+//     fired if the demand check had recognised the candidate set
+//     as semantically risky.
 //
 // Returns TriggerUnknown when no rule cleanly applies.
 func suspectSuppressedTrigger(miss MissedConflict, _ []ScanActivity, cfg Config) TriggerKind {

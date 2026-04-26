@@ -38,12 +38,12 @@ import (
 // PreToolUse hook input. Unknown fields are tolerated — Claude has
 // shipped multiple revisions of this shape.
 type preToolUsePayload struct {
-	HookEventName string                 `json:"hook_event_name"`
-	ToolName      string                 `json:"tool_name"`
-	ToolInput     map[string]any         `json:"tool_input"`
-	Cwd           string                 `json:"cwd"`
-	SessionID     string                 `json:"session_id"`
-	Extras        map[string]any         `json:"-"`
+	HookEventName string         `json:"hook_event_name"`
+	ToolName      string         `json:"tool_name"`
+	ToolInput     map[string]any `json:"tool_input"`
+	Cwd           string         `json:"cwd"`
+	SessionID     string         `json:"session_id"`
+	Extras        map[string]any `json:"-"`
 }
 
 // claudeDenyResponse is the JSON shape Claude Code reads off stdout
@@ -197,12 +197,12 @@ var bashVerbIntent = map[string]string{
 	"ls": "read", "stat": "read", "file": "read",
 	"grep": "read", "egrep": "read", "rg": "read", "ack": "read",
 	"find": "read", "fd": "read",
-	"awk": "read",
-	"diff": "read",
-	"cd": "read", // cd is "may we cwd here" — read is the right gate
-	"cp":   "write", // dest matters more than src; accept first arg as proxy
-	"mv":   "write",
-	"rm":   "write",
+	"awk":   "read",
+	"diff":  "read",
+	"cd":    "read",  // cd is "may we cwd here" — read is the right gate
+	"cp":    "write", // dest matters more than src; accept first arg as proxy
+	"mv":    "write",
+	"rm":    "write",
 	"touch": "write",
 	"mkdir": "write",
 	"sed":   "write", // -i mutates; non-i reads — treat as write conservatively

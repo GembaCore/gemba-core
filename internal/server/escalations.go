@@ -13,9 +13,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
-	"github.com/go-chi/chi/v5"
 )
 
 func (r *Router) listEscalations(w http.ResponseWriter, req *http.Request) {

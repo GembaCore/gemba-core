@@ -15,9 +15,10 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
-	"github.com/go-chi/chi/v5"
 )
 
 // listSessions handles GET /api/sessions. Optional query params:

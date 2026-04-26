@@ -40,7 +40,7 @@ type EventContribution struct {
 // for an event i positions back from the most-recent event in a
 // stream of n events with half-life h.
 //
-//   eventsSinceMostRecent = n - i
+//	eventsSinceMostRecent = n - i
 //
 // 0 → most recent event (weight 1.0)
 // h → exactly half the most recent (weight 0.5)

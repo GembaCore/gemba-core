@@ -95,13 +95,13 @@ type rowScanner interface {
 
 func scanProfile(row rowScanner) (*SessionProfile, error) {
 	var (
-		p              SessionProfile
-		conceptsRaw    sql.NullString
-		filesRaw       sql.NullString
-		lastBeadsRaw   sql.NullString
-		lastActivity   time.Time
-		createdAt      time.Time
-		updatedAt      time.Time
+		p            SessionProfile
+		conceptsRaw  sql.NullString
+		filesRaw     sql.NullString
+		lastBeadsRaw sql.NullString
+		lastActivity time.Time
+		createdAt    time.Time
+		updatedAt    time.Time
 	)
 	err := row.Scan(
 		&p.SessionID, &p.AssignmentID, &p.AgentID,

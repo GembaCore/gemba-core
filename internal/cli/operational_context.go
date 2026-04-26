@@ -31,9 +31,10 @@ import (
 	"sort"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/spf13/cobra"
 )
 
 // OperationalContextInput is the offline-mode envelope. Operators
@@ -44,10 +45,10 @@ import (
 // TimeOnTask is meaningful from a Session alone (see gm-s47n.5.1).
 // Populate Profiles too for ContextPressure + ConceptDrift.
 type OperationalContextInput struct {
-	Sessions   []*core.Session                          `json:"sessions"`
-	Agents     []*core.AgentRef                         `json:"agents,omitempty"`
-	Workspaces []*core.Workspace                        `json:"workspaces,omitempty"`
-	Profiles   map[string]*planner.SessionProfile       `json:"profiles,omitempty"` // key = session id
+	Sessions   []*core.Session                    `json:"sessions"`
+	Agents     []*core.AgentRef                   `json:"agents,omitempty"`
+	Workspaces []*core.Workspace                  `json:"workspaces,omitempty"`
+	Profiles   map[string]*planner.SessionProfile `json:"profiles,omitempty"` // key = session id
 	// Optional: explicit clock for deterministic test runs (RFC3339).
 	Now string `json:"now,omitempty"`
 }
@@ -60,7 +61,9 @@ func (s staticSessionLookup) FindSession(_ context.Context, sessionID string) (*
 	return s.byID[sessionID], nil
 }
 
-type staticAgentLookup struct{ byID map[core.AgentID]*core.AgentRef }
+type staticAgentLookup struct {
+	byID map[core.AgentID]*core.AgentRef
+}
 
 func (a staticAgentLookup) ReadAgent(_ context.Context, id core.AgentID) (*core.AgentRef, error) {
 	return a.byID[id], nil
@@ -75,7 +78,9 @@ func (w staticWorkspaceLookup) InspectWorkspace(_ context.Context, workspaceID s
 	return core.Workspace{}, nil
 }
 
-type staticProfileLookup struct{ byID map[string]*planner.SessionProfile }
+type staticProfileLookup struct {
+	byID map[string]*planner.SessionProfile
+}
 
 func (p staticProfileLookup) GetProfile(_ context.Context, sessionID string) (*planner.SessionProfile, error) {
 	return p.byID[sessionID], nil

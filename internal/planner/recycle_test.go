@@ -17,7 +17,7 @@ func TestShouldRecycle_NoSignalKeepsSession(t *testing.T) {
 
 func TestShouldRecycle_HighPressureBelowMedianFiresRule1(t *testing.T) {
 	got := ShouldRecycle(RecycleInputs{
-		Health: &SessionHealth{ContextPressure: 0.9},
+		Health:                 &SessionHealth{ContextPressure: 0.9},
 		IncomingAffinityScores: AffinityScores{Combined: 0.20},
 		ReadySetAffinities:     []float64{0.20, 0.50, 0.80},
 	})
@@ -36,7 +36,7 @@ func TestShouldRecycle_HighPressureAboveMedianKeeps(t *testing.T) {
 	// Pressure high but the bead is one of the warmer matches —
 	// don't waste the priming.
 	got := ShouldRecycle(RecycleInputs{
-		Health: &SessionHealth{ContextPressure: 0.9},
+		Health:                 &SessionHealth{ContextPressure: 0.9},
 		IncomingAffinityScores: AffinityScores{Combined: 0.85},
 		ReadySetAffinities:     []float64{0.20, 0.50, 0.80, 0.85},
 	})
@@ -48,7 +48,7 @@ func TestShouldRecycle_HighPressureAboveMedianKeeps(t *testing.T) {
 func TestShouldRecycle_PressureExactlyAtThresholdKeeps(t *testing.T) {
 	// > 0.85, not >= — exactly at the threshold should NOT fire.
 	got := ShouldRecycle(RecycleInputs{
-		Health: &SessionHealth{ContextPressure: 0.85},
+		Health:                 &SessionHealth{ContextPressure: 0.85},
 		IncomingAffinityScores: AffinityScores{Combined: 0.10},
 		ReadySetAffinities:     []float64{0.50},
 	})
@@ -127,8 +127,8 @@ func TestShouldRecycle_LongTimeOnTaskFamiliarAreaKeeps(t *testing.T) {
 func TestShouldRecycle_TimeOnTaskExactlyFourHoursKeeps(t *testing.T) {
 	// > 4h, not >= — exactly 4h should not fire.
 	got := ShouldRecycle(RecycleInputs{
-		Health: &SessionHealth{TimeOnTask: 4 * time.Hour},
-		IncomingBead: AffinityBeadInputs{Concepts: []ConceptTag{"new"}},
+		Health:          &SessionHealth{TimeOnTask: 4 * time.Hour},
+		IncomingBead:    AffinityBeadInputs{Concepts: []ConceptTag{"new"}},
 		SessionConcepts: map[ConceptTag]float64{"old": 1.0},
 	})
 	if got.Recycle {

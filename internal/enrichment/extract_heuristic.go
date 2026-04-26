@@ -12,13 +12,13 @@ import (
 //
 //   - **Targets** come from path-shaped tokens. The detector matches
 //     two families:
-//       1. Backtick-fenced paths (`internal/auth/auth.go`,
-//          `web/src/App.tsx`) — the most reliable signal because the
-//          author has already committed to the path being literal.
-//       2. Bare path tokens with a recognized prefix (`internal/`,
-//          `cmd/`, `web/src/`, `docs/`, `testing/`) and either a
-//          file extension or a trailing `/`. Looser, so prefixes
-//          gate it.
+//     1. Backtick-fenced paths (`internal/auth/auth.go`,
+//     `web/src/App.tsx`) — the most reliable signal because the
+//     author has already committed to the path being literal.
+//     2. Bare path tokens with a recognized prefix (`internal/`,
+//     `cmd/`, `web/src/`, `docs/`, `testing/`) and either a
+//     file extension or a trailing `/`. Looser, so prefixes
+//     gate it.
 //   - **Concepts** come from substring matches against the supplied
 //     vocabulary. Word-boundary aware so "auth" doesn't match
 //     "author"; case-insensitive so "Auth" / "AUTH" / "auth" all
