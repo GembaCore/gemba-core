@@ -5,6 +5,7 @@
 package conflicts
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -18,7 +19,7 @@ func bead(id core.WorkItemID, ts ...targets.Pattern) Bead {
 }
 
 func TestConflicts_NoTargetOverlap(t *testing.T) {
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/a.go"),
 		bead("gm-2", "src/b.go"),
 	}, Options{})
@@ -34,7 +35,7 @@ func TestConflicts_NoTargetOverlap(t *testing.T) {
 }
 
 func TestConflicts_TargetOverlapEdge(t *testing.T) {
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/a.go", "lib/x.go"),
 		bead("gm-2", "src/a.go"),
 	}, Options{})
@@ -54,7 +55,7 @@ func TestConflicts_TargetOverlapEdge(t *testing.T) {
 }
 
 func TestConflicts_PrefixGlobOverlap(t *testing.T) {
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/**"),
 		bead("gm-2", "src/foo.go"),
 	}, Options{})
@@ -67,7 +68,7 @@ func TestConflicts_PrefixGlobOverlap(t *testing.T) {
 }
 
 func TestConflicts_MaybeWithoutFsBecomesMaybeReason(t *testing.T) {
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/*.go"),
 		bead("gm-2", "src/*.ts"),
 	}, Options{})
@@ -83,7 +84,7 @@ func TestConflicts_MaybeWithoutFsBecomesMaybeReason(t *testing.T) {
 }
 
 func TestConflicts_MaybeIsConflictEscalates(t *testing.T) {
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/*.go"),
 		bead("gm-2", "src/*.ts"),
 	}, Options{MaybeIsConflict: true})
@@ -100,7 +101,7 @@ func TestConflicts_FsResolvesMaybe(t *testing.T) {
 		"src/*.go":   {"src/a.go", "src/share.go"},
 		"src/sh*.go": {"src/share.go"},
 	}
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/*.go"),
 		bead("gm-2", "src/sh*.go"),
 	}, Options{FS: fs})
@@ -118,7 +119,7 @@ func TestConflicts_SemanticDetector(t *testing.T) {
 			{"gm-1", "gm-2"}: "Foo's exported symbol referenced by gm-2",
 		},
 	}
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		// Disjoint targets so target-overlap doesn't fire.
 		bead("gm-1", "src/foo.go"),
 		bead("gm-2", "src/bar.go"),
@@ -137,7 +138,7 @@ func TestConflicts_WorkspaceCollisionDetector(t *testing.T) {
 			{"gm-1", "gm-2"}: "both routed to worktree /tmp/wt-1",
 		},
 	}
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/foo.go"),
 		bead("gm-2", "lib/bar.go"),
 	}, Options{WorkspaceCollision: ws})
@@ -152,7 +153,7 @@ func TestConflicts_WorkspaceCollisionDetector(t *testing.T) {
 func TestConflicts_MultipleReasonsOnOneEdge(t *testing.T) {
 	sem := fakeSemantic{overlapPairs: map[[2]core.WorkItemID]string{{"gm-1", "gm-2"}: "shared symbol"}}
 	ws := fakeWorkspace{colliding: map[[2]core.WorkItemID]string{{"gm-1", "gm-2"}: "shared worktree"}}
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/foo.go"),
 		bead("gm-2", "src/foo.go"),
 	}, Options{Semantic: sem, WorkspaceCollision: ws})
@@ -171,7 +172,7 @@ func TestConflicts_MultipleReasonsOnOneEdge(t *testing.T) {
 func TestConflicts_EdgeOrderingCanonical(t *testing.T) {
 	// Input order is reversed; the resulting edge should still have
 	// From="gm-1", To="gm-2" (lexicographic).
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-2", "src/x.go"),
 		bead("gm-1", "src/x.go"),
 	}, Options{})
@@ -190,7 +191,7 @@ func TestConflicts_EmptyTargetsNoEdge(t *testing.T) {
 	// A bead with no targets can't conflict at the file level. (It
 	// might still conflict via semantic / workspace; those detectors
 	// are nil here.)
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1"),
 		bead("gm-2", "src/x.go"),
 	}, Options{})
@@ -204,7 +205,7 @@ func TestConflicts_EmptyTargetsNoEdge(t *testing.T) {
 
 func TestConflicts_DetectorErrorPropagates(t *testing.T) {
 	sem := errSemantic{err: errors.New("source-analysis cache cold")}
-	_, err := Conflicts([]Bead{
+	_, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/x.go"),
 		bead("gm-2", "lib/y.go"),
 	}, Options{Semantic: sem})
@@ -216,7 +217,7 @@ func TestConflicts_DetectorErrorPropagates(t *testing.T) {
 // ── Graph methods ──────────────────────────────────────────────────
 
 func TestGraph_NeighborsAndHasEdge(t *testing.T) {
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/a.go"),
 		bead("gm-2", "src/a.go"),
 		bead("gm-3", "src/b.go"),
@@ -244,7 +245,7 @@ func TestGraph_NeighborsAndHasEdge(t *testing.T) {
 // ── Batches ────────────────────────────────────────────────────────
 
 func TestBatches_AllConflictFreeFitsOneBatch(t *testing.T) {
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/a.go"),
 		bead("gm-2", "src/b.go"),
 		bead("gm-3", "src/c.go"),
@@ -266,7 +267,7 @@ func TestBatches_FirstFitGreedyWithConflict(t *testing.T) {
 	// Expected first-fit:
 	//   batch 0: gm-1, gm-3 (gm-3 fits because it doesn't conflict with gm-1)
 	//   batch 1: gm-2 (conflicts with gm-1, opens new batch)
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/a.go"),
 		bead("gm-2", "src/a.go"),
 		bead("gm-3", "src/b.go"),
@@ -289,7 +290,7 @@ func TestBatches_FirstFitGreedyWithConflict(t *testing.T) {
 func TestBatches_ChainOfConflicts(t *testing.T) {
 	// gm-1 ↔ gm-2 ↔ gm-3 (linear chain). gm-1 and gm-3 are NOT in
 	// conflict with each other (no edge), so they can share a batch.
-	g, err := Conflicts([]Bead{
+	g, err := Conflicts(context.Background(), []Bead{
 		bead("gm-1", "src/a.go", "src/shared12.go"),
 		bead("gm-2", "src/shared12.go", "src/shared23.go"),
 		bead("gm-3", "src/c.go", "src/shared23.go"),
@@ -327,7 +328,7 @@ func TestBatches_DeterministicAcrossInputOrder(t *testing.T) {
 		for i, id := range order {
 			permuted[i] = bs[idx[id]]
 		}
-		g, err := Conflicts(permuted, Options{})
+		g, err := Conflicts(context.Background(), permuted, Options{})
 		if err != nil {
 			t.Fatalf("error: %v", err)
 		}
@@ -355,7 +356,7 @@ type fakeSemantic struct {
 	overlapPairs map[[2]core.WorkItemID]string
 }
 
-func (f fakeSemantic) Detect(a, b Bead) (bool, string, error) {
+func (f fakeSemantic) Detect(_ context.Context, a, b Bead) (bool, string, error) {
 	key := pairKey(a.ID, b.ID)
 	if msg, ok := f.overlapPairs[key]; ok {
 		return true, msg, nil
@@ -367,7 +368,7 @@ type fakeWorkspace struct {
 	colliding map[[2]core.WorkItemID]string
 }
 
-func (f fakeWorkspace) Detect(a, b core.WorkItemID) (bool, string, error) {
+func (f fakeWorkspace) Detect(_ context.Context, a, b core.WorkItemID) (bool, string, error) {
 	key := pairKey(a, b)
 	if msg, ok := f.colliding[key]; ok {
 		return true, msg, nil
@@ -377,7 +378,7 @@ func (f fakeWorkspace) Detect(a, b core.WorkItemID) (bool, string, error) {
 
 type errSemantic struct{ err error }
 
-func (e errSemantic) Detect(_, _ Bead) (bool, string, error) {
+func (e errSemantic) Detect(_ context.Context, _, _ Bead) (bool, string, error) {
 	return false, "", e.err
 }
 

@@ -3,6 +3,7 @@
 package conflicts
 
 import (
+	"context"
 	"sort"
 
 	"github.com/MikeBengtson/gemba/internal/core"
@@ -170,8 +171,13 @@ func batchConflictsWith(b Batch, id core.WorkItemID, g Graph) bool {
 // public symbols overlap the other bead's targets. Implementations
 // own the source-analysis cache; the conflicts package is
 // orchestration-only.
+//
+// ctx threads through so the underlying source-analysis backend can
+// honour cancellation and timeouts; sourceanalysis.SourceAnalysis
+// methods all take a ctx, and propagating it here keeps that
+// contract intact through the planner.
 type SemanticDetector interface {
-	Detect(a, b Bead) (overlap bool, evidence string, err error)
+	Detect(ctx context.Context, a, b Bead) (overlap bool, evidence string, err error)
 }
 
 // WorkspaceCollisionDetector is the optional gm-s47n.4.6 hook.
@@ -179,7 +185,7 @@ type SemanticDetector interface {
 // worktree path. Cross-references live OperationalContexts that the
 // detector implementation owns.
 type WorkspaceCollisionDetector interface {
-	Detect(a, b core.WorkItemID) (overlap bool, evidence string, err error)
+	Detect(ctx context.Context, a, b core.WorkItemID) (overlap bool, evidence string, err error)
 }
 
 // Options bundle the configuration knobs for Conflicts. All fields
@@ -212,7 +218,11 @@ type Options struct {
 // input (dozens of beads) this is fine. A future bead may grow a
 // trie-backed prefix index (the bead's title mentions it) to bring
 // target-overlap detection sublinear; the API here doesn't change.
-func Conflicts(beads []Bead, opts Options) (Graph, error) {
+//
+// ctx is threaded into the optional Semantic / WorkspaceCollision
+// detectors so a long-running scoring pass honours cancellation;
+// the pure target-overlap analysis is in-memory and ignores ctx.
+func Conflicts(ctx context.Context, beads []Bead, opts Options) (Graph, error) {
 	ids := make([]core.WorkItemID, len(beads))
 	for i, b := range beads {
 		ids[i] = b.ID
@@ -221,7 +231,7 @@ func Conflicts(beads []Bead, opts Options) (Graph, error) {
 
 	for i := 0; i < len(beads); i++ {
 		for j := i + 1; j < len(beads); j++ {
-			edge, err := classifyPair(beads[i], beads[j], opts)
+			edge, err := classifyPair(ctx, beads[i], beads[j], opts)
 			if err != nil {
 				return Graph{}, err
 			}
@@ -245,7 +255,7 @@ func Conflicts(beads []Bead, opts Options) (Graph, error) {
 // returns the resulting Edge (with no Reasons if the pair is
 // conflict-free). Edge.From / Edge.To are canonicalised so the
 // caller doesn't have to.
-func classifyPair(a, b Bead, opts Options) (Edge, error) {
+func classifyPair(ctx context.Context, a, b Bead, opts Options) (Edge, error) {
 	from, to := a.ID, b.ID
 	if to < from {
 		from, to = to, from
@@ -284,7 +294,7 @@ func classifyPair(a, b Bead, opts Options) (Edge, error) {
 	}
 
 	if opts.Semantic != nil {
-		ok, evidence, err := opts.Semantic.Detect(a, b)
+		ok, evidence, err := opts.Semantic.Detect(ctx, a, b)
 		if err != nil {
 			return Edge{}, err
 		}
@@ -297,7 +307,7 @@ func classifyPair(a, b Bead, opts Options) (Edge, error) {
 	}
 
 	if opts.WorkspaceCollision != nil {
-		ok, evidence, err := opts.WorkspaceCollision.Detect(a.ID, b.ID)
+		ok, evidence, err := opts.WorkspaceCollision.Detect(ctx, a.ID, b.ID)
 		if err != nil {
 			return Edge{}, err
 		}
