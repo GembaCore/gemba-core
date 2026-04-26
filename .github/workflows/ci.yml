@@ -19,7 +19,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-14, windows-2022]
+        # Windows is intentionally not in the matrix: the
+        # orchestration / hook / native-adapter family
+        # (cmd/gemba-{ask,bd-hook,bridge,mcp,state}, adapter/{bd,
+        # native,native/bridge,native/install,native/preamble}) is
+        # Unix-centric — tmux, git-hook +x bits, fs path semantics,
+        # and exec.Command shapes that don't translate. Re-add
+        # windows-2022 only after a Windows-port bead lands the
+        # build-tagged shims.
+        os: [ubuntu-22.04, macos-14]
         # go.mod targets go 1.25. golangci-lint v2.5.0 (the lint
         # tool we install below) was built with go1.25 and panics
         # when asked to analyze go1.26 toolchain output, so the

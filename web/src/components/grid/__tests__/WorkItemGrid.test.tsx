@@ -78,10 +78,13 @@ describe('WorkItemGrid', () => {
     const domRows = screen.queryAllByTestId(/^grid-row-gm-\d+$/);
     expect(domRows.length).toBeGreaterThan(0);
     expect(domRows.length).toBeLessThan(100);
-    // 200ms is generous — production hardware mounts in ~30ms. The
-    // budget exists to fail loudly if someone accidentally renders all
-    // 10k rows; a regression there blows past 200ms with room to spare.
-    expect(elapsed).toBeLessThan(200);
+    // 500ms is generous — production hardware mounts in ~30ms and a
+    // local jsdom run lands at ~40-60ms. The budget exists to fail
+    // loudly if someone accidentally renders all 10k rows; a
+    // regression there blows past 500ms with room to spare. CI's
+    // slower x86 runners land in the 200-300ms band, which is why we
+    // sit higher than the local-laptop number.
+    expect(elapsed).toBeLessThan(500);
   });
 
   it('toggling a column in the visibility menu hides + restores it', () => {
