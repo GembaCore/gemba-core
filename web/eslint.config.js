@@ -23,7 +23,11 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
-      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+      // Off — the codebase deliberately colocates hooks (useFoo) and
+      // helpers next to the components they belong to (PmPanelContext,
+      // WalkContext, ValuesEditor, etc). The rule's only payoff is
+      // Vite HMR ergonomics; the colocation pattern outweighs it.
+      'react-refresh/only-export-components': 'off',
     },
   }
 );

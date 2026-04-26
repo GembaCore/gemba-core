@@ -61,14 +61,21 @@ export function BoardListView({
   // start toggling chips the URL carries explicit values and the
   // preset stops contributing to the API filter (it still drives the
   // post-filter so `mine` / `done-recent` keep working).
-  const effectiveStates =
-    stateCategories.length > 0
-      ? stateCategories
-      : preset
-        ? BOARD_PRESET_FILTERS[preset].state_category
-        : [];
-  const effectiveKinds =
-    kinds.length > 0 ? kinds : preset ? BOARD_PRESET_FILTERS[preset].kind : [];
+  // Memoized so the conditional fallback doesn't re-allocate on every
+  // render (which would invalidate the apiFilter useMemo below).
+  const effectiveStates = useMemo(
+    () =>
+      stateCategories.length > 0
+        ? stateCategories
+        : preset
+          ? BOARD_PRESET_FILTERS[preset].state_category
+          : [],
+    [stateCategories, preset]
+  );
+  const effectiveKinds = useMemo(
+    () => (kinds.length > 0 ? kinds : preset ? BOARD_PRESET_FILTERS[preset].kind : []),
+    [kinds, preset]
+  );
 
   const apiFilter = useMemo<WorkItemListFilter>(() => {
     const f: WorkItemListFilter = {};

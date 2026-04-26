@@ -45,9 +45,12 @@ interface GridMeta {
 }
 
 // Augment react-table's TableMeta so cell renderers can read GridMeta
-// without casting. Standard v8 pattern.
+// without casting. Standard v8 pattern — the interface is "empty"
+// but the declaration-merge with the upstream type is the whole
+// point, so the lint rule's "equivalent to its supertype" hint is a
+// false positive here.
 declare module '@tanstack/react-table' {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/no-empty-object-type
   interface TableMeta<TData extends RowData> extends GridMeta {}
 }
 

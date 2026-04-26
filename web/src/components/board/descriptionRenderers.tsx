@@ -32,16 +32,12 @@ const REGISTRY: Record<DescriptionFormat, DescriptionRenderer> = {
 // rendererFor returns the renderer for the adaptor-declared format.
 // Accepts the raw string off the manifest; unknown / undefined values
 // fall through to the plain renderer so a format introduced server-side
-// never crashes an older SPA build. The react-refresh lint rule treats
-// functions returning a component type as if they were components; this
-// is a pure lookup, so the disable is correct.
-// eslint-disable-next-line react-refresh/only-export-components
+// never crashes an older SPA build.
 export function rendererFor(format: string | undefined | null): DescriptionRenderer {
   if (format && isKnownFormat(format)) return REGISTRY[format];
   return PlainDescription;
 }
 
-// eslint-disable-next-line react-refresh/only-export-components
 export function isKnownFormat(v: string): v is DescriptionFormat {
   return (DESCRIPTION_FORMATS as readonly string[]).includes(v);
 }
