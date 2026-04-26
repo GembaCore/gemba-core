@@ -48,6 +48,8 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newAdaptorCmd(),
 		newAuthCmd(),
 		newInstallBridgeCmd(),
+		newConflictsCmd(),
+		newAffinityCmd(),
 	)
 
 	return root
