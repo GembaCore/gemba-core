@@ -44,6 +44,7 @@ Rewires to bd extras when gm-s47n.1.1 lands the WorkItem schema.`,
 		newBeadListCmd(),
 		newBeadTargetsCmd(),
 		newBeadConceptsCmd(),
+		newBeadExtractCmd(),
 	)
 	return cmd
 }
@@ -106,6 +107,145 @@ func newBeadListCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "workspace root")
 	return cmd
+}
+
+// ── extract ───────────────────────────────────────────────────────
+
+func newBeadExtractCmd() *cobra.Command {
+	var (
+		workspace string
+		title     string
+		body      string
+		spec      string
+		bodyFile  string
+		specFile  string
+		dryRun    bool
+		merge     bool
+	)
+	cmd := &cobra.Command{
+		Use:   "extract <bead-id>",
+		Short: "Extract a starter targets/concepts enrichment from bead text (gm-s47n.1.2)",
+		Long: `Run the configured Extractor over a bead's title + body + linked
+spec and stash the result as the bead's enrichment.
+
+The default extractor is the network-free HeuristicExtractor: it
+mines path-shaped tokens (backtick-fenced or bareword with a
+recognized prefix) and matches the supplied vocabulary against the
+text. An LLM-backed extractor will land behind the same Extractor
+interface; the CLI surface stays unchanged.
+
+By default --merge=false (a fresh extraction replaces any prior
+enrichment, sourced as 'llm' for retrospective grading purposes).
+Pass --merge to UNION the new extraction with the existing
+enrichment instead.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+			beadID := args[0]
+
+			if bodyFile != "" {
+				b, err := os.ReadFile(bodyFile)
+				if err != nil {
+					return fmt.Errorf("read --body-file: %w", err)
+				}
+				body = string(b)
+			}
+			if specFile != "" {
+				b, err := os.ReadFile(specFile)
+				if err != nil {
+					return fmt.Errorf("read --spec-file: %w", err)
+				}
+				spec = string(b)
+			}
+
+			vocab := loadVocabularyTerms(root)
+			extracted, err := enrichment.HeuristicExtractor{}.Extract(cmd.Context(),
+				enrichment.BeadInput{
+					BeadID:     beadID,
+					Title:      title,
+					Body:       body,
+					Spec:       spec,
+					Vocabulary: vocab,
+				})
+			if err != nil {
+				return err
+			}
+
+			store := enrichment.NewFileStore(root, nil)
+			final := extracted
+			if merge {
+				existing, loadErr := store.Load(cmd.Context(), beadID)
+				if loadErr != nil && !errors.Is(loadErr, enrichment.ErrNotFound) {
+					return loadErr
+				}
+				final = mergeEnrichments(existing, extracted)
+			}
+			final.BeadID = beadID
+			if final.Source == "" {
+				final.Source = enrichment.SourceLLM
+			}
+
+			if !dryRun {
+				if err := store.Save(cmd.Context(), final); err != nil {
+					return err
+				}
+			}
+
+			out := cmd.OutOrStdout()
+			if dryRun {
+				fmt.Fprintln(out, "(dry-run; not persisted)")
+			}
+			printEnrichment(out, final)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "workspace root")
+	cmd.Flags().StringVar(&title, "title", "", "bead title")
+	cmd.Flags().StringVar(&body, "body", "", "bead body / description")
+	cmd.Flags().StringVar(&spec, "spec", "", "linked spec body (extra searchable text)")
+	cmd.Flags().StringVar(&bodyFile, "body-file", "", "read --body from a file path")
+	cmd.Flags().StringVar(&specFile, "spec-file", "", "read --spec from a file path")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would be extracted without writing")
+	cmd.Flags().BoolVar(&merge, "merge", false, "union with existing enrichment instead of replacing")
+	return cmd
+}
+
+// loadVocabularyTerms returns the canonical names + aliases of the
+// active vocabulary so the heuristic extractor can match against
+// every form a writer might use. Empty slice when no vocabulary is
+// bootstrapped — extractor degrades cleanly.
+func loadVocabularyTerms(root string) []string {
+	v, err := concepts.LoadVocabulary(root)
+	if err != nil || v == nil {
+		return nil
+	}
+	terms := v.Active()
+	out := make([]string, 0, len(terms)*2)
+	for _, t := range terms {
+		out = append(out, t.Name)
+		out = append(out, t.Aliases...)
+	}
+	return out
+}
+
+// mergeEnrichments unions the extracted result on top of an
+// existing one. Operator-stamped concepts/targets stay; the
+// extractor never demotes the Source.
+func mergeEnrichments(existing, extracted enrichment.Enrichment) enrichment.Enrichment {
+	out := existing
+	for _, t := range extracted.Targets {
+		out = out.AddTarget(t)
+	}
+	for _, c := range extracted.Concepts {
+		out = out.AddConcept(c)
+	}
+	if existing.Source == "" {
+		out.Source = extracted.Source
+	}
+	return out
 }
 
 // ── targets ───────────────────────────────────────────────────────

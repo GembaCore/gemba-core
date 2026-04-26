@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -9,6 +11,15 @@ import (
 	"github.com/MikeBengtson/gemba/internal/concepts"
 	"github.com/MikeBengtson/gemba/internal/enrichment"
 )
+
+func contains(s []string, v string) bool {
+	for _, x := range s {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
 
 func TestBeadShow_NoEnrichmentHints(t *testing.T) {
 	root := t.TempDir()
@@ -194,6 +205,117 @@ func TestBeadShow_RendersAfterEdit(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("show output missing %q; full output:\n%s", want, out)
 		}
+	}
+}
+
+func TestBeadExtract_HeuristicWritesEnrichment(t *testing.T) {
+	root := t.TempDir()
+	// Bootstrap a vocabulary so the concept side fires.
+	v := &concepts.Vocabulary{}
+	v.Add(concepts.Term{Name: "auth"})
+	v.Add(concepts.Term{Name: "react-query"})
+	if err := concepts.SaveVocabulary(root, v); err != nil {
+		t.Fatal(err)
+	}
+	out, _, err := runCmd(t, "bead", "extract", "gm-1",
+		"--workspace", root,
+		"--title", "Migrate auth to react-query",
+		"--body", "Touches `internal/auth/auth.go` and `web/src/App.tsx`.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"internal/auth/auth.go", "web/src/App.tsx", "auth", "react-query"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("extract output missing %q; got %q", want, out)
+		}
+	}
+	store := enrichment.NewFileStore(root, nil)
+	got, err := store.Load(context.Background(), "gm-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Source != enrichment.SourceLLM {
+		t.Errorf("Source = %q, want SourceLLM (heuristic)", got.Source)
+	}
+}
+
+func TestBeadExtract_DryRunDoesNotPersist(t *testing.T) {
+	root := t.TempDir()
+	out, _, err := runCmd(t, "bead", "extract", "gm-1",
+		"--workspace", root, "--dry-run",
+		"--body", "edits `internal/x/x.go`")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "(dry-run") {
+		t.Errorf("dry-run marker missing: %q", out)
+	}
+	store := enrichment.NewFileStore(root, nil)
+	if _, err := store.Load(context.Background(), "gm-1"); !errors.Is(err, enrichment.ErrNotFound) {
+		t.Errorf("dry-run must not persist; Load got %v", err)
+	}
+}
+
+func TestBeadExtract_MergeUnionsWithExistingOperatorEnrichment(t *testing.T) {
+	root := t.TempDir()
+	store := enrichment.NewFileStore(root, nil)
+	// Operator already pinned a target the heuristic wouldn't find.
+	_ = store.Save(context.Background(), enrichment.Enrichment{
+		BeadID:   "gm-1",
+		Targets:  []string{"docs/keep-me.md"},
+		Concepts: []string{"keep-me"},
+		Source:   enrichment.SourceOperator,
+	})
+	if _, _, err := runCmd(t, "bead", "extract", "gm-1",
+		"--workspace", root, "--merge",
+		"--body", "edits `internal/auth/auth.go`"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Load(context.Background(), "gm-1")
+	if !contains(got.Targets, "docs/keep-me.md") {
+		t.Errorf("merge dropped operator target: %v", got.Targets)
+	}
+	if !contains(got.Targets, "internal/auth/auth.go") {
+		t.Errorf("merge missed extractor target: %v", got.Targets)
+	}
+	if got.Source != enrichment.SourceOperator {
+		t.Errorf("merge should preserve operator Source; got %q", got.Source)
+	}
+}
+
+func TestBeadExtract_NoMergeReplaces(t *testing.T) {
+	root := t.TempDir()
+	store := enrichment.NewFileStore(root, nil)
+	_ = store.Save(context.Background(), enrichment.Enrichment{
+		BeadID:  "gm-1",
+		Targets: []string{"old.go"},
+	})
+	if _, _, err := runCmd(t, "bead", "extract", "gm-1",
+		"--workspace", root,
+		"--body", "edits `internal/new.go`"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := store.Load(context.Background(), "gm-1")
+	if contains(got.Targets, "old.go") {
+		t.Errorf("default mode should replace; old target survived: %v", got.Targets)
+	}
+}
+
+func TestBeadExtract_BodyFileWorks(t *testing.T) {
+	root := t.TempDir()
+	bodyPath := filepath.Join(root, "body.md")
+	if err := os.WriteFile(bodyPath,
+		[]byte("touches `internal/x/x.go`"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmd(t, "bead", "extract", "gm-1",
+		"--workspace", root, "--body-file", bodyPath); err != nil {
+		t.Fatal(err)
+	}
+	store := enrichment.NewFileStore(root, nil)
+	got, _ := store.Load(context.Background(), "gm-1")
+	if !contains(got.Targets, "internal/x/x.go") {
+		t.Errorf("body-file path not extracted: %v", got.Targets)
 	}
 }
 

@@ -127,10 +127,40 @@ title + body + any linked spec. Human can override at any time. Both
 fields are *advisory* until the turn retrospective (§7) starts grading
 them.
 
+#### Layer 0 — Extractor (gm-s47n.1.2)
+
+The extraction half of Layer 0 lives behind a small `Extractor`
+interface so backends can swap freely:
+
+- `NoopExtractor` — empty enrichment; safe default when no provider
+  is wired.
+- `HeuristicExtractor` — network-free, ships in the binary. Mines
+  path-shaped tokens (backtick-fenced or bareword with a recognized
+  prefix from `DefaultHeuristicPathPrefixes`) for targets; matches
+  the supplied vocabulary against bead text with word-boundary,
+  case-insensitive, dash/underscore/space-flexible comparisons for
+  concepts.
+- A future LLM-backed extractor (Anthropic / Bedrock / local model)
+  will land behind the same interface. It does not need to ship for
+  the bead-creation pipeline to start producing useful enrichment;
+  the heuristic extractor's output is operator-overridable via
+  `gemba bead targets/concepts set`.
+
+`Extractor`s MUST be pure with respect to their inputs (same
+`BeadInput` → same `Enrichment`). `BeadInput` carries title + body
++ optional spec + the active vocabulary so the extractor can match
+against the closed concept set.
+
+The CLI hook is `gemba bead extract <id>` with `--title`, `--body`,
+`--spec`, and `--body-file` / `--spec-file` flags. `--dry-run`
+previews; `--merge` unions with any existing enrichment instead of
+replacing — operator-pinned targets / concepts survive a re-extract
+that way, and the operator's `Source` stamp is preserved.
+
 #### Layer 0 — CLI surface (gm-s47n.1.3)
 
-`gemba bead {show, list, targets, concepts}` is the operator surface
-for the override / inspect side. The package
+`gemba bead {show, list, targets, concepts, extract}` is the
+operator surface for the override / inspect side. The package
 `internal/enrichment/` ships the data type + a small `Store`
 interface (`Load` / `Save` / `List`) so the storage backend can swap:
 
