@@ -344,3 +344,83 @@ func (noopOrchestrator) Subscribe(context.Context, SubscribeFilter) (<-chan Orch
 	close(ch)
 	return ch, nil
 }
+
+// gm-s47n.2.6 — Workspace.WorktreePath is a typed field; the helper
+// WorkspaceWorktreePath reads it preferentially, falling back to the
+// legacy provider_metadata keys some adaptors still write.
+func TestWorkspaceWorktreePath_PrefersTypedField(t *testing.T) {
+	w := Workspace{
+		Kind:         WorkspaceWorktree,
+		WorktreePath: "/var/gemba/worktrees/sess-1",
+		ProviderMetadata: map[string]any{
+			"worktree_path": "/should/not/win",
+		},
+	}
+	if got := WorkspaceWorktreePath(w); got != "/var/gemba/worktrees/sess-1" {
+		t.Errorf("typed field did not win: got %q", got)
+	}
+}
+
+func TestWorkspaceWorktreePath_FallsBackToProviderMetadata(t *testing.T) {
+	cases := []struct {
+		name string
+		md   map[string]any
+		want string
+	}{
+		{
+			name: "worktree_path key",
+			md:   map[string]any{"worktree_path": "/legacy/a"},
+			want: "/legacy/a",
+		},
+		{
+			name: "worktree key (native adaptor convention)",
+			md:   map[string]any{"worktree": "/legacy/b"},
+			want: "/legacy/b",
+		},
+		{
+			name: "neither key set",
+			md:   map[string]any{"unrelated": 1},
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := Workspace{Kind: WorkspaceWorktree, ProviderMetadata: tc.md}
+			if got := WorkspaceWorktreePath(w); got != tc.want {
+				t.Errorf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWorkspaceWorktreePath_NonWorktreeKindReturnsEmpty(t *testing.T) {
+	w := Workspace{
+		Kind:             WorkspaceKind("container"),
+		WorktreePath:     "/a/b/c", // typed field set but Kind says no
+		ProviderMetadata: map[string]any{"worktree_path": "/x/y/z"},
+	}
+	if got := WorkspaceWorktreePath(w); got != "" {
+		t.Errorf("non-worktree kind leaked path: %q", got)
+	}
+}
+
+func TestWorkspace_WorktreePathRoundTripsJSON(t *testing.T) {
+	in := Workspace{
+		ID:           "ws-1",
+		Kind:         WorkspaceWorktree,
+		WorktreePath: "/var/gemba/worktrees/sess-rt",
+		Status:       WorkspaceReady,
+		CreatedAt:    time.Unix(0, 0).UTC(),
+	}
+	bs, err := json.Marshal(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var out Workspace
+	if err := json.Unmarshal(bs, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if out.WorktreePath != in.WorktreePath {
+		t.Errorf("round-trip lost worktree_path: got %q", out.WorktreePath)
+	}
+}

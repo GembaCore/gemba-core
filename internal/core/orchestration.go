@@ -207,11 +207,46 @@ type Workspace struct {
 	Repository       string                `json:"repository,omitempty"`
 	Branch           string                `json:"branch,omitempty"`
 	BaseSHA          string                `json:"base_sha,omitempty"`
+	// WorktreePath is the absolute filesystem path of the working
+	// copy when Kind == WorkspaceWorktree (gm-s47n.2.6). Empty for
+	// every other Kind. Promoted to a typed field so the planner
+	// can detect workspace collision (two beads needing write
+	// access to the same checkout) without parsing per-provider
+	// metadata. Adaptors that previously stored this under
+	// ProviderMetadata["worktree_path"] MUST set this field too;
+	// the metadata key remains as a transitional fallback (see
+	// WorkspaceWorktreePath below).
+	WorktreePath     string                `json:"worktree_path,omitempty"`
 	Status           WorkspaceStatus       `json:"status"`
 	Isolation        IsolationCapabilities `json:"isolation"`
 	ProviderMetadata map[string]any        `json:"provider_metadata,omitempty"`
 	CreatedAt        time.Time             `json:"created_at"`
 	ReleasedAt       *time.Time            `json:"released_at,omitempty"`
+}
+
+// WorkspaceWorktreePath returns the worktree filesystem path for the
+// given Workspace (gm-s47n.2.6). Reads the typed WorktreePath field
+// first; falls back to the legacy ProviderMetadata["worktree_path"]
+// or ProviderMetadata["worktree"] keys some adaptors set today, so a
+// rolling migration doesn't strand the planner.
+//
+// Returns "" when the kind isn't a worktree or the path is unset.
+// Callers that need to detect workspace collision should compare the
+// returned string after canonicalisation (e.g. filepath.Clean).
+func WorkspaceWorktreePath(w Workspace) string {
+	if w.Kind != WorkspaceWorktree {
+		return ""
+	}
+	if w.WorktreePath != "" {
+		return w.WorktreePath
+	}
+	if v, ok := w.ProviderMetadata["worktree_path"].(string); ok && v != "" {
+		return v
+	}
+	if v, ok := w.ProviderMetadata["worktree"].(string); ok && v != "" {
+		return v
+	}
+	return ""
 }
 
 // WorkspaceStatus is the lifecycle tag on a Workspace. "provisioning"
