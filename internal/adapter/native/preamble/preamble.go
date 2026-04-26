@@ -13,19 +13,19 @@ import (
 	"strings"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/claudemd"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/dod"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/core/prompt"
 	"github.com/MikeBengtson/gemba/internal/persona"
 )
 
-// Sentinel pair brackets the gemba-managed block in CLAUDE.md. Only
-// content between these exact lines is ever touched — the operator's
-// hand-authored sections stay intact.
-const (
-	sentinelBegin = "<!-- gemba:preamble:begin -->"
-	sentinelEnd   = "<!-- gemba:preamble:end -->"
-)
+// Sentinel pair + write/strip ops live in the leaf
+// internal/adapter/native/claudemd package so persona's NativeSpawn
+// can reuse them without an import cycle (preamble imports persona
+// for Surface; persona's NativeSpawn writes the consult preamble).
+// The constants are re-exported through claudemd.SentinelBegin /
+// SentinelEnd; tests below reference them directly.
 
 // Sources is the file layer input. Paths are resolved relative to
 // RepoRoot and WorkspaceDir as appropriate; missing files are
@@ -250,64 +250,19 @@ func readLines(path string) []string {
 // ApplyToClaudeMD installs the composed text as a sentinel-bracketed
 // block in <workspace>/CLAUDE.md, preserving everything outside the
 // sentinels. Idempotent: calling twice with the same text leaves the
-// file byte-identical.
+// file byte-identical. Thin wrapper over claudemd.Apply so the
+// sentinel logic lives in one place that both bead-driven preamble
+// (this file) and consult-driven preamble (persona's NativeSpawn)
+// can call without an import cycle.
 func ApplyToClaudeMD(workspace string, composed prompt.Composed) error {
-	path := filepath.Join(workspace, "CLAUDE.md")
-	existing, _ := os.ReadFile(path) // missing file -> empty, which is fine
-	updated := replaceSentinelBlock(string(existing), composed.Text)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("preamble: mkdir %s: %w", filepath.Dir(path), err)
-	}
-	return os.WriteFile(path, []byte(updated), 0o644)
+	return claudemd.Apply(workspace, composed.Text)
 }
 
 // RemoveFromClaudeMD strips the sentinel-bracketed block on session
 // end so the operator's CLAUDE.md returns to its pre-session shape.
-// Missing file or missing sentinels are no-ops.
+// Thin wrapper over claudemd.Remove.
 func RemoveFromClaudeMD(workspace string) error {
-	path := filepath.Join(workspace, "CLAUDE.md")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("preamble: read %s: %w", path, err)
-	}
-	cleaned := stripSentinelBlock(string(b))
-	if cleaned == string(b) {
-		return nil
-	}
-	if strings.TrimSpace(cleaned) == "" {
-		return os.Remove(path)
-	}
-	return os.WriteFile(path, []byte(cleaned), 0o644)
-}
-
-func replaceSentinelBlock(existing, body string) string {
-	block := sentinelBegin + "\n" + strings.TrimRight(body, "\n") + "\n" + sentinelEnd + "\n"
-	if !strings.Contains(existing, sentinelBegin) {
-		if existing != "" && !strings.HasSuffix(existing, "\n") {
-			existing += "\n"
-		}
-		return existing + block
-	}
-	return stripSentinelBlock(existing) + block
-}
-
-func stripSentinelBlock(s string) string {
-	start := strings.Index(s, sentinelBegin)
-	if start < 0 {
-		return s
-	}
-	end := strings.Index(s, sentinelEnd)
-	if end < 0 {
-		return s
-	}
-	end += len(sentinelEnd)
-	if end < len(s) && s[end] == '\n' {
-		end++
-	}
-	return s[:start] + s[end:]
+	return claudemd.Remove(workspace)
 }
 
 // ApplyStrategy picks the right injection for the agent type. Called

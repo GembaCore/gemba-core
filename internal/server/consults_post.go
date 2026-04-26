@@ -156,12 +156,24 @@ func (r *Router) createConsult(w http.ResponseWriter, req *http.Request) {
 	// gm-twp2 spawn slice: if the dispatcher has a SpawnFunc bound
 	// (cmd/gemba serve installs persona.NativeSpawn when an
 	// OrchestrationPlane is registered), launch the session now.
-	// Spawn failure leaves the consult registered with status
-	// "running" — the operator sees it in /api/consults but no
-	// session lands. Surfaces as a 502 so the SPA's drawer can
+	// Spawn failure flips the consult to terminal-Failed via Finish
+	// so the audit-log row carries the spawn error and downstream
+	// inspectors don't see a phantom "running" consult that never
+	// actually launched. Surfaces as 502 so the SPA's drawer can
 	// render the spawn-error path explicitly.
 	if *body.Spawn {
 		if err := r.personaDispatcher.MaybeSpawn(req.Context(), c); err != nil {
+			_, finishErr := r.personaDispatcher.Finish(c.ID, persona.FinishInfo{
+				Error: "spawn failed: " + err.Error(),
+			})
+			if finishErr != nil {
+				// A Finish failure on top of a spawn failure means
+				// the consult's audit-log write didn't land; log
+				// here would help an operator chase it. Returning
+				// 502 with the original spawn error is still the
+				// right operator-facing message.
+				_ = finishErr
+			}
 			http.Error(w, "consult registered; spawn failed: "+err.Error(), http.StatusBadGateway)
 			return
 		}

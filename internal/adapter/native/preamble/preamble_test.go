@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/claudemd"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/persona"
 )
@@ -131,7 +132,7 @@ func TestApplyToClaudeMDIdempotent(t *testing.T) {
 		t.Error("operator content wiped")
 	}
 	// Sentinel block present.
-	if !strings.Contains(string(first), sentinelBegin) {
+	if !strings.Contains(string(first), claudemd.SentinelBegin) {
 		t.Error("sentinel marker missing")
 	}
 }

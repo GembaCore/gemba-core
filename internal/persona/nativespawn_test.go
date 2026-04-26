@@ -3,8 +3,12 @@ package persona
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/MikeBengtson/gemba/internal/adapter/native/claudemd"
 	"github.com/MikeBengtson/gemba/internal/core"
 )
 
@@ -58,11 +62,12 @@ func TestNativeSpawn_RejectsNilConsult(t *testing.T) {
 func TestNativeSpawn_PopulatesExpectedExtensionKeys(t *testing.T) {
 	op := &recordingOP{}
 	f := NativeSpawn(op, "claude")
+	ws := t.TempDir()
 	c := &Consult{
 		ID:         "consult-test-1",
 		PersonaID:  "project-manager",
 		SkillID:    "epic_order",
-		WorkingDir: "/work/repo-a",
+		WorkingDir: ws,
 	}
 	if err := f(context.Background(), c); err != nil {
 		t.Fatalf("spawn err = %v", err)
@@ -93,7 +98,7 @@ func TestNativeSpawn_PopulatesExpectedExtensionKeys(t *testing.T) {
 func TestNativeSpawn_PropagatesStartSessionError(t *testing.T) {
 	op := &recordingOP{startErr: errors.New("backend exploded")}
 	f := NativeSpawn(op, "claude")
-	err := f(context.Background(), &Consult{ID: "c-1", WorkingDir: "/w"})
+	err := f(context.Background(), &Consult{ID: "c-1", WorkingDir: t.TempDir()})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -134,5 +139,93 @@ func TestMaybeSpawn_PropagatesError(t *testing.T) {
 	d.SetSpawnFunc(func(context.Context, *Consult) error { return want })
 	if err := d.MaybeSpawn(context.Background(), &Consult{ID: "c-1"}); !errors.Is(err, want) {
 		t.Errorf("err = %v, want wrapping %v", err, want)
+	}
+}
+
+func TestNativeSpawn_WritesComposedPromptToClaudeMD(t *testing.T) {
+	op := &recordingOP{}
+	f := NativeSpawn(op, "claude")
+	ws := t.TempDir()
+	c := &Consult{
+		ID:         "consult-pre-1",
+		PersonaID:  "pm",
+		SkillID:    "epic_order",
+		WorkingDir: ws,
+		Composed: Composed{
+			System: "you are the project manager",
+			User:   "rank these epics",
+		},
+	}
+	if err := f(context.Background(), c); err != nil {
+		t.Fatalf("spawn err = %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(ws, claudemd.FileName))
+	if err != nil {
+		t.Fatalf("CLAUDE.md not written: %v", err)
+	}
+	body := string(got)
+	for _, want := range []string{
+		claudemd.SentinelBegin,
+		claudemd.SentinelEnd,
+		"you are the project manager",
+		"rank these epics",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("CLAUDE.md missing %q\nbody:\n%s", want, body)
+		}
+	}
+}
+
+func TestNativeSpawn_PreservesOperatorContent(t *testing.T) {
+	op := &recordingOP{}
+	f := NativeSpawn(op, "claude")
+	ws := t.TempDir()
+	original := "# my notes\n\nhand-authored content\n"
+	if err := os.WriteFile(filepath.Join(ws, claudemd.FileName), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := &Consult{
+		ID:         "consult-pre-2",
+		WorkingDir: ws,
+		Composed:   Composed{System: "consult system", User: "consult user"},
+	}
+	if err := f(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(ws, claudemd.FileName))
+	if !strings.Contains(string(got), "hand-authored content") {
+		t.Error("operator content wiped by spawn preamble write")
+	}
+}
+
+func TestNativeSpawn_RemovesPreambleOnSpawnFailure(t *testing.T) {
+	op := &recordingOP{startErr: errors.New("backend exploded")}
+	f := NativeSpawn(op, "claude")
+	ws := t.TempDir()
+	c := &Consult{
+		ID:         "consult-pre-3",
+		WorkingDir: ws,
+		Composed:   Composed{System: "sys", User: "usr"},
+	}
+	if err := f(context.Background(), c); err == nil {
+		t.Fatal("expected spawn failure")
+	}
+	// CLAUDE.md should not exist (created then removed) — Apply
+	// would have written one but Remove on failure cleans it up.
+	if _, err := os.Stat(filepath.Join(ws, claudemd.FileName)); !os.IsNotExist(err) {
+		t.Errorf("CLAUDE.md left behind after spawn failure; stat err = %v", err)
+	}
+}
+
+func TestNativeSpawn_NoPreambleWriteWhenWorkingDirEmpty(t *testing.T) {
+	// Defensive: a consult with no working dir (shouldn't happen in
+	// production, but the dispatcher may register one in unusual
+	// scope-resolution edge cases) skips the preamble write rather
+	// than writing to "". The spawn itself still runs.
+	op := &recordingOP{}
+	f := NativeSpawn(op, "claude")
+	c := &Consult{ID: "no-dir", Composed: Composed{User: "x"}}
+	if err := f(context.Background(), c); err != nil {
+		t.Errorf("spawn with empty WorkingDir errored: %v", err)
 	}
 }

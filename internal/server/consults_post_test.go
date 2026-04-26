@@ -299,3 +299,25 @@ func TestCreateConsult_SpawnFailureReturns502(t *testing.T) {
 }
 
 var errSpawn = errors.New("backend unreachable")
+
+func TestCreateConsult_SpawnFailureFinishesConsultWithError(t *testing.T) {
+	r, p := newConsultsPostRouter(t)
+	r.personaDispatcher.SetSpawnFunc(func(context.Context, *persona.Consult) error {
+		return errSpawn
+	})
+	rec := postConsult(t, r, map[string]any{
+		"persona_id": p.ID,
+		"skill_id":   epic_order.ID,
+		"workspace":  "gemba",
+		"raw_input":  validEpicOrderInput(t),
+	}, "nonce-spawn-finish")
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rec.Code)
+	}
+	// After Finish the consult is removed from the in-memory
+	// registry — List should reflect that. The audit-log row
+	// carries the failure for downstream inspectors.
+	if got := len(r.personaDispatcher.List()); got != 0 {
+		t.Errorf("dispatcher consult count = %d, want 0 (Finish removes terminal)", got)
+	}
+}

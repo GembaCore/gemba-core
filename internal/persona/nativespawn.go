@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
+	"github.com/MikeBengtson/gemba/internal/adapter/native/claudemd"
 	"github.com/MikeBengtson/gemba/internal/core"
 )
 
@@ -59,22 +61,18 @@ func (d *Dispatcher) MaybeSpawn(ctx context.Context, c *Consult) error {
 // Operators can specialise per-persona by passing different agent
 // types; the spawn helper itself is persona-agnostic.
 //
-// What this slice intentionally DOES NOT do:
+// Preamble injection: NativeSpawn writes the consult's composed
+// prompt to <WorkingDir>/CLAUDE.md via preamble.ApplyToClaudeMD
+// BEFORE calling StartSession. The native StartSession's own
+// preamble step does a bead lookup that returns no-such-bead for a
+// consult ID and skips silently; our pre-write is what the spawned
+// Claude Code session reads on boot. EndSession's preamble cleanup
+// strips the same sentinel block so the operator's hand-authored
+// CLAUDE.md returns to its pre-spawn state.
 //
-//   - Inject the composed prompt into the spawned session's
-//     CLAUDE.md. The native StartSession path tries to fetch a
-//     bead by the same id; for a consult ID it fails silently and
-//     the preamble step skips. A follow-up slice (filed) wires
-//     the consult's composed prompt through preamble.ApplyToClaudeMD
-//     so the spawned agent sees its instructions on first read.
-//
-//   - Reconcile spawn failures with consult status. A spawn
-//     failure today leaves the consult registered with status
-//     "running"; the operator sees the registered consult but no
-//     session lands in /api/sessions. The follow-up slice that
-//     wires the preamble also flips the consult to Failed via
-//     Finish on spawn error so the SPA's drawer surfaces the
-//     reason.
+// Spawn failure is the caller's problem: createConsult inspects
+// the returned error and calls Dispatcher.Finish with a Failed
+// status so the consult's audit-log row carries the spawn error.
 func NativeSpawn(op core.OrchestrationPlaneAdaptor, agentType string) SpawnFunc {
 	return func(ctx context.Context, c *Consult) error {
 		if op == nil {
@@ -86,6 +84,19 @@ func NativeSpawn(op core.OrchestrationPlaneAdaptor, agentType string) SpawnFunc 
 		if c == nil {
 			return errors.New("persona: NativeSpawn called with nil consult")
 		}
+
+		// Best-effort preamble: write the composed prompt to
+		// CLAUDE.md so the spawned session reads its instructions
+		// on first turn. A write failure is logged via the error
+		// chain but does NOT block the spawn — the operator can
+		// always paste from /api/consults/:id manually.
+		if c.WorkingDir != "" {
+			text := composedToText(c.Composed)
+			if err := claudemd.Apply(c.WorkingDir, text); err != nil {
+				return fmt.Errorf("persona: NativeSpawn preamble write to %s: %w", c.WorkingDir, err)
+			}
+		}
+
 		spec := core.SessionPrompt{
 			Extension: map[string]any{
 				// The consult ID stands in for the bead ID at the
@@ -103,8 +114,34 @@ func NativeSpawn(op core.OrchestrationPlaneAdaptor, agentType string) SpawnFunc 
 		}
 		_, err := op.StartSession(ctx, c.ID, spec)
 		if err != nil {
+			// Best-effort cleanup: strip the CLAUDE.md sentinel
+			// block we wrote above so the operator's hand-authored
+			// content isn't left with a half-attached preamble.
+			// Failure here is logged via the original spawn error;
+			// remove failures don't override the load-bearing
+			// StartSession error.
+			if c.WorkingDir != "" {
+				_ = claudemd.Remove(c.WorkingDir)
+			}
 			return fmt.Errorf("persona: NativeSpawn(%s): %w", c.ID, err)
 		}
 		return nil
 	}
+}
+
+// composedToText renders a persona.Composed (System + User) into
+// the single Text slot prompt.Composed expects. The two slots are
+// joined with a blank line so the model reads them as system-then-
+// user without the terminal block markers — preamble.ApplyToClaudeMD
+// brackets the whole thing in its own sentinel pair.
+func composedToText(c Composed) string {
+	switch {
+	case c.System == "" && c.User == "":
+		return ""
+	case c.System == "":
+		return c.User
+	case c.User == "":
+		return c.System
+	}
+	return strings.Join([]string{c.System, c.User}, "\n\n")
 }
