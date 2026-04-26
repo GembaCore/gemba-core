@@ -127,6 +127,27 @@ title + body + any linked spec. Human can override at any time. Both
 fields are *advisory* until the turn retrospective (§7) starts grading
 them.
 
+#### Layer 0 — CLI surface (gm-s47n.1.3)
+
+`gemba bead {show, list, targets, concepts}` is the operator surface
+for the override / inspect side. The package
+`internal/enrichment/` ships the data type + a small `Store`
+interface (`Load` / `Save` / `List`) so the storage backend can swap:
+
+- Today: `FileStore` — one JSON file per bead under
+  `<workspace>/.gemba/enrichment/<safe-id>.json`. Slashed bd ids
+  (`gemba/gemba/gm-1`) escape `/` → `__` so workspace-prefixed ids
+  round-trip across filesystems. Atomic write (tmp + rename).
+- After **gm-s47n.1.1** lands the WorkItem.targets / .concepts
+  schema: a `BdExtrasStore` reads + writes through the bd adaptor.
+  CLI surface stays unchanged.
+
+`gemba bead concepts add` cross-checks the new tag against the
+loaded vocabulary (`internal/concepts`) and prints a stderr warning
+on unknown tags, but the edit still applies — vocabulary is
+operator-driven (§6.4) so the CLI must not block on a not-yet-
+proposed concept. `--force` suppresses the warning for scripted use.
+
 ### Layer 1 — Session profile + operational context (data only)
 
 The session profile is **not a standalone object**. It is a join over
