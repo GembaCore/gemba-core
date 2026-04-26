@@ -105,6 +105,24 @@ jobs:
         # projects don't pay it on first test.
         run: make build
 
+      - name: Install bd (beads)
+        # smoke-deep specs spawn `bd init --non-interactive` per
+        # worker. Install the linux_amd64 release tarball into a
+        # path under $HOME and prepend it to $GITHUB_PATH so the
+        # node fixture's execFileSync('bd', ...) resolves it.
+        # gm-2sur. Pinned to a known-good version; bump explicitly
+        # when a new bd release is desired.
+        run: |
+          BD_VERSION="1.0.3"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL \
+            "https://github.com/gastownhall/beads/releases/download/v${BD_VERSION}/beads_${BD_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/bd.tar.gz
+          tar -xzf /tmp/bd.tar.gz -C "$HOME/.local/bin" bd
+          chmod +x "$HOME/.local/bin/bd"
+          rm /tmp/bd.tar.gz
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -176,6 +194,24 @@ jobs:
 
       - name: Build gemba binary
         run: make build
+
+      - name: Install bd (beads)
+        # Deep-tier specs spawn `bd init --non-interactive` per
+        # worker. Install the linux_amd64 release tarball into a
+        # path under $HOME and prepend it to $GITHUB_PATH so the
+        # node fixture's execFileSync('bd', ...) resolves it.
+        # gm-2sur. Pinned to a known-good version; bump explicitly
+        # when a new bd release is desired.
+        run: |
+          BD_VERSION="1.0.3"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL \
+            "https://github.com/gastownhall/beads/releases/download/v${BD_VERSION}/beads_${BD_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/bd.tar.gz
+          tar -xzf /tmp/bd.tar.gz -C "$HOME/.local/bin" bd
+          chmod +x "$HOME/.local/bin/bd"
+          rm /tmp/bd.tar.gz
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
@@ -255,6 +291,24 @@ jobs:
       - name: Build gemba binary
         run: make build
 
+      - name: Install bd (beads)
+        # Deep-tier specs spawn `bd init --non-interactive` per
+        # worker. Install the linux_amd64 release tarball into a
+        # path under $HOME and prepend it to $GITHUB_PATH so the
+        # node fixture's execFileSync('bd', ...) resolves it.
+        # gm-2sur. Pinned to a known-good version; bump explicitly
+        # when a new bd release is desired.
+        run: |
+          BD_VERSION="1.0.3"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL \
+            "https://github.com/gastownhall/beads/releases/download/v${BD_VERSION}/beads_${BD_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/bd.tar.gz
+          tar -xzf /tmp/bd.tar.gz -C "$HOME/.local/bin" bd
+          chmod +x "$HOME/.local/bin/bd"
+          rm /tmp/bd.tar.gz
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
@@ -314,6 +368,24 @@ jobs:
 
       - name: Build gemba binary
         run: make build
+
+      - name: Install bd (beads)
+        # Deep-tier specs spawn `bd init --non-interactive` per
+        # worker. Install the linux_amd64 release tarball into a
+        # path under $HOME and prepend it to $GITHUB_PATH so the
+        # node fixture's execFileSync('bd', ...) resolves it.
+        # gm-2sur. Pinned to a known-good version; bump explicitly
+        # when a new bd release is desired.
+        run: |
+          BD_VERSION="1.0.3"
+          mkdir -p "$HOME/.local/bin"
+          curl -sSfL \
+            "https://github.com/gastownhall/beads/releases/download/v${BD_VERSION}/beads_${BD_VERSION}_linux_amd64.tar.gz" \
+            -o /tmp/bd.tar.gz
+          tar -xzf /tmp/bd.tar.gz -C "$HOME/.local/bin" bd
+          chmod +x "$HOME/.local/bin/bd"
+          rm /tmp/bd.tar.gz
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
