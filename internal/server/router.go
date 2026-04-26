@@ -190,6 +190,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// gm-e7.3: live snapshot of a running session — currently a
 		// transcript tail from the backing pane. Read-only; no nonce.
 		api.Get("/sessions/{id}/peek", r.peekSession)
+		// gm-s47n.5.4: operational-context aggregator. Single read
+		// returning the join — Agent + Session + Workspace +
+		// Assignment + Profile + Health — that the planner, the
+		// coach UI, and operators all consume. Query: ?session_id=ID.
+		api.Get("/operational-context", r.operationalContext)
 		// gm-peg: list work items across the registered WorkPlane.
 		// Empty filter today — filtering / pagination land in later
 		// milestones.

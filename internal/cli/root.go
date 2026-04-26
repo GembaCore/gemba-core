@@ -51,6 +51,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newConflictsCmd(),
 		newAffinityCmd(),
 		newSessionHealthCmd(),
+		newOperationalContextCmd(),
 	)
 
 	return root
