@@ -295,8 +295,11 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.queryByTestId('work-item-drawer-content')).toBeNull());
   });
 
-  // The in-page view toggle flips ?view=workitem on/off without a reload.
-  it('view toggle switches between Epic and WorkItem boards', async () => {
+  // The in-page view toggle flips ?view=workitem|list on/off without
+  // a reload. gm-e12.19.1 added the third "list" mode (former
+  // /backlog surface lifted into Board) so the toggle is now
+  // tri-state — pin all three transitions.
+  it('view toggle cycles through Epic, WorkItem, and List boards', async () => {
     const data: WorkItem[] = [epic('root'), bead('t1', 'started')];
     fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ items: data, total: data.length }), {
@@ -309,6 +312,11 @@ describe('BoardPage', () => {
 
     fireEvent.click(screen.getByTestId('view-toggle-workitem'));
     await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+
+    // gm-e12.19.1: List mode renders BoardListView under the same
+    // shell. The list pane carries data-testid="board-list".
+    fireEvent.click(screen.getByTestId('view-toggle-list'));
+    await waitFor(() => expect(screen.getByTestId('board-list')).toBeTruthy());
 
     fireEvent.click(screen.getByTestId('view-toggle-epic'));
     await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());

@@ -34,8 +34,13 @@ export class BoardPage extends AppShell {
   // The flat WorkItem grid (?view=workitem). Lives in BoardPage.tsx
   // under data-testid="board-workitem".
   readonly workItemBoard: Locator;
+  // The list-mode pane (?view=list). Lifted from the former
+  // /backlog page in gm-e12.19.1; lives under data-testid="board-list".
+  readonly listView: Locator;
   readonly viewToggleEpic: Locator;
   readonly viewToggleWorkItem: Locator;
+  // gm-e12.19.1: third toggle button — kanban ↔ list flip.
+  readonly viewToggleList: Locator;
   readonly empty: Locator;
   readonly loading: Locator;
   readonly error: Locator;
@@ -45,8 +50,10 @@ export class BoardPage extends AppShell {
   constructor(page: Page) {
     super(page);
     this.workItemBoard = page.getByTestId('board-workitem');
+    this.listView = page.getByTestId('board-list');
     this.viewToggleEpic = page.getByTestId('view-toggle-epic');
     this.viewToggleWorkItem = page.getByTestId('view-toggle-workitem');
+    this.viewToggleList = page.getByTestId('view-toggle-list');
     this.empty = page.getByTestId('board-empty');
     this.loading = page.getByTestId('board-loading');
     this.error = page.getByTestId('board-error');
@@ -70,6 +77,16 @@ export class BoardPage extends AppShell {
     await this.goto('/board?view=workitem');
     await this.expectShellRendered();
     await expect(this.workItemBoard).toBeVisible();
+  }
+
+  // gotoListView is the gm-e12.19.1 third mode — the list pane that
+  // absorbed the former /backlog surface. Defaults to the Backlog
+  // preset because that's where /backlog redirects today; specs that
+  // need other presets can pass through goto() directly.
+  async gotoListView(): Promise<void> {
+    await this.goto('/board?view=list&preset=backlog');
+    await this.expectShellRendered();
+    await expect(this.listView).toBeVisible();
   }
 
   // column locator by state category. Both views render the columns
