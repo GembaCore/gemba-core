@@ -50,6 +50,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newInstallBridgeCmd(),
 		newConflictsCmd(),
 		newAffinityCmd(),
+		newSessionHealthCmd(),
 	)
 
 	return root
