@@ -1,3 +1,5 @@
+//go:build !windows
+
 package bridge
 
 import (
@@ -7,8 +9,8 @@ import (
 
 // inodeOf returns the POSIX inode number for a FileInfo, used to
 // detect log rotation (inode change) vs truncate (inode stable,
-// size shrinks). On non-POSIX systems the value is always 0 and the
-// tailer falls back to size-only detection.
+// size shrinks). The Windows build of this package returns 0 from
+// inode_windows.go and the tailer falls back to size-only detection.
 func inodeOf(fi os.FileInfo) uint64 {
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
 		return uint64(st.Ino)
