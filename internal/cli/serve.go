@@ -257,6 +257,16 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	personaDispatcher := persona.NewDispatcher(persona.NewAuditLog(""))
 	handler.AttachPersonaDispatcher(personaDispatcher, skillRegistry)
 
+	// gm-twp2: bridge tailer → dispatcher.Receive plumbing. The
+	// orchestration plane's GembaSkillOutput frames already land in
+	// the events hub as Kind=skill.output_emitted; FanFromHub
+	// subscribes and routes each event's lines into the dispatcher
+	// via the consult ID carried as SessionID. Runs on a long-lived
+	// goroutine and shuts down when ctx is cancelled.
+	if hub := handler.EventsHub(); hub != nil {
+		go persona.FanFromHub(ctx, personaDispatcher, hub)
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,

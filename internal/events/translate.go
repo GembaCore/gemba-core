@@ -63,6 +63,12 @@ func canonicalOrchestrationKind(k string) Kind {
 		return WorkspaceAcquired
 	case "workspace_released":
 		return WorkspaceReleased
+	case "skill_output_emitted":
+		// gm-twp2: persona consult emit_skill_output frames. Promoted
+		// to a canonical Kind so the persona dispatcher can subscribe
+		// with a single typed filter rather than the
+		// "orchestration.<raw>" namespace fallback.
+		return SkillOutputEmitted
 	}
 	return Kind("orchestration." + k)
 }

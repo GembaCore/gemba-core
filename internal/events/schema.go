@@ -68,6 +68,20 @@ const (
 	// re-evaluated (e.g. degraded → healthy transition). The SPA's
 	// AdaptorBanner refetches `/api/capabilities` on receipt.
 	CapabilityRefresh Kind = "capability.refresh"
+
+	// Skill.output_emitted — a persona consult's spawned session
+	// called the gemba-mcp emit_skill_output tool (gm-twp2). Payload
+	// shape:
+	//   skill_id   string             — registered persona.Skill.ID()
+	//   line_count int                — len(lines), for cheap subscribers
+	//   lines      []json.RawMessage  — verbatim model emissions; the
+	//                                   persona dispatcher validates each
+	//                                   line via Skill.ValidateOutputLine
+	//                                   and appends to the consult's
+	//                                   ValidatedLines / LineErrors.
+	// SessionID on the envelope is the consult ID — the spawn driver
+	// sets GEMBA_SESSION_ID = consult.ID so the bridge tail picks it up.
+	SkillOutputEmitted Kind = "skill.output_emitted"
 )
 
 // Plane identifies which adaptor surface produced an event.
