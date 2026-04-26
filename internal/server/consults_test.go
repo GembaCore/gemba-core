@@ -190,6 +190,126 @@ func TestGetConsult_UnknownReturns404(t *testing.T) {
 	}
 }
 
+func TestGetConsult_LiveResponseTagsSourceLive(t *testing.T) {
+	r, d := newConsultsRouter(t)
+	skill, _ := r.skillRegistry.Get(epic_order.ID)
+	c, err := d.Begin(persona.BeginRequest{
+		Persona:   pmPersona(),
+		Skill:     skill,
+		Workspace: "test-workspace",
+		RawInput:  epicOrderRawInput(t),
+	})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/consults/"+c.ID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	var body consultDetail
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Source != sourceLive {
+		t.Errorf("source = %q, want %q", body.Source, sourceLive)
+	}
+	if !body.ComposedPersisted {
+		t.Errorf("composed_persisted = false on live consult; want true")
+	}
+}
+
+func TestGetConsult_FallsThroughToAuditLogAfterFinish(t *testing.T) {
+	r, d := newConsultsRouter(t)
+	skill, _ := r.skillRegistry.Get(epic_order.ID)
+	c, err := d.Begin(persona.BeginRequest{
+		Persona:   pmPersona(),
+		Skill:     skill,
+		Workspace: "test-workspace",
+		RawInput:  epicOrderRawInput(t),
+	})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	// Finish the consult so it's removed from the live registry
+	// and lands in the audit log.
+	if _, err := d.Finish(c.ID, persona.FinishInfo{
+		Tokens: corepersona.TokenUsage{In: 100, Out: 250},
+		Model:  "claude-test",
+	}); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	if _, ok := d.Get(c.ID); ok {
+		t.Fatal("Finish did not remove consult from live registry")
+	}
+
+	// GET should now serve the audit-log shape.
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/consults/"+c.ID, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (audit fallthrough); body=%s", rec.Code, rec.Body.String())
+	}
+	var body consultDetail
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Source != sourceAudit {
+		t.Errorf("source = %q, want %q", body.Source, sourceAudit)
+	}
+	if body.ComposedPersisted {
+		t.Errorf("composed_persisted = true on audit-log record; want false")
+	}
+	if body.Status != "completed" {
+		t.Errorf("status = %q, want completed", body.Status)
+	}
+	if body.Tokens.Total != 350 {
+		t.Errorf("tokens total = %d, want 350 (in+out)", body.Tokens.Total)
+	}
+	if body.Model != "claude-test" {
+		t.Errorf("model = %q, want claude-test", body.Model)
+	}
+}
+
+func TestGetConsult_AuditFallthroughMarksFailedWhenErrorPresent(t *testing.T) {
+	r, d := newConsultsRouter(t)
+	skill, _ := r.skillRegistry.Get(epic_order.ID)
+	c, err := d.Begin(persona.BeginRequest{
+		Persona:   pmPersona(),
+		Skill:     skill,
+		Workspace: "test-workspace",
+		RawInput:  epicOrderRawInput(t),
+	})
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if _, err := d.Finish(c.ID, persona.FinishInfo{
+		Error: "spawn failed: backend unreachable",
+	}); err != nil {
+		t.Fatalf("Finish: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/consults/"+c.ID, nil))
+	var body consultDetail
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Status != "failed" {
+		t.Errorf("status = %q, want failed (Error non-empty)", body.Status)
+	}
+	if body.Error == "" {
+		t.Error("error field empty in archived response")
+	}
+}
+
+func TestGetConsult_StillReturns404WhenAuditMissesToo(t *testing.T) {
+	r, _ := newConsultsRouter(t)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/consults/never-existed", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
 func TestGetConsult_BeforeAttachReturns503(t *testing.T) {
 	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	rec := httptest.NewRecorder()

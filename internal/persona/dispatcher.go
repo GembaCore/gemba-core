@@ -329,6 +329,12 @@ func (d *Dispatcher) Begin(req BeginRequest) (*Consult, error) {
 	return c, nil
 }
 
+// AuditLog returns the dispatcher's audit-log handle. Used by HTTP
+// handlers that fall through to disk for consults that aged out of
+// the in-memory registry (gm-twp2 audit-log fall-through). Nil when
+// the dispatcher was constructed with no audit log (test paths).
+func (d *Dispatcher) AuditLog() *AuditLog { return d.auditLog }
+
 // Get returns the consult with the given id. The bool is false when
 // no consult is registered.
 //

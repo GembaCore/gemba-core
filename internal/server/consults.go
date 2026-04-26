@@ -19,12 +19,27 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"io/fs"
 	"net/http"
 	"time"
 
 	"github.com/MikeBengtson/gemba/internal/core"
+	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/MikeBengtson/gemba/internal/server/httperr"
 	"github.com/go-chi/chi/v5"
+)
+
+// detailSource identifies where a consultDetail was loaded from. The
+// SPA uses it to render an "archived" badge on audit-log records and
+// hide UI affordances (apply / re-emit) that only make sense for
+// live consults.
+type detailSource string
+
+const (
+	sourceLive  detailSource = "live"
+	sourceAudit detailSource = "audit"
 )
 
 // consultSummary is the row shape for /api/consults. Sized for a
@@ -53,13 +68,26 @@ type consultSummary struct {
 // (system + first user message) so the operator can audit what the
 // model was actually told. Lines + LineErrors carry the structured
 // output stream and the rejected-line audit trail.
+//
+// Source identifies whether the detail came from the in-memory
+// dispatcher (full shape) or the on-disk audit log (reduced shape —
+// composed_persisted=false, validated_lines empty). The SPA uses
+// it to render an archived badge instead of pretending an empty
+// drawer is fresh.
 type consultDetail struct {
 	consultSummary
-	Composed       persona.Composed     `json:"composed"`
-	RawRequest     json.RawMessage      `json:"raw_request,omitempty"`
-	ValidatedLines []any                `json:"validated_lines"`
-	LineErrors     []persona.LineError  `json:"line_errors,omitempty"`
-	Tokens         consultTokens        `json:"tokens"`
+	Source            detailSource         `json:"source"`
+	Composed          persona.Composed     `json:"composed"`
+	ComposedPersisted bool                 `json:"composed_persisted"`
+	RawRequest        json.RawMessage      `json:"raw_request,omitempty"`
+	ValidatedLines    []any                `json:"validated_lines"`
+	LineErrors        []persona.LineError  `json:"line_errors,omitempty"`
+	// AppliedIdx lists the recommendation indexes the operator
+	// applied (POST /api/consults/:id/apply/:idx — separate slice).
+	// Only populated for audit-log records; live consults track
+	// applies in their own state once the apply endpoint lands.
+	AppliedIdx []int         `json:"applied_idx,omitempty"`
+	Tokens     consultTokens `json:"tokens"`
 }
 
 // consultTokens mirrors corepersona.TokenUsage with explicit JSON
@@ -98,30 +126,102 @@ func (r *Router) getConsult(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	id := chi.URLParam(req, "id")
-	c, ok := r.personaDispatcher.Get(id)
-	if !ok {
-		// Live-map miss. The audit-log fall-through lands in a
-		// follow-up slice — for now the operator sees the 404 and
-		// can `cat` the on-disk record.
-		http.Error(w, "consult not found", http.StatusNotFound)
+	if c, ok := r.personaDispatcher.Get(id); ok {
+		writeJSON(w, http.StatusOK, detailFromLiveConsult(c))
 		return
 	}
+
+	// Live-map miss → audit-log fall-through. A consult that
+	// finished (success or failure) is removed from memory by
+	// Dispatcher.Finish but the audit-log row carries the post-hoc
+	// shape: status (derived from Error empty/non-empty), request,
+	// tokens, dollars, applied indexes, error string. ValidatedLines
+	// + Composed aren't preserved on disk — the operator sees a
+	// reduced detail shape with composed_persisted=false so the SPA
+	// can render an "archived" badge instead of pretending the live
+	// drawer state still exists.
+	if log := r.personaDispatcher.AuditLog(); log != nil {
+		rec, err := log.Get(id)
+		switch {
+		case err == nil:
+			writeJSON(w, http.StatusOK, detailFromAuditRecord(rec))
+			return
+		case errors.Is(err, fs.ErrNotExist):
+			// fall through to 404 below
+		default:
+			httperr.WriteError(w, err)
+			return
+		}
+	}
+
+	http.Error(w, "consult not found", http.StatusNotFound)
+}
+
+// detailFromLiveConsult renders the full in-memory consult shape,
+// including Composed prompt + ValidatedLines + LineErrors. The drawer
+// sees everything because the operator may want to re-read the prompt
+// the model saw or step through the validated lines as they arrive.
+func detailFromLiveConsult(c *persona.Consult) consultDetail {
 	lines := c.ValidatedLines
 	if lines == nil {
 		lines = []any{}
 	}
-	writeJSON(w, http.StatusOK, consultDetail{
-		consultSummary: summarizeConsult(c),
-		Composed:       c.Composed,
-		RawRequest:     c.RawRequest,
-		ValidatedLines: lines,
-		LineErrors:     c.LineErrors,
+	return consultDetail{
+		consultSummary:    summarizeConsult(c),
+		Source:            sourceLive,
+		Composed:          c.Composed,
+		ComposedPersisted: true,
+		RawRequest:        c.RawRequest,
+		ValidatedLines:    lines,
+		LineErrors:        c.LineErrors,
 		Tokens: consultTokens{
 			Input:  c.Tokens.In,
 			Output: c.Tokens.Out,
 			Total:  c.Tokens.In + c.Tokens.Out,
 		},
-	})
+	}
+}
+
+// detailFromAuditRecord renders an archived consult — what's left
+// after Finish removed the in-memory entry. Composed + ValidatedLines
+// are NOT preserved on disk so the response surfaces empty slots with
+// composed_persisted=false; the drawer can render a "consult ended,
+// detail archived" placeholder instead of an empty composed prompt
+// that looks like a bug.
+func detailFromAuditRecord(rec *corepersona.PersonaConsultRecord) consultDetail {
+	status := "completed"
+	if rec.Error != "" {
+		status = "failed"
+	}
+	endedAt := rec.EndedAt
+	endedPtr := &endedAt
+	return consultDetail{
+		consultSummary: consultSummary{
+			ID:        rec.ID,
+			PersonaID: rec.PersonaID,
+			SkillID:   rec.SkillID,
+			Workspace: rec.Workspace,
+			Status:    status,
+			StartedAt: rec.StartedAt,
+			EndedAt:   endedPtr,
+			Model:     rec.Model,
+			LatencyMs: rec.LatencyMs,
+			Dollars:   rec.Dollars,
+			Error:     rec.Error,
+		},
+		Source:            sourceAudit,
+		Composed:          persona.Composed{},
+		ComposedPersisted: false,
+		RawRequest:        rec.Request,
+		ValidatedLines:    []any{},
+		LineErrors:        nil,
+		AppliedIdx:        rec.AppliedIdx,
+		Tokens: consultTokens{
+			Input:  rec.Tokens.In,
+			Output: rec.Tokens.Out,
+			Total:  rec.Tokens.In + rec.Tokens.Out,
+		},
+	}
 }
 
 func summarizeConsult(c *persona.Consult) consultSummary {
