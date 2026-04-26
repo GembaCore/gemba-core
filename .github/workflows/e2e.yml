@@ -6,8 +6,10 @@ name: E2E
 #   pr-fast — every fake project + smoke-deep        (~2-3 min)
 #   merge   — every fake project + the deep tiers    (~8-10 min)
 #             that have stable infra (smoke-deep
-#             plus chrome-deep / route-deep /
-#             realtime-deep as those activate)
+#             plus route-deep / realtime-deep as
+#             those activate; chrome-deep retired in
+#             gm-5v8v.18 — chrome specs are backend-
+#             agnostic and ride chrome-fake only)
 #   nightly — the full deep matrix incl. integration (~25 min)
 #
 # workflow_dispatch lets an operator re-run a single project on demand.
@@ -46,7 +48,7 @@ on:
   workflow_dispatch:
     inputs:
       project:
-        description: 'Single Playwright project (e.g. smoke-fake, chrome-deep). Empty = full matrix.'
+        description: 'Single Playwright project (e.g. smoke-fake, route-deep). Empty = full matrix.'
         required: false
         type: string
         default: ''
@@ -188,17 +190,21 @@ jobs:
         env:
           GEMBA_E2E_RUN_DEEP: '1'
         run: |
-          # Pending deep projects (chrome-deep, route-deep,
-          # realtime-deep) have testIgnore=['**/*'] today, so naming
-          # them is a no-op until the matching child bead activates
-          # them. Listing them now lets the lane "just work" without
-          # a workflow edit at activation time.
+          # Pending deep projects (route-deep, realtime-deep) have
+          # testIgnore=['**/*'] today, so naming them is a no-op
+          # until the matching child bead activates them. Listing
+          # them now lets the lane "just work" without a workflow
+          # edit at activation time.
+          #
+          # chrome-deep was retired (gm-5v8v.18 — chrome specs are
+          # backend-agnostic, the chrome-fake project covers them);
+          # do NOT add it back here without a corresponding entry in
+          # testing/e2e/playwright.config.ts.
           pnpm --filter gemba-e2e exec playwright test \
             --project=smoke-fake \
             --project=chrome-fake \
             --project=route-fake \
             --project=smoke-deep \
-            --project=chrome-deep \
             --project=route-deep \
             --project=realtime-deep \
             --workers=2
