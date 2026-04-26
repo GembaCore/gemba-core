@@ -126,6 +126,15 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 			"native: build spawn spec for %s", beadID)
 	}
 
+	// Layer 2 producer (gm-v8vr.1): persist the resolved surface so
+	// the gemba-bridge PreToolUse hook (gm-eazw) reads it instead of
+	// falling back to the deny-outside-cwd default. Best-effort — a
+	// write failure logs (TODO when slog lands here) but doesn't
+	// abort the session; the bridge degrades to the safe default.
+	if surface != nil {
+		_ = persona.WriteSurfaceFile(sessionID, *surface)
+	}
+
 	pane, err := o.cfg.Backend.SpawnPane(ctx, spec)
 	if err != nil {
 		return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,

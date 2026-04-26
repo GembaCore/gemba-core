@@ -7,6 +7,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/preamble"
 	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/internal/persona"
 )
 
 // graceBeforeKill is how long EndSession waits after sending the
@@ -86,6 +87,12 @@ func (o *OrchestrationPlane) EndSession(
 	if workspace != "" {
 		_ = preamble.RemoveFromClaudeMD(workspace)
 	}
+
+	// Surface-file cleanup (gm-v8vr.1): unlink the on-disk allow-list
+	// the bridge was reading so a future session id collision can't
+	// inherit a stale file. RemoveSurfaceFile is a no-op when the
+	// file doesn't exist (best-effort, same as the preamble cleanup).
+	_ = persona.RemoveSurfaceFile(sessionID)
 
 	// Unregister bridge tailer.
 	o.fanout.Unregister(sessionID)
