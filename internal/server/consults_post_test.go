@@ -2,13 +2,16 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/MikeBengtson/gemba/internal/config"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
 )
 
@@ -234,3 +237,65 @@ func validEpicOrderInput(t *testing.T) json.RawMessage {
 	t.Helper()
 	return epicOrderRawInput(t)
 }
+
+func TestCreateConsult_DefaultSpawnsThroughDispatcher(t *testing.T) {
+	r, p := newConsultsPostRouter(t)
+	called := 0
+	r.personaDispatcher.SetSpawnFunc(func(context.Context, *persona.Consult) error {
+		called++
+		return nil
+	})
+	rec := postConsult(t, r, map[string]any{
+		"persona_id": p.ID,
+		"skill_id":   epic_order.ID,
+		"workspace":  "gemba",
+		"raw_input":  validEpicOrderInput(t),
+	}, "nonce-spawn-default")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if called != 1 {
+		t.Errorf("spawn func called %d times, want 1 (default-true)", called)
+	}
+}
+
+func TestCreateConsult_SpawnFalseSkipsDispatcherSpawn(t *testing.T) {
+	r, p := newConsultsPostRouter(t)
+	called := 0
+	r.personaDispatcher.SetSpawnFunc(func(context.Context, *persona.Consult) error {
+		called++
+		return nil
+	})
+	spawnFalse := false
+	rec := postConsult(t, r, map[string]any{
+		"persona_id": p.ID,
+		"skill_id":   epic_order.ID,
+		"workspace":  "gemba",
+		"raw_input":  validEpicOrderInput(t),
+		"spawn":      spawnFalse,
+	}, "nonce-spawn-false")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	if called != 0 {
+		t.Errorf("spawn func called %d times, want 0 (spawn=false)", called)
+	}
+}
+
+func TestCreateConsult_SpawnFailureReturns502(t *testing.T) {
+	r, p := newConsultsPostRouter(t)
+	r.personaDispatcher.SetSpawnFunc(func(context.Context, *persona.Consult) error {
+		return errSpawn
+	})
+	rec := postConsult(t, r, map[string]any{
+		"persona_id": p.ID,
+		"skill_id":   epic_order.ID,
+		"workspace":  "gemba",
+		"raw_input":  validEpicOrderInput(t),
+	}, "nonce-spawn-fail")
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+var errSpawn = errors.New("backend unreachable")

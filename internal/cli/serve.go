@@ -273,6 +273,19 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		go persona.FanFromHub(ctx, personaDispatcher, hub)
 	}
 
+	// gm-twp2 spawn integration: when an OrchestrationPlane is
+	// bound, install NativeSpawn as the dispatcher's post-Begin
+	// hook. POST /api/consults then launches a Claude Code session
+	// per consult. "claude" is the default agents.toml entry the
+	// PM-class personas dispatch as (the emit_skill_output MCP
+	// tool ships with the Claude Code bridge); operators can
+	// override via per-persona agent-type config in a follow-up
+	// slice. When no orchestration plane is bound the spawn func
+	// stays nil and POST /api/consults runs in dry-run mode.
+	if op := host.OrchestrationPlane(); op != nil {
+		personaDispatcher.SetSpawnFunc(persona.NativeSpawn(op, "claude"))
+	}
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,

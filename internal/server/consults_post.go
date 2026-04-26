@@ -57,6 +57,13 @@ type createConsultRequest struct {
 	ProjectGoals       []string          `json:"project_goals,omitempty"`
 	WorkspaceValues    []string          `json:"workspace_values,omitempty"`
 	ContextChunks      []string          `json:"context_chunks,omitempty"`
+	// Spawn picks whether the dispatcher's post-Begin SpawnFunc
+	// fires after a successful registration. nil = default true
+	// (spawn the session). Operators who want to iterate on prompt
+	// composition without launching a real Claude Code session set
+	// "spawn": false — the consult registers, the SPA can render
+	// the composed prompt for review, and no agent ever runs.
+	Spawn *bool `json:"spawn,omitempty"`
 }
 
 // templateValues mirrors persona.TemplateValues at the wire layer.
@@ -114,6 +121,15 @@ func (r *Router) createConsult(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if body.Spawn == nil {
+		// Default: spawn after Begin. The operator picks
+		// "spawn=false" to dry-run (compose prompt + register
+		// consult, never launch a session) — useful for
+		// integration tests and prompt-engineering iteration.
+		t := true
+		body.Spawn = &t
+	}
+
 	c, err := r.personaDispatcher.Begin(persona.BeginRequest{
 		Persona:            p,
 		Skill:              skill,
@@ -135,6 +151,20 @@ func (r *Router) createConsult(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		http.Error(w, beginErrorMessage(err), beginErrorStatus(err))
 		return
+	}
+
+	// gm-twp2 spawn slice: if the dispatcher has a SpawnFunc bound
+	// (cmd/gemba serve installs persona.NativeSpawn when an
+	// OrchestrationPlane is registered), launch the session now.
+	// Spawn failure leaves the consult registered with status
+	// "running" — the operator sees it in /api/consults but no
+	// session lands. Surfaces as a 502 so the SPA's drawer can
+	// render the spawn-error path explicitly.
+	if *body.Spawn {
+		if err := r.personaDispatcher.MaybeSpawn(req.Context(), c); err != nil {
+			http.Error(w, "consult registered; spawn failed: "+err.Error(), http.StatusBadGateway)
+			return
+		}
 	}
 
 	// 201 Created with the consult summary — the SPA polls

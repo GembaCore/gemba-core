@@ -41,6 +41,12 @@ type Dispatcher struct {
 
 	mu       sync.RWMutex
 	sessions map[string]*Consult
+	// spawn is the optional post-Begin hook. nil = dry-run mode
+	// (Begin returns the consult without launching a session). The
+	// production wiring installs [NativeSpawn]; tests usually leave
+	// it nil. Read with the RLock; written by [SetSpawnFunc] under
+	// the write lock.
+	spawn SpawnFunc
 
 	now   func() time.Time
 	newID func() string

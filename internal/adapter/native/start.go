@@ -39,6 +39,14 @@ const (
 	// behavior so terminal backends and pre-surface dispatch paths
 	// keep working.
 	extKeySurface = "gemba:surface"
+	// extKeySessionIDOverride lets a caller pin the spawned session's
+	// id (gm-twp2). Persona consults pass consult.ID here so the
+	// bridge frames the spawned agent emits carry a session id that
+	// the persona dispatcher's Receive call can correlate against
+	// without a separate session→consult lookup table. When absent
+	// (the common case for bead dispatch), the auto-generated
+	// "<backend>:<bead>:<nanos>" id is used unchanged.
+	extKeySessionIDOverride = "gemba:session_id_override"
 )
 
 // StartSession implements core.OrchestrationPlaneAdaptor for the
@@ -108,6 +116,9 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	}
 
 	sessionID := fmt.Sprintf("%s:%s:%d", o.cfg.Backend.Name(), beadID, time.Now().UnixNano())
+	if override, _ := prompt.Extension[extKeySessionIDOverride].(string); override != "" {
+		sessionID = override
+	}
 
 	// Best-effort bridge install — the per-agent installer is
 	// idempotent; a populated worktree is a supported no-op.
