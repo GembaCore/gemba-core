@@ -14,7 +14,9 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
+	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -74,6 +76,15 @@ type Router struct {
 	// double-fire of `bd update` doesn't double-publish events
 	// (gm-e4.3.2). Bounded FIFO; oldest entry evicted on insert.
 	notifyDeduper *notifyDeduper
+
+	// personaDispatcher + skillRegistry back the /api/consults and
+	// /api/skills surfaces (gm-twp2). Lazy-attached via
+	// AttachPersonaDispatcher so a Router built before persona
+	// configuration parses (or in tests that don't exercise consults)
+	// returns 503 from those endpoints instead of panicking on a nil
+	// deref.
+	personaDispatcher *persona.Dispatcher
+	skillRegistry     *corepersona.SkillRegistry
 
 	mux http.Handler
 }
@@ -241,6 +252,18 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// ready beads, conflict graph (file/workspace/semantic),
 		// affinity matrix, parallel-safe batches.
 		api.Get("/planner/coach", r.plannerCoach)
+
+		// gm-twp2: persona consults + the skill registry. All routes
+		// here return 503 until AttachPersonaDispatcher binds the
+		// dispatcher and skill registry. Write paths (POST consult,
+		// apply, bridge → Receive) land in follow-up slices; this
+		// commit ships the read surface so /plan + /insights/personas
+		// have something to render against.
+		api.Get("/skills", r.listSkills)
+		api.Get("/skills/{id}", r.getSkill)
+		api.Get("/skills/{id}/output_schema.json", r.getSkillOutputSchema)
+		api.Get("/consults", r.listConsults)
+		api.Get("/consults/{id}", r.getConsult)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {
@@ -356,6 +379,19 @@ func (r *Router) Close() {
 // subscribers. Returns nil only when the router was constructed
 // without one (zero-value/test paths).
 func (r *Router) EventsHub() *events.Hub { return r.eventsHub }
+
+// AttachPersonaDispatcher binds the persona consult dispatcher and the
+// skill registry it draws from to the router (gm-twp2). cmd/gemba serve
+// calls this once at boot after parsing personas + registering skills;
+// tests attach a fixture-built dispatcher per test case. Routes under
+// /api/skills* and /api/consults* return 503 until both are attached.
+//
+// Either argument may be nil to detach (tests that re-use a Router
+// across cases set then clear).
+func (r *Router) AttachPersonaDispatcher(d *persona.Dispatcher, sr *corepersona.SkillRegistry) {
+	r.personaDispatcher = d
+	r.skillRegistry = sr
+}
 
 // --- stock handlers -------------------------------------------------------
 
