@@ -1,42 +1,53 @@
-# golangci-lint config for gemba.
+# golangci-lint v2 config for gemba.
 #
 # Conservative starter set: keep the noise low while the scaffold is
 # young. Tighten in gm-e7.x once the surface stabilises.
+#
+# v2 schema migration (Apr 2026): top-level `version`, `default: none`
+# instead of `disable-all: true`, formatters moved to their own
+# section, and linter-settings nest under `linters.settings`. Old v1
+# config kept failing CI as v2.5.0 (the first golangci-lint built
+# with go1.25) was required for our `go 1.25.0` go.mod.
+
+version: "2"
 
 run:
   timeout: 3m
   tests: true
 
 linters:
-  disable-all: true
+  default: none
   enable:
     - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - revive
     - bodyclose
     - gocritic
-
-linters-settings:
-  revive:
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    gocritic:
+      disabled-checks:
+        - ifElseChain
+        - singleCaseSwitch
+  exclusions:
     rules:
-      - name: exported
-        disabled: true
-  gocritic:
-    disabled-checks:
-      - ifElseChain
-      - singleCaseSwitch
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gocritic
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
-        - gocritic
   max-issues-per-linter: 0
   max-same-issues: 0
