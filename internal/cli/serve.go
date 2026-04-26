@@ -23,10 +23,13 @@ import (
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/core"
+	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/server"
 	"github.com/MikeBengtson/gemba/internal/server/metrics"
 	"github.com/MikeBengtson/gemba/internal/shader"
 	"github.com/MikeBengtson/gemba/internal/shader/gastown"
+	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/spf13/cobra"
 )
@@ -231,6 +234,28 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		go mc.Run(ctx, hub)
 		handler.AttachMetricsHandler(mc.Handler())
 	}
+
+	// gm-twp2: persona consult dispatcher + skill registry. The
+	// HTTP read endpoints (/api/skills*, /api/consults*) return 503
+	// until this attaches; with it bound the SPA can render the
+	// /plan recommend-order surface and /insights/personas list.
+	//
+	// Skills register at startup — adding a new skill means a new
+	// import + Register call below. The audit log defaults to
+	// $HOME/.gemba/persona; operators with a custom location can
+	// override via persona.NewAuditLog(<path>) once that wiring lands.
+	skillRegistry := corepersona.NewSkillRegistry()
+	if err := epic_order.Register(skillRegistry); err != nil {
+		// A duplicate-id Register failure here would mean the binary
+		// is misbuilt (two skills claiming the same id), which is a
+		// programmer error rather than an operator one. Log and
+		// continue — the read endpoints will simply not surface the
+		// affected skill.
+		slog.Warn("personas: epic_order.Register failed; skill not exposed",
+			"err", err)
+	}
+	personaDispatcher := persona.NewDispatcher(persona.NewAuditLog(""))
+	handler.AttachPersonaDispatcher(personaDispatcher, skillRegistry)
 
 	srv := &http.Server{
 		Addr:              addr,
