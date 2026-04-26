@@ -119,14 +119,16 @@ const (
 )
 
 // Consult is the live state of one persona consult. The struct is
-// returned by Begin and read back by Get. Fields populated by
+// returned by Begin and read back by Get / List. Fields populated by
 // Receive (ValidatedLines, LineErrors) accumulate as the spawned
 // session emits its MCP tool calls.
 //
-// Treat the value Get returns as read-only — internal mutations
-// happen through the dispatcher's locked methods. Concurrent
-// readers can race with a still-running consult, so callers
-// rendering UI should snapshot the value once per render.
+// Get and List return a deep-enough snapshot copy so concurrent
+// readers cannot race a still-running Receive. Mutating the returned
+// value has no effect on the registry — the dispatcher's locked
+// methods are the only write path. The value Begin returns IS the
+// live registry pointer (so the caller doesn't pay for a copy on the
+// happy path); only post-Begin reads via Get / List are snapshots.
 type Consult struct {
 	ID        string
 	PersonaID string
@@ -328,28 +330,65 @@ func (d *Dispatcher) Begin(req BeginRequest) (*Consult, error) {
 }
 
 // Get returns the consult with the given id. The bool is false when
-// no consult is registered. Get returns a pointer into the live
-// registry; treat as read-only.
+// no consult is registered.
+//
+// Returned value is a snapshot taken under the read lock — callers
+// can read its fields freely without racing against a concurrent
+// Receive. Mutating the snapshot has no effect on the registry; the
+// dispatcher's locked methods are the only write surface.
 func (d *Dispatcher) Get(id string) (*Consult, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	c, ok := d.sessions[id]
-	return c, ok
+	if !ok {
+		return nil, false
+	}
+	snap := snapshotConsult(c)
+	return snap, true
 }
 
 // List returns a snapshot of all currently-registered consults,
 // newest StartedAt first. Used by /insights/personas to render
 // in-flight + recent consults; the audit log carries the full
 // history for closed consults.
+//
+// Each entry is a snapshot copy taken under the read lock — same
+// race-free contract as Get.
 func (d *Dispatcher) List() []*Consult {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	out := make([]*Consult, 0, len(d.sessions))
 	for _, c := range d.sessions {
-		out = append(out, c)
+		out = append(out, snapshotConsult(c))
 	}
 	sortByStartedAtDesc(out)
 	return out
+}
+
+// snapshotConsult returns a deep-enough copy of c so a caller can
+// read every field without racing a concurrent Receive. Caller MUST
+// hold d.mu (read or write) when calling — this function does not
+// take a lock itself.
+//
+// "Deep enough" means slices with mutable backing get their own
+// arrays. Pointers / interfaces inside ValidatedLines are not deep-
+// cloned because the skill validator returns immutable values
+// (typed line records produced once, never mutated).
+func snapshotConsult(c *Consult) *Consult {
+	if c == nil {
+		return nil
+	}
+	snap := *c
+	if c.ValidatedLines != nil {
+		snap.ValidatedLines = append([]any(nil), c.ValidatedLines...)
+	}
+	if c.LineErrors != nil {
+		snap.LineErrors = append([]LineError(nil), c.LineErrors...)
+	}
+	if c.RawRequest != nil {
+		snap.RawRequest = append(json.RawMessage(nil), c.RawRequest...)
+	}
+	return &snap
 }
 
 // Receive ingests one MCP-tool emission for an active consult. The

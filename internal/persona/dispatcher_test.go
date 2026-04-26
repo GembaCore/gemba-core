@@ -127,8 +127,14 @@ func TestDispatcher_BeginRegistersSession(t *testing.T) {
 	}
 
 	got, ok := d.Get(c.ID)
-	if !ok || got != c {
-		t.Errorf("Get returned (%v, %v); want same pointer back", got, ok)
+	if !ok {
+		t.Fatal("Get returned not-found; want the consult back")
+	}
+	// Get returns a snapshot copy (not the live pointer) so concurrent
+	// Receive can't race a reader. Identity check is by id.
+	if got.ID != c.ID || got.PersonaID != c.PersonaID {
+		t.Errorf("Get returned wrong consult: id=%q persona=%q want id=%q persona=%q",
+			got.ID, got.PersonaID, c.ID, c.PersonaID)
 	}
 }
 
