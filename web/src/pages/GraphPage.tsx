@@ -14,8 +14,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
-  ArrowLeft,
-  ArrowRight,
+  ArrowDown,
+  ArrowUp,
   Layers,
   Network,
   Route as RouteIcon,
@@ -325,15 +325,15 @@ export function GraphPage() {
             onClick={stepBack}
             disabled={!canStepBack}
             data-testid="graph-step-back"
-            title="Step back to predecessor (ArrowLeft)"
+            title="Step up to predecessor (ArrowUp)"
             className={cn(
               'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 transition-colors',
               'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800',
               'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-neutral-900'
             )}
           >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span>Back</span>
+            <ArrowUp className="h-3.5 w-3.5" />
+            <span>Up</span>
           </button>
           <button
             type="button"
@@ -342,7 +342,7 @@ export function GraphPage() {
             data-testid="graph-step-next"
             title={
               canStepNext
-                ? 'Step to next node (ArrowRight)'
+                ? 'Step down to next node (ArrowDown)'
                 : focusedId
                   ? 'Multiple successors — click one to choose'
                   : 'Click a node to start traversal'
@@ -353,8 +353,8 @@ export function GraphPage() {
               'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-neutral-900'
             )}
           >
-            <span>Next</span>
-            <ArrowRight className="h-3.5 w-3.5" />
+            <span>Down</span>
+            <ArrowDown className="h-3.5 w-3.5" />
           </button>
           <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
           <ToggleButton

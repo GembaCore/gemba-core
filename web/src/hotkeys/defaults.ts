@@ -72,16 +72,20 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
 
   // Graph traversal (gm-e12.20). Scoped to the GraphPage — these
   // bindings only fire while /graph is mounted (the page pushes
-  // scope='graph' on mount), so ArrowLeft/Right/Enter on Board or
+  // scope='graph' on mount), so ArrowUp/Down/Enter on Board or
   // Grid keep their existing semantics.
   //
-  // Forward stepping is only enabled when the focused node has
-  // exactly one outgoing structural edge — when ambiguous the
-  // binding is a no-op so the operator falls back to clicking. Back
-  // stepping is always enabled when at least one predecessor exists;
-  // an ambiguous case prefers the most recently visited predecessor.
-  { id: 'graph-next', keys: ['ArrowRight'], description: 'Graph: step to next node (when unambiguous)', category: 'navigation', scope: 'graph' },
-  { id: 'graph-back', keys: ['ArrowLeft'], description: 'Graph: step back to previous node', category: 'navigation', scope: 'graph' },
+  // Vertical keys, not horizontal: the layout is top-down (roots at
+  // the top, descendants below — graphLayout.ts §axes). ArrowDown
+  // steps toward a successor (downstream); ArrowUp steps back to a
+  // predecessor (upstream). Forward stepping is only enabled when
+  // the focused node has exactly one outgoing structural edge — when
+  // ambiguous the binding is a no-op so the operator falls back to
+  // clicking. Back stepping is always enabled when at least one
+  // predecessor exists; an ambiguous case prefers the most recently
+  // visited predecessor.
+  { id: 'graph-next', keys: ['ArrowDown'], description: 'Graph: step down to next node (when unambiguous)', category: 'navigation', scope: 'graph' },
+  { id: 'graph-back', keys: ['ArrowUp'], description: 'Graph: step up to previous node', category: 'navigation', scope: 'graph' },
   { id: 'graph-open', keys: ['Enter'], description: 'Graph: open focused node detail', category: 'drawer', scope: 'graph' },
 
   // Drawer / panel

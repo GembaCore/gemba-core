@@ -1,6 +1,6 @@
 // GraphPage keyboard-navigation tests (gm-e12.20). Verifies the
 // next-when-deterministic / always-back traversal contract by driving
-// the page through clicks, ArrowLeft/ArrowRight, and Enter, then
+// the page through clicks, ArrowUp/ArrowDown, and Enter, then
 // asserting that the focused-node marker (data-focused-node on the
 // canvas host) tracks the predicted path.
 //
@@ -10,7 +10,7 @@
 // div, not inside the React Flow viewport, so it survives stubbing.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -143,7 +143,7 @@ describe('GraphPage keyboard navigation (gm-e12.20)', () => {
 
   // Chain A → B → C: B has one outgoing (C) and one incoming (A);
   // C has one incoming (B); A has one outgoing (B). Every step is
-  // unambiguous so ArrowRight / ArrowLeft can walk the whole chain.
+  // unambiguous so ArrowDown / ArrowUp can walk the whole chain.
   function renderChain() {
     fetchSpy.mockResolvedValueOnce(
       jsonResp({
@@ -158,7 +158,7 @@ describe('GraphPage keyboard navigation (gm-e12.20)', () => {
     render(<GraphPage />, { wrapper: wrapper() });
   }
 
-  it('ArrowRight steps forward through a single-successor chain', async () => {
+  it('ArrowDown steps forward through a single-successor chain', async () => {
     renderChain();
     await waitFor(() => expect(screen.getByTestId('rf-stub-node-a')).toBeTruthy());
 
@@ -167,18 +167,18 @@ describe('GraphPage keyboard navigation (gm-e12.20)', () => {
     });
     expect(focusedId()).toBe('a');
 
-    press('ArrowRight');
+    press('ArrowDown');
     await waitFor(() => expect(focusedId()).toBe('b'));
 
-    press('ArrowRight');
+    press('ArrowDown');
     await waitFor(() => expect(focusedId()).toBe('c'));
 
-    // C has no outgoing structural edge; ArrowRight is a no-op.
-    press('ArrowRight');
+    // C has no outgoing structural edge; ArrowDown is a no-op.
+    press('ArrowDown');
     expect(focusedId()).toBe('c');
   });
 
-  it('ArrowLeft steps back to the predecessor', async () => {
+  it('ArrowUp steps back to the predecessor', async () => {
     renderChain();
     await waitFor(() => expect(screen.getByTestId('rf-stub-node-a')).toBeTruthy());
 
@@ -187,14 +187,14 @@ describe('GraphPage keyboard navigation (gm-e12.20)', () => {
     });
     expect(focusedId()).toBe('c');
 
-    press('ArrowLeft');
+    press('ArrowUp');
     await waitFor(() => expect(focusedId()).toBe('b'));
 
-    press('ArrowLeft');
+    press('ArrowUp');
     await waitFor(() => expect(focusedId()).toBe('a'));
 
-    // A has no predecessor; ArrowLeft is a no-op.
-    press('ArrowLeft');
+    // A has no predecessor; ArrowUp is a no-op.
+    press('ArrowUp');
     expect(focusedId()).toBe('a');
   });
 
@@ -226,15 +226,15 @@ describe('GraphPage keyboard navigation (gm-e12.20)', () => {
     const nextBtn = screen.getByTestId('graph-step-next') as HTMLButtonElement;
     expect(nextBtn.disabled).toBe(true);
 
-    // ArrowRight on an ambiguous node is also a no-op — focus stays
+    // ArrowDown on an ambiguous node is also a no-op — focus stays
     // on A.
-    press('ArrowRight');
+    press('ArrowDown');
     expect(focusedId()).toBe('a');
   });
 
-  it('ArrowLeft prefers the most-recently-visited predecessor when ambiguous', async () => {
+  it('ArrowUp prefers the most-recently-visited predecessor when ambiguous', async () => {
     // Both A and X block C. Visiting A then C makes A the most-
-    // recent predecessor of C, so ArrowLeft from C lands on A
+    // recent predecessor of C, so ArrowUp from C lands on A
     // (not the alphabetic min, which would be A here too — so we
     // also assert the X-visit-first variant separately).
     fetchSpy.mockResolvedValue(
@@ -250,7 +250,7 @@ describe('GraphPage keyboard navigation (gm-e12.20)', () => {
     render(<GraphPage />, { wrapper: wrapper() });
     await waitFor(() => expect(screen.getByTestId('rf-stub-node-c')).toBeTruthy());
 
-    // Visit X, then C — last visit before C is X, so ArrowLeft
+    // Visit X, then C — last visit before C is X, so ArrowUp
     // should pick X.
     act(() => {
       screen.getByTestId('rf-stub-node-x').click();
@@ -260,7 +260,7 @@ describe('GraphPage keyboard navigation (gm-e12.20)', () => {
     });
     expect(focusedId()).toBe('c');
 
-    press('ArrowLeft');
+    press('ArrowUp');
     await waitFor(() => expect(focusedId()).toBe('x'));
   });
 
