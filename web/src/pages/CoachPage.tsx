@@ -20,6 +20,7 @@ import {
   type PlannerWorkspaceCollision,
 } from '@/api/planner';
 import { AgentContextStrip } from '@/components/agents/AgentContextStrip';
+import { SessionHealthPanel } from '@/components/health/SessionHealthPanel';
 import { cn } from '@/lib/utils';
 
 const POLL_MS = 30_000;
@@ -46,6 +47,9 @@ export function CoachPage() {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="coach-page">
       <Header notices={data.notices ?? []} batchCount={data.batches.length} />
+      <div className="px-8 py-3">
+        <SessionHealthPanel sessions={data.sessions} sortBySeverity testid="coach-health-panel" />
+      </div>
       <CoachSessionStrip
         sessions={data.sessions}
         hoverBead={hoverBead}
