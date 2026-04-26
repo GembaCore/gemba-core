@@ -455,6 +455,133 @@ func TestRun_RejectsInvalidDaemon(t *testing.T) {
 	}
 }
 
+// ── Fairness boost ──────────────────────────────────────────────
+
+func TestFairness_BoostIsLinearAndCapped(t *testing.T) {
+	f := FairnessConfig{PerHour: 0.05, Max: 0.30}
+	cases := []struct {
+		name string
+		age  time.Duration
+		want float64
+	}{
+		{"zero age", 0, 0},
+		{"negative age", -time.Hour, 0},
+		{"one hour", time.Hour, 0.05},
+		{"three hours", 3 * time.Hour, 0.15},
+		{"capped at max", 12 * time.Hour, 0.30},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := f.Boost(tc.age)
+			if got < tc.want-1e-9 || got > tc.want+1e-9 {
+				t.Errorf("Boost(%s) = %v, want %v", tc.age, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestFairness_DisabledWhenPerHourZero(t *testing.T) {
+	f := FairnessConfig{Max: 1.0}
+	if got := f.Boost(10 * time.Hour); got != 0 {
+		t.Errorf("zero PerHour must disable; got %v", got)
+	}
+}
+
+func TestFairness_NoCapWhenMaxZero(t *testing.T) {
+	f := FairnessConfig{PerHour: 0.05}
+	if got := f.Boost(100 * time.Hour); got != 5.0 {
+		t.Errorf("no-cap should keep ramping; got %v want 5.0", got)
+	}
+}
+
+func TestTick_FairnessBoostFlipsRanking(t *testing.T) {
+	// Aged bead loses on raw affinity but wins on boost. Test
+	// uses an aggressive boost (PerHour=0.10, Max=0.60) so the
+	// arithmetic is unambiguous: fresh "auth" bead scores ~0.45,
+	// old "unrelated" bead scores ~0.15 + 0.60 boost = 0.75.
+	profile := &planner.SessionProfile{
+		Concepts: map[planner.ConceptTag]float64{"auth": 1.0},
+	}
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", profile, &planner.SessionHealth{}),
+	}
+	old := bead("gm-old", "other", "unrelated")
+	old.Age = 6 * time.Hour
+	fresh := bead("gm-fresh", "other", "auth")
+	ready := []ReadyBead{fresh, old}
+	dsp := &fakeDispatcher{}
+	d := newDaemon(idle, nil, ready, enabledGate(), dsp)
+	d.Now = fixedClock(t)
+	d.Fairness = &FairnessConfig{PerHour: 0.10, Max: 0.60}
+
+	r := d.Tick(context.Background())
+	if len(r.Actions) != 1 || r.Actions[0].Outcome != OutcomeDispatched {
+		t.Fatalf("expected dispatched; got %+v", r.Actions)
+	}
+	if r.Actions[0].BeadID != "gm-old" {
+		t.Errorf("aged bead should win after boost; picked %s", r.Actions[0].BeadID)
+	}
+}
+
+func TestTick_FairnessOptOutPreservesRawRanking(t *testing.T) {
+	profile := &planner.SessionProfile{
+		Concepts: map[planner.ConceptTag]float64{"auth": 1.0},
+	}
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", profile, &planner.SessionHealth{}),
+	}
+	old := bead("gm-old", "other", "unrelated")
+	old.Age = 6 * time.Hour
+	fresh := bead("gm-fresh", "other", "auth")
+	ready := []ReadyBead{fresh, old}
+	dsp := &fakeDispatcher{}
+	d := newDaemon(idle, nil, ready, enabledGate(), dsp)
+	d.Now = fixedClock(t)
+	d.Fairness = &FairnessConfig{} // explicit opt-out
+
+	r := d.Tick(context.Background())
+	if r.Actions[0].BeadID != "gm-fresh" {
+		t.Errorf("with fairness off, raw affinity should win; picked %s", r.Actions[0].BeadID)
+	}
+}
+
+func TestTick_RecycleUsesRawScoresNotBoosted(t *testing.T) {
+	// Confirm fairness boost does NOT bypass recycle. Setup: high
+	// pressure, conflict-block the high-affinity beads so the
+	// eligible top is below the median (rule 1 conditions). Even
+	// with a large boost, recycle should still fire because the
+	// median is computed over raw scores.
+	profile := &planner.SessionProfile{
+		Concepts: map[planner.ConceptTag]float64{"auth": 1.0},
+	}
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", profile, &planner.SessionHealth{ContextPressure: 0.95}),
+	}
+	live := []planner.OperationalContext{
+		{
+			Session:   &core.Session{ID: "sess-live", Status: core.SessionWorking},
+			Workspace: &core.Workspace{Repository: "other-repo", Branch: "main"},
+		},
+	}
+	low := bead("gm-low", "different-repo", "unrelated")
+	low.Age = 24 * time.Hour // huge fairness boost
+	ready := []ReadyBead{
+		low,
+		bead("gm-high1", "other-repo", "auth"),
+		bead("gm-high2", "other-repo", "auth"),
+	}
+	dsp := &fakeDispatcher{}
+	rec := &fakeRecycler{}
+	d := newDaemon(idle, live, ready, enabledGate(), dsp)
+	d.Recycler = rec
+	d.Now = fixedClock(t)
+
+	r := d.Tick(context.Background())
+	if r.Actions[0].Outcome != OutcomeRecycled {
+		t.Errorf("fairness must not bypass recycle; got %+v", r.Actions[0])
+	}
+}
+
 // ── Rate gate updates on dispatch ───────────────────────────────
 
 func TestTick_DispatchAdvancesRateLimit(t *testing.T) {

@@ -107,6 +107,49 @@ const (
 	OutcomeError           Outcome = "error"
 )
 
+// FairnessConfig controls the age-in-ready-queue boost applied
+// when ranking beads for dispatch (gm-s47n.6.4, spec §4 Layer 5.2).
+//
+// Boost is added to a bead's combined affinity for ranking purposes
+// only — the persisted Decision still records the raw planner
+// score so the retrospective grades the affinity model, not the
+// dispatch tie-breaker. Recycle decisions also use raw scores.
+//
+// Default per-hour: 0.05; cap: 0.30. A bead that has waited 6+
+// hours therefore picks up a +0.30 boost — enough to overtake a
+// concept-matched competitor (typical AffinityScores.Combined sit
+// in the 0.2-0.6 band) without dwarfing it.
+type FairnessConfig struct {
+	// PerHour is the linear boost added per hour of age in the
+	// ready queue. Zero disables the boost entirely (caller
+	// passes &FairnessConfig{} to opt out without a nil check
+	// branch).
+	PerHour float64
+	// Max caps the cumulative boost so a forever-blocked bead
+	// can't drown out the affinity signal entirely. Zero means
+	// "no cap" (the linear ramp keeps going); operators should
+	// set this in production.
+	Max float64
+}
+
+// DefaultFairness matches the spec note's guidance: gentle boost,
+// hard cap. Tunable via Daemon.Fairness.
+var DefaultFairness = FairnessConfig{PerHour: 0.05, Max: 0.30}
+
+// Boost returns the additive boost for a bead with the given age.
+// Linear ramp clamped at Max. Negative ages and zero PerHour both
+// return 0.
+func (f FairnessConfig) Boost(age time.Duration) float64 {
+	if f.PerHour <= 0 || age <= 0 {
+		return 0
+	}
+	v := f.PerHour * age.Hours()
+	if f.Max > 0 && v > f.Max {
+		return f.Max
+	}
+	return v
+}
+
 // Daemon holds the dependencies the loop pulls each tick. All
 // interface fields are required EXCEPT Recycler (optional — when
 // nil the recycle gate becomes a pure no-op) and Decisions (optional
@@ -131,6 +174,10 @@ type Daemon struct {
 	// Weights overrides the default affinity weighting. nil →
 	// planner.DefaultAffinityWeights.
 	Weights *planner.AffinityWeights
+
+	// Fairness tunes the age-in-ready-queue boost. nil →
+	// DefaultFairness. Pass &FairnessConfig{} to opt out.
+	Fairness *FairnessConfig
 }
 
 // TickResult bundles every Action produced this tick plus any
@@ -331,13 +378,25 @@ func (d *Daemon) tickSession(
 }
 
 // scoredBead pairs a bead with its computed affinity for the session
-// being scored. Sort key: scores.Combined desc.
+// being scored, plus the fairness boost. Sort key for ranking:
+// effective() desc. Recycle uses scores.Combined (raw) so the
+// fairness boost is purely a dispatch tie-breaker.
 type scoredBead struct {
 	bead   ReadyBead
 	scores planner.AffinityScores
+	boost  float64
+}
+
+// effective is the combined score the daemon ranks by — raw
+// affinity plus the age-fairness boost. Used for ordering only;
+// scores.Combined remains the canonical "what the affinity model
+// said" value.
+func (s scoredBead) effective() float64 {
+	return s.scores.Combined + s.boost
 }
 
 func (d *Daemon) rankBeads(ready []ReadyBead, sess planner.OperationalContext) []scoredBead {
+	fairness := d.fairness()
 	out := make([]scoredBead, 0, len(ready))
 	for _, b := range ready {
 		scores := planner.Affinity(planner.AffinityBeadInputs{
@@ -347,12 +406,16 @@ func (d *Daemon) rankBeads(ready []ReadyBead, sess planner.OperationalContext) [
 			Repositories: b.Repositories,
 			Branch:       b.Branch,
 		}, sess, d.Weights)
-		out = append(out, scoredBead{bead: b, scores: scores})
+		out = append(out, scoredBead{
+			bead:   b,
+			scores: scores,
+			boost:  fairness.Boost(b.Age),
+		})
 	}
 	// Stable sort so equal-score ties resolve by ready-set order
 	// (which is itself determined upstream).
 	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].scores.Combined > out[j].scores.Combined
+		return out[i].effective() > out[j].effective()
 	})
 	return out
 }
@@ -427,6 +490,13 @@ func (d *Daemon) now() time.Time {
 		return d.Now()
 	}
 	return time.Now().UTC()
+}
+
+func (d *Daemon) fairness() FairnessConfig {
+	if d.Fairness != nil {
+		return *d.Fairness
+	}
+	return DefaultFairness
 }
 
 func (d *Daemon) logger() *slog.Logger { return d.Logger }
