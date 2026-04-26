@@ -68,20 +68,23 @@
 
 Top-to-bottom, in order:
 
-1. **Board** — home (Gemba view)
+1. **Board** — home (Gemba view; absorbs the former standalone "Backlog" surface as a built-in view-mode + preset, see §4 and §5.2)
 2. **Gemba walks**
-3. **Backlog**
-4. **Grid**
-5. **Escalations**
-6. **Project Config**
-7. **Settings**
+3. **Grid**
+4. **Escalations**
+5. **Setup** — single-surface admin (adaptors / personas / packs / agents / project config / bootstrap; see §5.20)
+6. **Settings**
 
-Secondary surfaces (`/plan`, `/graph`, `/insights`, `/qa/health`, `/qa/gates`, `/personas`, `/capabilities`, `/checkpoints`, `/bootstrap`) are NOT in the sidebar. They're reachable via:
+> **Sidebar collapse rationale (ratified 2026-04-26):** Two prior items collapse into the list above.
+> - **Board ⇐ Backlog.** Both are WorkItem views over the same data; Backlog was a state-filtered list. Board now exposes a kanban / list view-mode toggle (§4.10) plus a "Backlog & Next Up" preset (§4.11). Standalone `/backlog` route persists as a deep-link redirect to `/board?view=list&preset=backlog`.
+> - **Setup ⇐ Capability browser + Agents + Personas + Packs + Project config + Bootstrap.** All six are configuration surfaces with low daily-traffic. They become sections within `/setup` using the single-scroll + sticky section nav pattern already specified for Project config (§5.16). Old routes deep-link to the matching section.
+
+Secondary surfaces (`/plan`, `/graph`, `/insights`, `/qa/health`, `/qa/gates`, `/checkpoints`) are NOT in the sidebar. They're reachable via:
 - **Cmd-K** (primary: typing the surface name jumps to it)
 - **Deep link** (URL-navigable)
 - **Inline buttons** inside related surfaces (e.g., "Insights" button on Board top-right)
 
-Sidebar items show a small badge when they have pending attention (Escalations: count of open; Gemba walks: count of active).
+Sidebar items show a small badge when they have pending attention (Escalations: count of open; Gemba walks: count of active; Setup: count of degraded adaptors or unsigned packs awaiting confirmation).
 
 ### 2.3 Top bar (left to right)
 
@@ -292,6 +295,32 @@ Swimlane switcher (top-right of board): by parent-epic / by parallel-group / by 
 
 Alternate view at `/board?view=workitem`. Same six columns, but cards are individual WorkItems (not Epics). Accessible via keyboard shortcut (Cmd-Shift-W) and view toggle in board header.
 
+### 4.10 View modes (kanban / list)
+
+Board exposes two visual modes over the same query result. The `view` URL param composes with `granularity` (Epic vs WorkItem) and `preset` (§4.11):
+
+| Mode | URL | Purpose |
+|---|---|---|
+| `kanban` (default) | `/board` | Six-column drag surface; the canonical Gemba view |
+| `list` | `/board?view=list` | Flat dense list with state_category + kind filter chips and client-side title search; absorbs the former `/backlog` surface |
+
+Switcher lives in the board header next to the granularity toggle. Kanban list-mode shares the same query, drawer, and selection behavior as kanban-mode — only the rendering changes. Cmd-Shift-L toggles list ↔ kanban.
+
+`/grid` (§5.3) is intentionally NOT a Board view-mode: Grid is the power-user TanStack table with inline edit, column presets, and bulk-action ergonomics that don't fit a board frame. It stays a standalone surface in the sidebar.
+
+### 4.11 Built-in presets
+
+The view-mode toggle composes with named presets that pin filters + granularity. Presets live in the URL (`?preset=<name>`) and are URL-shareable. v1 ships:
+
+| Preset | Filter | Default mode |
+|---|---|---|
+| `staged` (default) | state_category ∈ {staged, started} | kanban |
+| `backlog` | state_category ∈ {backlog, unstarted} | **list** (absorbs the former standalone Backlog surface) |
+| `done-recent` | state_category = completed; closed within 7d | list |
+| `mine` | assignee = current_agent | kanban |
+
+Selecting a preset updates filter chips but doesn't lock them — users can layer additional chips on top. Saved personal views (per §6.8) are preset extensions.
+
 ---
 
 ## 5. Other screens
@@ -305,12 +334,15 @@ Alternate view at `/board?view=workitem`. Same six columns, but cards are indivi
 - Cost preview: always visible at the top — `Total cost estimate: $4.20 · ~142k tokens`
 - Post-execute: navigate to Board with dispatched Epics visibly transitioning to In Progress
 
-### 5.2 Backlog (`/backlog`)
+### 5.2 Backlog (now a Board preset, not a standalone surface)
 
-- Cross-workspace view of Epics in Backlog + Next Up columns
-- Filter chips: workspace / priority / labels / sprint / phase
-- Bulk-triage: multi-select + "Promote to Next Up" / "Defer" / "Cancel"
-- Grouping: by parent-epic (default) or chronological
+> **Collapsed into Board (ratified 2026-04-26).** What was a standalone `/backlog` surface is now `/board?view=list&preset=backlog` (see §4.10–4.11). The legacy `/backlog` route persists as a permanent redirect so existing links and bookmarks keep working.
+>
+> Behaviors carry over unchanged:
+> - Cross-workspace view of items in Backlog + Next Up columns (the `backlog` preset filter)
+> - Filter chips: workspace / priority / labels / sprint / phase (board chip-rail; preset pre-applies state filter)
+> - Bulk-triage: multi-select + "Promote to Next Up" / "Defer" / "Cancel" (the existing board multi-select + context menu, see §4.5)
+> - Grouping: by parent-epic (default) or chronological (the swimlane switcher in §4.4 covers this)
 
 ### 5.3 Grid (`/grid`)
 
@@ -339,7 +371,10 @@ Layout: **two-pane** — agenda left, chat right. PM panel pinned to bottom as u
 - **Pause / Resume:** menu option in top-right of the walk pane ("Pause walk", "End walk"). Not a prominent button — walks should feel continuous.
 - **Active-walk indicator in chrome:** yellow-tinted banner across the top of the content area: `Gemba walk active · 4 of 11 decided · [resume / end]`
 
-### 5.5 Persona roster (`/personas`)
+### 5.5 Persona roster — Setup section (was: `/personas`)
+
+> **Folded into Setup (ratified 2026-04-26).** Renders as the "Personas" section inside `/setup` (§5.20). The legacy `/personas` route is a deep-link to `/setup#personas`.
+
 
 - Layout: **grid of cards** (3-4 per row on comfortable desktop)
 - Per-card (closed state):
@@ -375,7 +410,10 @@ Similar right-side drawer. Tabs: **Summary / Description / DoD / Activity / Comm
 - **Per-card primary CTA:** **Resolve** (primary button) or **Hand-off** (secondary, opens mini-modal to pick a persona)
 - **Inline context:** 2-3 lines of the triggering event, plus a link to the originating bead/session
 
-### 5.9 Capability browser (`/capabilities`)
+### 5.9 Capability browser — Setup section (was: `/capabilities`)
+
+> **Folded into Setup (ratified 2026-04-26).** Renders as the "Adaptors" section inside `/setup` (§5.20). The legacy `/capabilities` route is a deep-link to `/setup#adaptors`.
+
 
 - Layout: **adaptor-per-row**
 - Per-row: adaptor ID / transport / last conformance run timestamp + status / declared capability count / health indicator
@@ -422,7 +460,10 @@ Similar right-side drawer. Tabs: **Summary / Description / DoD / Activity / Comm
 - **Restore UX:** confirm-dialog with typing-guard
 - **Typing-guard copy:** "Type `restore` to confirm. This will roll back every git repo, the Beads database, live session state, sidecar, and artifacts to this checkpoint. Pushed commits cannot be un-pushed."
 
-### 5.15 Bootstrap wizard (`/bootstrap`)
+### 5.15 Bootstrap wizard — Setup section (was: `/bootstrap`)
+
+> **Folded into Setup (ratified 2026-04-26).** Renders as the "Bootstrap" section inside `/setup` (§5.20). The legacy `/bootstrap` route is a deep-link to `/setup#bootstrap`. The wizard remains a guided multi-step flow inside that section — folding it into Setup did not flatten the steps.
+
 
 Steps (4): **Source → Analysis → Plan review → Ratify**
 
@@ -431,13 +472,19 @@ Steps (4): **Source → Analysis → Plan review → Ratify**
 - **Plan review:** side-by-side — generated plan on left, consistency report on right. Report format: **summary-then-details** (top-line PASS/WARN/FAIL with drill-down per finding)
 - **Ratify:** nonce-confirmed commit of the project config
 
-### 5.16 Project config (`/project/config`)
+### 5.16 Project config — Setup section (was: `/project/config`)
+
+> **Folded into Setup (ratified 2026-04-26).** Renders as the "Project config" section inside `/setup` (§5.20) — and provides the layout pattern (single-scroll + sticky section nav) that Setup itself uses at the outer level. The legacy `/project/config` route deep-links to `/setup#project-config`.
+
 
 - Layout: **single-scroll** with sticky section nav on left
 - Sections: Values / Guardrails / Goals / Personas / Adaptors / Packs / Integrations / Mode / Subscriptions / Workspace repos / Advanced
 - **Values editor:** **modal** (table of current values; add/edit/remove; priority rank; statement textarea)
 
-### 5.17 Pack browser (`/packs`)
+### 5.17 Pack browser — Setup section (was: `/packs`)
+
+> **Folded into Setup (ratified 2026-04-26).** Renders as the "Packs" section inside `/setup` (§5.20). The legacy `/packs` route deep-links to `/setup#packs`. The marketplace-grid layout is preserved within the section.
+
 
 - Layout: marketplace-grid (installed packs highlighted) with list view toggle
 - Per-pack card: icon / name / author / version / signed-status badge / description / install button
@@ -457,6 +504,39 @@ Workspace.kind-specific affordances (from template):
 | container | Railway link (if configured) + docker-exec button |
 | subprocess | Process tree viewer |
 | exec | Last command + exit code |
+
+### 5.20 Setup (`/setup`) — admin consolidation
+
+**Route:** `/setup` (sidebar primary nav). Default landing section: Adaptors (most operationally relevant).
+
+**Layout:** **Single-scroll** with sticky section nav on left — same pattern §5.16 specifies for Project config, lifted up one level. Each section renders the surface that previously stood alone.
+
+**Sections (top-to-bottom in the sticky nav):**
+
+| Anchor | Section | Was | Notes |
+|---|---|---|---|
+| `#adaptors` | **Adaptors** | §5.9 Capability browser | adaptor-per-row + drill-down to CapabilityManifest. Default section on `/setup` load |
+| `#agents` | **Agents** | (current SPA `/agents`) | agent registry: identity / role / rig / last-seen / health |
+| `#personas` | **Personas** | §5.5 Persona roster | grid of persona cards + TOML editor modal |
+| `#packs` | **Packs** | §5.17 Pack browser | marketplace-grid + install UX |
+| `#project-config` | **Project config** | §5.16 Project config | values / guardrails / goals / mode / subscriptions / workspace repos / advanced (the inner sticky-nav from §5.16 collapses into a single nested accordion within this Setup section) |
+| `#bootstrap` | **Bootstrap** | §5.15 Bootstrap wizard | 4-step wizard renders inline in this section; opening `/setup#bootstrap` from cold start auto-jumps to step 1 |
+| `#workspace` | **Workspace + repos** | (new) | repository registry, surface allow-lists (gm-v8vr), workspace mode |
+
+**Behavior:**
+- **Deep links** for every legacy route land on the matching anchor (`/personas` → `/setup#personas`, etc.). Implemented as router-level redirects, not in-app links.
+- **Sticky nav** highlights the section currently in view as the user scrolls; clicking jumps with smooth scroll + URL hash update.
+- **Per-section actions** (e.g., "Add adaptor", "Run conformance suite", "Install pack") render in a section-local toolbar at the top of each section, not in a global Setup toolbar.
+- **Health rollup:** Setup sidebar item shows a badge when any subsection has a degraded adaptor (per §6.5), an unsigned-pack confirmation pending, or a workspace-repo write-allow-list change pending review.
+- **Search-within-Setup:** Cmd-F inside `/setup` filters sections to those matching the query (e.g., "openai" surfaces the openai-adaptor row + any pack mentioning it). This supplements global Cmd-K, which still works.
+
+**Why one tab, not seven:** these surfaces are configuration / inspection — high-leverage but low-traffic. Daily users open them once a sprint; consolidating cuts sidebar weight (7 → 4 admin-adjacent items) without hiding anything (Cmd-K still indexes section names and contents).
+
+**What stays out of Setup:**
+- **Sessions** (`/sessions`) — operational, not configuration; live agent activity belongs near Insights.
+- **QA Health / QA Gates** (§5.12, §5.13) — operational quality surfaces, not setup.
+- **Checkpoints** (§5.14) — destructive recovery, not setup.
+- **Escalations** (§5.8) — workflow inbox, not setup.
 
 ### 5.19 Additional screens deferred to v1.1
 
