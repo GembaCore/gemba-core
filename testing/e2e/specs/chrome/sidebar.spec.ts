@@ -22,6 +22,7 @@ const NAV_LINKS = [
   { label: 'Insights', path: '/insights' },
   { label: 'Escalations', path: '/escalations' },
   { label: 'Capability Browser', path: '/capabilities' },
+  { label: 'Gemba walk', path: '/walk' },
 ] as const;
 
 test.describe('Sidebar @chrome', () => {

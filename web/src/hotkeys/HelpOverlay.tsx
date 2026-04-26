@@ -10,6 +10,7 @@ const CATEGORY_ORDER: HotkeyCategory[] = [
   'creation',
   'views',
   'drawer',
+  'walk',
   'help',
 ];
 
@@ -20,6 +21,7 @@ const CATEGORY_LABEL: Record<HotkeyCategory, string> = {
   creation: 'Create',
   views: 'Views',
   drawer: 'Drawer & panel',
+  walk: 'Gemba walk',
   help: 'Help',
 };
 

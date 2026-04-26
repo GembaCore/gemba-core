@@ -118,6 +118,47 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
   // PM panel + HelpOverlay + WorkItem drawer can all listen for
   // drawer-close and gate on their own open state.
 
+  // Gemba walk (gm-uipx.2). Cmd-G is the global toggle; the four
+  // R/M/X/D verbs are scoped so they only fire while the walk
+  // surface is mounted (WalkPage pushes scope='walk'). Browsers
+  // reserve Cmd-G for "find next" — when the OS swallows the
+  // keystroke the operator falls back to the sidebar entry or
+  // the resume button on the active-walk banner.
+  {
+    id: 'walk-toggle',
+    keys: ['Mod+G'],
+    description: 'Toggle Gemba walk',
+    category: 'navigation',
+  },
+  {
+    id: 'walk-ratify',
+    keys: ['r'],
+    description: 'Walk: Ratify active item',
+    category: 'walk',
+    scope: 'walk',
+  },
+  {
+    id: 'walk-modify',
+    keys: ['m'],
+    description: 'Walk: Modify active item',
+    category: 'walk',
+    scope: 'walk',
+  },
+  {
+    id: 'walk-reject',
+    keys: ['x'],
+    description: 'Walk: Reject active item',
+    category: 'walk',
+    scope: 'walk',
+  },
+  {
+    id: 'walk-defer',
+    keys: ['d'],
+    description: 'Walk: Defer active item',
+    category: 'walk',
+    scope: 'walk',
+  },
+
   // Help
   { id: 'help', keys: ['?'], description: 'Show all shortcuts', category: 'help' },
 ];

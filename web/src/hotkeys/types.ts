@@ -5,6 +5,7 @@ export type HotkeyCategory =
   | 'creation'
   | 'views'
   | 'drawer'
+  | 'walk'
   | 'help';
 
 export type Hotkey = {
