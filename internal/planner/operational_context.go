@@ -74,7 +74,13 @@ type OperationalContextReaders struct {
 	Assignments AssignmentLookup
 	Workspaces  WorkspaceLookup
 	Profiles    ProfileLookup
-	Now         func() time.Time
+	// BeadConcepts is the optional gm-s47n.5.1 concept-drift input.
+	// When wired, ComputeHealth uses it to derive the last-N concept
+	// vector from profile.LastBeads and compute concept_drift; nil
+	// leaves drift at zero. The concrete impl ships with gm-s47n.1
+	// WorkItem-concept enrichment.
+	BeadConcepts BeadConceptLookup
+	Now          func() time.Time
 }
 
 // ErrSessionLookupRequired is returned when the Sessions reader is
@@ -152,36 +158,22 @@ func ReadOperationalContext(
 		}
 	}
 
-	out.Health = deriveHealth(sess, out.Profile, r.Now)
+	// ComputeHealth (gm-s47n.5.1) handles all three numbers in one
+	// call: ContextPressure off profile.ContextPct, TimeOnTask off
+	// now() - sess.StartedAt, and ConceptDrift via the optional
+	// BeadConcepts lookup. Errors from the bead-concept lookup get
+	// swallowed at this layer to keep the OperationalContext read
+	// path's graceful-degradation contract; the returned snapshot
+	// is best-effort.
+	if h, err := ComputeHealth(ctx, sess, out.Profile, r.BeadConcepts, r.Now); err == nil {
+		out.Health = h
+	} else {
+		// ComputeHealth ran into a non-recoverable lookup error;
+		// fall back to the no-drift snapshot so the caller still
+		// gets ContextPressure + TimeOnTask.
+		if h, _ := ComputeHealth(ctx, sess, out.Profile, nil, r.Now); h != nil {
+			out.Health = h
+		}
+	}
 	return out, nil
-}
-
-// deriveHealth computes the SessionHealth snapshot from a session +
-// profile pair. ConceptDrift is a placeholder zero until gm-s47n.5
-// ships the cosine-distance computation; ContextPressure rides
-// straight off SessionProfile.ContextPct (already pre-derived);
-// TimeOnTask is wall clock since session.StartedAt.
-//
-// Returns a non-nil SessionHealth even when the profile is nil —
-// TimeOnTask is meaningful from a session alone, and the other
-// fields have valid zero values. Returning nil here would force
-// every consumer to nil-check a pointer for what is really a
-// "computed view" with sensible defaults.
-func deriveHealth(sess *core.Session, profile *SessionProfile, now func() time.Time) *SessionHealth {
-	if sess == nil {
-		return nil
-	}
-	if now == nil {
-		now = time.Now
-	}
-	h := &SessionHealth{
-		TimeOnTask: now().Sub(sess.StartedAt),
-	}
-	if profile != nil {
-		h.ContextPressure = profile.ContextPct
-		// ConceptDrift stays zero until gm-s47n.5 lands the
-		// last-N-vs-lifetime cosine-distance scorer. Documented in
-		// SessionHealth.ConceptDrift docstring.
-	}
-	return h
 }
