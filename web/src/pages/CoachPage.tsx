@@ -9,7 +9,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Boxes, Clock, GitBranch, Sparkles, Users } from 'lucide-react';
+import { Boxes } from 'lucide-react';
 import {
   getCoach,
   type PlannerAffinityRow,
@@ -19,6 +19,7 @@ import {
   type PlannerReadyBead,
   type PlannerWorkspaceCollision,
 } from '@/api/planner';
+import { AgentContextStrip } from '@/components/agents/AgentContextStrip';
 import { cn } from '@/lib/utils';
 
 const POLL_MS = 30_000;
@@ -45,7 +46,7 @@ export function CoachPage() {
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="coach-page">
       <Header notices={data.notices ?? []} batchCount={data.batches.length} />
-      <SessionStrip
+      <CoachSessionStrip
         sessions={data.sessions}
         hoverBead={hoverBead}
         affinity={data.affinity}
@@ -60,6 +61,53 @@ export function CoachPage() {
         setHoverBead={setHoverBead}
       />
     </div>
+  );
+}
+
+// CoachSessionStrip wraps the reusable AgentContextStrip
+// (gm-s47n.6.7) with coach-specific overlay logic — the
+// hovered-bead → conflict / affinity callbacks the strip itself
+// stays agnostic about. Other surfaces (a future agents page, a
+// debug roster) reuse AgentContextStrip directly with their own
+// callbacks (or none).
+function CoachSessionStrip({
+  sessions,
+  hoverBead,
+  affinity,
+  workspace,
+}: {
+  sessions: PlannerOperationalContext[];
+  hoverBead: string | null;
+  affinity: PlannerAffinityRow[];
+  workspace: PlannerWorkspaceCollision[];
+}) {
+  const liveConflict = useMemo(() => {
+    if (!hoverBead) return new Set<string>();
+    const out = new Set<string>();
+    for (const w of workspace) {
+      if (w.live_session_id && w.b === hoverBead) out.add(w.live_session_id);
+    }
+    return out;
+  }, [hoverBead, workspace]);
+
+  const affinityBySession = useMemo(() => {
+    if (!hoverBead) return new Map<string, { beadId: string; combined: number }>();
+    const m = new Map<string, { beadId: string; combined: number }>();
+    for (const a of affinity) {
+      if (a.bead_id === hoverBead) {
+        m.set(a.session_id, { beadId: a.bead_id, combined: a.scores.combined });
+      }
+    }
+    return m;
+  }, [hoverBead, affinity]);
+
+  return (
+    <AgentContextStrip
+      sessions={sessions}
+      inConflict={(sid) => liveConflict.has(sid)}
+      affinityFor={(sid) => affinityBySession.get(sid) ?? null}
+      testid="coach-session-strip"
+    />
   );
 }
 
@@ -92,160 +140,12 @@ function Header({ notices, batchCount }: { notices: string[]; batchCount: number
   );
 }
 
-function SessionStrip({
-  sessions,
-  hoverBead,
-  affinity,
-  workspace,
-}: {
-  sessions: PlannerOperationalContext[];
-  hoverBead: string | null;
-  affinity: PlannerAffinityRow[];
-  workspace: PlannerWorkspaceCollision[];
-}) {
-  const liveConflict = useMemo(() => {
-    // Map sessionID → boolean "this session is in conflict with the
-    // hovered bead" (workspace-collision detail names the bead↔live
-    // edges).
-    if (!hoverBead) return new Set<string>();
-    const out = new Set<string>();
-    for (const w of workspace) {
-      if (w.live_session_id && w.b === hoverBead) out.add(w.live_session_id);
-    }
-    return out;
-  }, [hoverBead, workspace]);
-
-  if (sessions.length === 0) {
-    return (
-      <div className="border-b border-neutral-200 p-6 text-sm text-neutral-500 dark:border-neutral-800">
-        No live sessions.
-      </div>
-    );
-  }
-  return (
-    <div className="overflow-x-auto border-b border-neutral-200 p-3 dark:border-neutral-800">
-      <div className="flex gap-3" data-testid="coach-session-strip">
-        {sessions.map((c) => (
-          <SessionCard
-            key={c.session?.id ?? Math.random()}
-            ctx={c}
-            hovered={hoverBead}
-            affinity={affinity}
-            inConflict={liveConflict.has(c.session?.id ?? '')}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SessionCard({
-  ctx,
-  hovered,
-  affinity,
-  inConflict,
-}: {
-  ctx: PlannerOperationalContext;
-  hovered: string | null;
-  affinity: PlannerAffinityRow[];
-  inConflict: boolean;
-}) {
-  const sid = ctx.session?.id ?? '';
-  const score = useMemo(() => {
-    if (!hovered) return null;
-    return affinity.find((a) => a.session_id === sid && a.bead_id === hovered) ?? null;
-  }, [hovered, affinity, sid]);
-
-  const topConcepts = useMemo(() => {
-    const m = ctx.profile?.concepts;
-    if (!m) return [] as { tag: string; weight: number }[];
-    return Object.entries(m)
-      .map(([tag, weight]) => ({ tag, weight }))
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 5);
-  }, [ctx.profile?.concepts]);
-
-  return (
-    <div
-      data-testid={`coach-session-${sid}`}
-      data-in-conflict={inConflict || undefined}
-      className={cn(
-        'min-w-[260px] shrink-0 rounded-md border p-3 text-xs transition-colors',
-        inConflict
-          ? 'border-rose-400 bg-rose-50 dark:border-rose-700 dark:bg-rose-950/40'
-          : 'border-neutral-200 bg-white dark:border-neutral-800 dark:bg-neutral-900'
-      )}
-    >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1 font-mono text-[11px] text-neutral-500">
-          <Users className="h-3 w-3" />
-          {ctx.agent?.id ?? '(anon)'}
-        </span>
-        <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-neutral-800">
-          {ctx.session?.status ?? 'unknown'}
-        </span>
-      </div>
-      <div className="mb-1 truncate font-medium">{ctx.agent?.name ?? sid}</div>
-      {ctx.workspace ? (
-        <div className="mb-2 text-[11px] text-neutral-500">
-          <span className="inline-flex items-center gap-1">
-            <GitBranch className="h-3 w-3" />
-            {ctx.workspace.repository}/{ctx.workspace.branch}
-          </span>
-        </div>
-      ) : null}
-      {topConcepts.length > 0 ? (
-        <div className="mb-2 flex flex-wrap gap-1">
-          {topConcepts.map((c) => (
-            <span
-              key={c.tag}
-              className="rounded bg-sky-50 px-1.5 py-0.5 font-mono text-[10px] text-sky-700 dark:bg-sky-950/40 dark:text-sky-300"
-            >
-              {c.tag}
-            </span>
-          ))}
-        </div>
-      ) : null}
-      {ctx.health ? (
-        <div className="grid grid-cols-3 gap-1 text-[10px] text-neutral-500">
-          <Stat icon={<Sparkles className="h-3 w-3" />} value={ctx.health.context_pressure} />
-          <Stat icon={<AlertTriangle className="h-3 w-3" />} value={ctx.health.concept_drift} />
-          <Stat icon={<Clock className="h-3 w-3" />} value={ctx.health.time_on_task_ns / 1e9 / 60} suffix="m" precision={0} />
-        </div>
-      ) : null}
-      {score ? (
-        <div
-          data-testid={`coach-session-${sid}-affinity`}
-          className="mt-2 rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200"
-        >
-          affinity for {score.bead_id}: {score.scores.combined.toFixed(2)}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function Stat({
-  icon,
-  value,
-  suffix,
-  precision = 2,
-}: {
-  icon: React.ReactNode;
-  value: number;
-  suffix?: string;
-  precision?: number;
-}) {
-  return (
-    <span className="inline-flex items-center gap-1">
-      {icon}
-      <span className="font-mono">
-        {value.toFixed(precision)}
-        {suffix ?? ''}
-      </span>
-    </span>
-  );
-}
+// SessionStrip / SessionCard / Stat were inlined here in
+// gm-s47n.6.1; gm-s47n.6.7 extracted them into the reusable
+// AgentContextStrip + AgentContextCard components under
+// web/src/components/agents/. Coach-specific overlay logic
+// (which sessions conflict with the hovered bead) lives in
+// CoachSessionStrip above.
 
 function DispatchGrid({
   beads,
