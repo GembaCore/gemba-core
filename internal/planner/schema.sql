@@ -106,3 +106,60 @@ CREATE TABLE IF NOT EXISTS scorer_grades (
   KEY idx_scorer_grades_target_divergence (target_divergence),
   KEY idx_scorer_grades_concept_divergence (concept_divergence)
 );
+
+-- dispatch_decisions (gm-s47n.6.2)
+--
+-- One row per dispatch pick (coach or auto). The retrospective
+-- (gm-s47n.8.x) joins these against scorer_grades on (bead_id) to
+-- compare *predicted* affinity at dispatch time to *observed*
+-- divergence after the bead lands.
+--
+-- Why a separate table from scorer_grades:
+--   - Different lifecycle. A decision is born at dispatch and never
+--     re-runs; a grade is born on bead-close and may re-run when the
+--     merge graph evolves.
+--   - Different identity. A bead may be dispatched, recycled, and
+--     re-dispatched against a different session — each pick is its
+--     own row keyed on (bead_id, decided_at). The grade is keyed
+--     on (bead_id, closed_at) — only the merge-time event matters.
+--
+-- Schema notes:
+--   - mode is 'coach' | 'auto'. Coach decisions carry decided_by
+--     (the operator id); auto decisions leave it blank.
+--   - affinity_combined is denormalised so the §7.4 review query
+--     ("show me high-affinity picks that diverged > 0.5") is
+--     sargable without JSON_EXTRACT.
+--   - affinity_json carries the full AffinityScores breakdown so
+--     historical analysis can still see which sub-score drove the
+--     pick even after the weighting changes.
+--   - conflicts_json captures the conflict edges the planner saw at
+--     decision time. The retrospective wants this to ask "did the
+--     coach pick into a known conflict?" — a value that's only
+--     observable at decision time.
+--   - ready_set_json is the set of alternatives the coach could have
+--     picked. Without it the retrospective can't ask "of the ready
+--     set, was the chosen bead actually the highest-affinity one?"
+
+CREATE TABLE IF NOT EXISTS dispatch_decisions (
+  id                  VARCHAR(64)  NOT NULL,
+  bead_id             VARCHAR(255) NOT NULL,
+  decided_at          DATETIME(6)  NOT NULL,
+
+  session_id          VARCHAR(255) NOT NULL DEFAULT '',
+  agent_id            VARCHAR(255) NOT NULL DEFAULT '',
+  decided_by          VARCHAR(255) NOT NULL DEFAULT '',
+  mode                VARCHAR(16)  NOT NULL DEFAULT 'coach',
+
+  affinity_combined   DOUBLE       NOT NULL DEFAULT 0.0,
+  affinity_json       JSON,
+  conflicts_json      JSON,
+  ready_set_json      JSON,
+
+  created_at          DATETIME(6)  NOT NULL,
+
+  PRIMARY KEY (id),
+  KEY idx_dispatch_decisions_bead (bead_id, decided_at),
+  KEY idx_dispatch_decisions_session (session_id),
+  KEY idx_dispatch_decisions_mode (mode),
+  KEY idx_dispatch_decisions_combined (affinity_combined)
+);
