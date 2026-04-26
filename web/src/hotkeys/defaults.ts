@@ -93,6 +93,26 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
     category: 'drawer',
   },
   { id: 'fold', keys: ['f'], description: 'Fold / collapse pane', category: 'drawer' },
+  // PM panel (gm-uipx.12) — bottom drawer toggle. ui-spec §2.4 calls
+  // for Cmd-P / Ctrl-P, but the browser swallows that for the print
+  // dialog. The runtime chord is Cmd-Shift-P (registered as 'Mod+P'
+  // because the matcher canonicalises uppercase letter + Mod into
+  // the form e.key emits when Shift is held). The Topbar toggle
+  // button is the authoritative path; the hotkey is a convenience.
+  // Per ui-spec §2.4 the panel is global — every route binds this
+  // hotkey so the operator can summon it from anywhere.
+  {
+    id: 'pm-panel-toggle',
+    keys: ['Mod+P'],
+    description: 'Toggle PM panel',
+    category: 'drawer',
+  },
+  // PM panel collapse rides on the existing 'drawer-close' id rather
+  // than a separate registration. The matcher fires the FIRST chord
+  // match — registering two ids for the same chord would mean only
+  // one ever fires. Multiple subscribers to a single id all run, so
+  // PM panel + HelpOverlay + WorkItem drawer can all listen for
+  // drawer-close and gate on their own open state.
 
   // Help
   { id: 'help', keys: ['?'], description: 'Show all shortcuts', category: 'help' },

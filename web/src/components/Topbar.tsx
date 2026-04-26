@@ -1,11 +1,13 @@
-import { Command, Moon, Sun, User, ChevronDown } from 'lucide-react';
+import { Command, MessageSquare, Moon, Sun, User, ChevronDown } from 'lucide-react';
 import { useTheme } from '@/lib/theme-context';
 import { usePalette } from '@/components/palette/PaletteContext';
+import { usePmPanel } from '@/components/pm/PmPanelContext';
 import { cn } from '@/lib/utils';
 
 export function Topbar() {
   const { theme, toggle } = useTheme();
   const { setOpen: setPaletteOpen } = usePalette();
+  const pm = usePmPanel();
   const resolved =
     theme === 'system'
       ? window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -41,6 +43,20 @@ export function Topbar() {
       </button>
 
       <div className="ml-auto flex items-center gap-1">
+        <button
+          type="button"
+          onClick={pm.toggle}
+          aria-label="Toggle PM panel"
+          aria-pressed={pm.open}
+          data-testid="pm-panel-toggle"
+          data-hotkey-target="pm-panel-toggle"
+          className={cn(
+            'inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-900',
+            pm.open && 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300'
+          )}
+        >
+          <MessageSquare className="h-4 w-4" />
+        </button>
         <button
           type="button"
           onClick={toggle}
