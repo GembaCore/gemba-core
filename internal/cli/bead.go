@@ -45,6 +45,7 @@ Rewires to bd extras when gm-s47n.1.1 lands the WorkItem schema.`,
 		newBeadTargetsCmd(),
 		newBeadConceptsCmd(),
 		newBeadExtractCmd(),
+		newBeadBackfillCmd(),
 	)
 	return cmd
 }
@@ -246,6 +247,113 @@ func mergeEnrichments(existing, extracted enrichment.Enrichment) enrichment.Enri
 		out.Source = extracted.Source
 	}
 	return out
+}
+
+// ── backfill ──────────────────────────────────────────────────────
+
+func newBeadBackfillCmd() *cobra.Command {
+	var (
+		workspace    string
+		bdBin        string
+		bdCwd        string
+		includeAll   bool
+		dryRun       bool
+		skipExisting bool
+		limit        int
+		filter       string
+	)
+	cmd := &cobra.Command{
+		Use:   "backfill",
+		Short: "Run the heuristic extractor over every bead and persist enrichments (gm-s47n.1.4)",
+		Long: `Walks every bead the bd CLI surfaces and runs the configured
+extractor (HeuristicExtractor today) against each one. Best-effort:
+per-bead errors are reported but don't abort the loop.
+
+Defaults to the active-bead set; pass --all to include closed
+beads too. --skip-existing leaves any bead whose enrichment is
+already non-empty alone — operator-pinned data never gets
+clobbered. --filter narrows the scope by id regex; --limit caps
+the number considered (useful for a smoke run before a full
+backfill).
+
+The bd binary is shelled out under the hood; pass --bd-bin to
+point at a non-PATH copy or --bd-cwd to point at a different
+workspace.`,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			root, err := resolveWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+			vocab := loadVocabularyTerms(root)
+
+			src := &enrichment.BdJSONSource{
+				Bin:        bdBin,
+				Cwd:        bdCwd,
+				IncludeAll: includeAll,
+			}
+			ext := vocabBindingExtractor{
+				inner: enrichment.HeuristicExtractor{},
+				vocab: vocab,
+			}
+			store := enrichment.NewFileStore(root, nil)
+
+			rep, err := enrichment.Backfill(cmd.Context(), src, ext, store, enrichment.BackfillOpts{
+				DryRun:       dryRun,
+				SkipExisting: skipExisting,
+				Limit:        limit,
+				FilterRegex:  filter,
+			})
+			if err != nil {
+				return err
+			}
+			printBackfillReport(cmd.OutOrStdout(), rep, dryRun)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "workspace root for the enrichment store")
+	cmd.Flags().StringVar(&bdBin, "bd-bin", "", "path to the bd binary (default: PATH)")
+	cmd.Flags().StringVar(&bdCwd, "bd-cwd", "", "working directory for the bd subprocess (default: inherit)")
+	cmd.Flags().BoolVar(&includeAll, "all", false, "include closed beads (bd list --all)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report only; nothing is persisted")
+	cmd.Flags().BoolVar(&skipExisting, "skip-existing", true,
+		"skip beads with non-empty enrichment (preserves operator pins)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "cap the number of beads considered (0 = all)")
+	cmd.Flags().StringVar(&filter, "filter", "", "regex to restrict bead ids (e.g. '^gm-s47n')")
+	return cmd
+}
+
+// vocabBindingExtractor binds the loaded vocabulary into every
+// BeadInput so the heuristic extractor's concept matcher has
+// something to compare against. The Backfill loop deliberately
+// keeps Extractor pure-per-input; this is the small adapter that
+// hangs the workspace-scoped vocabulary off it.
+type vocabBindingExtractor struct {
+	inner enrichment.Extractor
+	vocab []string
+}
+
+func (v vocabBindingExtractor) Extract(ctx context.Context, in enrichment.BeadInput) (enrichment.Enrichment, error) {
+	if in.Vocabulary == nil {
+		in.Vocabulary = v.vocab
+	}
+	return v.inner.Extract(ctx, in)
+}
+
+func printBackfillReport(w io.Writer, rep enrichment.BackfillReport, dryRun bool) {
+	mode := "persisted"
+	if dryRun {
+		mode = "dry-run"
+	}
+	fmt.Fprintf(w, "Backfill report [%s]\n", mode)
+	fmt.Fprintf(w, "  considered: %d\n", rep.Considered)
+	fmt.Fprintf(w, "  extracted:  %d\n", rep.Extracted)
+	fmt.Fprintf(w, "  skipped:    %d\n", rep.Skipped)
+	if len(rep.Errors) > 0 {
+		fmt.Fprintf(w, "  errors:     %d\n", len(rep.Errors))
+		for _, e := range rep.Errors {
+			fmt.Fprintf(w, "    %s\n", e.Error())
+		}
+	}
 }
 
 // ── targets ───────────────────────────────────────────────────────

@@ -319,6 +319,121 @@ func TestBeadExtract_BodyFileWorks(t *testing.T) {
 	}
 }
 
+func TestBeadBackfill_DryRunDoesNotPersist(t *testing.T) {
+	root := t.TempDir()
+	bdBin := writeFakeBd(t, `[
+		{"id":"gm-1","title":"auth flow","description":"touches `+"`internal/auth/auth.go`"+`"}
+	]`)
+	out, _, err := runCmd(t, "bead", "backfill",
+		"--workspace", root,
+		"--bd-bin", bdBin,
+		"--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "[dry-run]") {
+		t.Errorf("missing dry-run marker: %q", out)
+	}
+	if !strings.Contains(out, "considered: 1") || !strings.Contains(out, "extracted:  1") {
+		t.Errorf("unexpected report: %q", out)
+	}
+	store := enrichment.NewFileStore(root, nil)
+	if _, err := store.Load(context.Background(), "gm-1"); !errors.Is(err, enrichment.ErrNotFound) {
+		t.Errorf("dry-run must not persist; got %v", err)
+	}
+}
+
+func TestBeadBackfill_PersistsAndStampsSourceBackfill(t *testing.T) {
+	root := t.TempDir()
+	bdBin := writeFakeBd(t, `[
+		{"id":"gm-1","title":"a","description":"edits `+"`internal/x/x.go`"+`"}
+	]`)
+	if _, _, err := runCmd(t, "bead", "backfill",
+		"--workspace", root,
+		"--bd-bin", bdBin); err != nil {
+		t.Fatal(err)
+	}
+	store := enrichment.NewFileStore(root, nil)
+	got, err := store.Load(context.Background(), "gm-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Source != enrichment.SourceBackfill {
+		t.Errorf("Source = %q, want SourceBackfill", got.Source)
+	}
+	if !contains(got.Targets, "internal/x/x.go") {
+		t.Errorf("expected target persisted: %v", got.Targets)
+	}
+}
+
+func TestBeadBackfill_SkipExistingPreservesOperatorPin(t *testing.T) {
+	root := t.TempDir()
+	store := enrichment.NewFileStore(root, nil)
+	_ = store.Save(context.Background(), enrichment.Enrichment{
+		BeadID:  "gm-1",
+		Targets: []string{"keep.go"},
+		Source:  enrichment.SourceOperator,
+	})
+	bdBin := writeFakeBd(t, `[
+		{"id":"gm-1","title":"a","description":"edits `+"`internal/new.go`"+`"},
+		{"id":"gm-2","title":"b","description":"edits `+"`internal/x/x.go`"+`"}
+	]`)
+	out, _, err := runCmd(t, "bead", "backfill",
+		"--workspace", root,
+		"--bd-bin", bdBin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "skipped:    1") {
+		t.Errorf("expected skipped:1 for the operator-pinned bead: %q", out)
+	}
+	got1, _ := store.Load(context.Background(), "gm-1")
+	if !contains(got1.Targets, "keep.go") || contains(got1.Targets, "internal/new.go") {
+		t.Errorf("operator pin clobbered: %+v", got1)
+	}
+	got2, _ := store.Load(context.Background(), "gm-2")
+	if !contains(got2.Targets, "internal/x/x.go") {
+		t.Errorf("untracked bead should still be backfilled: %+v", got2)
+	}
+}
+
+func TestBeadBackfill_FilterRegexNarrows(t *testing.T) {
+	root := t.TempDir()
+	bdBin := writeFakeBd(t, `[
+		{"id":"gm-s47n-aaa","title":"a","description":"edits `+"`internal/aaa.go`"+`"},
+		{"id":"gm-other-bbb","title":"b","description":"edits `+"`internal/bbb.go`"+`"}
+	]`)
+	out, _, err := runCmd(t, "bead", "backfill",
+		"--workspace", root,
+		"--bd-bin", bdBin,
+		"--filter", "^gm-s47n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "extracted:  1") || !strings.Contains(out, "skipped:    1") {
+		t.Errorf("filter report wrong: %q", out)
+	}
+	store := enrichment.NewFileStore(root, nil)
+	if _, err := store.Load(context.Background(), "gm-other-bbb"); !errors.Is(err, enrichment.ErrNotFound) {
+		t.Errorf("filtered bead should be untouched; got %v", err)
+	}
+}
+
+// writeFakeBd drops a tiny shell script that prints the supplied
+// JSON whenever invoked. Returns the path; the test passes it to
+// `bead backfill --bd-bin` so the loop runs without a real bd
+// binary or workspace.
+func writeFakeBd(t *testing.T, jsonOut string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bd")
+	script := "#!/bin/sh\ncat <<'EOF'\n" + jsonOut + "\nEOF\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestBeadShow_AcceptsSlashedID(t *testing.T) {
 	// Workspace-prefixed bd ids must round-trip through the file
 	// path safe-id encoding.

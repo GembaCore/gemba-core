@@ -157,6 +157,35 @@ previews; `--merge` unions with any existing enrichment instead of
 replacing — operator-pinned targets / concepts survive a re-extract
 that way, and the operator's `Source` stamp is preserved.
 
+#### Layer 0 — Backfill (gm-s47n.1.4)
+
+`gemba bead backfill` walks every bead the bd CLI surfaces and
+runs the configured extractor against each one. Best-effort:
+per-bead errors land in the report but don't abort the loop.
+
+The runner is decoupled from bd via a small `BeadSource` interface
+(`Iter(ctx, yield)` per bead). The shipping production source is
+`BdJSONSource` — wraps `bd list --json`. `MemoryBeadSource` powers
+tests. Adding a new source (e.g. a JSONL file an external tool
+produced) is a one-method change.
+
+Defaults reflect the operator-safe posture:
+
+- `--skip-existing=true` — beads with non-empty enrichment stay
+  alone; operator pins never get clobbered.
+- `--all=false` — closed beads are excluded; the planner reads
+  enrichment off active work.
+- `--filter` (regex over bead id) and `--limit` compose: filter
+  applies first, then limit caps the number of post-filter beads
+  the runner attempts. `--filter ^gm-s47n --limit 5` reliably
+  attempts the first five `gm-s47n` beads instead of bailing
+  after five total of any id.
+- `--dry-run` produces the report without persisting.
+
+Source on backfill writes is always `SourceBackfill` so the
+operator can grep `bead show` output for backfilled vs operator-
+pinned vs interactively-extracted entries.
+
 #### Layer 0 — CLI surface (gm-s47n.1.3)
 
 `gemba bead {show, list, targets, concepts, extract}` is the
