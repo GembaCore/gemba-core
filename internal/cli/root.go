@@ -54,6 +54,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newOperationalContextCmd(),
 		newDispatchCmd(),
 		newRetroCmd(),
+		newConceptsCmd(),
 	)
 
 	return root

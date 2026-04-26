@@ -467,6 +467,35 @@ distinctions (they might be — auth could mean *authorization* and
 auth-token specifically *bearer tokens*). The human knows; the system
 proposes.
 
+### 6.5 Implementation notes (gm-s47n.7.1-.4)
+
+The package `internal/concepts/` ships the four .7 children as one
+cohesive subsystem. Highlights:
+
+- **Storage**: `<workspace>/.gemba/concepts/{vocabulary,suggestions}.json`
+  + `decisions.log` (JSONL append-only audit trail). Atomic writes
+  via tmp + rename so a crashed run never leaves half-written state.
+- **Bootstrap sources** (.7.1): `go-packages` (walks `internal/` +
+  `cmd/`), `route-prefixes` (regex over `web/src/App.tsx`), and
+  `fixture-taxonomy` (`testing/e2e/specs/*` directory names). Sources
+  run in parallel; first-source-wins on duplicate names; cap at
+  `--max` (default 60).
+- **Drift thresholds** (.7.2): Jaccard 0.7 + use-ratio guard 0.5 for
+  near-duplicates; `< 3 beads` + `dormant > 90d` for singletons. The
+  Jaccard / cosine choice differs from §6.2's literal language because
+  Jaccard is the right shape for sparse bead-id sets; the threshold
+  is calibrated for similar precision. Drifters (semantic neighbor
+  walks) defer to **gm-s47n.3** because they need the source-analysis
+  abstraction.
+- **Integration boundary** (.7.4): a small `BeadConceptStore`
+  interface (`List` / `Set`) keeps the package independent of the
+  WorkItem.concepts schema landing in **gm-s47n.1.1**. The in-memory
+  implementation powers tests + CLI dry-runs; production wiring lands
+  alongside the schema.
+- **CLI**: `gemba concepts {bootstrap, list, drift, review, approve,
+  reject, log}`. `drift` and `approve` no-op cleanly when no
+  production store is wired so the commands are usable today.
+
 ## 7. Turn retrospective
 
 After a bead lands (merged, closed), the retrospective compares
