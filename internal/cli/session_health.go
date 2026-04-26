@@ -15,7 +15,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"sort"
@@ -119,7 +118,7 @@ ConceptDrift's last-N vector).`,
 
 func readSessionHealthInput(cmd *cobra.Command) (*SessionHealthInput, error) {
 	path, _ := cmd.Flags().GetString("file")
-	var rd io.Reader = cmd.InOrStdin()
+	rd := cmd.InOrStdin()
 	if path != "" {
 		f, err := os.Open(path)
 		if err != nil {

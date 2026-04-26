@@ -154,17 +154,11 @@ func WorkspaceCollisions(beads []BeadTarget, live []OperationalContext) []Worksp
 // collides, or "" when no relation fires. Centralising the rule
 // here keeps bead↔bead and bead↔live paths reading the same way.
 func collisionReason(x, y BeadTarget) string {
-	repoBranch := false
-	if x.Repository != "" && y.Repository != "" &&
+	repoBranch := x.Repository != "" && y.Repository != "" &&
 		x.Branch != "" && y.Branch != "" &&
-		x.Repository == y.Repository && x.Branch == y.Branch {
-		repoBranch = true
-	}
-	worktree := false
-	if x.WorktreePath != "" && y.WorktreePath != "" &&
-		filepath.Clean(x.WorktreePath) == filepath.Clean(y.WorktreePath) {
-		worktree = true
-	}
+		x.Repository == y.Repository && x.Branch == y.Branch
+	worktree := x.WorktreePath != "" && y.WorktreePath != "" &&
+		filepath.Clean(x.WorktreePath) == filepath.Clean(y.WorktreePath)
 	switch {
 	case repoBranch && worktree:
 		return "same repo+branch + same worktree_path"

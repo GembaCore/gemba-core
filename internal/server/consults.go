@@ -30,8 +30,6 @@ import (
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
-
-	"github.com/go-chi/chi/v5"
 )
 
 // detailSource identifies where a consultDetail was loaded from. The

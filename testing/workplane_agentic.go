@@ -239,15 +239,6 @@ func hasEdgeExtension(m core.CapabilityManifest, name string) bool {
 	return false
 }
 
-func containsVersioningTransport(m core.CapabilityManifest, want core.VersioningTransport) bool {
-	for _, v := range m.VersioningTransport {
-		if v == want {
-			return true
-		}
-	}
-	return false
-}
-
 func containsOrchestratorHook(m core.CapabilityManifest, want core.OrchestratorHook) bool {
 	for _, h := range m.OrchestratorHooks {
 		if h == want {

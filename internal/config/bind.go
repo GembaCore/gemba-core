@@ -144,8 +144,8 @@ func (c ServeConfig) ValidateBindPolicy() error {
 	if c.EffectiveAuthMode() == "none" {
 		return fmt.Errorf(
 			"non-loopback bind requires --auth; got --listen %s\n"+
-				"  Pass --auth=token to generate a token, or keep the default bind\n"+
-				"  (127.0.0.1). See docs/remote-access.md for details.",
+				"  pass --auth=token to generate a token, or keep the default bind\n"+
+				"  (127.0.0.1) — see docs/remote-access.md",
 			c.listenDisplay())
 	}
 	return nil
@@ -217,8 +217,8 @@ func (c ServeConfig) ResolveBeadsDir() (string, error) {
 	if err != nil || !binfo.IsDir() {
 		return "", fmt.Errorf(
 			"--beads-dir %q: no .beads/ directory found at %s\n"+
-				"  Pass the rig root (containing .beads/) or the "+
-				".beads/ directory itself.", c.BeadsDir, beads)
+				"  pass the rig root (containing .beads/) or the "+
+				".beads/ directory itself", c.BeadsDir, beads)
 	}
 	return abs, nil
 }

@@ -267,7 +267,11 @@ func agedClone(prior *SessionProfile, halfLife int) *SessionProfile {
 // entries (oldest dropped). Newest is always last so the affinity
 // scorer's "most recent bead" lookup is ring[len-1].
 func appendRing(ring []core.WorkItemID, id core.WorkItemID, max int) []core.WorkItemID {
-	out := append(ring, id)
+	// Fresh backing array so the caller's `ring` slice cannot be
+	// stomped on a high-capacity append.
+	out := make([]core.WorkItemID, 0, len(ring)+1)
+	out = append(out, ring...)
+	out = append(out, id)
 	if max > 0 && len(out) > max {
 		out = out[len(out)-max:]
 	}

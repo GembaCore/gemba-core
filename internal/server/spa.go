@@ -35,7 +35,7 @@ func (r *Router) serveSPA(w http.ResponseWriter, req *http.Request) {
 	// Try the requested file first (assets, favicon, etc.)
 	if path != "" {
 		if f, err := r.spa.Open(path); err == nil {
-			f.Close()
+			_ = f.Close()
 			http.ServeFileFS(w, req, r.spa, path)
 			return
 		}
@@ -47,7 +47,7 @@ func (r *Router) serveSPA(w http.ResponseWriter, req *http.Request) {
 		spaUnbuilt(w)
 		return
 	}
-	f.Close()
+	_ = f.Close()
 	http.ServeFileFS(w, req, r.spa, "index.html")
 }
 

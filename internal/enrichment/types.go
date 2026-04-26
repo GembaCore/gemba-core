@@ -178,7 +178,11 @@ func appendUniqueSorted(in []string, v string) []string {
 			return in
 		}
 	}
-	out := append(in, v)
+	// Build a fresh backing array so the caller's `in` slice never
+	// gets stomped on a high-capacity append.
+	out := make([]string, 0, len(in)+1)
+	out = append(out, in...)
+	out = append(out, v)
 	sort.Strings(out)
 	return out
 }

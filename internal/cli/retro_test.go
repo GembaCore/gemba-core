@@ -142,13 +142,10 @@ func TestRetroList_LimitClamps(t *testing.T) {
 }
 
 func TestRetroList_EmptyResultPrintsHelpfulMessage(t *testing.T) {
-	got, err := runListCmd(t, sampleGrades(t), "--diverged-gt", "0.99")
-	if err != nil {
-		t.Fatalf("execute: %v", err)
-	}
-	// gm-high has divergence 1.0 strictly above 0.99, so it
-	// survives. Use 1.5 to filter everything out:
-	got, err = runListCmd(t, sampleGrades(t), "--diverged-gt", "1.5")
+	// gm-high has divergence 1.0, so >= 0.99 keeps it. Use 1.5 to
+	// filter every grade out and exercise the helpful empty-state
+	// rendering.
+	got, err := runListCmd(t, sampleGrades(t), "--diverged-gt", "1.5")
 	if err != nil {
 		t.Fatalf("execute: %v", err)
 	}

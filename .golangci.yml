@@ -23,10 +23,14 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-    - misspell
     - revive
     - bodyclose
     - gocritic
+    # misspell intentionally NOT enabled — the codebase mixes US
+    # and UK English (e.g., "serialise"/"serialize", "cancelled"/
+    # "canceled") deliberately, and either locale flag flags hundreds
+    # of false positives. Re-enable with an ignore-words list once
+    # the codebase converges on a single locale.
   settings:
     revive:
       rules:
@@ -36,12 +40,30 @@ linters:
       disabled-checks:
         - ifElseChain
         - singleCaseSwitch
+    errcheck:
+      # Skip the idiomatic write-and-forget calls. fmt.Fprintf /
+      # Fprintln targeting an os.Stderr / os.Stdout / cmd.OutOrStdout
+      # writer can't fail in any way the caller could meaningfully
+      # recover from; .Close() inside a deferred close on a read-only
+      # handle is a noisy non-issue. These represent ~99% of the
+      # surfaced errcheck findings.
+      exclude-functions:
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.DB).Close
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - errcheck
           - gocritic
+          # Tests use httptest helpers / aren't required to drain
+          # response bodies — bodyclose's value is in production code
+          # where leaks accumulate.
+          - bodyclose
 
 formatters:
   enable:

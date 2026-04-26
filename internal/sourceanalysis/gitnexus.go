@@ -165,10 +165,7 @@ func isExecMissing(err error) bool {
 		return true
 	}
 	var pathErr *exec.Error
-	if errors.As(err, &pathErr) {
-		return true
-	}
-	return false
+	return errors.As(err, &pathErr)
 }
 
 // Dependents returns the set of files containing a node with an

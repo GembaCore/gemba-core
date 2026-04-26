@@ -81,7 +81,7 @@ func (b TokenBudget) Validate() error {
 	if b.Limit < 0 || b.Used < 0 || b.Inform < 0 || b.Warn < 0 || b.Stop < 0 {
 		return fmt.Errorf("core: TokenBudget values must be non-negative")
 	}
-	if !(b.Inform <= b.Warn && b.Warn <= b.Stop && b.Stop <= b.Limit) {
+	if b.Inform > b.Warn || b.Warn > b.Stop || b.Stop > b.Limit {
 		return fmt.Errorf(
 			"core: TokenBudget thresholds must satisfy "+
 				"inform<=warn<=stop<=limit, got inform=%d warn=%d stop=%d limit=%d",

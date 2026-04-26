@@ -198,7 +198,7 @@ func doltDSN(rawURL string) (string, error) {
 }
 
 func listFromFile(cmd *cobra.Command, path string, tgtThresh, cptThresh float64, sessionID string, limit int) ([]retro.Grade, error) {
-	var rd io.Reader = cmd.InOrStdin()
+	rd := cmd.InOrStdin()
 	if path != "-" {
 		f, err := os.Open(path)
 		if err != nil {

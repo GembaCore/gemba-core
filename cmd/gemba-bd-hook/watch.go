@@ -73,7 +73,7 @@ func runWatch(ctx context.Context, cfg config, client *http.Client, bdDir string
 		}
 		return 0
 	}
-	defer w.Close()
+	defer func() { _ = w.Close() }()
 	if err := w.Add(watchDir); err != nil {
 		warn("watch: add %s: %v", watchDir, err)
 		if strict {

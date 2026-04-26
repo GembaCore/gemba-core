@@ -16,7 +16,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -195,11 +194,8 @@ func mutatePolicy(cmd *cobra.Command, mut func(*planner.DispatchPolicy), msg str
 		return err
 	}
 	mut(&pol)
-	// Materialise the file's parent so SavePolicyFile's MkdirAll
-	// has a sensible base when the operator hand-rolled --file.
-	if filepath.Dir(path) != "" {
-		// SavePolicyFile already mkdirs; no extra work here.
-	}
+	// SavePolicyFile mkdirs the file's parent itself; no extra
+	// work needed even when the operator hand-rolled --file.
 	if err := planner.SavePolicyFile(path, pol); err != nil {
 		return err
 	}

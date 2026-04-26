@@ -157,7 +157,7 @@ func runOperationalContext(cmd *cobra.Command, asJSON bool) error {
 }
 
 func readOpCtxInput(path string, stdin io.Reader) (*OperationalContextInput, error) {
-	var rd io.Reader = stdin
+	rd := stdin
 	if path != "" {
 		f, err := os.Open(path)
 		if err != nil {

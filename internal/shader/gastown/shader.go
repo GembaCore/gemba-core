@@ -151,9 +151,7 @@ func (s *Shader) DecodeFromRead(_ context.Context, item core.WorkItem) (core.Wor
 	if !hasPrefix || prefix == "" {
 		return item, nil
 	}
-	if strings.HasPrefix(item.Title, prefix) {
-		item.Title = strings.TrimPrefix(item.Title, prefix)
-	}
+	item.Title = strings.TrimPrefix(item.Title, prefix)
 	return item, nil
 }
 

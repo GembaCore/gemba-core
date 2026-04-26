@@ -173,8 +173,8 @@ type Fanout struct {
 
 	// out is the single shared channel historical callers expect
 	// (kept for backward compatibility — it drains the input too).
-	// Deprecated in favor of Subscribe(); Events() still works but
-	// uses it.
+	//
+	// Deprecated: prefer Subscribe(); Events() still works but uses it.
 	out chan core.OrchestrationEvent
 
 	pumpDone chan struct{}

@@ -27,7 +27,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"sort"
 	"strings"
@@ -159,7 +158,7 @@ present the scalar without the per-sub-score row.`,
 
 func readPlannerInput(cmd *cobra.Command) (*PlannerInput, error) {
 	path, _ := cmd.Flags().GetString("file")
-	var rd io.Reader = cmd.InOrStdin()
+	rd := cmd.InOrStdin()
 	if path != "" {
 		f, err := os.Open(path)
 		if err != nil {

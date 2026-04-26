@@ -149,7 +149,7 @@ func runBuiltinNoopWork(transport core.Transport, f testFlags) (*gembatesting.Re
 	impl := noop.NewWorkPlane()
 	m, err := impl.Describe(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("Describe: %w", err)
+		return nil, fmt.Errorf("describe: %w", err)
 	}
 	if m.Transport != transport {
 		return nil, fmt.Errorf(

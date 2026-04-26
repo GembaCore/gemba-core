@@ -296,9 +296,9 @@ func (c *Collector) evictIfFull() {
 	for len(c.workItemEntries) > trackedWorkItemsCap && len(c.workItemOrder) > 0 {
 		victim := c.workItemOrder[0]
 		c.workItemOrder = c.workItemOrder[1:]
-		if _, ok := c.workItemEntries[victim]; ok {
-			delete(c.workItemEntries, victim)
-		}
+		// delete is a no-op when the key is absent, so no guard
+		// is needed (lazy ordering may carry dead refs).
+		delete(c.workItemEntries, victim)
 	}
 }
 

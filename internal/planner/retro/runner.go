@@ -87,7 +87,6 @@ type Runner struct {
 	// Now is injected for deterministic tests; nil → time.Now.
 	Now func() time.Time
 
-	mu      sync.Mutex
 	pending sync.WaitGroup
 }
 

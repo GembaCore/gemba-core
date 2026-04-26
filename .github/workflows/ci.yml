@@ -65,14 +65,6 @@ jobs:
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: make lint
-        # Lint is advisory until the accumulated debt clears (see
-        # follow-up bead). The lint job was silently broken for a
-        # long time (v1 config rejected by v2 binary at config-load
-        # time), so the codebase has 500+ unchecked findings.
-        # `continue-on-error: true` keeps the output visible in the
-        # workflow log without blocking merges; tighten back to
-        # blocking once the debt is paid down.
-        continue-on-error: true
         run: make lint
 
       - name: make test
