@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -255,7 +256,12 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 			"err", err)
 	}
 	personaDispatcher := persona.NewDispatcher(persona.NewAuditLog(""))
-	handler.AttachPersonaDispatcher(personaDispatcher, skillRegistry)
+	// Persona registry: load persona TOML files from the workspace's
+	// .gemba/personas/ directory. Missing dir is acceptable — POST
+	// /api/consults will 503 until personas exist; the read
+	// endpoints don't depend on the registry.
+	personaRegistry := loadPersonaRegistry(cfg)
+	handler.AttachPersonaDispatcher(personaDispatcher, skillRegistry, personaRegistry)
 
 	// gm-twp2: bridge tailer → dispatcher.Receive plumbing. The
 	// orchestration plane's GembaSkillOutput frames already land in
@@ -614,4 +620,37 @@ func ensurePrimaryToken(path string) error {
 	fmt.Fprintln(os.Stderr, "==============================================================")
 	fmt.Fprintln(os.Stderr)
 	return nil
+}
+
+// loadPersonaRegistry resolves the persona TOML directory from the
+// resolved beads-dir (the workspace root) and loads it. A missing
+// directory yields an empty registry rather than an error — the
+// operator may not have authored personas yet, and POST /api/consults
+// degrades to 503 cleanly via the lazy-attach gate. A malformed file
+// logs and yields an empty registry so a single bad TOML can't
+// brick the whole serve startup.
+//
+// The personas dir lives at <beads-dir parent>/.gemba/personas — but
+// for the read-only adaptors today the workspace root maps to the
+// dir containing .beads, so .gemba lives alongside .beads. When
+// beads-dir is empty (no WorkPlane bound) the registry stays empty.
+func loadPersonaRegistry(cfg config.ServeConfig) *corepersona.Registry {
+	if cfg.BeadsDir == "" {
+		return corepersona.NewRegistry()
+	}
+	// .beads/ is inside the workspace root; .gemba/personas is a
+	// sibling. Climb one level off BeadsDir which is itself the
+	// .beads-containing dir per ResolveBeadsDir's contract.
+	personaDir := filepath.Join(cfg.BeadsDir, ".gemba", "personas")
+	reg, err := corepersona.LoadRegistry(personaDir)
+	if err != nil {
+		// LoadRegistry returns an error only on truly bad input (a
+		// file that fails to decode). A missing dir is reported as
+		// "no personas" — the registry comes back empty and that's
+		// fine. Anything else is operator-actionable: log the path.
+		slog.Warn("personas: LoadRegistry failed; POST /api/consults will 503",
+			"dir", personaDir, "err", err)
+		return corepersona.NewRegistry()
+	}
+	return reg
 }

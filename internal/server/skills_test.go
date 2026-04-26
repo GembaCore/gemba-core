@@ -18,7 +18,7 @@ func newSkillsRouter(t *testing.T) (*Router, *corepersona.SkillRegistry) {
 		t.Fatalf("epic_order.Register: %v", err)
 	}
 	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
-	r.AttachPersonaDispatcher(nil, sr)
+	r.AttachPersonaDispatcher(nil, sr, nil)
 	return r, sr
 }
 

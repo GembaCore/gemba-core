@@ -77,14 +77,16 @@ type Router struct {
 	// (gm-e4.3.2). Bounded FIFO; oldest entry evicted on insert.
 	notifyDeduper *notifyDeduper
 
-	// personaDispatcher + skillRegistry back the /api/consults and
-	// /api/skills surfaces (gm-twp2). Lazy-attached via
-	// AttachPersonaDispatcher so a Router built before persona
+	// personaDispatcher + skillRegistry + personaRegistry back the
+	// /api/consults and /api/skills surfaces (gm-twp2). Lazy-attached
+	// via AttachPersonaDispatcher so a Router built before persona
 	// configuration parses (or in tests that don't exercise consults)
 	// returns 503 from those endpoints instead of panicking on a nil
-	// deref.
+	// deref. The personaRegistry is required for POST /api/consults
+	// (lookup persona by id) but optional for the read endpoints.
 	personaDispatcher *persona.Dispatcher
 	skillRegistry     *corepersona.SkillRegistry
+	personaRegistry   *corepersona.Registry
 
 	mux http.Handler
 }
@@ -264,6 +266,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/skills/{id}/output_schema.json", r.getSkillOutputSchema)
 		api.Get("/consults", r.listConsults)
 		api.Get("/consults/{id}", r.getConsult)
+		// POST /api/consults starts a new persona consult. Nonce-
+		// gated like every mutating route so a SPA double-submit or
+		// React re-mount can't fork two consults from one click.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/consults", r.createConsult)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {
@@ -380,17 +387,22 @@ func (r *Router) Close() {
 // without one (zero-value/test paths).
 func (r *Router) EventsHub() *events.Hub { return r.eventsHub }
 
-// AttachPersonaDispatcher binds the persona consult dispatcher and the
-// skill registry it draws from to the router (gm-twp2). cmd/gemba serve
-// calls this once at boot after parsing personas + registering skills;
-// tests attach a fixture-built dispatcher per test case. Routes under
-// /api/skills* and /api/consults* return 503 until both are attached.
+// AttachPersonaDispatcher binds the persona consult dispatcher, the
+// skill registry it draws from, and the persona registry the POST
+// endpoint resolves persona_id against (gm-twp2). cmd/gemba serve
+// calls this once at boot after parsing personas + registering
+// skills; tests attach a fixture-built dispatcher per case. Routes
+// under /api/skills* and /api/consults* return 503 until at least
+// the dispatcher + skill registry are bound; POST /api/consults
+// additionally requires the persona registry (the read endpoints
+// don't).
 //
-// Either argument may be nil to detach (tests that re-use a Router
+// Any argument may be nil to detach (tests that re-use a Router
 // across cases set then clear).
-func (r *Router) AttachPersonaDispatcher(d *persona.Dispatcher, sr *corepersona.SkillRegistry) {
+func (r *Router) AttachPersonaDispatcher(d *persona.Dispatcher, sr *corepersona.SkillRegistry, pr *corepersona.Registry) {
 	r.personaDispatcher = d
 	r.skillRegistry = sr
+	r.personaRegistry = pr
 }
 
 // --- stock handlers -------------------------------------------------------

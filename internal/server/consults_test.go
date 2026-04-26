@@ -34,7 +34,7 @@ func newConsultsRouter(t *testing.T) (*Router, *persona.Dispatcher) {
 		}),
 	)
 	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
-	r.AttachPersonaDispatcher(d, sr)
+	r.AttachPersonaDispatcher(d, sr, nil)
 	return r, d
 }
 
