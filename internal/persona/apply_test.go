@@ -23,7 +23,7 @@ func applyTestDispatcher(t *testing.T) (*Dispatcher, string) {
 	)
 	skill := fakeSkill{id: "test"}
 	persona := &corepersona.Persona{
-		ID:      "p", Name: "P", Role: "P",
+		ID: "p", Name: "P", Role: "P",
 		Variety:      corepersona.VarietyCoach,
 		Scope:        corepersona.PersonaScope{Kind: corepersona.ScopeProject},
 		Skills:       []string{"test"},
