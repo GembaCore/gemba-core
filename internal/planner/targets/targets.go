@@ -282,6 +282,17 @@ func isPathPrefix(short, long string) bool {
 	return strings.HasPrefix(long, short+"/")
 }
 
+// Match reports whether the given concrete path matches the pattern.
+// Path is repo-relative and forward-slashed; pattern uses the same
+// glob grammar as Compare (literal / *, ?, **). Pure; no I/O.
+//
+// The retrospective (gm-s47n.8.1) uses this to ask "is this actual
+// file covered by any declared pattern?" without going through the
+// pair-wise pattern Compare.
+func Match(pattern Pattern, path string) bool {
+	return matchPattern(normalise(string(pattern)), normalise(path))
+}
+
 // matchPattern is a path-aware glob matcher with `**` support.
 // `*` matches one path segment (no slashes), `?` matches one
 // character within a segment, `**` matches any number of segments

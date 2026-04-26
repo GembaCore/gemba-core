@@ -53,6 +53,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newSessionHealthCmd(),
 		newOperationalContextCmd(),
 		newDispatchCmd(),
+		newRetroCmd(),
 	)
 
 	return root

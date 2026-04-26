@@ -52,3 +52,57 @@ CREATE TABLE IF NOT EXISTS session_profiles (
   KEY idx_session_profiles_agent (agent_id),
   KEY idx_session_profiles_assignment (assignment_id)
 );
+
+-- scorer_grades (gm-s47n.8.2)
+--
+-- One row per (bead, retrospective run) capturing the comparator
+-- output from internal/planner/retro.Compare. The retrospective hook
+-- (gm-s47n.8.3) writes after the bead's merge commits land and the
+-- queryable view (gm-s47n.8.4) reads.
+--
+-- Schema notes:
+--   - Primary key is (bead_id, closed_at). A bead retro may be re-
+--     run when the merge graph evolves (revert, fixup, late
+--     backfill); each run lands its own row keyed on the close
+--     timestamp so historical comparisons stay intact.
+--   - session_id / agent_id record which session shipped the bead.
+--     Denormalised so the query view ("which sessions over-declare?")
+--     doesn't need a join through the assignment table — the row
+--     answers it standalone.
+--   - declared_targets / declared_concepts capture what the planner
+--     thought the bead would touch at dispatch time. Stored even
+--     though the bead row is the canonical source so retros remain
+--     queryable after the bead is updated with actuals.
+--   - actual_files / actual_concepts are the comparator's "actual"
+--     side — the merge file list + inferred concepts.
+--   - target_divergence / concept_divergence are the Jaccard
+--     distances; stored as columns so the §7.4 review query
+--     ("show me beads where divergence > 0.5") is a sargable scan.
+--   - diff_json is the full retro.Diff payload — stored verbatim
+--     so future scorer changes can re-derive metrics from history
+--     without re-running source analysis.
+
+CREATE TABLE IF NOT EXISTS scorer_grades (
+  bead_id             VARCHAR(255) NOT NULL,
+  closed_at           DATETIME(6)  NOT NULL,
+
+  session_id          VARCHAR(255) NOT NULL DEFAULT '',
+  agent_id            VARCHAR(255) NOT NULL DEFAULT '',
+
+  declared_targets    JSON,
+  declared_concepts   JSON,
+  actual_files        JSON,
+  actual_concepts     JSON,
+
+  target_divergence   DOUBLE       NOT NULL DEFAULT 0.0,
+  concept_divergence  DOUBLE       NOT NULL DEFAULT 0.0,
+
+  diff_json           JSON,
+
+  created_at          DATETIME(6)  NOT NULL,
+
+  PRIMARY KEY (bead_id, closed_at),
+  KEY idx_scorer_grades_session (session_id),
+  KEY idx_scorer_grades_target_divergence (target_divergence),
+  KEY idx_scorer_grades_concept_divergence (concept_divergence)
+);
