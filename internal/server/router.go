@@ -277,6 +277,13 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// React re-mount can't fork two consults from one click.
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/consults", r.createConsult)
+		// POST /api/consults/{id}/apply/{idx} records that the
+		// operator applied the validated line at idx. Same nonce
+		// gate so a double-click can't double-record. Returns the
+		// recorded line so the SPA can render the SuggestedAction
+		// the operator acted on.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/consults/{id}/apply/{idx}", r.applyConsult)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

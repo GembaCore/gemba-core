@@ -178,6 +178,12 @@ type Consult struct {
 	// them to the SPA in real time.
 	LineErrors []LineError
 
+	// AppliedIdx lists the ValidatedLines indexes the operator has
+	// applied via [Dispatcher.Apply] (gm-twp2). Mirrors the same-
+	// named field on the on-disk audit-log row so live and archived
+	// consult shapes carry the same apply history.
+	AppliedIdx []int
+
 	// Error is set by Finish for failed consults. Empty for
 	// completed; populated for failed.
 	Error string
@@ -468,6 +474,64 @@ type FinishInfo struct {
 	EndedAt time.Time
 }
 
+// ApplyResult is what [Dispatcher.Apply] returns to the HTTP layer.
+// The line is the validated entry the operator chose to apply
+// (typically a *RecommendationLine for epic_order); the SPA renders
+// its SuggestedAction so the operator knows what just got recorded.
+//
+// This slice records intent only — the dispatcher does NOT execute
+// the SuggestedAction. A follow-up bead (filed) wires per-skill
+// appliers that translate verb+path+body into actual WorkPlane
+// mutations. Until then the operator (or their automation) reads
+// the returned line and dispatches the action manually.
+type ApplyResult struct {
+	// Line is the validated-output entry at the requested index.
+	// Type is skill-specific (e.g. *epic_order.RecommendationLine);
+	// callers type-switch when they need the SuggestedAction.
+	Line any
+	// AppliedIdx is the snapshot of every recorded apply for this
+	// consult AFTER the new index was added. Useful for the HTTP
+	// response so the SPA can render the apply history without a
+	// follow-up GET.
+	AppliedIdx []int
+}
+
+// Apply records that the operator applied the validated line at
+// idx. Returns ApplyResult with the line so the HTTP layer can echo
+// the SuggestedAction back. Errors:
+//
+//   - unknown consult_id (id never began OR already finished)
+//   - idx out of range (negative or ≥ len(ValidatedLines))
+//   - duplicate apply (idx already in AppliedIdx; idempotency gate)
+//
+// Concurrency: holds the dispatcher's write lock for the
+// append+snapshot.
+func (d *Dispatcher) Apply(consultID string, idx int) (ApplyResult, error) {
+	if strings.TrimSpace(consultID) == "" {
+		return ApplyResult{}, errors.New("persona/dispatcher: consult_id must not be empty")
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	c, ok := d.sessions[consultID]
+	if !ok {
+		return ApplyResult{}, fmt.Errorf("persona/dispatcher: unknown consult_id %q", consultID)
+	}
+	if idx < 0 || idx >= len(c.ValidatedLines) {
+		return ApplyResult{}, fmt.Errorf("persona/dispatcher: apply idx %d out of range (have %d lines)", idx, len(c.ValidatedLines))
+	}
+	for _, prior := range c.AppliedIdx {
+		if prior == idx {
+			return ApplyResult{}, fmt.Errorf("persona/dispatcher: apply idx %d already recorded", idx)
+		}
+	}
+	c.AppliedIdx = append(c.AppliedIdx, idx)
+	snapshot := append([]int(nil), c.AppliedIdx...)
+	return ApplyResult{
+		Line:       c.ValidatedLines[idx],
+		AppliedIdx: snapshot,
+	}, nil
+}
+
 // Finish closes a consult, removes it from the in-memory registry,
 // and writes a [corepersona.PersonaConsultRecord] to the audit log.
 // Returns the audit-log record so callers can echo it back over
@@ -537,20 +601,25 @@ func buildAuditRecord(c *Consult) (corepersona.PersonaConsultRecord, error) {
 	if err != nil {
 		return corepersona.PersonaConsultRecord{}, fmt.Errorf("persona/dispatcher: marshal response: %w", err)
 	}
+	var applied []int
+	if len(c.AppliedIdx) > 0 {
+		applied = append([]int(nil), c.AppliedIdx...)
+	}
 	return corepersona.PersonaConsultRecord{
-		ID:        c.ID,
-		PersonaID: c.PersonaID,
-		SkillID:   c.SkillID,
-		Workspace: c.Workspace,
-		StartedAt: c.StartedAt,
-		EndedAt:   c.EndedAt,
-		Request:   append(json.RawMessage(nil), c.RawRequest...),
-		Response:  resp,
-		Tokens:    c.Tokens,
-		Dollars:   c.Dollars,
-		Model:     c.Model,
-		LatencyMs: c.LatencyMs,
-		Error:     c.Error,
+		ID:         c.ID,
+		PersonaID:  c.PersonaID,
+		SkillID:    c.SkillID,
+		Workspace:  c.Workspace,
+		StartedAt:  c.StartedAt,
+		EndedAt:    c.EndedAt,
+		Request:    append(json.RawMessage(nil), c.RawRequest...),
+		Response:   resp,
+		Tokens:     c.Tokens,
+		Dollars:    c.Dollars,
+		Model:      c.Model,
+		LatencyMs:  c.LatencyMs,
+		AppliedIdx: applied,
+		Error:      c.Error,
 	}, nil
 }
 
