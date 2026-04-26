@@ -60,10 +60,12 @@ type ServeConfig struct {
 	OrchestratorConfigPath string
 
 	// Orchestration selects which OrchestrationPlaneAdaptor to bind at
-	// server startup (gm-native.2). Empty means no orchestration plane
-	// is registered — the SPA will reflect an absent orchestration
-	// manifest and agent-management surfaces are hidden. Supported:
-	//   "native" — direct-to-shell adaptor (gm-native)
+	// server startup (gm-native.2). The CLI flag defaults to "native"
+	// so /coach + /api/operational-context return data on fresh
+	// installs. Supported values:
+	//   "native"      — direct-to-shell adaptor (gm-native), default
+	//   "none" or ""  — no orchestration plane; SPA hides
+	//                   agent-management surfaces, /coach 503s
 	// Future values may include "gt" (gastown) etc.; the single-slot
 	// invariant (gm-native.1) means only one may be active at a time.
 	Orchestration string

@@ -66,6 +66,22 @@ func TestServe_DoltURLFlagAccepted(t *testing.T) {
 	}
 }
 
+// TestServe_OrchestrationDefaultsToNative pins the flag default. A
+// fresh `gemba serve` MUST register the native orchestration plane
+// so /coach + /api/operational-context return data without the
+// operator hunting for an --orchestration flag. Pass --orchestration=
+// or =none to opt out.
+func TestServe_OrchestrationDefaultsToNative(t *testing.T) {
+	cmd := newServeCmd(BuildInfo{})
+	f := cmd.Flags().Lookup("orchestration")
+	if f == nil {
+		t.Fatal("--orchestration flag missing from serve command")
+	}
+	if got := f.DefValue; got != "native" {
+		t.Errorf("orchestration default = %q, want %q", got, "native")
+	}
+}
+
 // TestServe_RejectsBothBeadsDirAndDoltURL pins the mutex between the
 // two workplane selectors at the CLI layer. The rejection must
 // happen before ResolveBeadsDir / NewWorkPlane fires so the operator

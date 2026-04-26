@@ -83,8 +83,8 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 	cmd.Flags().StringVar(&cfg.OrchestratorConfigPath, "orchestrator-config", "",
 		"path to .gemba/orchestrator.json (default: probe cwd; missing → no shader)")
 
-	cmd.Flags().StringVar(&cfg.Orchestration, "orchestration", "",
-		"orchestration plane adaptor to bind (empty = none, 'native' = direct-to-shell)")
+	cmd.Flags().StringVar(&cfg.Orchestration, "orchestration", "native",
+		"orchestration plane adaptor to bind ('native' = direct-to-shell, 'none' = no plane)")
 
 	cmd.Flags().StringVar(&cfg.TerminalBackend, "terminal", "auto",
 		"terminal backend when --orchestration=native: auto|tmux|iterm|terminal")
@@ -480,17 +480,18 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 // registerOrchestrationPlane binds the operator-selected
 // OrchestrationPlaneAdaptor onto the api Host. A single-slot
 // invariant (gm-native.1) lives in the Host itself: Register will
-// refuse a second call with KindValidation. Empty Orchestration is
-// a no-op (today's default) — the SPA will reflect an absent
-// orchestration manifest.
+// refuse a second call with KindValidation. The flag defaults to
+// "native" so /coach + /api/operational-context return data on
+// fresh installs; pass --orchestration=none (or empty) to disable
+// the plane explicitly.
 func registerOrchestrationPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) error {
 	switch cfg.Orchestration {
-	case "":
+	case "", "none":
 		return nil
 	case "native":
 		return registerNativeOrchestration(ctx, host, cfg)
 	default:
-		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native' or empty)", cfg.Orchestration)
+		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native', 'none', or empty)", cfg.Orchestration)
 	}
 }
 
