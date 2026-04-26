@@ -8,6 +8,7 @@ import (
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/internal/persona"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -180,6 +181,144 @@ func TestApplyClaudeStrategyProducesFirstMessagePointer(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(ws, "CLAUDE.md")); err != nil {
 		t.Errorf("CLAUDE.md should be written by Apply: %v", err)
+	}
+}
+
+// gm-r5vz: surface section tests.
+
+func TestBuildOmitsWorkingSurfaceWhenSurfaceNil(t *testing.T) {
+	c := Build(Sources{}, core.WorkItem{ID: "gm-x", Kind: "task"})
+	if strings.Contains(c.Text, "Working surface") {
+		t.Errorf("nil Surface MUST NOT emit a section; got:\n%s", c.Text)
+	}
+}
+
+func TestBuildRendersSurfaceSectionForRepoScope(t *testing.T) {
+	s := &persona.Surface{
+		Cwd:               "/work/repo-a",
+		SiblingReads:      []string{"/work/repo-b"},
+		WorkspaceMetadata: "/work/.gemba",
+		ToolingPaths:      []string{"$HOME/.gitconfig", "$HOME/.cargo"},
+	}
+	c := Build(Sources{
+		Surface:    s,
+		SurfaceEnv: map[string]string{"HOME": "/home/mike"},
+		Repository: "repo-a",
+		Branch:     "feat/gm-r5vz",
+	}, core.WorkItem{ID: "gm-x", Kind: "task"})
+
+	for _, sub := range []string{
+		"## Working surface",
+		"You are working in: /work/repo-a",
+		"Repository: repo-a",
+		"Branch: feat/gm-r5vz",
+		"You may write inside /work/repo-a.",
+		"Additional write paths: none.",
+		"sibling repos in this workspace: /work/repo-b",
+		"workspace metadata at /work/.gemba",
+		"/home/mike/.gitconfig",
+		"/home/mike/.cargo",
+		"additional read paths: none",
+		"ask the operator via gemba-ask",
+	} {
+		if !strings.Contains(c.Text, sub) {
+			t.Errorf("missing %q in surface section:\n%s", sub, c.Text)
+		}
+	}
+	// Env-expanded paths must replace the literal $VAR — a leaked
+	// "$HOME" string would mean ExpandPaths didn't run.
+	if strings.Contains(c.Text, "$HOME") {
+		t.Errorf("unexpanded $HOME leaked into rendered preamble:\n%s", c.Text)
+	}
+}
+
+func TestBuildRendersProjectScopePlaceholderWhenNoRepo(t *testing.T) {
+	s := &persona.Surface{Cwd: "/work"}
+	c := Build(Sources{Surface: s}, core.WorkItem{ID: "gm-x", Kind: "task"})
+	if !strings.Contains(c.Text, "Repository: (workspace root, no single repo)") {
+		t.Errorf("project-scope spawn must surface placeholder; got:\n%s", c.Text)
+	}
+}
+
+func TestBuildRendersNoBranchPlaceholderForConsult(t *testing.T) {
+	s := &persona.Surface{Cwd: "/work/repo-a"}
+	c := Build(Sources{Surface: s, Repository: "repo-a"}, core.WorkItem{ID: "gm-x", Kind: "task"})
+	if !strings.Contains(c.Text, "Branch: no branch — read-only consult") {
+		t.Errorf("missing branch must render the consult placeholder; got:\n%s", c.Text)
+	}
+}
+
+func TestBuildRendersAdditionalReadAndWritePaths(t *testing.T) {
+	s := &persona.Surface{
+		Cwd:              "/work/repo-a",
+		AdditionalWrites: []string{"/var/log/gemba/sessions"},
+		AdditionalReads:  []string{"$HOME/.aws/credentials", "/etc/myapp.conf"},
+	}
+	c := Build(Sources{
+		Surface:    s,
+		SurfaceEnv: map[string]string{"HOME": "/home/mike"},
+		Repository: "repo-a",
+		Branch:     "main",
+	}, core.WorkItem{ID: "gm-x", Kind: "task"})
+
+	if !strings.Contains(c.Text, "Additional write paths: /var/log/gemba/sessions.") {
+		t.Errorf("additional write paths missing:\n%s", c.Text)
+	}
+	if !strings.Contains(c.Text, "additional read paths: /home/mike/.aws/credentials, /etc/myapp.conf") {
+		t.Errorf("additional read paths missing or unexpanded:\n%s", c.Text)
+	}
+}
+
+func TestBuildExpandsToolingPaths(t *testing.T) {
+	s := &persona.Surface{
+		Cwd:          "/work/repo-a",
+		ToolingPaths: []string{"$HOME/.gitconfig", "$GOPATH/pkg/mod"},
+	}
+	c := Build(Sources{
+		Surface: s,
+		// Intentionally omit GOPATH so persona.ExpandPaths drops the
+		// $GOPATH entry — the model should never see a path with an
+		// unset envvar (would be a relative path on the daemon).
+		SurfaceEnv: map[string]string{"HOME": "/home/mike"},
+		Repository: "repo-a",
+		Branch:     "main",
+	}, core.WorkItem{ID: "gm-x", Kind: "task"})
+	if !strings.Contains(c.Text, "/home/mike/.gitconfig") {
+		t.Errorf("HOME-rooted tooling path not expanded:\n%s", c.Text)
+	}
+	if strings.Contains(c.Text, "$GOPATH") {
+		t.Errorf("unexpanded $GOPATH leaked despite missing env value:\n%s", c.Text)
+	}
+}
+
+func TestApplyToClaudeMD_SurfaceRoundTrips(t *testing.T) {
+	// Round-trip: Apply with surface → CLAUDE.md has section; Remove
+	// → CLAUDE.md returns to its pre-Apply byte-identical state.
+	// Existing tests already cover the operator-content case; this one
+	// pins the new surface section.
+	ws := t.TempDir()
+	original := "# operator notes\n\nhand-written\n"
+	writeFile(t, filepath.Join(ws, "CLAUDE.md"), original)
+
+	composed := Build(Sources{
+		Surface:    &persona.Surface{Cwd: "/work/repo-a"},
+		Repository: "repo-a",
+		Branch:     "main",
+	}, core.WorkItem{ID: "gm-x", Kind: "task"})
+	if err := ApplyToClaudeMD(ws, composed); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := os.ReadFile(filepath.Join(ws, "CLAUDE.md"))
+	if !strings.Contains(string(after), "## Working surface") {
+		t.Error("surface section missing after Apply")
+	}
+
+	if err := RemoveFromClaudeMD(ws); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(ws, "CLAUDE.md"))
+	if string(got) != original {
+		t.Errorf("CLAUDE.md not byte-identical after Remove; got:\n%q\nwant:\n%q", got, original)
 	}
 }
 

@@ -197,6 +197,16 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 				WorkspaceDir:           workspace,
 				InteractionProfilePath: preamble.ResolveProfilePath(o.cfg.RepoRoot, agent.InteractionProfile),
 				InteractionMode:        agent.ResolvedInteractionMode(),
+				// Layer 1 of the cwd-constraint defense-in-depth
+				// (gm-r5vz / gm-v8vr): name the resolved surface to
+				// the model so it doesn't have to learn its bounds
+				// from PreToolUse rejections. The dispatcher resolves
+				// the surface once and threads it through the spawn
+				// extension; we reuse it here instead of re-resolving.
+				Surface:    surface,
+				SurfaceEnv: persona.EnvFromOS(os.Getenv),
+				Repository: surfaceRepoLabel(item),
+				Branch:     surfaceBranchLabel(item),
 			}, item)
 			if strat, err := preamble.Apply(workspace, agent, composed); err == nil && strat.FirstMessage != "" {
 				go o.deliverFirstMessage(ctx, pane.ID, strat.FirstMessage)
@@ -205,6 +215,32 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	}
 
 	return *sess, nil
+}
+
+// surfaceRepoLabel resolves the operator-visible repository name for
+// the preamble's "Repository:" line (gm-r5vz). Returns "" when the
+// bead has no primary repository set; the renderer surfaces that as
+// the "(workspace root, no single repo)" placeholder.
+func surfaceRepoLabel(item core.WorkItem) string {
+	if item.PrimaryRepositoryID == "" || item.PrimaryRepositoryID == core.RepositoryUnspecified {
+		return ""
+	}
+	return string(item.PrimaryRepositoryID)
+}
+
+// surfaceBranchLabel returns the branch name the spawned session is
+// working on, picked out of the bead's per-repo branch map. Empty
+// return is rendered as "no branch — read-only consult" upstream.
+func surfaceBranchLabel(item core.WorkItem) string {
+	if item.PrimaryRepositoryID == "" {
+		return ""
+	}
+	for _, b := range item.Branches {
+		if b.RepositoryID == item.PrimaryRepositoryID {
+			return b.Branch
+		}
+	}
+	return ""
 }
 
 // firstMessageBootDelay is how long we wait after spawning the agent

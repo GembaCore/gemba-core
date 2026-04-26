@@ -16,6 +16,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/native/dod"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/core/prompt"
+	"github.com/MikeBengtson/gemba/internal/persona"
 )
 
 // Sentinel pair brackets the gemba-managed block in CLAUDE.md. Only
@@ -45,6 +46,30 @@ type Sources struct {
 	// injected (dangerous | balanced | cautious). Empty string →
 	// no injection.
 	InteractionMode agents.InteractionMode
+
+	// Surface is the resolved read/write allow list the spawned
+	// session is bounded to (gm-r5vz layer 1 of the cwd-constraint
+	// defense-in-depth, gm-v8vr). When non-nil the rendered preamble
+	// includes a "Working surface" section so the model knows in
+	// plain language which paths it may read, which it may write,
+	// and how to ask for more. Nil = no section emitted.
+	Surface *persona.Surface
+	// SurfaceEnv supplies $HOME / $GOPATH / $GOROOT values the
+	// surface section uses to expand declarative tooling-path
+	// templates into concrete paths the model can recognize. Nil =
+	// no expansion (paths render with literal $VARs). Production
+	// callers pass [persona.EnvFromOS] (os.Getenv); tests pin a
+	// literal map.
+	SurfaceEnv map[string]string
+	// Repository names the spawned repo for the surface header
+	// ("Repository: <name>"). Optional; "(workspace root, no single
+	// repo)" placeholder when empty. Independent of Surface.Cwd —
+	// the cwd carries the path, this carries the operator-visible id.
+	Repository string
+	// Branch names the git branch this session is working on.
+	// Optional; rendered as "no branch — read-only consult" when
+	// empty per the bead spec.
+	Branch string
 }
 
 // Build reads the sources + work item and returns a composed prompt
@@ -57,7 +82,7 @@ func Build(s Sources, item core.WorkItem) prompt.Composed {
 		ProjectGuardrails: readLines(filepath.Join(s.RepoRoot, ".gemba", "guardrails.md")),
 		WorkspaceValues:   readLines(filepath.Join(s.WorkspaceDir, ".gemba", "workspace.md")),
 		PersonaSystem:     SelectProfileSection(s.InteractionProfilePath, s.InteractionMode),
-		UserInput:         renderWorkItem(item),
+		UserInput:         renderWorkItem(item) + renderSurface(s.Surface, s.SurfaceEnv, s.Repository, s.Branch),
 	}
 	return env.Compose(prompt.ComposeOptions{})
 }
@@ -98,6 +123,80 @@ func renderWorkItem(item core.WorkItem) string {
 		fmt.Fprintf(&b, "**Labels**: %s\n\n", strings.Join(item.Labels, ", "))
 	}
 	b.WriteString("## Your task\n\nWork this bead. Push when the DoD is met. Escalate (permission prompt) if blocked.\n")
+	return b.String()
+}
+
+// renderSurface emits the "## Working surface" section the model
+// reads to learn its filesystem allow-lists (gm-r5vz). Returns "" if
+// surface is nil so callers that don't pass a surface don't get an
+// empty heading.
+//
+// The section is plain language on purpose: this is the habit-forming
+// layer of the cwd-constraint defense-in-depth (gm-v8vr). The hard
+// guarantee comes from the PreToolUse hook (gm-eazw, layer 2) and
+// container mounts (gm-utik, layer 3); the preamble's job is to make
+// the model behave correctly without learning from rejections.
+//
+// Path templates ($HOME, $GOPATH, …) are expanded against env so the
+// model sees concrete paths. Entries whose template variable is unset
+// drop out — same semantic as [persona.ExpandPaths] in the container
+// backend so what the model is told matches what the bridge enforces.
+func renderSurface(surface *persona.Surface, env map[string]string, repo, branch string) string {
+	if surface == nil {
+		return ""
+	}
+	expanded := *surface
+	if env != nil {
+		expanded = persona.ExpandPaths(*surface, env)
+	}
+
+	var b strings.Builder
+	b.WriteString("\n## Working surface\n\n")
+
+	cwd := expanded.Cwd
+	if cwd == "" {
+		cwd = "(unset)"
+	}
+	fmt.Fprintf(&b, "You are working in: %s\n", cwd)
+	if repo != "" {
+		fmt.Fprintf(&b, "Repository: %s\n", repo)
+	} else {
+		b.WriteString("Repository: (workspace root, no single repo)\n")
+	}
+	if branch != "" {
+		fmt.Fprintf(&b, "Branch: %s\n", branch)
+	} else {
+		b.WriteString("Branch: no branch — read-only consult\n")
+	}
+	b.WriteString("\n")
+
+	fmt.Fprintf(&b, "You may write inside %s.\n", cwd)
+	if extra := expanded.AdditionalWrites; len(extra) > 0 {
+		fmt.Fprintf(&b, "Additional write paths: %s.\n", strings.Join(extra, ", "))
+	} else {
+		b.WriteString("Additional write paths: none.\n")
+	}
+	b.WriteString("\n")
+
+	b.WriteString("You may read:\n")
+	fmt.Fprintf(&b, "- %s (your write surface)\n", cwd)
+	if sib := expanded.SiblingReads; len(sib) > 0 {
+		fmt.Fprintf(&b, "- sibling repos in this workspace: %s (read-only)\n", strings.Join(sib, ", "))
+	}
+	if expanded.WorkspaceMetadata != "" {
+		fmt.Fprintf(&b, "- workspace metadata at %s (read-only)\n", expanded.WorkspaceMetadata)
+	}
+	if tooling := expanded.ToolingPaths; len(tooling) > 0 {
+		fmt.Fprintf(&b, "- standard tooling: %s (read-only)\n", strings.Join(tooling, ", "))
+	}
+	if extra := expanded.AdditionalReads; len(extra) > 0 {
+		fmt.Fprintf(&b, "- additional read paths: %s\n", strings.Join(extra, ", "))
+	} else {
+		b.WriteString("- additional read paths: none\n")
+	}
+	b.WriteString("\n")
+
+	b.WriteString("Anything outside this surface is invisible. If you need access to something not listed, ask the operator via gemba-ask, or request a `read:<glob>` / `write:<glob>` label on this bead.\n")
 	return b.String()
 }
 
