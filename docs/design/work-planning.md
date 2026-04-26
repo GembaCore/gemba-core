@@ -104,6 +104,65 @@ Stable terms used throughout this document and the code.
 | **Concept drift** | Cosine distance between a session's *recent-window* concept vector and its *lifetime* concept vector. High drift = the session has shifted topic. |
 | **Context pressure** | Fraction of the agent's context window in use. |
 | **Recycle** | Cleanly end a session via `gt handoff` so the next bead starts in a fresh context. |
+| **Score** | The Layer-3 output: how *cheaply* a bead can be done well by a session. Pure function over targets / concepts / profile / source-analysis (§4 Layer 3). Same inputs → same score. |
+| **Selection** | The Layer-5 output: which bead this session should do *next*. Composes Score with operator/session-level signals (intent, soft-blocks, owner-claim, runway). Distinct from scoring (§3.5). |
+| **Justification** | The accumulated per-component reasons that produced a Score and a Selection. Every score sub-component contributes one line; every selection-time gate adds one. Surfaced verbatim to the operator (§4 Layer 5). |
+| **Blocks-weight** | Score component (§4 Layer 3): how many open beads are blocked by completing this one. Read off the dependency graph; a leaf bead has weight 0, a bead blocking a 5-child epic has weight 5+. Counters the affinity-only bias toward "pick what's cheap regardless of leverage." |
+| **Epic-affinity** | Score component (§4 Layer 3): is the candidate bead a sibling of one this session has already completed *this turn*? Captures the operator-observed bias toward closing out an epic before opening another. Decays per-turn, not per-bead. |
+| **Agent profile** | A persistent recency-decayed concept + file vector keyed on `AgentRef`, surviving session handoff. Sister to Session profile (§4 Layer 1.2): same shape, longer half-life, different question — "what is this *agent* good at?" vs. "what is this *session* warm on?" |
+| **Session intent** | An operator-set focus directive scoped to one session: an epic id, a label, a bead-id regex, or a free-text rationale. The Selection layer respects it as a soft prefilter — beads outside intent are demoted, not excluded (§4 Layer 1.3). |
+| **Dispatch status** | A bead-level enum orthogonal to bd `status`: `ready` / `awaiting-design` / `awaiting-vendor` / `awaiting-review` / `not-now`. Selection respects soft-blocks; the conflict graph doesn't see them. Operator-pinned (§4 Layer 0). |
+| **Bead size estimate** | A heuristic scalar (small / medium / large; or token-budget bucket) for how much session runway this bead consumes. Bootstrap from description length × DoD line count, calibrate from retrospective time-to-close (§4 Layer 0). |
+| **Session runway** | An estimate of how much *productive work* the current session has left before recycle: derived from context-pressure + concept-drift + time-on-task plus a calibration bias from completed-vs-promised cycles in this session (§4 Layer 1.4). |
+| **Owner / claim** | The agent currently working a bead (in_progress + assignee from bd). Selection treats a claimed bead as soft-conflicted against any other session, so two agents in a fleet don't race the same bead (§4 Layer 5). |
+| **Recommendation calibration** | The retrospective signal that grades planner *recommendations* against operator *picks*: when the planner says "do X" and the operator picks Y instead, the delta is recorded so the score weights can re-tune (§7.5). |
+
+## 3.5 Selection vs. scoring — the load-bearing distinction
+
+The original spec collapsed two questions into "scoring":
+
+1. **"Which bead is cheapest to do well right now?"** — pure function over
+   bead enrichment, session profile, and source analysis. Same inputs
+   produce the same answer. This is **scoring** (§4 Layer 3).
+
+2. **"Which bead should *this session* do *next*?"** — a higher-level
+   decision that uses the score *plus* a bundle of session-level and
+   operator-level signals: is the operator focused on a particular
+   epic? Is another agent already on this bead? Does the session have
+   enough runway? Is the bead soft-blocked on a vendor? Is the score
+   even comparable across the candidate set?
+
+   This is **selection** (§4 Layer 5). Same inputs do *not* always
+   produce the same answer — selection is parameterized by the
+   *moment*, not just the data.
+
+These are not the same question, and they don't fit in the same
+layer. A bead can be the highest-scoring work in the workspace and
+still be the wrong selection: someone else owns it, the session has
+20 minutes of runway and the bead's a 4-hour atomic refactor, the
+operator's pinned focus is elsewhere. The score isn't *wrong* — it
+honestly answered the question it was asked.
+
+The same bead can also be a low-scoring choice that's the right
+selection: the operator-set focus says "finish the gm-s47n epic
+this turn", and the cheapest gm-s47n leaf is a P3 with a poor
+affinity match. Selection prefers it because the operator's intent
+trumps cheapness.
+
+This document treats scoring and selection as orthogonal:
+
+- Scoring is **stateless** with respect to operator preferences.
+  The same bead always scores the same way against the same
+  session profile.
+- Selection is **stateful** — it composes the score with the
+  session-purpose, soft-block, owner-claim, and runway gates that
+  do change moment-to-moment.
+- The retrospective grades both: scoring against outcome (cycle
+  time, rework, conflict count); selection against operator
+  override (recommendation calibration, §7.5).
+
+The rest of §4 follows this split: Layers 0-3 build the scoring
+substrate; Layer 5 is selection on top.
 
 ## 4. Primitives, in dependency order
 
@@ -114,18 +173,29 @@ collect.
 
 ### Layer 0 — WorkItem enrichment (data only)
 
-Add two structured fields to every WorkItem:
+Add four structured fields to every WorkItem:
 
 - `targets[]` — declared path globs the item is expected to touch.
 - `concepts[]` — tags from the controlled vocabulary.
+- `dispatch_status` — the soft-block enum (default `ready`):
+  `ready` / `awaiting-design` / `awaiting-vendor` / `awaiting-review` /
+  `not-now`. Selection (Layer 5) respects this; the conflict graph
+  (Layer 3) ignores it. A bead in `ready` status is the only kind
+  selection considers a candidate; the others are visible in `bd
+  list` but suppressed from the planner's "what's next" surface.
+- `estimated_size` — `small` / `medium` / `large` (or a token-budget
+  bucket once the calibration loop in §7.6 lands). Bootstrap from
+  description-length + DoD-line-count; the retrospective grades it
+  against actual time-to-close so the heuristic gets sharper. Used
+  by Layer 5 to compare bead size against session runway.
 
-For the bd adaptor, store these in the bead's structured-extras map,
-not in the body, so they're queryable.
+For the bd adaptor, store all four in the bead's structured-extras
+map, not in the body, so they're queryable.
 
 **Bootstrap**: at WorkItem creation, an LLM extracts a first guess from
-title + body + any linked spec. Human can override at any time. Both
-fields are *advisory* until the turn retrospective (§7) starts grading
-them.
+title + body + any linked spec. Human can override at any time. All
+four fields are *advisory* until the turn retrospective (§7) starts
+grading them.
 
 #### Layer 0 — Extractor (gm-s47n.1.2)
 
@@ -263,6 +333,84 @@ Lives in dolt because:
 - It is itself reviewable history — you can ask "what was session S
   primed on, in which workspace, when it took bead X?"
 
+#### 1.2 Agent profile (persistent across sessions)
+
+Sister to the session profile. Same shape (`concepts {tag:weight}` +
+`files {path:weight}`), keyed on `AgentRef.ID`, but with two key
+differences:
+
+- **Survives `gt handoff`.** A new session inherits its agent's
+  profile as a warm starting point, then accumulates session-specific
+  weight on top. The session profile decays per-bead with half-life
+  5; the agent profile decays per-day with half-life ~14d.
+- **Different question.** Session profile answers "what is this
+  session warm on right now?" Agent profile answers "what is this
+  agent *good at* over weeks?" Mike4 has been deep in the e2e
+  library and the planner family across multiple sessions —
+  selection should know that even on Mike4's first bead of a fresh
+  session.
+
+The retrospective (§7) writes both profiles on bead completion: the
+session row gets the bead's actual concepts/files at full weight; the
+agent row gets the same contribution scaled by `1 / (lifetime bead
+count)` so a single bead doesn't dominate.
+
+Score-side, the affinity component in §4 Layer 3 reads BOTH
+profiles, weighted (default 0.7 session + 0.3 agent — tunable). A
+fresh session post-handoff with an empty session profile inherits
+its agent's affinity surface; over time the session profile dominates
+as it accumulates its own weight.
+
+#### 1.3 Session intent (operator-pinned focus)
+
+A small struct attached to a session by the operator to bias
+selection toward a particular slice of work:
+
+- `epic_id` — restrict candidates to descendants of this epic.
+- `label` — restrict candidates carrying this bd label.
+- `bead_id_regex` — restrict candidates whose id matches.
+- `rationale` — free-text "why this focus" for the audit log.
+
+Intent is **soft**: selection demotes candidates outside intent
+rather than excluding them. A P0 bead outside intent can still beat
+a P3 bead inside intent if the score gap is wide enough. The
+demotion factor is operator-tunable per intent (default 0.4 — a
+0.8 in-intent score beats a 1.0 out-of-intent score).
+
+Set via `gemba session focus <session-id> --epic <id>` or `--label`
+or `--regex`; cleared via `gemba session focus <session-id>
+--clear`. Audit row written for every change.
+
+Without explicit intent, selection's `epic-affinity` heuristic
+(§4 Layer 3) supplies a softer version of the same signal: if this
+session has been consistently working `gm-s47n.*` beads this turn,
+the planner biases toward more `gm-s47n.*` even without an explicit
+focus directive.
+
+#### 1.4 Session runway (estimate of remaining productive work)
+
+Derived from the existing health telemetry (Layer 4) plus a
+calibration bias:
+
+- Start with `1 - context_pressure` as the upper-bound runway in
+  "session lifetimes."
+- Subtract a `concept_drift` penalty: a session that's drifted hard
+  in the last 3 beads has less runway for a new topic.
+- Multiply by a calibration scalar from this session's
+  promised-vs-actual cycle on the last few beads. A session that
+  consistently overruns its declared bead estimate by 2x gets a
+  0.5 runway scalar.
+
+The output is a `(small / medium / large)` bucket comparable with
+the bead's `estimated_size` (Layer 0). Selection rejects bead
+candidates whose size exceeds available runway; `gemba session
+status` surfaces it for operator inspection.
+
+This is **read-only / advisory** in the same posture as Layer 4 —
+the planner's `auto-dispatch` mode respects it; coach mode shows
+the score but lets the operator pick anyway with a one-line
+warning.
+
 ### Layer 2 — Source analysis (capability, abstract)
 
 Define an internal interface; do not bind to a specific tool.
@@ -321,31 +469,67 @@ For each unordered pair (a, b) in the input set, classify:
 Edge metadata records which kind of conflict and a one-line reason
 (for the explanation surface).
 
-#### 3.2 `Affinity(bead WorkItem, ctx OperationalContext) (float64, Explanation)`
+#### 3.2 `Affinity(bead WorkItem, ctx OperationalContext) (float64, Justification)`
 
 Takes the joined operational-context struct (§4 Layer 1) so it can see
 agent identity, workspace, profile, and health together.
 
-Compute five sub-scores in [0, 1]:
+Compute seven sub-scores in [0, 1]:
 
-- **Concept overlap**: cosine similarity between `bead.concepts`
-  (one-hot) and `ctx.profile.concepts` (decayed weights).
+- **Concept overlap (session)**: cosine similarity between
+  `bead.concepts` (one-hot) and `ctx.session_profile.concepts`
+  (decayed weights).
+- **Concept overlap (agent)**: same, against `ctx.agent_profile.concepts`.
+  The composite "concept" sub-score is `0.7 * session + 0.3 * agent`
+  (tunable). On a fresh session post-handoff the agent half carries
+  the weight; over time the session half dominates (§4 Layer 1.2).
 - **File familiarity**: fraction of `bead.targets` that intersect
-  `ctx.profile.files` weighted by decay.
+  `ctx.session_profile.files` weighted by decay. Uses session-only
+  here — file familiarity decays fast and the agent-level signal is
+  already captured by the source analysis layer.
 - **Workspace match**: 1 if `bead.repository ∈ ctx.workspace.repository`
   AND `bead.branch_convention` matches `ctx.workspace.branch`; 0.5 if
-  same repo / different branch (cheap branch switch, expensive only if
-  this kind is `worktree`); 0 if different repo (cold-start cost on
-  workspace switch is real). For multi-repo beads, take the max over
-  declared repos.
+  same repo / different branch; 0 if different repo. Multi-repo
+  beads take the max over declared repos.
+- **Epic-affinity**: 1 if the candidate bead is a sibling (same
+  parent epic id) of a bead this session has *closed* this turn;
+  decays per-turn, hard 0 once a different epic has been
+  contiguously worked. The "in-progress epic gravity" from §3.5 —
+  expresses that finishing 75%-done epics beats starting new ones.
 - **Recency**: 1 if the session's most recent bead shared a concept
   with this one; decays linearly to 0 over ~10 beads.
-- **Headroom**: 1 if `ctx.health.context_pct < 0.5`; decays linearly to
-  0 at 0.85; hard 0 above 0.9.
+- **Headroom**: 1 if `ctx.health.context_pct < 0.5`; decays linearly
+  to 0 at 0.85; hard 0 above 0.9.
 
-Combined score: weighted sum (default weights 0.30 / 0.20 / 0.20 /
-0.15 / 0.15; tunable). Explanation is the per-sub-score breakdown —
-never present the scalar without the breakdown.
+Combined score: weighted sum (default weights 0.25 concept / 0.15
+file / 0.15 workspace / 0.15 epic-affinity / 0.15 recency / 0.15
+headroom; tunable). Returns a `Justification` slice — every sub-score
+contributes one line — so the coach surface and the audit log can
+render *why* without re-running the math.
+
+#### 3.3 `Leverage(bead WorkItem, deps DependencyGraph) (float64, Justification)`
+
+Pure score over the bead's downstream impact in the dependency graph.
+Counters the affinity-only bias toward "pick what's cheapest"
+regardless of how many open beads it would unblock. A leaf bead with
+no downstream dependents has leverage 0; a bead blocking a 5-child
+epic has leverage proportional to the open count in its transitive-
+dependents subgraph.
+
+The score is `1 - exp(-k * blocks_weight)` so an isolated leaf maps
+to 0, single-blocker beads to ~0.4, and 5+-blocker beads asymptote
+toward 1. Selection (Layer 5) combines Leverage with Affinity via
+a tunable mix (default `0.7 * affinity + 0.3 * leverage`). Operators
+preferring "knock out small wins to clear the queue" can lower the
+leverage weight; operators on a deadline boost it.
+
+Justification names the specific blocked beads (by id), so the
+operator sees not just "leverage 0.6" but "blocks gm-X, gm-Y, gm-Z."
+
+`Leverage` is part of the score because it's a *property of the
+bead*, not of the moment — same dependency graph means same
+leverage. (Selection-time signals like owner-claim and runway live
+in Layer 5.)
 
 ### Layer 4 — Session-health telemetry (read-only first)
 
@@ -369,12 +553,74 @@ Phase 4 is **read-only**. The planner can read these and *suggest*; it
 must not auto-kill sessions. Auto-recycle (§4.5) is opt-in and gated
 behind explicit configuration.
 
-### Layer 5 — The planner (UX)
+### Layer 5 — Selection (compose Score with session-level signals)
 
-Two modes share the same scoring engine. The mode flag determines who
-makes the final dispatch decision.
+Selection is the §3.5 "which bead should *this session* do *next*?"
+question. It takes the per-(bead, session) `Score` from Layer 3 and
+composes it with the moment-dependent signals that Layer 3 deliberately
+leaves out:
 
-#### 5.1 Coach mode (interactive PM)
+#### 5.1 Inputs
+
+- `Score` and `Justification` from `Affinity(bead, ctx)` and
+  `Leverage(bead, deps)` for every (ready bead, this session) pair.
+- `ctx.intent` — the operator's session-pinned focus (§4 Layer 1.3).
+  May be empty.
+- `ctx.runway` — the small/medium/large estimate (§4 Layer 1.4).
+- `bead.dispatch_status` — the soft-block enum (§4 Layer 0). Beads
+  not in `ready` are dropped before scoring even runs; they never
+  reach selection. The reason is recorded in the report so the
+  operator sees "5 candidates suppressed: 3 awaiting-design, 2
+  not-now."
+- `bead.estimated_size` (§4 Layer 0).
+- `claim_index[bead] -> session_id` from the OperationalContext
+  registry (§4 Layer 1) — a bead claimed by another live session
+  is soft-conflicted against this session's selection.
+
+#### 5.2 Selection gates (in order)
+
+The gates run in sequence; the first that fires demotes or excludes
+the candidate, with a one-line reason added to its `Justification`.
+
+1. **Dispatch-status filter** (hard): `bead.dispatch_status != ready`
+   → exclude.
+2. **Owner-claim filter** (hard): `claim_index[bead] != nil &&
+   != ctx.session_id` → exclude. Two agents in a fleet can't
+   double-claim a bead just because both score it well.
+3. **Conflict filter** (hard): bead conflict-adjacent to a bead
+   currently being worked by another session → exclude.
+4. **Runway gate** (soft): `bead.estimated_size > ctx.runway` →
+   demote by 0.5. Coach mode shows the warning and lets the
+   operator override; auto-dispatch respects the demotion.
+5. **Intent gate** (soft): `ctx.intent != nil && bead ∉ intent` →
+   demote by `ctx.intent.demotion_factor` (default 0.4). Out-of-
+   intent P0 beads can still beat in-intent P3 beads when the score
+   gap is wide enough.
+6. **Fairness boost** (soft): each candidate gains affinity
+   proportional to its age in the ready queue. Stops the planner
+   from starving hard work in favor of cheap concept-matched work.
+
+The output is a sorted list of `(bead, score, justification)`
+tuples. Coach mode renders the top-N; auto-dispatch picks the top-1
+(or skips if the top score falls below a configurable floor).
+
+#### 5.3 Selection is stateless — but its INPUTS are not
+
+Selection itself is a pure function over its inputs. The non-pure
+behavior over time comes from inputs changing: intent gets pinned,
+the claim_index updates as sessions take and finish work, runway
+estimates shift as the session's context-pressure climbs.
+
+This matters for testing — selection can be exercised with a frozen
+input bundle and produce reproducible outputs. The planner's
+correctness can be debugged without time-travel.
+
+### Layer 6 — Surface (coach + auto-dispatch UX)
+
+Two modes share the same selection engine. The mode flag determines
+who makes the final dispatch decision.
+
+#### 6.1 Coach mode (interactive PM)
 
 A SPA view with two halves:
 
@@ -382,43 +628,56 @@ A SPA view with two halves:
   full operational context: agent name + role, repo, branch,
   worktree path, isolation kind (with a worktree icon for the
   preferred case), session status, last heartbeat, top concepts in
-  the profile, context pressure, concept drift, time-on-task. This
-  is the operator's at-a-glance view of *who is loaded with what*
-  and *where they're working*.
+  the profile, context pressure, concept drift, time-on-task,
+  pinned intent (§4 Layer 1.3), runway estimate (§4 Layer 1.4).
+  This is the operator's at-a-glance view of *who is loaded with
+  what* and *where they're working*.
 - **Dispatch grid** — rows are ready beads, columns are agent cards
-  from the strip. Each cell shows `(affinity_score, explanation)`.
-  Conflict edges between beads are rendered as grouped highlights —
-  picking one bead dims the cells of its conflict-adjacent siblings,
-  *including* workspace-conflict siblings against currently-active
-  sessions in the strip.
+  from the strip. Each cell shows the selection output:
+  `(score, justification)`. The justification IS the explanation —
+  every selection-time gate (intent demote, runway warn, claim
+  exclude) and every score component (concept, leverage, epic-
+  affinity) contributes one line. Conflict edges between beads are
+  rendered as grouped highlights — picking one bead dims the cells
+  of its conflict-adjacent siblings.
 
-The coach (human) picks. The system records the pick along with the
-scores at decision time, so the retrospective can grade the model.
+The coach (human) picks. The system records the pick along with
+the full score + justification at decision time so the retrospective
+can grade BOTH the score (against outcome) AND the recommendation
+(against operator override) — see §7.5.
 
-This mode is a faithful instrument of what a senior PM does in a live
-session today. It does not change the workflow, only surfaces the data
-behind it.
+This mode is a faithful instrument of what a senior PM does in a
+live session today. It does not change the workflow, only surfaces
+the data behind it.
 
-#### 5.2 Auto-dispatch mode
+#### 6.2 Auto-dispatch mode
 
 A daemon loop. When a session becomes idle, the planner:
 
-1. Reads the ready set, the session's profile, and session health.
-2. If the session is over a hard recycle threshold (§4.4), trigger
+1. Reads the ready set, the session's operational context, and the
+   live claim_index across the rig.
+2. If the session is over a hard recycle threshold, trigger
    `gt handoff`; the next iteration of the loop will see a fresh
    session and re-decide.
-3. Compute the conflict graph over the ready set.
-4. Find the highest-affinity bead for this session that is **not**
-   conflict-adjacent to any bead currently being worked by another
-   session.
-5. Apply a **fairness boost**: each ready bead gains affinity
-   proportional to its age in the ready queue. Stops the planner
-   from starving hard work in favor of cheap concept-matched work.
-6. Sling the chosen bead.
+3. Run Layer 5 selection over the ready set for this session.
+4. If the top selection's score falls below `auto_dispatch_floor`
+   (default 0.5), do nothing — wait for either new ready beads or
+   for operator-set intent to bias the selection. Don't sling
+   low-confidence picks.
+5. Otherwise sling the top bead. The selection's `Justification` is
+   stamped on the dispatch event so the auto-dispatch decision is
+   auditable post-hoc.
 
-Auto-dispatch is **opt-in per rig** with a kill-switch in rig settings.
-A bad scorer on a fast loop can do real damage; the kill-switch is
-non-negotiable.
+Auto-dispatch is **opt-in per rig** with a kill-switch in rig
+settings. A bad scorer on a fast loop can do real damage; the
+kill-switch is non-negotiable.
+
+Coach mode and auto-dispatch share the same `Layer 5 Selection`
+output; the difference is who reads the sorted list. This is the
+load-bearing reason for the §3.5 selection-vs-scoring split — auto-
+dispatch's correctness is *exactly* "the operator would have picked
+the same top-1 in coach mode," which the recommendation calibration
+loop (§7.5) measures.
 
 ## 5. Algorithms
 
@@ -615,6 +874,57 @@ where actual targets diverged > 50% from declared"). Used to spot
 extraction prompt bugs, missing concepts in the vocabulary, or beads
 that were under-scoped to begin with.
 
+### 7.5 Recommendation calibration
+
+The retrospective grades the *score* against outcomes (§7.1). Layer
+5 selection adds a second feedback loop: grade the *recommendation*
+against operator overrides.
+
+Every coach-mode pick records `(recommended_top_bead, picked_bead,
+score_delta, justification, operator_reason)`. When the operator
+takes the top recommendation, the calibration row is degenerate —
+the planner agreed with itself. When the operator picks something
+else, the row carries real signal: the score thought X was best,
+the operator picked Y, and the operator may have entered a one-
+line `--reason` explaining why.
+
+Aggregate signals the calibration loop watches for:
+
+- **Systematic intent miss.** Operator consistently picks beads
+  outside the planner's top-3 when intent is set. Suggests the
+  intent demotion factor is too lenient (the planner is letting
+  out-of-intent beads slip through).
+- **Systematic leverage miss.** Operator picks high-blocks-weight
+  beads when the planner ranked them lower. Suggests bumping the
+  leverage weight in §4 Layer 5.2's score mix.
+- **Systematic runway over-trust.** Operator overrides the runway
+  warning frequently and the bead lands fine. Suggests the runway
+  estimator is too pessimistic.
+- **Systematic affinity drift.** Operator picks beads with low
+  affinity but a particular concept-tag pattern that the score
+  doesn't capture. Suggests adding a vocabulary entry or
+  rebalancing the session-vs-agent profile mix.
+
+These signals are surfaced as suggestions in the same operator-
+review queue the vocabulary governance uses (§6 / gm-s47n.7.3) —
+nothing auto-applies. The operator approves a re-tune
+("`--leverage-weight 0.4`") and the planner reads it from rig
+settings on the next loop.
+
+### 7.6 Bead-size calibration
+
+The `estimated_size` heuristic in §4 Layer 0 starts as
+description-length × DoD-line-count. The retrospective grades it
+by comparing predicted size against actual time-to-close on the
+session that took the bead. Drift > 2x in either direction
+contributes a delta to the estimator's bucket boundaries.
+
+Calibration is per-rig — different codebases have different
+description norms — and per-author when enough signal exists. A
+rig that systematically under-describes leaves the size heuristic
+shifted; the calibration loop captures that without per-rig
+config edits.
+
 ## 8. Source analysis scheduling — a first-order planner concern
 
 The Layer 2 source analysis interface (§4 Layer 2) is only useful if its
@@ -767,6 +1077,38 @@ the complexity. If the project stops at step 3, gemba is still
 meaningfully better at coordinating work than it is today. Steps 4–10
 are how it becomes the "central feature" — but each only earns its
 keep on top of the data the earlier steps collect.
+
+### Work Planning 2.0 — selection layer + signals (gm-wp2 epic)
+
+Steps 1-11 above ship the *scoring substrate*: a planner that
+correctly answers "which bead is cheapest to do well?" The §3.5
+analysis identified that the operator-observed bias when
+recommending work draws on a second class of signals — moment-
+dependent, session-specific, operator-pinned — that the scoring
+layer deliberately doesn't model.
+
+WP2 ships those signals + the Layer 5 selection that composes them.
+Each step is independently usable, layered on the same bottom-up
+order:
+
+| Step | Builds | Value at this stop |
+|------|--------|--------------------|
+| 12 | Layer 0 grow: `dispatch_status` enum + `estimated_size` heuristic + bd extras schema | Soft-blocks finally have a vocabulary; the scorer no longer recommends "awaiting-design" beads. Bead size becomes queryable. |
+| 13 | Layer 1.2: persistent agent profile (write-through alongside session profile) | A fresh session inherits its agent's warm context. Mike4's first bead post-handoff isn't cold-start. |
+| 14 | Layer 1.3: session intent + `gemba session focus` CLI | Operator can pin "finish gm-s47n this turn" and the planner respects it. Selection's first new gate. |
+| 15 | Layer 1.4: runway estimator (read-only, advisory) + `gemba session status` | Operators see "this session has small/medium/large runway left." Used by step 18's selection gate. |
+| 16 | Layer 3.3: `Leverage(bead, deps)` scorer (blocks-weight) + `epic-affinity` sub-score in Affinity | "Pick what unblocks more" + "finish what you started" land as scoreable signals. |
+| 17 | OperationalContext claim_index + owner-claim cross-check | Multi-agent fleets stop racing the same bead. Required for step 18's hard gate. |
+| 18 | Layer 5: Selection layer composing Score + Justification + the new gates (dispatch_status, owner-claim, runway, intent, fairness) | The §3.5 split materializes. Coach mode and auto-dispatch share one selection engine; both render `Justification` verbatim. |
+| 19 | §7.5 recommendation calibration loop; §7.6 bead-size calibration | Operator overrides become tuning signal. The planner learns *what to recommend*, not just *how to score*. |
+| 20 | `gemba session focus` SPA surface + Justification rendering in dispatch grid | Coach-mode UX catches up to the new selection signals. |
+
+Steps 12-15 are *data*: they pay for themselves once the operator
+or extractor populates the new fields, even before the selection
+layer reads them. Steps 16-18 are *compute*: they need the data
+from 12-15 plus the existing scoring substrate. Step 19 is the
+*feedback loop*: it grades the system from steps 18 down. Step 20
+is the *surface*.
 
 ## 11. Open questions
 
