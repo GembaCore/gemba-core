@@ -25,7 +25,6 @@ import { useCallback } from 'react';
 import { Command } from 'cmdk';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bot,
   ClipboardList,
   Compass,
   HelpCircle,
@@ -40,7 +39,6 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { usePalette } from './PaletteContext';
 import { useWorkItems } from '@/hooks/useWorkItems';
-import { useAgents } from '@/hooks/useAgents';
 import { useSessions } from '@/hooks/useSessions';
 import { useEscalations } from '@/hooks/useEscalations';
 
@@ -66,7 +64,6 @@ const NAVIGATE_ITEMS: NavigateItem[] = [
   { id: 'nav-backlog', label: 'Backlog', keywords: 'backlog list planning', icon: ClipboardList, to: '/board?view=list&preset=backlog' },
   { id: 'nav-grid', label: 'Grid', keywords: 'grid table rows', icon: Workflow, to: '/grid' },
   { id: 'nav-graph', label: 'Dependency graph', keywords: 'graph dependency network', icon: Network, to: '/graph' },
-  { id: 'nav-agents', label: 'Agents', keywords: 'agents tiles', icon: Bot, to: '/agents' },
   { id: 'nav-sessions', label: 'Sessions', keywords: 'sessions panes runs', icon: Radio, to: '/sessions' },
   { id: 'nav-escalations', label: 'Escalations', keywords: 'escalations elicit hitl', icon: HelpCircle, to: '/escalations' },
   { id: 'nav-capabilities', label: 'Capabilities', keywords: 'capabilities adaptors manifest', icon: Server, to: '/capabilities' },
@@ -111,7 +108,6 @@ export function Palette() {
   // navigated page. Disable retry-blocking with empty arrays so an
   // adaptor-degraded backend doesn't break the palette.
   const { data: workItems = [] } = useWorkItems();
-  const { data: agents = [] } = useAgents();
   const { data: sessions = [] } = useSessions();
   const { data: escalations = [] } = useEscalations();
 
@@ -205,22 +201,6 @@ export function Palette() {
                   />
                 );
               })}
-            </Command.Group>
-          ) : null}
-
-          {agents.length > 0 ? (
-            <Command.Group heading="Agents" className="text-xs uppercase tracking-wide text-neutral-500">
-              {agents.slice(0, PALETTE_RESULT_LIMIT).map((a) => (
-                <PaletteRow
-                  key={`ag-${a.id}`}
-                  value={`ag-${a.id}`}
-                  keywords={[a.id, a.name ?? '', a.role ?? '', a.dialect ?? '', a.agent_kind]}
-                  icon={Bot}
-                  label={a.name || a.id}
-                  hint={`${a.agent_kind} • ${a.role ?? '—'}`}
-                  onSelect={goTo('/agents')}
-                />
-              ))}
             </Command.Group>
           ) : null}
 

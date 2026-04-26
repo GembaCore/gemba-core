@@ -10,7 +10,6 @@ import {
   Mail,
   Table2,
   Terminal,
-  Users,
   CircuitBoard,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -24,7 +23,6 @@ const items: Item[] = [
   { to: '/backlog', label: 'Backlog', Icon: ListTodo },
   { to: '/grid', label: 'Grid', Icon: Table2 },
   { to: '/sessions', label: 'Sessions', Icon: Terminal },
-  { to: '/agents', label: 'Agents', Icon: Users },
   { to: '/coach', label: 'Coach', Icon: CircuitBoard },
   { to: '/walk', label: 'Gemba walk', Icon: Footprints },
   { to: '/graph', label: 'Graph', Icon: Network },
