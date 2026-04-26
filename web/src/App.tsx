@@ -8,6 +8,7 @@ import { GraphPage } from '@/pages/GraphPage';
 import CapabilitiesPage from '@/pages/CapabilitiesPage';
 import { CoachPage } from '@/pages/CoachPage';
 import { WalkPage } from '@/pages/WalkPage';
+import { ProjectConfigPage } from '@/pages/ProjectConfigPage';
 import {
   EscalationsPage,
   HealthPage,
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/capabilities" element={<CapabilitiesPage />} />
         <Route path="/coach" element={<CoachPage />} />
         <Route path="/walk" element={<WalkPage />} />
+        <Route path="/project/config" element={<ProjectConfigPage />} />
         {features.mail && <Route path="/mail" element={<MailPage />} />}
         <Route path="/health" element={<HealthPage />} />
         <Route path="*" element={<NotFoundPage />} />

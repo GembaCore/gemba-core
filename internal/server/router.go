@@ -236,6 +236,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// Adaptors with sprint_native=false return an empty list and the
 		// freeform editor takes over.
 		api.Get("/sprints", r.listSprints)
+		// gm-uipx.8: workspace repository registry, used by the
+		// /project/config Workspace-repos section. Empty list is the
+		// right answer when the workspace has no .gemba/repositories/
+		// dir — never an error.
+		api.Get("/repositories", r.listRepositories)
 		api.Get("/packs", notImplemented)
 		api.Get("/desired-state", notImplemented)
 		api.Get("/drift", notImplemented)

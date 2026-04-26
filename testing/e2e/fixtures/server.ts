@@ -532,6 +532,15 @@ function dispatch(route: Route, stores: FakeStores): unknown {
     return json({ agents: items, total: items.length });
   }
   if (isPath(path, '/api/sprints')) return json({ items: [] });
+  if (isPath(path, '/api/repositories')) {
+    // gm-uipx.8: project-config Workspace-repos section. Fake mode
+    // mirrors the real backend's empty + notice payload so the SPA
+    // renders the helpful empty state.
+    return json({
+      repositories: [],
+      notice: 'no .gemba/repositories/ directory in workspace; configure repositories there',
+    });
+  }
   if (isPath(path, '/api/capabilities')) return json(capabilitiesPlane.get());
   if (isPath(path, '/api/adaptors')) return json({ adaptors: adaptorsState.get() });
   if (isPath(path, '/api/health')) return json({ status: 'ok' });

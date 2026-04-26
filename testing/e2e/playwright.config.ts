@@ -74,6 +74,10 @@ const projects: Project[] = [
       'graph/**/*.spec.ts',
       'grid/**/*.spec.ts',
       'sessions/**/*.spec.ts',
+      // gm-uipx.8 — /project/config (Values / Adaptors / Workspace
+      // repos / sticky-nav). The rest of the Setup section family
+      // will land here as it ships.
+      'setup/**/*.spec.ts',
     ],
     use: {
       ...devices['Desktop Chrome'],
