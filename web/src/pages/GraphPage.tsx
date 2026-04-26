@@ -12,7 +12,14 @@
 // well under a frame budget thanks to the O(V+E) analysis passes.
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Layers, Network, Route as RouteIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Layers,
+  Network,
+  Route as RouteIcon,
+} from 'lucide-react';
 import type { WorkItem } from '@/types/core.gen';
 import ReactFlow, {
   Background,
@@ -33,7 +40,13 @@ import { WorkItemNode, type WorkItemNodeData } from '@/components/graph/WorkItem
 import { buildGraph } from '@/components/graph/buildGraph';
 import { criticalPath, detectCycles, edgeKey } from '@/components/graph/graphAnalysis';
 import { layoutLayered } from '@/components/graph/graphLayout';
+import { useHotkey, useHotkeyScope } from '@/hotkeys';
 import { cn } from '@/lib/utils';
+
+// HISTORY_CAP bounds the focused-node back-stack so a long-running
+// session can't accumulate unbounded predecessor breadcrumbs. 32 is
+// well past any reasonable Gemba-walk traversal length.
+const HISTORY_CAP = 32;
 
 const NODE_TYPES = { workItem: WorkItemNode };
 
@@ -133,6 +146,99 @@ export function GraphPage() {
     [graph.nodeIds, graph.structuralEdges]
   );
 
+  // gm-e12.20: traversal indices. successors/predecessors are derived
+  // once per render from the structural-edge slice (the same set the
+  // layered layout uses) so non-ordering kinds like relates_to and
+  // extension edges never participate in keyboard stepping. A
+  // single-outgoing successor enables ArrowRight; multi-outgoing
+  // disables it (the operator falls back to clicking).
+  const successors = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const e of graph.structuralEdges) {
+      const list = m.get(e.from) ?? [];
+      list.push(e.to);
+      m.set(e.from, list);
+    }
+    for (const list of m.values()) list.sort();
+    return m;
+  }, [graph.structuralEdges]);
+  const predecessors = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const e of graph.structuralEdges) {
+      const list = m.get(e.to) ?? [];
+      list.push(e.from);
+      m.set(e.to, list);
+    }
+    for (const list of m.values()) list.sort();
+    return m;
+  }, [graph.structuralEdges]);
+
+  // History stack of focused-node ids. Used by the back hotkey to
+  // prefer the most-recently-visited predecessor when the current
+  // node has more than one. Bounded to HISTORY_CAP entries so a
+  // long Gemba walk doesn't accumulate without bound.
+  const historyRef = useRef<string[]>([]);
+  const recordVisit = useCallback((id: string) => {
+    const h = historyRef.current;
+    if (h[h.length - 1] === id) return;
+    h.push(id);
+    if (h.length > HISTORY_CAP) h.shift();
+  }, []);
+
+  const moveFocus = useCallback(
+    (id: string) => {
+      recordVisit(id);
+      setFocusedId(id);
+      focusOnNode(id);
+    },
+    [focusOnNode, recordVisit]
+  );
+
+  // canStepNext mirrors the next hotkey's enable rule for the
+  // toolbar button — the two surfaces share a single source of
+  // truth so a button click can never fire when the keystroke is
+  // a no-op (or vice versa).
+  const nextTarget = useMemo(() => {
+    if (!focusedId) return null;
+    const out = successors.get(focusedId) ?? [];
+    return out.length === 1 ? out[0] : null;
+  }, [focusedId, successors]);
+  const canStepNext = nextTarget !== null;
+
+  const backTarget = useMemo(() => {
+    if (!focusedId) return null;
+    const preds = predecessors.get(focusedId) ?? [];
+    if (preds.length === 0) return null;
+    if (preds.length === 1) return preds[0];
+    // Ambiguous: prefer the most recently visited predecessor. The
+    // history walks newest-first; the first match wins. Fall back
+    // to the smallest-id predecessor when no history match exists.
+    const h = historyRef.current;
+    for (let i = h.length - 1; i >= 0; i--) {
+      if (preds.includes(h[i])) return h[i];
+    }
+    return preds[0];
+  }, [focusedId, predecessors]);
+  const canStepBack = backTarget !== null;
+
+  const stepNext = useCallback(() => {
+    if (nextTarget) moveFocus(nextTarget);
+  }, [moveFocus, nextTarget]);
+  const stepBack = useCallback(() => {
+    if (backTarget) moveFocus(backTarget);
+  }, [moveFocus, backTarget]);
+  const openFocused = useCallback(() => {
+    if (focusedId) setOpenId(focusedId);
+  }, [focusedId]);
+
+  // Push the graph scope while this page is mounted so the
+  // ArrowLeft / ArrowRight / Enter bindings don't leak into Board /
+  // Grid / other pages where those keys carry different semantics.
+  useHotkeyScope('graph');
+  useHotkey('graph-next', stepNext);
+  useHotkey('graph-back', stepBack);
+  useHotkey('graph-open', openFocused);
+
   // gm-qdqu: precompute the hover-related set so node + edge passes
   // share the same answer. The set is the hovered node plus every
   // direct neighbour through any structural or extension edge.
@@ -214,6 +320,43 @@ export function GraphPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={stepBack}
+            disabled={!canStepBack}
+            data-testid="graph-step-back"
+            title="Step back to predecessor (ArrowLeft)"
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 transition-colors',
+              'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800',
+              'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-neutral-900'
+            )}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Back</span>
+          </button>
+          <button
+            type="button"
+            onClick={stepNext}
+            disabled={!canStepNext}
+            data-testid="graph-step-next"
+            title={
+              canStepNext
+                ? 'Step to next node (ArrowRight)'
+                : focusedId
+                  ? 'Multiple successors — click one to choose'
+                  : 'Click a node to start traversal'
+            }
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 transition-colors',
+              'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800',
+              'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white dark:disabled:hover:bg-neutral-900'
+            )}
+          >
+            <span>Next</span>
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
+          <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
           <ToggleButton
             active={granularity === 'epics'}
             onClick={() =>
@@ -280,8 +423,9 @@ export function GraphPage() {
               // the drawer. The two surfaces are independent — drawer
               // closes via Escape; the focus persists until the
               // operator clicks the canvas background to clear it.
-              setFocusedId(node.id);
-              focusOnNode(node.id);
+              // gm-e12.20: route through moveFocus so the click also
+              // appends to the back-history that ArrowLeft consults.
+              moveFocus(node.id);
               setOpenId(node.id);
             }}
             onPaneClick={() => {

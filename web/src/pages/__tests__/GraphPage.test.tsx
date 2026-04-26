@@ -60,6 +60,7 @@ vi.mock('reactflow', async () => {
 
 import { GraphPage } from '../GraphPage';
 import { CapabilitiesProvider } from '@/capabilities';
+import { HotkeysProvider } from '@/hotkeys';
 import type { CapabilitiesResponse } from '@/capabilities';
 
 function caps(extDeclared = false): CapabilitiesResponse {
@@ -89,7 +90,9 @@ function wrapper(extDeclared = false): (p: { children: ReactNode }) => JSX.Eleme
     return (
       <QueryClientProvider client={client}>
         <CapabilitiesProvider initial={caps(extDeclared)}>
-          <MemoryRouter>{children}</MemoryRouter>
+          <HotkeysProvider>
+            <MemoryRouter>{children}</MemoryRouter>
+          </HotkeysProvider>
         </CapabilitiesProvider>
       </QueryClientProvider>
     );

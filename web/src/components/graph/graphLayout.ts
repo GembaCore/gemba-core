@@ -1,19 +1,24 @@
-// Layered DAG layout for the dependency graph (gm-e12.16).
+// Layered DAG layout for the dependency graph (gm-e12.16, top-down
+// re-orient gm-e12.20).
 //
 // We deliberately avoid a third-party layout dep (dagre, elkjs) — the
 // dependency graph is a sparse DAG with a handful of edge types and
 // at-most a few thousand nodes, and a hand-rolled layered placer is
 // faster to tune to our domain than to drag in a 200KB layout engine.
 //
-// Layering: each node sits in a column equal to the longest hop chain
-// from any root. Roots are nodes with no incoming "blocks" or
-// "parent_child" edge (the two structural edge kinds; relates_to is
-// horizontal and doesn't constrain layering). Nodes inside cycles
-// take the layer of any one cycle member — they cluster together
-// horizontally because the rendering layer paints them red anyway.
+// Layering: each node sits in a row equal to the longest hop chain
+// from any root. Roots (no incoming structural edges) anchor the top
+// of the canvas; descendants flow downward. Nodes inside cycles take
+// the layer of any one cycle member — they cluster together because
+// the rendering layer paints them red anyway.
+//
+// Axes (gm-e12.20): layer → y (vertical), index-within-layer → x
+// (horizontal). The previous left-to-right orientation read upside-
+// down for a dependency view; top-down matches how operators read
+// "what's upstream / downstream" in a vertical scroll surface.
 //
 // Within a layer we sort by id to keep the layout deterministic
-// across renders. Vertical spacing scales with the densest layer so
+// across renders. Horizontal spacing scales with the densest layer so
 // neighbours never overlap.
 
 import type { DirectedEdge } from './graphAnalysis';
@@ -35,11 +40,12 @@ const COLUMN_WIDTH = 220;
 const ROW_HEIGHT = 80;
 const LAYER_PADDING = 40;
 
-// layoutLayered places nodes column-by-column from longest-chain
-// depth. Edges classified as "structural" drive layering; the
-// `structuralEdges` parameter lets the caller exclude horizontal
+// layoutLayered places nodes row-by-row from longest-chain depth.
+// Edges classified as "structural" drive layering; the
+// `structuralEdges` parameter lets the caller exclude non-ordering
 // kinds (relates_to, extension) which would otherwise inflate depth
-// estimates without representing a real ordering constraint.
+// estimates without representing a real predecessor / successor
+// relationship.
 export function layoutLayered(
   nodes: LayoutNodeInput[],
   structuralEdges: DirectedEdge[]
@@ -93,12 +99,12 @@ export function layoutLayered(
   for (const bucket of layers) bucket.sort();
 
   const positions = new Map<string, { x: number; y: number }>();
-  let maxRows = 0;
-  for (let col = 0; col < layers.length; col++) {
-    const bucket = layers[col];
-    if (bucket.length > maxRows) maxRows = bucket.length;
-    for (let row = 0; row < bucket.length; row++) {
-      positions.set(bucket[row], {
+  let maxCols = 0;
+  for (let row = 0; row < layers.length; row++) {
+    const bucket = layers[row];
+    if (bucket.length > maxCols) maxCols = bucket.length;
+    for (let col = 0; col < bucket.length; col++) {
+      positions.set(bucket[col], {
         x: col * COLUMN_WIDTH + LAYER_PADDING,
         y: row * ROW_HEIGHT + LAYER_PADDING,
       });
@@ -107,7 +113,7 @@ export function layoutLayered(
 
   return {
     positions,
-    width: layers.length * COLUMN_WIDTH + LAYER_PADDING * 2,
-    height: maxRows * ROW_HEIGHT + LAYER_PADDING * 2,
+    width: maxCols * COLUMN_WIDTH + LAYER_PADDING * 2,
+    height: layers.length * ROW_HEIGHT + LAYER_PADDING * 2,
   };
 }
