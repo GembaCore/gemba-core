@@ -34,6 +34,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/shader/gastown"
 	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
+	walksources "github.com/MikeBengtson/gemba/internal/walk/sources"
 )
 
 func newServeCmd(b BuildInfo) *cobra.Command {
@@ -203,6 +204,13 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 			handler.EventsHub().AttachOrchestrationStream(ctx,
 				op.Describe().AdaptorID, ch)
 		}
+		// gm-3jv: cross-worker escalation aggregator. The bridge
+		// republishes escalation.* OrchestrationEvents as
+		// walk.escalation_changed frames on the same hub so an
+		// active walk's UI can refresh its agenda live without a
+		// dedicated subscription. Nil-safe — see
+		// walksources.StartOrchestrationBridge.
+		walksources.StartOrchestrationBridge(ctx, op, handler.EventsHub())
 	}
 
 	// Wire the bound WorkPlane's Subscribe stream into the hub
