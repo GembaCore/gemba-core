@@ -87,7 +87,12 @@ var gastownManifest = core.OrchestrationCapabilityManifest{
 		core.WorkspaceWorktree: {FSScoped: true},
 	},
 	GroupModes: []core.GroupMode{core.GroupStatic, core.GroupPool},
-	CostAxes:   []core.CostAxis{core.CostWallclock},
+	// CostAxes: gm-e7.4 added Tokens (synthesised from Claude Code
+	// transcripts via cost.go). Wallclock is wall-clock seconds
+	// from session StartedAt → EndedAt. DollarsEst rolls in when
+	// pricing config is present (env-driven); the axis is implicit
+	// to Tokens when configured — no separate axis declaration.
+	CostAxes: []core.CostAxis{core.CostWallclock, core.CostTokens},
 	// EscalationKinds: gm-e7.5 surfaces every `gt escalate` row as
 	// EscalationOrchestratorPause; HITLApproval stays declared for
 	// the persona-suspension surface that lands with gm-uf7.
