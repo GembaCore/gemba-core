@@ -335,6 +335,10 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	})
 	handler.AttachWalk(walk.NewMemoryStore(), walkSources)
 
+	// gm-ad1u: wire the /bootstrap wizard backend. In-memory store
+	// matches walk's pattern; SQL persistence is a follow-up bead.
+	handler.AttachBootstrap(server.NewMemoryBootstrapStore())
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
