@@ -8,6 +8,7 @@ import CapabilitiesPage from '@/pages/CapabilitiesPage';
 import { CoachPage } from '@/pages/CoachPage';
 import { WalkPage } from '@/pages/WalkPage';
 import { ProjectConfigPage } from '@/pages/ProjectConfigPage';
+import { InsightsPersonasPage } from '@/pages/InsightsPersonasPage';
 import {
   EscalationsPage,
   HealthPage,
@@ -39,6 +40,10 @@ export default function App() {
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />
+        {/* gm-twp2: persona consult activity. The first concrete
+            /insights/* surface; the placeholder /insights stays as a
+            landing while other /insights/* tabs land. */}
+        <Route path="/insights/personas" element={<InsightsPersonasPage />} />
         <Route path="/escalations" element={<EscalationsPage />} />
         <Route path="/capabilities" element={<CapabilitiesPage />} />
         <Route path="/coach" element={<CoachPage />} />
