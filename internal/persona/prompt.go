@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/MikeBengtson/gemba/internal/core/projectshape"
 	"github.com/MikeBengtson/gemba/internal/core/prompt"
 )
 
@@ -83,6 +84,17 @@ type ComposeRequest struct {
 	WorkspaceValues   []string
 	ContextChunks     []string
 
+	// ProjectShape is the workspace's active architectural
+	// archetype (gm-4uso). When non-zero, its Render() output is
+	// prepended to the project-values layer so every persona
+	// consult sees the same shape framing for free. A zero-value
+	// Shape is the documented "no shape configured" path: Render()
+	// returns the empty string and the project-values layer is
+	// unchanged. The dispatcher resolves the active shape via
+	// projectshape.LoadConfig before calling Compose; tests often
+	// construct the field directly.
+	ProjectShape projectshape.Shape
+
 	// WalkID, when non-empty, appends the walk-mode system prompt
 	// fragment to the persona's base prompt (gm-4p6). The HTTP
 	// layer detects an active walk via walk.IDFromContext on the
@@ -140,8 +152,19 @@ func Compose(req ComposeRequest) (Composed, error) {
 	}
 	skillFragment := strings.TrimSpace(req.Skill.SkillPrompt())
 
+	// Project-values layer composition (gm-3d6, gm-4uso). The
+	// active project shape — when configured — leads the layer so
+	// the model anchors on the architectural archetype before the
+	// per-workspace value bullets. A zero-value Shape contributes
+	// nothing (Render() returns ""), preserving the existing
+	// behavior for workspaces that haven't pinned a shape.
+	projectValues := req.ProjectValues
+	if rendered := strings.TrimSpace(req.ProjectShape.Render()); rendered != "" {
+		projectValues = append([]string{rendered}, projectValues...)
+	}
+
 	env := prompt.Envelope{
-		ProjectValues:     req.ProjectValues,
+		ProjectValues:     projectValues,
 		ProjectGuardrails: req.ProjectGuardrails,
 		ProjectGoals:      req.ProjectGoals,
 		WorkspaceValues:   req.WorkspaceValues,
