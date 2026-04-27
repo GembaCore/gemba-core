@@ -1,0 +1,78 @@
+# gm-e14.4: build and deploy the docs site (Astro Starlight) to GitHub Pages.
+#
+# Triggers:
+#   - push to main (publishes the latest docs)
+#   - tag push (so a release also refreshes the published docs)
+#   - manual dispatch
+#   - PRs that touch docs/, docs-site/, or this workflow (build-only, no deploy)
+#
+# Deploy URL: https://mikebengtson.github.io/gemba/
+name: docs
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'docs-site/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # The docs-site lives under a pnpm workspace; install at the repo
+      # root so the workspace-aware install resolves @astrojs/starlight
+      # against the root lockfile.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build site
+        working-directory: docs-site
+        env:
+          SITE: https://mikebengtson.github.io
+          BASE: /gemba/
+        run: pnpm build
+
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs-site/dist
+
+  deploy:
+    name: deploy
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

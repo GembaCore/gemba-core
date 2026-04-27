@@ -1,0 +1,25 @@
+# build output
+dist/
+.astro/
+
+# dependencies
+node_modules/
+
+# the synced content tree is generated from ../docs at build time;
+# never commit it (sync-docs.mjs reproduces it deterministically).
+src/content/docs/
+
+# the openapi spec & other assets mirrored from ../docs into /public
+public/api/
+public/adaptors/
+public/agents/
+public/deployment/
+public/design/
+public/getting-started/
+public/personas/
+public/prior-art/
+public/research/
+
+# logs / cache
+*.log
+.pnpm-debug.log
