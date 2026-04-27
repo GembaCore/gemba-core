@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 func TestCICollector_Collect(t *testing.T) {

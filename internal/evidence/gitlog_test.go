@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 func TestGitLogCollector_Collect(t *testing.T) {

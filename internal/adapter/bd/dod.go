@@ -3,7 +3,7 @@ package bd
 import (
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // gm-e6.4 DoD pass-through.

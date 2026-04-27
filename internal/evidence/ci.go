@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // CICollector synthesizes [core.EvidenceTestResult] records from

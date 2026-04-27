@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // GitLogCollector synthesizes [core.EvidenceCommit] records by

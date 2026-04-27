@@ -4,7 +4,7 @@ import (
 	"context"
 	"os/exec"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Source labels the origin system a piece of synthesized Evidence

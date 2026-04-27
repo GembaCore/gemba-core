@@ -163,6 +163,13 @@ export type OrchestratorHook =
   | "work-complete-ack"
   | "pool-bulk-dispatch";
 
+// GroupMode discriminates an AgentGroup's membership shape (gm-root DD-7).
+// Mirror core/orchestration.go's Group* constants — keep in lockstep.
+export type GroupMode =
+  | "static"
+  | "pool"
+  | "graph";
+
 // AdaptorErrorKind is the closed discriminator every adaptor-boundary
 // error carries (gm-faz). The SPA branches on _kind + retryable; it
 // MUST NOT parse the human-readable message.
@@ -389,22 +396,9 @@ export interface CapabilityManifest {
   orchestrator_hooks?: OrchestratorHook[];
 }
 
-// GroupMode is the discriminator for AgentGroup.members (gm-root DD-7).
-// Mirrors core.GroupMode in internal/core/orchestration.go.
-//
-// NOTE: this type is also exported by web/src/capabilities/types.ts for
-// the manifest's group_modes axis. Keep both in sync.
-export type GroupMode = "static" | "pool" | "graph";
-
-export const GROUP_MODES: readonly GroupMode[] = [
-  "static",
-  "pool",
-  "graph",
-] as const;
-
-// GroupMembers is the mode-tagged union of member descriptors. Only the
-// subset matching GroupMode is meaningful; the rest are absent or zero.
-// Mirrors core.GroupMembers.
+// GroupMembers is the mode-tagged union of member descriptors on an
+// AgentGroup (gm-root DD-7). Only the subset matching Mode is
+// meaningful; the rest MUST be zero.
 export interface GroupMembers {
   static?: AgentID[];
   pool_check_url?: string;
@@ -416,7 +410,6 @@ export interface GroupMembers {
 
 // AgentGroup is the adaptor-agnostic view of a collection of agents
 // (gm-root DD-7). The Mode field picks the union arm carried by Members.
-// Mirrors core.AgentGroup.
 export interface AgentGroup {
   id: string;
   display_name: string;

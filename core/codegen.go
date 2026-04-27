@@ -126,6 +126,19 @@ var tsExports = []tsExport{
 // what extensions it carries beyond the core primitives, and which
 // optional feature groups it opts into (gm-root DD-15).`,
 	},
+	{
+		goType: reflect.TypeOf(GroupMembers{}),
+		name:   "GroupMembers",
+		comment: `// GroupMembers is the mode-tagged union of member descriptors on an
+// AgentGroup (gm-root DD-7). Only the subset matching Mode is
+// meaningful; the rest MUST be zero.`,
+	},
+	{
+		goType: reflect.TypeOf(AgentGroup{}),
+		name:   "AgentGroup",
+		comment: `// AgentGroup is the adaptor-agnostic view of a collection of agents
+// (gm-root DD-7). The Mode field picks the union arm carried by Members.`,
+	},
 }
 
 // emitInterface renders a Go struct as a TypeScript interface. Field
@@ -401,6 +414,13 @@ export type OrchestratorHook =
   | "escalation-ingest"
   | "work-complete-ack"
   | "pool-bulk-dispatch";
+
+// GroupMode discriminates an AgentGroup's membership shape (gm-root DD-7).
+// Mirror core/orchestration.go's Group* constants — keep in lockstep.
+export type GroupMode =
+  | "static"
+  | "pool"
+  | "graph";
 
 // AdaptorErrorKind is the closed discriminator every adaptor-boundary
 // error carries (gm-faz). The SPA branches on _kind + retryable; it
