@@ -18,22 +18,53 @@ const (
 	SourceBackfill Source = "backfill"
 )
 
-// Enrichment is the per-bead targets[] + concepts[] data the planner
-// reads. Stored as one JSON file per bead today; rewires to bd
-// extras when gm-s47n.1.1 lands the schema.
+// Enrichment is the per-bead targets[] + concepts[] +
+// dispatch_status + estimated_size data the planner reads. Stored
+// as one JSON file per bead today; rewires to bd extras when
+// gm-s47n.1.1 lands the schema.
+//
+// DispatchStatus + EstimatedSize are the WP2.0 additions
+// (gm-v5z2.1, work-planning.md §4 Layer 0). Empty values mean
+// "field never set" — Layer 5 selection treats DispatchStatus=""
+// as ready (per DispatchStatusOrDefault) so legacy beads without
+// the field don't get suppressed.
 type Enrichment struct {
-	BeadID    string    `json:"bead_id"`
-	Targets   []string  `json:"targets,omitempty"`
-	Concepts  []string  `json:"concepts,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Source    Source    `json:"source,omitempty"`
+	BeadID         string         `json:"bead_id"`
+	Targets        []string       `json:"targets,omitempty"`
+	Concepts       []string       `json:"concepts,omitempty"`
+	DispatchStatus DispatchStatus `json:"dispatch_status,omitempty"`
+	EstimatedSize  EstimatedSize  `json:"estimated_size,omitempty"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	Source         Source         `json:"source,omitempty"`
 }
 
 // IsZero reports whether the enrichment carries any signal — useful
 // for the CLI's "show" command to render "(no enrichment)" instead
-// of an empty struct.
+// of an empty struct. DispatchStatus + EstimatedSize count as
+// signal even when targets/concepts are empty: an operator who
+// pinned `awaiting-design` is making a statement.
 func (e Enrichment) IsZero() bool {
-	return len(e.Targets) == 0 && len(e.Concepts) == 0
+	return len(e.Targets) == 0 && len(e.Concepts) == 0 &&
+		e.DispatchStatus == "" && e.EstimatedSize == ""
+}
+
+// SetDispatchStatus replaces the dispatch_status field. Returns a
+// copy. Empty input clears the field (selection treats absent as
+// ready). Callers that want strict validation should call
+// ParseDispatchStatus first.
+func (e Enrichment) SetDispatchStatus(s DispatchStatus) Enrichment {
+	cp := e.copy()
+	cp.DispatchStatus = s
+	return cp
+}
+
+// SetEstimatedSize replaces the estimated_size field. Returns a
+// copy. Empty input clears the field; callers that want strict
+// validation should call ParseEstimatedSize first.
+func (e Enrichment) SetEstimatedSize(s EstimatedSize) Enrichment {
+	cp := e.copy()
+	cp.EstimatedSize = s
+	return cp
 }
 
 // AddTarget appends a target glob, returning a copy. Idempotent —

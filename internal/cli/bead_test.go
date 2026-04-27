@@ -455,3 +455,131 @@ func TestBeadShow_AcceptsSlashedID(t *testing.T) {
 		t.Errorf("expected safe-id encoded file on disk; matches=%v", matches)
 	}
 }
+
+// ── dispatch_status (gm-v5z2.1) ─────────────────────────────────
+
+func TestBeadStatusSet_PersistsAndShows(t *testing.T) {
+	root := t.TempDir()
+	out, _, err := runCmd(t, "bead", "status", "set", "gm-1", "awaiting-design", "--workspace", root)
+	if err != nil {
+		t.Fatalf("status set: %v", err)
+	}
+	if !strings.Contains(out, "dispatch_status: awaiting-design") {
+		t.Errorf("expected dispatch_status in output; got %q", out)
+	}
+
+	// Show should reflect the persisted value.
+	out, _, err = runCmd(t, "bead", "show", "gm-1", "--workspace", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "dispatch_status: awaiting-design") {
+		t.Errorf("show missed status: %q", out)
+	}
+}
+
+func TestBeadStatusSet_RejectsUnknownValue(t *testing.T) {
+	root := t.TempDir()
+	_, _, err := runCmd(t, "bead", "status", "set", "gm-1", "blocked", "--workspace", root)
+	if err == nil {
+		t.Fatal("expected error on unknown status")
+	}
+	if !strings.Contains(err.Error(), "ready") {
+		t.Errorf("error should list valid set: %v", err)
+	}
+}
+
+func TestBeadStatusClear_RemovesValue(t *testing.T) {
+	root := t.TempDir()
+	store := enrichment.NewFileStore(root, nil)
+	_ = store.Save(context.Background(), enrichment.Enrichment{
+		BeadID:         "gm-1",
+		DispatchStatus: enrichment.DispatchNotNow,
+	})
+	if _, _, err := runCmd(t, "bead", "status", "clear", "gm-1", "--workspace", root); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Load(context.Background(), "gm-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DispatchStatus != "" {
+		t.Errorf("expected cleared; got %q", got.DispatchStatus)
+	}
+}
+
+// ── estimated_size (gm-v5z2.1) ──────────────────────────────────
+
+func TestBeadSizeSet_PersistsAndShows(t *testing.T) {
+	root := t.TempDir()
+	out, _, err := runCmd(t, "bead", "size", "set", "gm-1", "large", "--workspace", root)
+	if err != nil {
+		t.Fatalf("size set: %v", err)
+	}
+	if !strings.Contains(out, "estimated_size: large") {
+		t.Errorf("expected size in output; got %q", out)
+	}
+}
+
+func TestBeadSizeSet_RejectsUnknownBucket(t *testing.T) {
+	root := t.TempDir()
+	_, _, err := runCmd(t, "bead", "size", "set", "gm-1", "xl", "--workspace", root)
+	if err == nil {
+		t.Fatal("expected error on unknown bucket")
+	}
+}
+
+func TestBeadSizeEstimate_DryRunDoesNotPersist(t *testing.T) {
+	root := t.TempDir()
+	body := strings.Repeat("Detailed body. ", 20) + "\n\n- [ ] one\n- [ ] two\n"
+	out, _, err := runCmd(t, "bead", "size", "estimate", "gm-1",
+		"--workspace", root, "--body", body, "--dry-run")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "(dry-run") {
+		t.Errorf("expected dry-run notice; got %q", out)
+	}
+	store := enrichment.NewFileStore(root, nil)
+	_, err = store.Load(context.Background(), "gm-1")
+	if !errors.Is(err, enrichment.ErrNotFound) {
+		t.Errorf("dry-run should not persist; load = %v", err)
+	}
+}
+
+func TestBeadSizeEstimate_PersistsBucketFromBody(t *testing.T) {
+	root := t.TempDir()
+	body := "tiny one-line bead body"
+	if _, _, err := runCmd(t, "bead", "size", "estimate", "gm-1",
+		"--workspace", root, "--body", body); err != nil {
+		t.Fatal(err)
+	}
+	store := enrichment.NewFileStore(root, nil)
+	got, err := store.Load(context.Background(), "gm-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.EstimatedSize != enrichment.SizeSmall {
+		t.Errorf("got %q, want small", got.EstimatedSize)
+	}
+}
+
+func TestBeadSizeEstimate_ReadsBodyFromFile(t *testing.T) {
+	root := t.TempDir()
+	bodyPath := filepath.Join(root, "body.md")
+	if err := os.WriteFile(bodyPath, []byte("brief description"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := runCmd(t, "bead", "size", "estimate", "gm-1",
+		"--workspace", root, "--body-file", bodyPath); err != nil {
+		t.Fatal(err)
+	}
+	store := enrichment.NewFileStore(root, nil)
+	got, _ := store.Load(context.Background(), "gm-1")
+	if got.EstimatedSize == "" {
+		t.Errorf("expected size to be set; got %+v", got)
+	}
+}
+
+// concepts package import is already used elsewhere — keep unused-ref check happy.
+var _ = concepts.Vocabulary{}

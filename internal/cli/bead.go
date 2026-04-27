@@ -44,9 +44,219 @@ Rewires to bd extras when gm-s47n.1.1 lands the WorkItem schema.`,
 		newBeadListCmd(),
 		newBeadTargetsCmd(),
 		newBeadConceptsCmd(),
+		newBeadStatusCmd(),
+		newBeadSizeCmd(),
 		newBeadExtractCmd(),
 		newBeadBackfillCmd(),
 	)
+	return cmd
+}
+
+// ── dispatch_status (gm-v5z2.1) ───────────────────────────────────
+
+func newBeadStatusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Manage the dispatch_status soft-block enum on a bead (gm-v5z2.1)",
+		Long: `Set the per-bead dispatch_status. The planner's selection layer
+(work-planning §4 Layer 5) treats only "ready" beads as
+candidates; the others remain visible in 'bd list' but are
+suppressed from the planner's "what's next" surface.
+
+Valid values: ready | awaiting-design | awaiting-vendor | awaiting-review | not-now`,
+	}
+	cmd.AddCommand(newBeadStatusSetCmd(), newBeadStatusClearCmd())
+	return cmd
+}
+
+func newBeadStatusSetCmd() *cobra.Command {
+	var workspace, by string
+	cmd := &cobra.Command{
+		Use:   "set <bead-id> <ready|awaiting-design|awaiting-vendor|awaiting-review|not-now>",
+		Short: "Pin a bead's dispatch_status",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := enrichment.ParseDispatchStatus(args[1])
+			if err != nil {
+				return err
+			}
+			root, err := resolveWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+			store := enrichment.NewFileStore(root, nil)
+			beadID := args[0]
+			e := loadOrFresh(cmd.Context(), store, beadID, by)
+			next := e.SetDispatchStatus(s)
+			next.BeadID = beadID
+			next.Source = enrichment.SourceOperator
+			if err := store.Save(cmd.Context(), next); err != nil {
+				return err
+			}
+			printEnrichment(cmd.OutOrStdout(), next)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "workspace root")
+	cmd.Flags().StringVar(&by, "by", "", "operator id (default: $USER)")
+	return cmd
+}
+
+func newBeadStatusClearCmd() *cobra.Command {
+	var workspace, by string
+	cmd := &cobra.Command{
+		Use:   "clear <bead-id>",
+		Short: "Clear a bead's dispatch_status (treated as ready by selection)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+			store := enrichment.NewFileStore(root, nil)
+			beadID := args[0]
+			e := loadOrFresh(cmd.Context(), store, beadID, by)
+			next := e.SetDispatchStatus("")
+			next.BeadID = beadID
+			next.Source = enrichment.SourceOperator
+			if err := store.Save(cmd.Context(), next); err != nil {
+				return err
+			}
+			printEnrichment(cmd.OutOrStdout(), next)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "workspace root")
+	cmd.Flags().StringVar(&by, "by", "", "operator id")
+	return cmd
+}
+
+// ── estimated_size (gm-v5z2.1) ────────────────────────────────────
+
+func newBeadSizeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "size",
+		Short: "Manage the estimated_size bucket on a bead (gm-v5z2.1)",
+		Long: `Set the per-bead estimated_size bucket. The selection layer's
+runway gate (work-planning §4 Layer 5) compares this to the
+session's remaining context budget; oversized beads are demoted.
+
+Valid values: small | medium | large
+
+Bootstrap from bead text via 'gemba bead size estimate <id> --body
+<text>' (heuristic = description length × DoD-line count).`,
+	}
+	cmd.AddCommand(newBeadSizeSetCmd(), newBeadSizeClearCmd(), newBeadSizeEstimateCmd())
+	return cmd
+}
+
+func newBeadSizeSetCmd() *cobra.Command {
+	var workspace, by string
+	cmd := &cobra.Command{
+		Use:   "set <bead-id> <small|medium|large>",
+		Short: "Pin a bead's estimated_size bucket",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			s, err := enrichment.ParseEstimatedSize(args[1])
+			if err != nil {
+				return err
+			}
+			root, err := resolveWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+			store := enrichment.NewFileStore(root, nil)
+			beadID := args[0]
+			e := loadOrFresh(cmd.Context(), store, beadID, by)
+			next := e.SetEstimatedSize(s)
+			next.BeadID = beadID
+			next.Source = enrichment.SourceOperator
+			if err := store.Save(cmd.Context(), next); err != nil {
+				return err
+			}
+			printEnrichment(cmd.OutOrStdout(), next)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "workspace root")
+	cmd.Flags().StringVar(&by, "by", "", "operator id")
+	return cmd
+}
+
+func newBeadSizeClearCmd() *cobra.Command {
+	var workspace, by string
+	cmd := &cobra.Command{
+		Use:   "clear <bead-id>",
+		Short: "Clear a bead's estimated_size",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+			store := enrichment.NewFileStore(root, nil)
+			beadID := args[0]
+			e := loadOrFresh(cmd.Context(), store, beadID, by)
+			next := e.SetEstimatedSize("")
+			next.BeadID = beadID
+			next.Source = enrichment.SourceOperator
+			if err := store.Save(cmd.Context(), next); err != nil {
+				return err
+			}
+			printEnrichment(cmd.OutOrStdout(), next)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "workspace root")
+	cmd.Flags().StringVar(&by, "by", "", "operator id")
+	return cmd
+}
+
+func newBeadSizeEstimateCmd() *cobra.Command {
+	var workspace, body, bodyFile string
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "estimate <bead-id>",
+		Short: "Estimate a bead's size from text via the heuristic and persist the result",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if bodyFile != "" {
+				b, err := os.ReadFile(bodyFile)
+				if err != nil {
+					return fmt.Errorf("read --body-file: %w", err)
+				}
+				body = string(b)
+			}
+			size := enrichment.EstimateSize(body, nil)
+			root, err := resolveWorkspace(workspace)
+			if err != nil {
+				return err
+			}
+			store := enrichment.NewFileStore(root, nil)
+			beadID := args[0]
+			e := loadOrFresh(cmd.Context(), store, beadID, "")
+			next := e.SetEstimatedSize(size)
+			next.BeadID = beadID
+			if next.Source == "" {
+				next.Source = enrichment.SourceLLM // heuristic = same Source bucket as LLM extract
+			}
+			if !dryRun {
+				if err := store.Save(cmd.Context(), next); err != nil {
+					return err
+				}
+			}
+			out := cmd.OutOrStdout()
+			if dryRun {
+				fmt.Fprintln(out, "(dry-run; not persisted)")
+			}
+			printEnrichment(out, next)
+			return nil
+		},
+	}
+	cmd.Flags().StringVarP(&workspace, "workspace", "w", "", "workspace root")
+	cmd.Flags().StringVar(&body, "body", "", "bead body / description")
+	cmd.Flags().StringVar(&bodyFile, "body-file", "", "read --body from a file path")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "show the estimated bucket without persisting")
 	return cmd
 }
 
@@ -571,6 +781,12 @@ func printEnrichment(w io.Writer, e enrichment.Enrichment) {
 		for _, c := range e.Concepts {
 			fmt.Fprintln(w, "  "+c)
 		}
+	}
+	if e.DispatchStatus != "" {
+		fmt.Fprintf(w, "dispatch_status: %s\n", e.DispatchStatus)
+	}
+	if e.EstimatedSize != "" {
+		fmt.Fprintf(w, "estimated_size: %s\n", e.EstimatedSize)
 	}
 }
 
