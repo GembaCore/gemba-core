@@ -310,6 +310,14 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/consults/{id}/apply/{idx}", r.applyConsult)
 
+		// gm-8qr: persona roster read surface. Surfaces every
+		// persona's identity + the three gm-9rv axes (Personality /
+		// Perspective / Purview). 503 until AttachPersonaDispatcher
+		// binds a registry. Read-only and additive — gm-3on / gm-jt9
+		// will extend the response with phase + active-purview state
+		// without breaking the existing shape.
+		api.Get("/v1/personas", r.listPersonasV1)
+
 		// gm-wgv: Gemba walk HTTP surface. Mounted under /api/v1/
 		// per the design's §API table; rest of /api stays unversioned
 		// for now. The "verb" routes (walks:start, walks:recent) sit

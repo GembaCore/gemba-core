@@ -342,6 +342,196 @@ func TestLoadRegistry_SeedFiles(t *testing.T) {
 	}
 }
 
+// gm-8qr: Personality + Perspective + Purview round-trip from TOML.
+// A fully-populated PPPP fixture loads successfully and every field
+// survives the decode → normalize → Validate path.
+func TestLoadFile_PPPPRoundTrips(t *testing.T) {
+	const body = `
+id = "tester"
+name = "Test"
+role = "Tester"
+description = "fixture"
+system_prompt = "You are a test."
+
+[scope]
+kind = "project"
+
+[model]
+vendor = "anthropic"
+model = "claude-haiku-4-5"
+
+[budget_policy]
+counts_against_sprint = false
+
+[personality]
+id = "laconic"
+description = "Precise and economical."
+examples = ["short", "blunt"]
+
+[perspective]
+statement = "design integrity"
+triggers = ["area:core", "edges internal/core/*"]
+volunteer_mode = "on_trigger"
+cost_tier = "haiku"
+
+[purview]
+domain = "design"
+active_phases = ["ideation", "design", "building"]
+blocking_authority = "strong"
+`
+	dir := t.TempDir()
+	path := writeFile(t, dir, "tester.toml", body)
+	p, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+
+	if p.Personality.ID != "laconic" {
+		t.Errorf("Personality.ID = %q, want laconic", p.Personality.ID)
+	}
+	if p.Personality.Description != "Precise and economical." {
+		t.Errorf("Personality.Description = %q", p.Personality.Description)
+	}
+	if got := p.Personality.Examples; len(got) != 2 || got[0] != "short" || got[1] != "blunt" {
+		t.Errorf("Personality.Examples = %v, want [short blunt]", got)
+	}
+
+	if p.Perspective.Statement != "design integrity" {
+		t.Errorf("Perspective.Statement = %q", p.Perspective.Statement)
+	}
+	if got := p.Perspective.Triggers; len(got) != 2 || got[0] != "area:core" || got[1] != "edges internal/core/*" {
+		t.Errorf("Perspective.Triggers = %v", got)
+	}
+	if p.Perspective.VolunteerMode != VolunteerOnTrigger {
+		t.Errorf("Perspective.VolunteerMode = %q, want on_trigger", p.Perspective.VolunteerMode)
+	}
+	if p.Perspective.CostTier != "haiku" {
+		t.Errorf("Perspective.CostTier = %q", p.Perspective.CostTier)
+	}
+
+	if p.Purview.Domain != "design" {
+		t.Errorf("Purview.Domain = %q", p.Purview.Domain)
+	}
+	wantPhases := []Phase{"ideation", "design", "building"}
+	if got := p.Purview.ActivePhases; len(got) != len(wantPhases) {
+		t.Errorf("Purview.ActivePhases = %v, want %v", got, wantPhases)
+	} else {
+		for i, w := range wantPhases {
+			if got[i] != w {
+				t.Errorf("Purview.ActivePhases[%d] = %q, want %q", i, got[i], w)
+			}
+		}
+	}
+	if p.Purview.BlockingAuthority != PurviewStrong {
+		t.Errorf("Purview.BlockingAuthority = %q, want strong", p.Purview.BlockingAuthority)
+	}
+}
+
+// gm-8qr: PPPP blocks are optional. Existing seed personas
+// (project-manager, documentarian) — which do NOT declare any of the
+// three blocks — must still load cleanly.
+func TestLoadRegistry_SeedFiles_PPPPZeroValueOK(t *testing.T) {
+	r, err := LoadRegistry("../../../.gemba/personas")
+	if err != nil {
+		t.Fatalf("LoadRegistry: %v", err)
+	}
+	for _, id := range []string{"project-manager", "documentarian"} {
+		p, ok := r.Get(id)
+		if !ok {
+			t.Errorf("seed persona %q missing", id)
+			continue
+		}
+		if !p.Personality.IsZero() {
+			t.Errorf("%s: Personality should be zero-value, got %+v", id, p.Personality)
+		}
+		if !p.Perspective.IsZero() {
+			t.Errorf("%s: Perspective should be zero-value, got %+v", id, p.Perspective)
+		}
+		if !p.Purview.IsZero() {
+			t.Errorf("%s: Purview should be zero-value, got %+v", id, p.Purview)
+		}
+	}
+}
+
+// gm-8qr: a declared [perspective] block without volunteer_mode
+// normalizes to "never". The empty block stays untouched (zero
+// value).
+func TestLoadFile_PerspectiveDefaultsVolunteerModeNever(t *testing.T) {
+	const fragment = `
+[perspective]
+statement = "design integrity"
+`
+	dir := t.TempDir()
+	path := writeFile(t, dir, "tester.toml", minimalTOML+fragment)
+	p, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if p.Perspective.VolunteerMode != VolunteerNever {
+		t.Errorf("Perspective.VolunteerMode = %q, want never (default)", p.Perspective.VolunteerMode)
+	}
+}
+
+// gm-8qr: a declared [purview] block without blocking_authority
+// normalizes to "advisory".
+func TestLoadFile_PurviewDefaultsAuthorityAdvisory(t *testing.T) {
+	const fragment = `
+[purview]
+domain = "docs"
+`
+	dir := t.TempDir()
+	path := writeFile(t, dir, "tester.toml", minimalTOML+fragment)
+	p, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if p.Purview.BlockingAuthority != PurviewAdvisory {
+		t.Errorf("Purview.BlockingAuthority = %q, want advisory (default)", p.Purview.BlockingAuthority)
+	}
+}
+
+// gm-8qr: malformed enum values are rejected with a caller-readable
+// error mentioning the offending field.
+func TestLoadFile_RejectsMalformedPPPPEnums(t *testing.T) {
+	cases := []struct {
+		name     string
+		fragment string
+		wantSub  string
+	}{
+		{
+			name: "unknown volunteer_mode",
+			fragment: `
+[perspective]
+statement = "x"
+volunteer_mode = "sometimes"
+`,
+			wantSub: "volunteer_mode",
+		},
+		{
+			name: "unknown blocking_authority",
+			fragment: `
+[purview]
+domain = "x"
+blocking_authority = "veto"
+`,
+			wantSub: "blocking_authority",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := writeFile(t, dir, "tester.toml", minimalTOML+tc.fragment)
+			_, err := LoadFile(path)
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("error = %v, want substring %q", err, tc.wantSub)
+			}
+		})
+	}
+}
+
 func TestLoadRegistry_SourcePath(t *testing.T) {
 	dir := t.TempDir()
 	path := writeFile(t, dir, "tester.toml", minimalTOML)
