@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/MikeBengtson/gemba/internal/skills/walk_summary"
 	"github.com/MikeBengtson/gemba/internal/walk"
 )
 
@@ -529,6 +531,80 @@ func (f fakeWorkItemLister) ListWorkItems(_ context.Context, filter core.WorkIte
 		}
 	}
 	return nil, nil
+}
+
+// gm-77u: when a walk_summary skill is attached, ending a walk
+// produces a markdown artifact under docs/walks/ and the End SSE
+// event payload carries the absolute path. Validates both the
+// integration (handler → skill) and the SSE payload contract the
+// SPA's preview pane will read.
+func TestEndWalk_InvokesWalkSummarySkill(t *testing.T) {
+	r, store, ch := newWalkRouter(t)
+	tmpRoot := t.TempDir()
+	r.AttachWalkSummary(walk_summary.New(walk_summary.NewApplier(tmpRoot)))
+
+	wk, _ := store.Start(context.Background(), walk.StartParams{
+		Workspace:   "ws",
+		Label:       "Sprint retro",
+		InitiatedBy: "op",
+	})
+
+	req := walkReq(t, http.MethodPost, "/api/v1/walks/"+string(wk.ID)+"/end", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("end: want 200, got %d body=%q", rec.Code, rec.Body.String())
+	}
+
+	ev := drainWalkEvent(t, ch, kindWalkEnded)
+	got, _ := ev.Payload["summary_path"].(string)
+	if got == "" {
+		t.Fatalf("expected summary_path in payload, got %v", ev.Payload)
+	}
+	if !strings.HasPrefix(got, tmpRoot) {
+		t.Errorf("summary_path %q not under tmp root %q", got, tmpRoot)
+	}
+	if !strings.HasSuffix(got, "-sprint-retro.md") {
+		t.Errorf("summary_path suffix unexpected: %q", got)
+	}
+	body, err := os.ReadFile(got)
+	if err != nil {
+		t.Fatalf("read summary: %v", err)
+	}
+	if !strings.Contains(string(body), "Sprint retro") {
+		t.Errorf("summary missing label: %q", body)
+	}
+}
+
+// A render failure (or any other walk_summary error) MUST NOT fail
+// the End response — the store transition has already committed.
+// The SSE event still fires; the summary_path is simply omitted.
+func TestEndWalk_SkillFailureDoesNotBreakEnd(t *testing.T) {
+	r, store, ch := newWalkRouter(t)
+	// Applier configured with a path that points at a *file*
+	// (existing temp file), so MkdirAll will fail when the skill
+	// tries to create docs/ underneath it.
+	tmpRoot := t.TempDir()
+	bogusRoot := tmpRoot + "/file-not-dir"
+	if err := os.WriteFile(bogusRoot, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r.AttachWalkSummary(walk_summary.New(walk_summary.NewApplier(bogusRoot)))
+
+	wk, _ := store.Start(context.Background(), walk.StartParams{
+		Workspace: "ws", InitiatedBy: "op",
+	})
+
+	req := walkReq(t, http.MethodPost, "/api/v1/walks/"+string(wk.ID)+"/end", nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("end should still 200 on skill failure: got %d body=%q", rec.Code, rec.Body.String())
+	}
+	ev := drainWalkEvent(t, ch, kindWalkEnded)
+	if _, ok := ev.Payload["summary_path"]; ok {
+		t.Errorf("summary_path should be omitted on failure: %v", ev.Payload)
+	}
 }
 
 func TestStartWalk_AgendaFromSources(t *testing.T) {

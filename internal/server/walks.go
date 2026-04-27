@@ -43,6 +43,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -52,6 +53,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/MikeBengtson/gemba/internal/skills/walk_summary"
 	"github.com/MikeBengtson/gemba/internal/walk"
 )
 
@@ -87,6 +89,16 @@ const (
 func (r *Router) AttachWalk(store walk.Store, sources walk.Sources) {
 	r.walkStore = store
 	r.walkSources = sources
+}
+
+// AttachWalkSummary binds the Documentarian's walk_summary skill
+// (gm-77u). When attached, the End handler invokes Run after the
+// store transition so a markdown artifact lands under
+// docs/walks/<date>-<slug>.md. Pass nil to disable — the End
+// handler still records the transition and emits the SSE event,
+// just without producing the artifact.
+func (r *Router) AttachWalkSummary(s *walk_summary.Skill) {
+	r.walkSummary = s
 }
 
 // publishWalkEvent emits one walk.* GembaEvent through the hub. No-op
@@ -518,13 +530,32 @@ func (r *Router) endWalk(w http.ResponseWriter, req *http.Request) {
 		writeWalkError(w, err)
 		return
 	}
-	// TODO(gm-77u): generate the markdown summary artifact via the
-	// Documentarian walk-summary skill. For now we just record the
-	// transition.
-	r.publishWalkEvent(kindWalkEnded, wk, map[string]any{
+	// gm-77u: invoke the Documentarian walk-summary skill. Runs
+	// unconditionally when attached (rather than gating on persona
+	// membership) — every completed walk produces the same summary
+	// artifact whether or not Documentarian assisted, which keeps
+	// the operator-facing contract simple. Best-effort: a render or
+	// write failure is logged but does not fail the End response —
+	// the store transition has already committed and the SSE event
+	// is what subscribers depend on.
+	summaryPath := ""
+	if r.walkSummary != nil {
+		_, abs, sumErr := r.walkSummary.Run(ctx, wk, time.Now().UTC())
+		if sumErr != nil {
+			slog.Warn("walk_summary: render/write failed",
+				"walk_id", wk.ID, "err", sumErr)
+		} else {
+			summaryPath = abs
+		}
+	}
+	payload := map[string]any{
 		"decisions_total": len(wk.Decisions),
 		"agenda_total":    len(wk.Agenda),
-	})
+	}
+	if summaryPath != "" {
+		payload["summary_path"] = summaryPath
+	}
+	r.publishWalkEvent(kindWalkEnded, wk, payload)
 	writeJSON(w, http.StatusOK, wk)
 }
 

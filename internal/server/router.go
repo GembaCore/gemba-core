@@ -20,6 +20,7 @@ import (
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/MikeBengtson/gemba/internal/skills/walk_summary"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/MikeBengtson/gemba/internal/walk"
 )
@@ -98,6 +99,12 @@ type Router struct {
 	// escalation aggregator. Bind via Router.AttachWalk.
 	walkStore   walk.Store
 	walkSources walk.Sources
+
+	// walkSummary is the Documentarian post-end artifact skill
+	// (gm-77u). Optional — when nil, /api/v1/walks/{id}/end records
+	// the transition and emits the SSE event but does not write the
+	// markdown summary. Bind via Router.AttachWalkSummary.
+	walkSummary *walk_summary.Skill
 
 	mux http.Handler
 }
