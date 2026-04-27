@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/MikeBengtson/gemba/internal/core/projectshape"
 )
 
 // fakeSkill is the test-only skill stand-in. The full epic_order
@@ -230,6 +231,75 @@ func TestCompose_InputMustMarshal(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "marshal input") {
 		t.Errorf("err = %v, want marshal-input wrap", err)
+	}
+}
+
+func TestCompose_ProjectShapeInjectedIntoProjectValuesLayer(t *testing.T) {
+	// gm-4uso: an active shape's Render() lands in the project-
+	// values layer so every persona consult sees the same shape
+	// framing for free.
+	shape, err := projectshape.DefaultRegistry().Resolve("two-tier-spa")
+	if err != nil {
+		t.Fatalf("resolve seed: %v", err)
+	}
+	req := ComposeRequest{
+		Persona:       samplePersona(),
+		Skill:         fakeSkill{id: "epic_order", prompt: "rank epics"},
+		Template:      TemplateValues{WorkspaceName: "Gemba", Role: "PM", ProjectPrefix: "gm"},
+		Input:         map[string]any{},
+		ProjectValues: []string{"transparency"},
+		ProjectShape:  shape,
+	}
+	got, err := Compose(req)
+	if err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+	if !strings.Contains(got.System, "Project shape: two-tier-spa") {
+		t.Errorf("system missing shape header:\n%s", got.System)
+	}
+	// Tier list should land verbatim — coaches scope advice off it.
+	if !strings.Contains(got.System, "spa frontend") {
+		t.Errorf("system missing shape tiers:\n%s", got.System)
+	}
+	// The pre-existing project value MUST still ride along.
+	if !strings.Contains(got.System, "transparency") {
+		t.Errorf("system dropped existing project value:\n%s", got.System)
+	}
+	// And the layer must be the project-values layer specifically.
+	foundShapeInValues := false
+	for _, d := range got.Diagnostics {
+		if string(d.Layer) == "project_values" && strings.Contains(d.Text, "Project shape: two-tier-spa") {
+			foundShapeInValues = true
+			break
+		}
+	}
+	if !foundShapeInValues {
+		t.Errorf("shape rendered outside project_values layer; diagnostics: %+v", got.Diagnostics)
+	}
+}
+
+func TestCompose_NoProjectShapeOmitsCleanly(t *testing.T) {
+	// gm-4uso fallback: a zero-value Shape contributes nothing.
+	// The project-values layer is unchanged from what the caller
+	// supplied (or absent entirely if the caller supplied nothing).
+	req := ComposeRequest{
+		Persona:  samplePersona(),
+		Skill:    fakeSkill{id: "epic_order", prompt: "rank"},
+		Template: TemplateValues{WorkspaceName: "Gemba"},
+		Input:    map[string]any{},
+		// ProjectShape omitted (zero value).
+	}
+	got, err := Compose(req)
+	if err != nil {
+		t.Fatalf("Compose: %v", err)
+	}
+	if strings.Contains(got.System, "Project shape:") {
+		t.Errorf("zero shape should not emit shape header:\n%s", got.System)
+	}
+	for _, d := range got.Diagnostics {
+		if string(d.Layer) == "project_values" {
+			t.Errorf("zero shape unexpectedly produced a project_values layer: %q", d.Text)
+		}
 	}
 }
 
