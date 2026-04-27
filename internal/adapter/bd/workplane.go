@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MikeBengtson/gemba/core"
@@ -60,6 +61,12 @@ type WorkPlane struct {
 	descriptionFormat string
 	emitter           *core.WorkPlaneEmitter
 	repos             *core.RepositoryRegistry // gm-d2ts; nil = no prefix routing
+	// beadsDir is the workspace root the bd subprocess runs in. Empty
+	// for tests built via NewWorkPlaneWithRunner. The fsnotify watcher
+	// (gm-e6.6) attaches to <beadsDir>/.beads when this is set.
+	beadsDir    string
+	watcherOnce sync.Once
+	watcherStop func()
 }
 
 // NewWorkPlane returns a WorkPlane shelling to the `bd` binary on PATH.
@@ -92,6 +99,7 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 		descriptionFormat: format,
 		emitter:           core.NewWorkPlaneEmitter(),
 		repos:             cfg.Repositories,
+		beadsDir:          beadsDir,
 	}, nil
 }
 
@@ -574,7 +582,21 @@ func (w *WorkPlane) ReadBudgetRollup(_ context.Context, _ string) (core.BudgetRo
 // /events SSE hub attach and fan out the subset it does see today.
 // gm-e4.3.1.
 func (w *WorkPlane) Subscribe(ctx context.Context, f core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	// gm-e6.6: lazy-start the fsnotify+poll watcher so out-of-process
+	// `bd update` calls still propagate to subscribers. No-op when the
+	// adaptor was built without a beadsDir (test runners).
+	w.startBeadsWatcher()
 	return w.emitter.Subscribe(ctx, f), nil
+}
+
+// Close releases the fsnotify watcher and any background polling
+// goroutines. Idempotent; safe to call from a test cleanup or from
+// the `gemba serve` shutdown path. Subscribers attached via the
+// emitter remain — their channels close on their own context cancel
+// per the in-emitter contract.
+func (w *WorkPlane) Close() error {
+	w.stopBeadsWatcher()
+	return nil
 }
 
 // NotifyExternal publishes a workitem.* event for a mutation that
