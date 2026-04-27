@@ -24,6 +24,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/native"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
+	"github.com/MikeBengtson/gemba/internal/adapter/noop"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/core"
@@ -111,6 +112,11 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"mysql://user[:pass]@host:port/dbname of a Dolt server to read "+
 			"beads directly (read-only; required unless --beads-dir is "+
 			"set; mutually exclusive with it)")
+
+	cmd.Flags().BoolVar(&cfg.Noop, "noop", false,
+		"bind the in-memory noop reference WorkPlane + OrchestrationPlane "+
+			"(dev/demo; mutually exclusive with --beads-dir / --dolt-url; "+
+			"forces --orchestration=noop)")
 
 	// Flag name copied verbatim from Claude Code. Do not rename or soften.
 	cmd.Flags().BoolVar(&cfg.DangerouslySkipPermissions,
@@ -430,10 +436,43 @@ func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*workPlaneR
 	if err != nil {
 		return nil, err
 	}
+	if cfg.Noop {
+		return registerNoopWorkPlane(ctx, host, sh)
+	}
 	if cfg.DoltURL != "" {
 		return registerDoltWorkPlane(ctx, host, cfg, sh)
 	}
 	return registerBeadsWorkPlane(ctx, host, cfg, sh)
+}
+
+// registerNoopWorkPlane binds the in-memory reference WorkPlane (gm-e3.7).
+// Used by `gemba serve --noop` for SPA development, demos, and conformance
+// smoke-testing — the noop adaptor itself is exercised by the conformance
+// harness in internal/adapter/noop and testing/.
+func registerNoopWorkPlane(ctx context.Context, host *api.Host, sh core.Shader) (*workPlaneReg, error) {
+	adaptor := noop.NewWorkPlaneWithTransport(core.TransportAPI)
+	wrapped := shader.Wrap(adaptor, sh)
+	reg, err := host.RegisterWorkPlane(ctx, wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("register noop workplane: %w", err)
+	}
+	manifest, err := wrapped.Describe(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("describe noop workplane: %w", err)
+	}
+	slog.Info("workplane adaptor registered",
+		"adaptor", reg.AdaptorName,
+		"version", reg.AdaptorVersion,
+		"protocol", reg.ProtocolVersion,
+		"transport", reg.Transport,
+		"mode", "noop")
+	return &workPlaneReg{
+		Host:       host,
+		Manifest:   manifest,
+		Mode:       "noop",
+		SourceKind: "memory",
+		Source:     "in-memory reference adaptor",
+	}, nil
 }
 
 // buildShader resolves the orchestrator config (gm-root.4) and
@@ -556,14 +595,41 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 // fresh installs; pass --orchestration=none (or empty) to disable
 // the plane explicitly.
 func registerOrchestrationPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig) error {
-	switch cfg.Orchestration {
+	mode := cfg.Orchestration
+	// --noop short-circuits the orchestration selector. The noop reference
+	// plane has no real spawn surface — it just maintains in-memory state
+	// for the SPA / harness.
+	if cfg.Noop {
+		mode = "noop"
+	}
+	switch mode {
 	case "", "none":
 		return nil
+	case "noop":
+		return registerNoopOrchestration(ctx, host)
 	case "native":
 		return registerNativeOrchestration(ctx, host, cfg)
 	default:
-		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native', 'none', or empty)", cfg.Orchestration)
+		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native', 'noop', 'none', or empty)", cfg.Orchestration)
 	}
+}
+
+// registerNoopOrchestration binds the in-memory reference OrchestrationPlane
+// (gm-e3.7). Companion to registerNoopWorkPlane — together these unblock
+// SPA development without a real backend.
+func registerNoopOrchestration(ctx context.Context, host *api.Host) error {
+	plane := noop.NewOrchestrationPlaneWithTransport(core.TransportAPI)
+	reg, err := host.RegisterOrchestrationPlane(ctx, plane)
+	if err != nil {
+		return fmt.Errorf("register noop orchestration: %w", err)
+	}
+	slog.Info("orchestration plane registered",
+		"adaptor", reg.AdaptorName,
+		"version", reg.AdaptorVersion,
+		"protocol", reg.ProtocolVersion,
+		"transport", reg.Transport,
+		"mode", "noop")
+	return nil
 }
 
 // registerNativeOrchestration wires the native adaptor end-to-end

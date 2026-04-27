@@ -13,19 +13,42 @@ import (
 // gated off; the adaptor then fails fast with capability_denied on the
 // corresponding methods. This is the canonical shape a new adaptor
 // starts from before it opts into extension features.
+//
+// Transport is configurable via NewWorkPlaneWithTransport because the
+// noop adaptor serves two callers with different wire expectations:
+// the conformance CLI (`gemba adaptor test`) drives it over jsonl, and
+// `gemba serve --noop` registers it on the api host. Defaulting to
+// jsonl preserves the conformance harness's existing wiring; the serve
+// path opts into TransportAPI explicitly.
 type WorkPlane struct {
-	mu    sync.Mutex
-	items map[core.WorkItemID]core.WorkItem
+	mu       sync.Mutex
+	items    map[core.WorkItemID]core.WorkItem
+	manifest core.CapabilityManifest
 }
 
-// NewWorkPlane returns a WorkPlane with an empty in-memory store.
+// NewWorkPlane returns a WorkPlane with an empty in-memory store and
+// the default jsonl transport. Use NewWorkPlaneWithTransport when
+// binding to a different transport host (e.g. the api Host).
 func NewWorkPlane() *WorkPlane {
-	return &WorkPlane{items: make(map[core.WorkItemID]core.WorkItem)}
+	return NewWorkPlaneWithTransport(core.TransportJSONL)
+}
+
+// NewWorkPlaneWithTransport returns a WorkPlane whose manifest declares
+// the given transport. Used by `gemba serve --noop` to bind on the api
+// host (gm-e3.7) without the transport-mismatch guard rejecting the
+// registration.
+func NewWorkPlaneWithTransport(t core.Transport) *WorkPlane {
+	m := defaultWorkPlaneManifest
+	m.Transport = t
+	return &WorkPlane{
+		items:    make(map[core.WorkItemID]core.WorkItem),
+		manifest: m,
+	}
 }
 
 var _ core.WorkPlane = (*WorkPlane)(nil)
 
-var noopWorkPlaneManifest = core.CapabilityManifest{
+var defaultWorkPlaneManifest = core.CapabilityManifest{
 	AdaptorName:     "noop",
 	AdaptorVersion:  "0.1.0",
 	ProtocolVersion: core.ProtocolVersion,
@@ -41,7 +64,7 @@ var noopWorkPlaneManifest = core.CapabilityManifest{
 }
 
 func (w *WorkPlane) Describe(context.Context) (core.CapabilityManifest, error) {
-	return noopWorkPlaneManifest, nil
+	return w.manifest, nil
 }
 
 func (w *WorkPlane) ListWorkItems(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
@@ -99,15 +122,15 @@ func (w *WorkPlane) UpdateWorkItem(
 }
 
 func (w *WorkPlane) AttachEvidence(_ context.Context, _ core.WorkItemID, _ core.Evidence) error {
-	return core.EnforceCapability(noopWorkPlaneManifest, core.OpAttachEvidence)
+	return core.EnforceCapability(w.manifest, core.OpAttachEvidence)
 }
 
 func (w *WorkPlane) ListSprints(_ context.Context) ([]core.Sprint, error) {
-	return nil, core.EnforceCapability(noopWorkPlaneManifest, core.OpListSprints)
+	return nil, core.EnforceCapability(w.manifest, core.OpListSprints)
 }
 
 func (w *WorkPlane) ReadBudgetRollup(_ context.Context, _ string) (core.BudgetRollup, error) {
-	return core.BudgetRollup{}, core.EnforceCapability(noopWorkPlaneManifest, core.OpReadBudgetRollup)
+	return core.BudgetRollup{}, core.EnforceCapability(w.manifest, core.OpReadBudgetRollup)
 }
 
 // Subscribe returns ErrUnsupported — the noop adaptor doesn't emit

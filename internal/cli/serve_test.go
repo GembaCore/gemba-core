@@ -165,7 +165,7 @@ func TestServe_RejectsTLSSelfSignedWithCertKey(t *testing.T) {
 // half of the WorkPlane selector contract at the CLI layer. Running
 // `gemba serve` with no adaptor flag has no WorkPlane to expose, so
 // the rejection must happen before the listener opens and must point
-// the operator at both flag names.
+// the operator at all three selector flag names.
 func TestServe_RejectsNeitherBeadsDirNorDoltURL(t *testing.T) {
 	cmd := newServeCmd(BuildInfo{})
 	var out bytes.Buffer
@@ -179,9 +179,38 @@ func TestServe_RejectsNeitherBeadsDirNorDoltURL(t *testing.T) {
 	if !strings.Contains(err.Error(), "no WorkPlane selected") {
 		t.Errorf("error must name the condition; got %q", err.Error())
 	}
-	for _, want := range []string{"--beads-dir", "--dolt-url"} {
+	for _, want := range []string{"--beads-dir", "--dolt-url", "--noop"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error missing %q; got %q", want, err.Error())
 		}
+	}
+}
+
+// TestServe_NoopFlagAccepted pins the --noop flag's presence on the serve
+// command (gm-e3.7). The reference adaptors themselves are exercised by
+// the conformance harness; this test just guards the flag surface.
+func TestServe_NoopFlagAccepted(t *testing.T) {
+	cmd := newServeCmd(BuildInfo{})
+	if cmd.Flags().Lookup("noop") == nil {
+		t.Fatal("--noop flag missing from serve command")
+	}
+}
+
+// TestServe_NoopRejectsBeadsDir pins the mutex between --noop and the
+// real WorkPlane selectors. The noop adaptor is itself a complete
+// WorkPlane — pairing it with --beads-dir would force the server to
+// pick one and silently ignore the other, so we reject up front.
+func TestServe_NoopRejectsBeadsDir(t *testing.T) {
+	cmd := newServeCmd(BuildInfo{})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--noop", "--beads-dir", "/tmp"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "--noop is mutually exclusive") {
+		t.Errorf("error must mention --noop mutex; got %q", err.Error())
 	}
 }

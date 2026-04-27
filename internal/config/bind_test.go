@@ -288,6 +288,9 @@ func TestValidateWorkPlaneFlags(t *testing.T) {
 		{"only beads-dir", ServeConfig{BeadsDir: "/tmp/gm"}, ""},
 		{"only dolt-url", ServeConfig{DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, ""},
 		{"both set", ServeConfig{BeadsDir: "/tmp/gm", DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, "mutually exclusive"},
+		{"noop alone", ServeConfig{Noop: true}, ""},
+		{"noop with beads-dir", ServeConfig{Noop: true, BeadsDir: "/tmp/gm"}, "--noop is mutually exclusive"},
+		{"noop with dolt-url", ServeConfig{Noop: true, DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, "--noop is mutually exclusive"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -440,6 +443,13 @@ func TestBeadsSource(t *testing.T) {
 			name:     "unconfigured",
 			cfg:      ServeConfig{},
 			wantKind: "unconfigured",
+		},
+		{
+			name:       "noop",
+			cfg:        ServeConfig{Noop: true},
+			wantKind:   "noop",
+			wantLabel:  "noop",
+			wantDetail: "in-memory reference adaptor",
 		},
 	}
 	for _, tc := range cases {

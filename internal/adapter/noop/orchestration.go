@@ -35,14 +35,30 @@ type OrchestrationPlane struct {
 	// rather than block the mutator.
 	subscribers []chan core.OrchestrationEvent
 	seq         int
+	// manifest is per-instance so NewOrchestrationPlaneWithTransport can
+	// override Transport without mutating package state (gm-e3.7).
+	manifest core.OrchestrationCapabilityManifest
 }
 
-// NewOrchestrationPlane returns a OrchestrationPlane with empty stores.
+// NewOrchestrationPlane returns an OrchestrationPlane with empty stores
+// and the default jsonl transport. Use NewOrchestrationPlaneWithTransport
+// when binding to a different transport host (e.g. the api Host).
 func NewOrchestrationPlane() *OrchestrationPlane {
+	return NewOrchestrationPlaneWithTransport(core.TransportJSONL)
+}
+
+// NewOrchestrationPlaneWithTransport returns an OrchestrationPlane whose
+// manifest declares the given transport. Used by `gemba serve --noop` to
+// bind on the api host (gm-e3.7) without the transport-mismatch guard
+// rejecting the registration.
+func NewOrchestrationPlaneWithTransport(t core.Transport) *OrchestrationPlane {
+	m := defaultOrchestrationManifest
+	m.Transport = t
 	return &OrchestrationPlane{
 		assignments:   make(map[string]core.Assignment),
 		sessions:      make(map[string]*core.Session),
 		closureNonces: make(map[string]core.ConfirmNonce),
+		manifest:      m,
 	}
 }
 
@@ -69,7 +85,7 @@ func (o *OrchestrationPlane) publish(ev core.OrchestrationEvent) {
 
 var _ core.OrchestrationPlaneAdaptor = (*OrchestrationPlane)(nil)
 
-var noopOrchestrationManifest = core.OrchestrationCapabilityManifest{
+var defaultOrchestrationManifest = core.OrchestrationCapabilityManifest{
 	AdaptorID:               "noop",
 	AdaptorVersion:          "0.1.0",
 	OrchestrationAPIVersion: core.ProtocolVersion,
@@ -98,7 +114,7 @@ func (o *OrchestrationPlane) CreateAssignment(a core.Assignment) {
 }
 
 func (o *OrchestrationPlane) Describe() core.OrchestrationCapabilityManifest {
-	return noopOrchestrationManifest
+	return o.manifest
 }
 
 func (o *OrchestrationPlane) DeclaredState(context.Context) (core.WorkspaceTopology, error) {

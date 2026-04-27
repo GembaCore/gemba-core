@@ -50,6 +50,14 @@ type ServeConfig struct {
 	// exclusive with BeadsDir.
 	DoltURL string
 
+	// Noop, when true, binds the in-memory noop reference adaptors for
+	// both the WorkPlane and OrchestrationPlane (gm-e3.7). Intended for
+	// SPA development, demos, and conformance smoke-testing. Mutually
+	// exclusive with BeadsDir / DoltURL because the noop WorkPlane is
+	// itself a complete adaptor — there is no backend behind it.
+	// When set, --orchestration is forced to "noop".
+	Noop bool
+
 	// ConfigPath is an explicit gemba.toml override. Empty means "probe
 	// the standard locations." File loading lands with a later bead;
 	// serve threads the path through today so the flag surface is stable.
@@ -199,6 +207,15 @@ func (c ServeConfig) TLSEnabled() bool {
 // actionable message instead of a later cryptic failure from the
 // adaptor layer.
 func (c ServeConfig) ValidateWorkPlaneFlags() error {
+	if c.Noop && (c.BeadsDir != "" || c.DoltURL != "") {
+		return fmt.Errorf(
+			"--noop is mutually exclusive with --beads-dir and --dolt-url; " +
+				"the noop adaptor is itself a complete in-memory WorkPlane\n" +
+				"  drop --beads-dir / --dolt-url, or drop --noop")
+	}
+	if c.Noop {
+		return nil
+	}
 	if c.BeadsDir != "" && c.DoltURL != "" {
 		return fmt.Errorf(
 			"--beads-dir and --dolt-url are mutually exclusive; " +
@@ -208,10 +225,11 @@ func (c ServeConfig) ValidateWorkPlaneFlags() error {
 	}
 	if c.BeadsDir == "" && c.DoltURL == "" {
 		return fmt.Errorf(
-			"no WorkPlane selected; pass --beads-dir <path> or " +
-				"--dolt-url <mysql://...>\n" +
+			"no WorkPlane selected; pass --beads-dir <path>, " +
+				"--dolt-url <mysql://...>, or --noop\n" +
 				"  --beads-dir <path>          route through the bd CLI (reads + writes)\n" +
-				"  --dolt-url <mysql://...>    direct read-only SQL to a Dolt server")
+				"  --dolt-url <mysql://...>    direct read-only SQL to a Dolt server\n" +
+				"  --noop                      bind in-memory reference adaptors (dev/demo)")
 	}
 	return nil
 }
@@ -284,6 +302,9 @@ type BeadsSource struct {
 // "unconfigured" branch is reached only by tests that build a ServeConfig
 // directly.
 func (c ServeConfig) BeadsSource() BeadsSource {
+	if c.Noop {
+		return BeadsSource{Kind: "noop", Label: "noop", Detail: "in-memory reference adaptor"}
+	}
 	if c.BeadsDir != "" {
 		return BeadsSource{
 			Kind:   "beads-dir",
