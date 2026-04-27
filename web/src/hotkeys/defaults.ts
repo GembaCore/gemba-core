@@ -149,6 +149,31 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
     description: 'Toggle PM panel',
     category: 'drawer',
   },
+  // gm-96l: open-and-focus is a separate id from toggle so the
+  // operator can summon a fresh prompt input without first
+  // collapsing an already-open panel. Cmd+K is reserved for the
+  // command palette (PaletteContext owns it); the bead spec asks
+  // for Cmd+K → focus PM input but the palette precedent wins
+  // here. The new chord is Cmd+Shift+K — close enough to muscle
+  // memory that an operator typing 'PM panel' lands on it without
+  // a docs lookup.
+  {
+    id: 'pm-panel-focus-input',
+    keys: ['Mod+Shift+K'],
+    description: 'PM panel: open and focus input',
+    category: 'drawer',
+  },
+  // gm-96l: cycle the active persona forward (palette-style). The
+  // bead spec asks for Cmd+P; that chord already toggles the panel
+  // (and the existing test pins it). Use Alt+P so the cycle never
+  // shadows toggle — both can ship without one having to become a
+  // chord prefix.
+  {
+    id: 'pm-panel-cycle-persona',
+    keys: ['Alt+p'],
+    description: 'PM panel: cycle persona',
+    category: 'drawer',
+  },
   // PM panel collapse rides on the existing 'drawer-close' id rather
   // than a separate registration. The matcher fires the FIRST chord
   // match — registering two ids for the same chord would mean only

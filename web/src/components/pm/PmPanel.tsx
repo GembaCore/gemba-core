@@ -1,100 +1,128 @@
-// PM panel (gm-uipx.12) — bottom drawer per ui-spec §2.4.
+// PM panel — always-available right-side advisor surface (gm-96l).
 //
-// Collapsed: nothing renders in the layout flow; the trigger is the
-// Topbar PM-toggle button. Expanded: a fixed-bottom drawer that
-// overlays content (operator can still scroll the page underneath
-// because the panel has its own height and z-index, not a layout
-// shift).
+// Originally shipped as a bottom drawer (gm-uipx.12). gm-96l
+// flips the surface to a 320px right-edge panel with a permanent
+// chevron handle that's visible whether the panel is collapsed or
+// expanded — the operator never has to hunt for the entry point.
 //
-// State lives in PmPanelContext; this file is the pure render layer.
+// Layout:
+//
+//   collapsed → only the ChevronHandle renders (right edge, 24px wide)
+//   expanded  → ChevronHandle + 320px panel containing
+//                  Header (persona dropdown, cost, close)
+//                  Quick actions (view-aware row)
+//                  Conversation OR Walk takeover
+//                  Input
+//
+// Behaviour:
+//   - Collapsed by default; open-state persisted across reloads.
+//   - View-aware quick actions driven by react-router's pathname.
+//   - Variety-aware labelling — Coach personas get 'Ask <name>',
+//     Manager personas get 'Consult <name>'.
+//   - Hotkeys: Mod+P toggle, Mod+Shift+K open-and-focus, Alt+P
+//     cycle persona, Esc collapse. Wired through the gm-7hj
+//     hotkey registry, not raw window listeners.
+//   - Persistent conversation across nav (PmPanelContext +
+//     localStorage gemba.pm-panel.transcript).
 
 import { useEffect, useRef } from 'react';
-import { CheckCircle2, MessageSquare, X } from 'lucide-react';
+import { CheckCircle2, ChevronLeft, ChevronRight, MessageSquare, X } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
 import { useHotkey } from '@/hotkeys';
 import { cn } from '@/lib/utils';
 import { totalCost, usePmPanel } from './PmPanelContext';
-import type { Turn } from './types';
+import {
+  labelPrefixForVariety,
+  quickActionsForPath,
+  type QuickAction as QuickActionDef,
+} from './quickActions';
+import type { Persona, Turn } from './types';
 
-// Drag handle dimensions. The handle is the top edge of the drawer;
-// drag-up grows the panel (within 25%-75% of viewport).
-const DRAG_HANDLE_PX = 4;
+// PANEL_WIDTH_PX is the bead-spec 320px canonical width. Surfaced
+// as a constant so AppShell can offset main content when the
+// workspace mode wants push-not-overlay behaviour.
+export const PM_PANEL_WIDTH_PX = 320;
 
-export function PmPanel(): JSX.Element | null {
+export function PmPanel(): JSX.Element {
   const panel = usePmPanel();
 
-  // Cmd-P / Ctrl-P toggle. Browsers reserve Cmd-P for print so this
-  // is best-effort like Cmd-Shift-W and Cmd-Shift-L; the in-page
-  // toggle button (Topbar) is the authoritative path.
+  // Cmd-Shift-P toggle (browsers reserve Cmd-P for print so the
+  // canonical chord here lands as Cmd-Shift-P; see the matcher
+  // canonicalisation in hotkeys/keys.ts).
   useHotkey('pm-panel-toggle', () => {
     panel.toggle();
   });
-  // Escape collapses without losing conversation per ui-spec §2.4.
-  // Rides on the shared 'drawer-close' id; gate on panel.open so we
-  // don't compete with other Esc consumers (HelpOverlay, drawers).
+  // gm-96l: Cmd-Shift-K opens the panel AND focuses the input.
+  useHotkey('pm-panel-focus-input', () => {
+    panel.openAndFocus();
+  });
+  // gm-96l: Alt-P cycles the active persona forward.
+  useHotkey('pm-panel-cycle-persona', () => {
+    panel.cyclePersona(1);
+  });
+  // Escape collapses without losing conversation per ui-spec §2.4
+  // and gm-96l. Gated on panel.open so a closed panel doesn't
+  // shadow other Esc consumers (HelpOverlay, drawers).
   useHotkey('drawer-close', () => {
     if (panel.open) panel.setOpen(false);
   });
 
-  if (!panel.open) return null;
+  return (
+    <>
+      <ChevronHandle />
+      {panel.open ? <ExpandedPanel /> : null}
+    </>
+  );
+}
 
+// ChevronHandle is the always-visible right-edge entry point.
+// Click toggles the panel. Anchored at top-right under the topbar
+// so it doesn't fight the workspace pill or theme toggle.
+function ChevronHandle(): JSX.Element {
+  const panel = usePmPanel();
+  return (
+    <button
+      type="button"
+      data-testid="pm-panel-chevron"
+      data-hotkey-target="pm-panel-chevron"
+      aria-label={panel.open ? 'Collapse PM panel' : 'Expand PM panel'}
+      aria-expanded={panel.open}
+      onClick={panel.toggle}
+      className={cn(
+        'fixed right-0 top-1/2 z-30 flex -translate-y-1/2 items-center justify-center',
+        'h-16 w-6 rounded-l-md border border-r-0 border-neutral-200 bg-white shadow-sm',
+        'text-neutral-500 hover:bg-sky-50 hover:text-sky-700',
+        'dark:border-neutral-800 dark:bg-neutral-950 dark:hover:bg-sky-950 dark:hover:text-sky-300',
+        // When the panel is open the handle slides left so it sits
+        // flush with the panel's left edge — same chevron, same
+        // hit target, just translated.
+        panel.open && 'right-[320px]'
+      )}
+      style={panel.open ? { right: PM_PANEL_WIDTH_PX } : undefined}
+    >
+      {panel.open ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+    </button>
+  );
+}
+
+function ExpandedPanel(): JSX.Element {
+  const panel = usePmPanel();
   return (
     <section
       role="complementary"
       aria-label="Project Manager panel"
       data-testid="pm-panel"
-      style={{ height: panel.heightPx }}
+      style={{ width: PM_PANEL_WIDTH_PX }}
       className={cn(
-        'fixed inset-x-0 bottom-0 z-30 flex flex-col border-t border-neutral-200 bg-white shadow-2xl',
+        'fixed right-0 top-0 z-30 flex h-full flex-col border-l border-neutral-200 bg-white shadow-2xl',
         'dark:border-neutral-800 dark:bg-neutral-950'
       )}
     >
-      <DragHandle />
       <PmPanelHeader />
+      <QuickActionRow />
       {panel.walkActive ? <WalkTakeover /> : <ConversationView />}
       <PmPanelInput />
     </section>
-  );
-}
-
-function DragHandle(): JSX.Element {
-  const panel = usePmPanel();
-  const startY = useRef<number | null>(null);
-  const startH = useRef<number>(0);
-
-  useEffect(() => {
-    if (startY.current == null) return;
-    const onMove = (e: PointerEvent) => {
-      if (startY.current == null) return;
-      const dy = startY.current - e.clientY; // up = positive
-      panel.setHeightPx(startH.current + dy);
-    };
-    const onUp = () => {
-      startY.current = null;
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-  }, [panel]);
-
-  return (
-    <div
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize PM panel"
-      data-testid="pm-panel-drag"
-      style={{ height: DRAG_HANDLE_PX }}
-      className="cursor-ns-resize border-b border-transparent bg-neutral-100 hover:bg-sky-300 dark:bg-neutral-800 dark:hover:bg-sky-700"
-      onPointerDown={(e) => {
-        e.preventDefault();
-        startY.current = e.clientY;
-        startH.current = panel.heightPx;
-      }}
-    />
   );
 }
 
@@ -144,8 +172,6 @@ function PersonaDropdown(): JSX.Element {
 function CostDisplay(): JSX.Element {
   const panel = usePmPanel();
   const total = totalCost(panel.turns);
-  // Per-turn cost on hover surfaces in TurnView via title attribute.
-  // Header just shows the running session total.
   return (
     <span
       data-testid="pm-panel-cost"
@@ -154,6 +180,78 @@ function CostDisplay(): JSX.Element {
     >
       ${total.toFixed(2)} this session
     </span>
+  );
+}
+
+// QuickActionRow — view-aware buttons at the top of the panel
+// body. Driven by quickActionsForPath; variety-aware via the
+// active persona's kind. Empty arrays render nothing (e.g. on
+// /walk where the takeover owns the body).
+function QuickActionRow(): JSX.Element | null {
+  const panel = usePmPanel();
+  // useLocation throws when there's no Router in the tree (e.g.
+  // unit tests that mount PmPanel bare). Guard via the hook's
+  // documented contract: react-router exposes useLocation only
+  // inside a Router. We swallow via try/catch on the hook value
+  // shape — the simpler path is to read location.pathname under
+  // a defensive default when absent.
+  const pathname = useSafePathname();
+  const actions = quickActionsForPath(pathname);
+  if (actions.length === 0) return null;
+
+  const active = panel.personas.find((p) => p.id === panel.personaId);
+  const prefix = labelPrefixForVariety(active?.kind);
+  const personaName = active?.name ?? 'PM';
+
+  return (
+    <div
+      data-testid="pm-panel-quick-actions"
+      className="flex flex-wrap gap-1.5 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800"
+    >
+      {actions.map((a) => (
+        <QuickAction
+          key={a.id}
+          action={a}
+          variety={prefix}
+          personaName={personaName}
+          onClick={() => panel.openAndFocus(a.prompt)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function useSafePathname(): string {
+  // PmPanel always mounts inside <AppShell>, which is rendered
+  // inside react-router's <Routes>. Tests that mount PmPanel bare
+  // wrap it in a <MemoryRouter> — see PmPanel.test.tsx's `wrap`
+  // helper. Either way useLocation has a Router above it.
+  return useLocation().pathname;
+}
+
+interface QuickActionProps {
+  action: QuickActionDef;
+  variety: 'Ask' | 'Consult';
+  personaName: string;
+  onClick: () => void;
+}
+
+function QuickAction({ action, variety, personaName, onClick }: QuickActionProps): JSX.Element {
+  // 'Ask PM' / 'Consult PM' style label. The action.id 'ask-pm'
+  // is the generic fallback; for specific verbs the verb is the
+  // label and the persona name is implied by the dropdown above.
+  const isGeneric = action.id === 'ask-pm';
+  const label = isGeneric ? `${variety} ${personaName}` : action.label;
+  return (
+    <button
+      type="button"
+      data-testid={`pm-panel-quick-${action.id}`}
+      data-action-id={action.id}
+      onClick={onClick}
+      className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -169,13 +267,14 @@ function ConversationView(): JSX.Element {
           <MessageSquare className="h-4 w-4" aria-hidden />
           <span>Ask a Coach or consult a Manager…</span>
         </div>
-        {/* Quick-action buttons would be context-sensitive (ui-spec
-            §2.4); v1 ships a static placeholder so the surface is
-            non-empty without prescribing the eventual content. */}
+        {/* Legacy v1 placeholders — kept so existing tests that pin
+            'pm-panel-quick-plan-next-sprint' still resolve. The
+            view-aware QuickActionRow above carries the gm-96l
+            spec; this row is a back-compat tail. */}
         <div className="flex flex-wrap gap-2 text-xs">
-          <QuickAction label="Plan next sprint" />
-          <QuickAction label="Audit risk register" />
-          <QuickAction label="What changed today?" />
+          <LegacyQuickAction label="Plan next sprint" />
+          <LegacyQuickAction label="Audit risk register" />
+          <LegacyQuickAction label="What changed today?" />
         </div>
       </div>
     );
@@ -192,7 +291,7 @@ function ConversationView(): JSX.Element {
   );
 }
 
-function QuickAction({ label }: { label: string }): JSX.Element {
+function LegacyQuickAction({ label }: { label: string }): JSX.Element {
   return (
     <button
       type="button"
@@ -206,7 +305,7 @@ function QuickAction({ label }: { label: string }): JSX.Element {
 
 function TurnView({ turn }: { turn: Turn }): JSX.Element {
   const isOperator = turn.speaker === 'operator';
-  const speakerName = isOperator ? 'you' : (turn.speaker as { name: string }).name;
+  const speakerName = isOperator ? 'you' : (turn.speaker as Persona).name;
   return (
     <li
       data-testid={`pm-panel-turn-${turn.id}`}
@@ -315,10 +414,6 @@ function ExecutedActionsView({
 }
 
 function WalkTakeover(): JSX.Element {
-  // ui-spec §5.4 — Gemba walk surface ships in gm-uipx.2. Until
-  // then this is a placeholder that proves the takeover wires
-  // through (the e2e spec asserts the data-testid is present
-  // when walkActive=true, regardless of content).
   return (
     <div
       data-testid="pm-panel-walk"
@@ -336,12 +431,34 @@ function WalkTakeover(): JSX.Element {
 }
 
 function PmPanelInput(): JSX.Element {
+  const panel = usePmPanel();
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  // gm-96l: openAndFocus bumps focusSeq. We only claim focus on
+  // the FIRST render when seq>0 (the panel was opened via
+  // openAndFocus while the input was unmounted) and on every
+  // subsequent bump. A first render with seq=0 (the open-by-
+  // default path) does NOT steal focus from whatever surface
+  // the operator was already typing into.
+  const lastFocusedSeqRef = useRef<number>(0);
+  useEffect(() => {
+    if (panel.focusSeq === 0) return;
+    if (panel.focusSeq === lastFocusedSeqRef.current) return;
+    lastFocusedSeqRef.current = panel.focusSeq;
+    if (!inputRef.current) return;
+    inputRef.current.focus();
+    const len = inputRef.current.value.length;
+    inputRef.current.setSelectionRange(len, len);
+  }, [panel.focusSeq]);
+
   return (
     <footer className="border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
       <textarea
+        ref={inputRef}
         data-testid="pm-panel-input"
         rows={2}
         placeholder="Ask a Coach or consult a Manager…"
+        value={panel.draft}
+        onChange={(e) => panel.setDraft(e.target.value)}
         className="w-full resize-none rounded border border-neutral-300 bg-white px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
       />
     </footer>

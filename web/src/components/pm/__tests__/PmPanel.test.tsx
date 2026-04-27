@@ -8,16 +8,23 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { PmPanel } from '../PmPanel';
 import { PmPanelProvider, usePmPanel } from '../PmPanelContext';
 import type { Turn } from '../types';
 import { HotkeysProvider } from '@/hotkeys';
 
-function wrap(children: ReactNode, providerProps = {}): JSX.Element {
+function wrap(
+  children: ReactNode,
+  providerProps: Record<string, unknown> = {},
+  initialPath = '/'
+): JSX.Element {
   return (
-    <HotkeysProvider>
-      <PmPanelProvider {...providerProps}>{children}</PmPanelProvider>
-    </HotkeysProvider>
+    <MemoryRouter initialEntries={[initialPath]}>
+      <HotkeysProvider>
+        <PmPanelProvider {...providerProps}>{children}</PmPanelProvider>
+      </HotkeysProvider>
+    </MemoryRouter>
   );
 }
 
@@ -244,6 +251,137 @@ describe('PmPanel', () => {
       );
     });
     expect(screen.queryByTestId('pm-panel')).toBeNull();
+  });
+
+  // gm-96l: chevron handle is always visible — even when collapsed.
+  it('renders the chevron handle even when collapsed', () => {
+    render(wrap(<PmPanel />, { initialOpen: false }));
+    expect(screen.queryByTestId('pm-panel')).toBeNull();
+    // The chevron is the always-available entry point.
+    expect(screen.getByTestId('pm-panel-chevron')).toBeTruthy();
+    expect(screen.getByTestId('pm-panel-chevron').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('chevron handle click toggles the panel', () => {
+    render(wrap(<PmPanel />, { initialOpen: false }));
+    act(() => {
+      screen.getByTestId('pm-panel-chevron').click();
+    });
+    expect(screen.getByTestId('pm-panel')).toBeTruthy();
+    act(() => {
+      screen.getByTestId('pm-panel-chevron').click();
+    });
+    expect(screen.queryByTestId('pm-panel')).toBeNull();
+  });
+
+  it('quick actions surface plan-related verbs on /board', () => {
+    render(wrap(<PmPanel />, { initialOpen: true }, '/board'));
+    expect(screen.getByTestId('pm-panel-quick-recommend-order')).toBeTruthy();
+    expect(screen.getByTestId('pm-panel-quick-what-remains')).toBeTruthy();
+    expect(screen.getByTestId('pm-panel-quick-trim-to-budget')).toBeTruthy();
+  });
+
+  it('quick actions show only Triage on /escalations', () => {
+    render(wrap(<PmPanel />, { initialOpen: true }, '/escalations'));
+    expect(screen.getByTestId('pm-panel-quick-triage')).toBeTruthy();
+    expect(screen.queryByTestId('pm-panel-quick-recommend-order')).toBeNull();
+  });
+
+  it('quick actions row is hidden on /walk so the takeover owns the body', () => {
+    render(
+      wrap(
+        <PmPanel />,
+        { initialOpen: true, initialWalkActive: true },
+        '/walk'
+      )
+    );
+    expect(screen.queryByTestId('pm-panel-quick-actions')).toBeNull();
+  });
+
+  it('generic Ask PM action variety-prefixes by active persona', () => {
+    // Default persona is 'coach' (variety=coach) → 'Ask Coach'.
+    render(wrap(<PmPanel />, { initialOpen: true }, '/insights'));
+    const btn = screen.getByTestId('pm-panel-quick-ask-pm');
+    expect(btn.textContent).toMatch(/Ask Coach/);
+  });
+
+  it('Manager variety renders Consult prefix', () => {
+    render(
+      wrap(
+        <PmPanel />,
+        { initialOpen: true, initialPersonaId: 'manager' },
+        '/insights'
+      )
+    );
+    const btn = screen.getByTestId('pm-panel-quick-ask-pm');
+    expect(btn.textContent).toMatch(/Consult Manager/);
+  });
+
+  it('clicking a quick action seeds the input draft and focuses', () => {
+    render(wrap(<PmPanel />, { initialOpen: true }, '/board'));
+    act(() => {
+      screen.getByTestId('pm-panel-quick-recommend-order').click();
+    });
+    const input = screen.getByTestId('pm-panel-input') as HTMLTextAreaElement;
+    expect(input.value).toMatch(/Recommend an order/);
+  });
+
+  it('Cmd+Shift+K opens the panel and focuses input', () => {
+    render(wrap(<PmPanel />, { initialOpen: false }));
+    expect(screen.queryByTestId('pm-panel')).toBeNull();
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'K',
+          metaKey: true,
+          shiftKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+    expect(screen.getByTestId('pm-panel')).toBeTruthy();
+    expect(document.activeElement).toBe(screen.getByTestId('pm-panel-input'));
+  });
+
+  it('Alt+P cycles the persona forward', () => {
+    render(wrap(<PmPanel />, { initialOpen: true }));
+    const select = screen.getByTestId('pm-panel-persona') as HTMLSelectElement;
+    expect(select.value).toBe('coach');
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'p',
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+    expect(select.value).toBe('manager');
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'p',
+          altKey: true,
+          bubbles: true,
+          cancelable: true,
+        })
+      );
+    });
+    expect(select.value).toBe('architect');
+  });
+
+  it('persists the transcript across reloads', () => {
+    const turns = [turn('t1', { text: 'pinned across reloads' })];
+    const { unmount } = render(wrap(<PmPanel />, { initialOpen: true, initialTurns: turns }));
+    unmount();
+    // Fresh mount with NO initialTurns — should rehydrate from
+    // localStorage under the canonical gm-96l key.
+    const raw = window.localStorage.getItem('gemba.pm-panel.transcript');
+    expect(raw).toBeTruthy();
+    render(wrap(<PmPanel />, { initialOpen: true }));
+    expect(screen.getByText('pinned across reloads')).toBeTruthy();
   });
 
   it('Mod+P toggles the panel via the registered hotkey', () => {
