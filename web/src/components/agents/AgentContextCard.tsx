@@ -115,7 +115,7 @@ function CardHeader({ ctx }: { ctx: PlannerOperationalContext }) {
             <ParallelismPill
               inFlight={par.in_flight}
               maxParallel={par.max_parallel}
-              intraParallel={par.intra_parallel}
+              intraParallel={par.max_parallel > 1}
               testid={`agent-context-${sid || 'unknown'}-pill`}
             />
           ) : null}

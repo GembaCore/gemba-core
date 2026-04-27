@@ -160,7 +160,8 @@ export function routeEvent(qc: QueryClient, ev: GembaEvent): void {
 }
 
 // parsedParallelismPayload validates that an event's payload matches
-// SessionParallelismChangedPayload before we fold it in. Defensive
+// the wire shape from parallelChanged() in
+// internal/adapter/native/parallel.go before we fold it in. Defensive
 // against a malformed event body — better to drop than to render
 // "NaN/undefined" in a pill.
 function parsedParallelismPayload(
@@ -173,11 +174,11 @@ function parsedParallelismPayload(
       ? p.session_id
       : ev.session_id;
   if (!session_id) return null;
-  const agent_id = typeof p.agent_id === 'string' ? p.agent_id : (ev.agent_id ?? '');
+  const agent_type =
+    typeof p.agent_type === 'string' ? p.agent_type : (ev.agent_id ?? '');
   const in_flight = typeof p.in_flight === 'number' ? p.in_flight : NaN;
   const max_parallel = typeof p.max_parallel === 'number' ? p.max_parallel : NaN;
-  const intra_parallel =
-    typeof p.intra_parallel === 'boolean' ? p.intra_parallel : false;
+  const delta = typeof p.delta === 'number' ? p.delta : 0;
   if (!Number.isFinite(in_flight) || !Number.isFinite(max_parallel)) return null;
-  return { session_id, agent_id, in_flight, max_parallel, intra_parallel };
+  return { session_id, agent_type, in_flight, max_parallel, delta };
 }

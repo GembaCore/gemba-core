@@ -120,19 +120,18 @@ describe('routeEvent', () => {
         session_id: 'sess-A',
         payload: {
           session_id: 'sess-A',
-          agent_id: 'claude',
+          agent_type: 'claude',
           in_flight: 2,
           max_parallel: 3,
-          intra_parallel: true,
+          delta: 1,
         },
       } as GembaEvent);
       expect(invalidateSpy).not.toHaveBeenCalled();
       expect(getParallelismMap()['sess-A']).toEqual({
         session_id: 'sess-A',
-        agent_id: 'claude',
+        agent_type: 'claude',
         in_flight: 2,
         max_parallel: 3,
-        intra_parallel: true,
       });
     });
 
@@ -141,7 +140,7 @@ describe('routeEvent', () => {
         ...baseEvent,
         kind: SESSION_PARALLEL_CHANGED,
         session_id: 'sess-bad',
-        payload: { session_id: 'sess-bad', agent_id: 'claude', intra_parallel: true },
+        payload: { session_id: 'sess-bad', agent_type: 'claude', delta: 1 },
       } as GembaEvent);
       expect(getParallelismMap()['sess-bad']).toBeUndefined();
     });
@@ -152,33 +151,62 @@ describe('routeEvent', () => {
         kind: SESSION_PARALLEL_CHANGED,
         session_id: 'sess-B',
         payload: {
-          agent_id: 'claude',
+          agent_type: 'claude',
           in_flight: 1,
           max_parallel: 2,
-          intra_parallel: true,
+          delta: 1,
         },
       } as GembaEvent);
       expect(getParallelismMap()['sess-B']?.in_flight).toBe(1);
     });
 
     it('subsequent events overwrite earlier per-session state', () => {
-      const fire = (in_flight: number) =>
+      const fire = (in_flight: number, delta: number) =>
         routeEvent(qc, {
           ...baseEvent,
           kind: SESSION_PARALLEL_CHANGED,
           session_id: 'sess-C',
           payload: {
             session_id: 'sess-C',
-            agent_id: 'claude',
+            agent_type: 'claude',
             in_flight,
             max_parallel: 3,
-            intra_parallel: true,
+            delta,
           },
         } as GembaEvent);
-      fire(1);
-      fire(2);
-      fire(3);
+      fire(1, 1);
+      fire(2, 1);
+      fire(3, 1);
       expect(getParallelismMap()['sess-C']?.in_flight).toBe(3);
+    });
+
+    it('parses the canonical fixture from internal/adapter/native/testdata', () => {
+      // Mirror of internal/adapter/native/testdata/session_parallel_changed.json
+      // — pinned here so SPA-side parsing breaks loudly if WS-A's
+      // emitter shape drifts. The Go-side handshake test
+      // (TestParallelChangedFixtureMatchesEmitter) holds the other
+      // half of the contract.
+      const fixture = {
+        id: 'evt-2026-04-27-001',
+        kind: 'session_parallel_changed',
+        at: '2026-04-27T07:58:00Z',
+        source: { plane: 'orchestration', adaptor_id: 'native' },
+        session_id: 'tmux:gm-abc.1:1714169123456789',
+        payload: {
+          session_id: 'tmux:gm-abc.1:1714169123456789',
+          agent_type: 'claude',
+          in_flight: 2,
+          max_parallel: 3,
+          delta: 1,
+        },
+      } as GembaEvent;
+      routeEvent(qc, fixture);
+      expect(getParallelismMap()[fixture.session_id!]).toEqual({
+        session_id: fixture.session_id,
+        agent_type: 'claude',
+        in_flight: 2,
+        max_parallel: 3,
+      });
     });
   });
 });
