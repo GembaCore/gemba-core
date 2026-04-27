@@ -383,8 +383,14 @@ func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.
 	if wi.Priority != nil {
 		args = append(args, "--priority", strconv.Itoa(*wi.Priority))
 	}
-	if wi.Description != "" {
-		args = append(args, "--description", wi.Description)
+	// gm-e6.4: DoD has no native bd column on the read surface; the
+	// adaptor encodes it inline in the description (delimited block).
+	// embedDoD on a description with no DoD round-trips to the original
+	// string, so passing every wi.Description through this is safe even
+	// when wi.DoD is nil.
+	desc := embedDoD(wi.Description, wi.DoD)
+	if desc != "" {
+		args = append(args, "--description", desc)
 	}
 	// Agent-federation labels (gm-e6.3) ride with --labels so a single
 	// create call persists the full AgentRef. Caller-supplied labels win
@@ -472,8 +478,26 @@ func (w *WorkPlane) UpdateWorkItem(
 	if patch.Title != nil {
 		args = append(args, "--title", *patch.Title)
 	}
-	if patch.Description != nil {
+	// gm-e6.4: DoD is encoded inline in the bd description. Three cases:
+	//   1. patch.Description set, patch.DoD nil → write user-supplied desc
+	//      verbatim (DoD-aware callers send the full desc, including any
+	//      embedded block they want).
+	//   2. patch.Description nil, patch.DoD set → re-read current desc,
+	//      replace its DoD block, push back.
+	//   3. both set → embed DoD into the patched desc.
+	// Case 1 is the legacy path; cases 2 and 3 are new.
+	if patch.Description != nil && patch.DoD != nil {
+		args = append(args, "--description", embedDoD(*patch.Description, patch.DoD))
+	} else if patch.Description != nil {
 		args = append(args, "--description", *patch.Description)
+	} else if patch.DoD != nil {
+		current, err := w.GetWorkItem(ctx, id)
+		if err != nil {
+			return core.WorkItem{}, err
+		}
+		// current.Description has the DoD block already stripped
+		// (toWorkItem ran extractDoD); re-embed with the new DoD.
+		args = append(args, "--description", embedDoD(current.Description, patch.DoD))
 	}
 	if patch.Status != nil {
 		args = append(args, "--status", *patch.Status)

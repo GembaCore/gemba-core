@@ -159,11 +159,17 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 	concepts := conceptsFromLabels(b.Labels)
 	dispatch := dispatchStatusFromLabels(b.Labels)
 	size := estimatedSizeFromLabels(b.Labels)
+	// gm-e6.4: parse the embedded DoD section out of the description so
+	// core.WorkItem.DoD is the canonical surface for acceptance criteria
+	// + notes. Anything outside the delimiters survives verbatim on
+	// Description; if no block exists, dod is nil and Description is the
+	// raw bd value.
+	descClean, dod := extractDoD(b.Description)
 	wi := core.WorkItem{
 		ID:                   id,
 		Kind:                 kind,
 		Title:                b.Title,
-		Description:          b.Description,
+		Description:          descClean,
 		Status:               b.Status,
 		StateCategory:        category,
 		Priority:             &priority,
@@ -183,6 +189,7 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 		// ["beads:dependents"] so the beads/ SPA extension can render
 		// them when loaded (gm-e6.2, DD-9).
 		Relationships: relationshipsFromBead(b, id, prefix),
+		DoD:           dod,
 		CreatedAt:     b.CreatedAt,
 		UpdatedAt:     b.UpdatedAt,
 		Custom:        custom,
