@@ -389,6 +389,43 @@ export interface CapabilityManifest {
   orchestrator_hooks?: OrchestratorHook[];
 }
 
+// GroupMode is the discriminator for AgentGroup.members (gm-root DD-7).
+// Mirrors core.GroupMode in internal/core/orchestration.go.
+//
+// NOTE: this type is also exported by web/src/capabilities/types.ts for
+// the manifest's group_modes axis. Keep both in sync.
+export type GroupMode = "static" | "pool" | "graph";
+
+export const GROUP_MODES: readonly GroupMode[] = [
+  "static",
+  "pool",
+  "graph",
+] as const;
+
+// GroupMembers is the mode-tagged union of member descriptors. Only the
+// subset matching GroupMode is meaningful; the rest are absent or zero.
+// Mirrors core.GroupMembers.
+export interface GroupMembers {
+  static?: AgentID[];
+  pool_check_url?: string;
+  pool_min?: number | null;
+  pool_max?: number | null;
+  graph_topology_id?: string;
+  graph_resolved?: AgentID[];
+}
+
+// AgentGroup is the adaptor-agnostic view of a collection of agents
+// (gm-root DD-7). The Mode field picks the union arm carried by Members.
+// Mirrors core.AgentGroup.
+export interface AgentGroup {
+  id: string;
+  display_name: string;
+  mode: GroupMode;
+  members: GroupMembers;
+  repository?: string[];
+  extension?: Record<string, unknown>;
+}
+
 // FLAG_NAMES is the exhaustive list of keys on Flags. Useful for
 // exhaustiveness checks in the SPA's gating layer (so a new flag added
 // on the Go side surfaces as a type error on the UI side).

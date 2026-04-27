@@ -12,6 +12,7 @@ import {
   CircuitBoard,
   Settings,
   GitCompare,
+  Users,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,7 @@ const items: Item[] = [
   { to: '/board', label: 'Board', Icon: LayoutGrid },
   { to: '/backlog', label: 'Backlog', Icon: ListTodo },
   { to: '/sessions', label: 'Sessions', Icon: Terminal },
+  { to: '/agent-groups', label: 'Agent groups', Icon: Users },
   { to: '/coach', label: 'Coach', Icon: CircuitBoard },
   { to: '/walk', label: 'Gemba walk', Icon: Footprints },
   { to: '/graph', label: 'Graph', Icon: Network },

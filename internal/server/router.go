@@ -231,6 +231,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// AssigneePicker / OwnerPicker. Empty list when no
 		// orchestration plane is bound (the freeform editor takes over).
 		api.Get("/agents", r.listAgents)
+		// gm-e12.8: orchestrator's known AgentGroups. Drives the SPA's
+		// AgentGroupBoard, which dispatches on GroupMode (static | pool
+		// | graph). Empty list when no orchestration plane is bound.
+		api.Get("/agent-groups", r.listAgentGroups)
 		// gm-native.15: session inventory + dispatch + end. POST and
 		// DELETE are gated by X-GEMBA-Confirm so SPA double-clicks /
 		// React re-mounts can't double-spawn or double-end.
