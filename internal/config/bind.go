@@ -4,9 +4,11 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 // ServeConfig captures every flag `gemba serve` accepts. Held on the CLI side
@@ -223,6 +225,52 @@ func (c ServeConfig) ResolveBeadsDir() (string, error) {
 				".beads/ directory itself", c.BeadsDir, beads)
 	}
 	return abs, nil
+}
+
+// BeadsSource describes the configured WorkPlane source in a form safe to
+// expose to operators over the API. Credentials in --dolt-url are stripped
+// from Detail so the SPA can render the workspace identity in the topbar
+// without leaking secrets to anyone viewing the page or its devtools.
+type BeadsSource struct {
+	// Kind is one of "beads-dir", "dolt-url", "unconfigured".
+	Kind string `json:"kind"`
+	// Label is the short human-friendly identifier — basename of the
+	// beads-dir path, or the database name parsed from a dolt-url.
+	Label string `json:"label"`
+	// Detail is the redacted full source: absolute beads-dir path, or
+	// a mysql:// DSN with the user-info segment removed. Empty for
+	// "unconfigured" and for dolt-urls that fail to parse.
+	Detail string `json:"detail,omitempty"`
+}
+
+// BeadsSource derives the displayable WorkPlane identity from the configured
+// flags. The mutual-exclusion contract (see ValidateWorkPlaneFlags) means at
+// most one of BeadsDir / DoltURL is set in a successfully booted server; the
+// "unconfigured" branch is reached only by tests that build a ServeConfig
+// directly.
+func (c ServeConfig) BeadsSource() BeadsSource {
+	if c.BeadsDir != "" {
+		return BeadsSource{
+			Kind:   "beads-dir",
+			Label:  filepath.Base(c.BeadsDir),
+			Detail: c.BeadsDir,
+		}
+	}
+	if c.DoltURL != "" {
+		u, err := url.Parse(c.DoltURL)
+		if err != nil {
+			// Don't echo the raw string — it may carry creds we
+			// couldn't strip. Operators still see the kind.
+			return BeadsSource{Kind: "dolt-url", Label: "(unparseable dolt-url)"}
+		}
+		u.User = nil
+		db := strings.TrimPrefix(u.Path, "/")
+		if db == "" {
+			db = u.Host
+		}
+		return BeadsSource{Kind: "dolt-url", Label: db, Detail: u.String()}
+	}
+	return BeadsSource{Kind: "unconfigured"}
 }
 
 // listenDisplay formats Listen+Port the way it would appear on the command

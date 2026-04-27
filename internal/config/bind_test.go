@@ -332,3 +332,67 @@ func TestEffectiveAuthMode(t *testing.T) {
 		t.Fatalf("want token, got %q", got)
 	}
 }
+
+func TestBeadsSource(t *testing.T) {
+	cases := []struct {
+		name       string
+		cfg        ServeConfig
+		wantKind   string
+		wantLabel  string
+		wantDetail string
+	}{
+		{
+			name:       "beads-dir",
+			cfg:        ServeConfig{BeadsDir: "/Users/mike/gt/gemba"},
+			wantKind:   "beads-dir",
+			wantLabel:  "gemba",
+			wantDetail: "/Users/mike/gt/gemba",
+		},
+		{
+			name:       "dolt-url with creds is redacted",
+			cfg:        ServeConfig{DoltURL: "mysql://root:hunter2@127.0.0.1:3307/lume_spark_api"},
+			wantKind:   "dolt-url",
+			wantLabel:  "lume_spark_api",
+			wantDetail: "mysql://127.0.0.1:3307/lume_spark_api",
+		},
+		{
+			name:       "dolt-url with user only is redacted",
+			cfg:        ServeConfig{DoltURL: "mysql://root@127.0.0.1:3307/gemba"},
+			wantKind:   "dolt-url",
+			wantLabel:  "gemba",
+			wantDetail: "mysql://127.0.0.1:3307/gemba",
+		},
+		{
+			name:       "dolt-url without creds is unchanged",
+			cfg:        ServeConfig{DoltURL: "mysql://127.0.0.1:3307/sb"},
+			wantKind:   "dolt-url",
+			wantLabel:  "sb",
+			wantDetail: "mysql://127.0.0.1:3307/sb",
+		},
+		{
+			name:     "unconfigured",
+			cfg:      ServeConfig{},
+			wantKind: "unconfigured",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := tc.cfg.BeadsSource()
+			if got.Kind != tc.wantKind {
+				t.Errorf("Kind = %q, want %q", got.Kind, tc.wantKind)
+			}
+			if got.Label != tc.wantLabel {
+				t.Errorf("Label = %q, want %q", got.Label, tc.wantLabel)
+			}
+			if got.Detail != tc.wantDetail {
+				t.Errorf("Detail = %q, want %q", got.Detail, tc.wantDetail)
+			}
+			// Defense in depth: the redacted Detail must never carry
+			// the password literal. Cheap check, catches refactor
+			// regressions even if Label/Detail shape changes.
+			if strings.Contains(got.Detail, "hunter2") {
+				t.Errorf("Detail leaks password: %q", got.Detail)
+			}
+		})
+	}
+}

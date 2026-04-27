@@ -441,6 +441,11 @@ func (r *Router) config(w http.ResponseWriter, _ *http.Request) {
 		"port":           r.cfg.Port,
 		"city":           r.cfg.City,
 		"town":           r.cfg.Town,
+		// beads_source is the workspace identity — 1:1 with a beads
+		// database. The SPA renders it in the Topbar so operators
+		// running multiple gemba instances against different databases
+		// can tell them apart at a glance.
+		"beads_source": r.cfg.BeadsSource(),
 	})
 }
 
