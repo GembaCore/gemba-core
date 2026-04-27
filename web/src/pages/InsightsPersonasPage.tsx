@@ -17,9 +17,12 @@
 // auto-refresh-via-SSE land in follow-up beads when we have feedback.
 
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { Sparkles, Bot, AlertTriangle } from 'lucide-react';
+import { Sparkles, Bot, AlertTriangle, Footprints } from 'lucide-react';
 import { listConsults, listSkills, type ConsultSummary } from '@/api/consults';
+import { listRecentWalks, walkDuration, type Walk } from '@/api/walks';
+import { fmtDuration } from '@/components/walk/BottomBar';
 import { ApiError } from '@/api/client';
 import { cn } from '@/lib/utils';
 
@@ -92,9 +95,97 @@ export function InsightsPersonasPage() {
           ) : (
             <PersonaTable rows={rows} />
           )}
+          <RecentWalksSection />
         </div>
       )}
     </div>
+  );
+}
+
+// RecentWalksSection — the "walks" filter (gm-i65). Surfaces the most
+// recent walks via /api/v1/walks:recent so an operator scanning the
+// insights page can drill into walk audit records the same way they
+// drill into persona consult activity.
+function RecentWalksSection(): JSX.Element {
+  const { data, isLoading, error } = useQuery<Walk[]>({
+    queryKey: ['walks', 'recent'],
+    queryFn: () => listRecentWalks(),
+    refetchInterval: 30_000,
+    staleTime: 10_000,
+  });
+  const walks = data ?? [];
+  const unavailable = isUnavailable(error);
+  return (
+    <section
+      data-testid="insights-walks-section"
+      className="mt-8 border-t border-neutral-200 pt-6 dark:border-neutral-800"
+    >
+      <div className="mb-3 flex items-baseline gap-2">
+        <Footprints className="h-4 w-4" aria-hidden />
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
+          Recent Gemba walks
+        </h2>
+        <span className="text-xs text-neutral-500">{walks.length}</span>
+      </div>
+      {isLoading ? (
+        <div className="text-sm text-neutral-500" data-testid="insights-walks-loading">
+          Loading…
+        </div>
+      ) : unavailable ? (
+        <div className="text-xs italic text-neutral-500">
+          Walk store not configured.
+        </div>
+      ) : walks.length === 0 ? (
+        <div data-testid="insights-walks-empty" className="text-xs italic text-neutral-500">
+          No walks yet. Start one at <Link to="/walk" className="underline">/walk</Link>.
+        </div>
+      ) : (
+        <table className="w-full border-collapse text-sm" data-testid="insights-walks-table">
+          <thead>
+            <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500 dark:border-neutral-800">
+              <th className="px-3 py-2 font-medium">Walk</th>
+              <th className="px-3 py-2 font-medium">Status</th>
+              <th className="px-3 py-2 font-medium">Started</th>
+              <th className="px-3 py-2 font-medium">Duration</th>
+              <th className="px-3 py-2 text-right font-medium">Decisions</th>
+              <th className="px-3 py-2 text-right font-medium">Spent</th>
+            </tr>
+          </thead>
+          <tbody>
+            {walks.map((w) => (
+              <tr
+                key={w.id}
+                data-testid={`insights-walks-row-${w.id}`}
+                className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 dark:border-neutral-900 dark:hover:bg-neutral-900"
+              >
+                <td className="px-3 py-1.5">
+                  <Link to={`/walks/${encodeURIComponent(w.id)}`} className="hover:underline">
+                    {w.label || w.id}
+                  </Link>
+                </td>
+                <td className="px-3 py-1.5">
+                  <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
+                    {w.status}
+                  </span>
+                </td>
+                <td className="px-3 py-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+                  {new Date(w.started_at).toLocaleString()}
+                </td>
+                <td className="px-3 py-1.5 text-xs">
+                  {fmtDuration(walkDuration(w))}
+                </td>
+                <td className="px-3 py-1.5 text-right">
+                  {(w.decisions ?? []).length}
+                </td>
+                <td className="px-3 py-1.5 text-right">
+                  ${w.cost.dollars.toFixed(2)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 

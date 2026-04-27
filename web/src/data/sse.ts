@@ -74,6 +74,16 @@ const KIND_ROUTES: Array<{ matches: (kind: string) => boolean; keys: readonly un
     // and reservations show up in the assignment lifecycle.
     keys: [['sessions']],
   },
+  {
+    // walk.* events (gm-i65 / gm-wgv) — walk.started/agenda_added/
+    // turn/decided/paused/resumed/ended. Each event invalidates the
+    // walks list AND the per-walk record (the SSE payload doesn't
+    // tell us which walk id was affected at the routing layer; the
+    // per-walk query keys are versioned by id, so invalidating
+    // ['walks'] catches both shapes).
+    matches: (k) => k.startsWith('walk.'),
+    keys: [['walks']],
+  },
 ];
 
 // startSSE opens the /events stream and routes incoming events through
@@ -129,6 +139,13 @@ export function startSSE(qc: QueryClient, opts: StartSSEOptions = {}): () => voi
     'reservation.released',
     'workspace.acquired',
     'workspace.released',
+    'walk.started',
+    'walk.agenda_added',
+    'walk.turn',
+    'walk.decided',
+    'walk.paused',
+    'walk.resumed',
+    'walk.ended',
   ];
   for (const k of knownKinds) {
     es.addEventListener(k, handle);

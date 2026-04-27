@@ -6,6 +6,7 @@ import { GraphPage } from '@/pages/GraphPage';
 import CapabilitiesPage from '@/pages/CapabilitiesPage';
 import { CoachPage } from '@/pages/CoachPage';
 import { WalkPage } from '@/pages/WalkPage';
+import { WalkDetailPage } from '@/pages/WalkDetailPage';
 import { ProjectConfigPage } from '@/pages/ProjectConfigPage';
 import { InsightsPersonasPage } from '@/pages/InsightsPersonasPage';
 import {
@@ -53,6 +54,7 @@ export default function App() {
         <Route path="/capabilities" element={<CapabilitiesPage />} />
         <Route path="/coach" element={<CoachPage />} />
         <Route path="/walk" element={<WalkPage />} />
+        <Route path="/walks/:id" element={<WalkDetailPage />} />
         <Route path="/project/config" element={<ProjectConfigPage />} />
         {features.mail && <Route path="/mail" element={<MailPage />} />}
         <Route path="/health" element={<HealthPage />} />
