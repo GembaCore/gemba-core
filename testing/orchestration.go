@@ -38,6 +38,14 @@ type OrchestrationFixture struct {
 	// both starters typically share a single internal helper that
 	// mints an assignment and calls StartSession.
 	ProgrammaticSessionStarter func(impl core.OrchestrationPlaneAdaptor) (sessionID string, cleanup func(), err error)
+
+	// AcquireWorkspaceRequest seeds the Group D acquire/release event-
+	// emission probe (gm-e3.6.3). Leave nil to skip the workspace half
+	// of the event-emission group; adaptors without a workspace
+	// allocator (noop) won't run it. The probe pairs the request with
+	// a matching ReleaseWorkspace call so the workspace doesn't leak
+	// into a follow-up probe.
+	AcquireWorkspaceRequest *core.WorkspaceRequest
 }
 
 // RunOrchestrationConformance runs the OrchestrationPlane contract
@@ -94,6 +102,26 @@ func RunOrchestrationConformance(t *testing.T, impl core.OrchestrationPlaneAdapt
 		})
 		t.Run("B_end_session_terminal_absorbing", func(t *testing.T) {
 			probeEndSessionTerminalAbsorbing(t, impl, sessionID)
+		})
+	}
+
+	// gm-e3.6.3 — Group D event-emission probes. Pair the lifecycle
+	// fixture's session with a fresh starter call (the lifecycle probes
+	// above moved their session to terminal) so PauseSession has
+	// something live to act on. Acquire/release runs unconditionally
+	// when the workspace fixture is present; the probe gates itself.
+	if fixture.SessionStarter != nil {
+		sid, cleanup := fixture.SessionStarter(t, impl)
+		if cleanup != nil {
+			defer cleanup()
+		}
+		t.Run("D_pause_session_emits_transition", func(t *testing.T) {
+			probePauseSessionEmitsTransition(t, impl, sid)
+		})
+	}
+	if fixture.AcquireWorkspaceRequest != nil {
+		t.Run("D_acquire_release_workspace_emits_events", func(t *testing.T) {
+			probeAcquireReleaseWorkspaceEmits(t, impl, fixture)
 		})
 	}
 }

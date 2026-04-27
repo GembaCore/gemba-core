@@ -146,10 +146,15 @@ func RunWorkPlaneProbes(impl core.WorkPlane, fixture *WorkPlaneFixture) *Report 
 		})
 	}
 
-	groupD := GroupResult{
-		Name:          "D: subscribe / event delivery",
-		NotApplicable: true,
-		Note:          "WorkPlane interface does not expose a Subscribe method; event delivery is an OrchestrationPlane concern",
+	// gm-e3.6.3 — Group D event-emission. Adaptors whose Subscribe
+	// returns ErrUnsupported skip silently inside each probe; here we
+	// always enumerate the probes so the report shows whether the
+	// contract was checked or skipped.
+	groupD := GroupResult{Name: "D: subscribe / event delivery"}
+	groupD.Probes = []ProbeResult{
+		runProbe("D_create_emits_event", func(t probeT) { probeCreateWorkItemEmitsEvent(t, impl) }),
+		runProbe("D_update_emits_event", func(t probeT) { probeUpdateWorkItemEmitsEvent(t, impl) }),
+		runProbe("D_attach_evidence_emits_event", func(t probeT) { probeAttachEvidenceEmitsEvent(t, impl) }),
 	}
 
 	groupE := GroupResult{Name: "E: capability-declared optional features"}
@@ -397,6 +402,33 @@ func RunOrchestrationProbes(impl core.OrchestrationPlaneAdaptor, fixture *Orches
 	groupD := GroupResult{Name: "D: subscribe / event delivery"}
 	groupD.Probes = []ProbeResult{
 		runProbe("D_subscribe_returns_channel", func(t probeT) { probeSubscribeChannel(t, impl) }),
+	}
+	// gm-e3.6.3 — pause-session event-emission probe. Skipped when the
+	// fixture's programmatic starter is nil (same gate as Group B).
+	if fixture.ProgrammaticSessionStarter != nil {
+		groupD.Probes = append(groupD.Probes,
+			runSessionProbe("D_pause_session_emits_transition", impl, fixture.ProgrammaticSessionStarter,
+				func(t probeT, sessionID string) { probePauseSessionEmitsTransition(t, impl, sessionID) }),
+		)
+	} else {
+		groupD.Probes = append(groupD.Probes, ProbeResult{
+			Name:     "D_pause_session_emits_transition",
+			Skipped:  true,
+			Messages: []string{"fixture.ProgrammaticSessionStarter not provided"},
+		})
+	}
+	if fixture.AcquireWorkspaceRequest != nil {
+		groupD.Probes = append(groupD.Probes,
+			runProbe("D_acquire_release_workspace_emits_events", func(t probeT) {
+				probeAcquireReleaseWorkspaceEmits(t, impl, fixture)
+			}),
+		)
+	} else {
+		groupD.Probes = append(groupD.Probes, ProbeResult{
+			Name:     "D_acquire_release_workspace_emits_events",
+			Skipped:  true,
+			Messages: []string{"fixture.AcquireWorkspaceRequest not provided"},
+		})
 	}
 
 	groupF := GroupResult{Name: "F: error semantics"}

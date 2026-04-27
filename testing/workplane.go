@@ -155,6 +155,20 @@ func RunWorkPlaneConformance(t *testing.T, impl core.WorkPlane, fixture *WorkPla
 			probeEdgeRoundTripWorkItem(t, impl, fixture)
 		})
 	}
+	// gm-e3.6.3 — Group D event-emission probes. Subscribe-supporting
+	// adaptors MUST yield a matching workitem.* event on every
+	// successful state-changing mutation; ErrUnsupported on Subscribe
+	// skips the whole group cleanly.
+	t.Run("D_create_emits_event", func(t *testing.T) {
+		probeCreateWorkItemEmitsEvent(t, impl)
+	})
+	t.Run("D_update_emits_event", func(t *testing.T) {
+		probeUpdateWorkItemEmitsEvent(t, impl)
+	})
+	t.Run("D_attach_evidence_emits_event", func(t *testing.T) {
+		probeAttachEvidenceEmitsEvent(t, impl)
+	})
+
 	t.Run("E_capability_denial_matches_manifest", func(t *testing.T) {
 		probeCapabilityDenialMatchesManifest(t, impl)
 	})

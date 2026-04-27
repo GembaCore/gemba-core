@@ -28,6 +28,13 @@ type OrchestrationPlane struct {
 	sessions    map[string]*core.Session
 	// closureNonces deduplicates EndSession same-nonce replays.
 	closureNonces map[string]core.ConfirmNonce
+	// subscribers holds the per-Subscribe-call sink channels. Mutators
+	// fan-out a typed OrchestrationEvent through these so the
+	// conformance harness's Group D event-emission probes (gm-e3.6.3)
+	// can observe state-changing methods. Slow subscribers drop events
+	// rather than block the mutator.
+	subscribers []chan core.OrchestrationEvent
+	seq         int
 }
 
 // NewOrchestrationPlane returns a OrchestrationPlane with empty stores.
@@ -36,6 +43,27 @@ func NewOrchestrationPlane() *OrchestrationPlane {
 		assignments:   make(map[string]core.Assignment),
 		sessions:      make(map[string]*core.Session),
 		closureNonces: make(map[string]core.ConfirmNonce),
+	}
+}
+
+// publish delivers ev to every active subscriber. Caller MUST hold
+// o.mu — that keeps subscriber registration and event ordering
+// consistent under concurrent mutators. Drops on a full sink so a
+// slow subscriber can't stall the mutator path; the harness uses
+// buffered channels so tests don't hit the drop branch.
+func (o *OrchestrationPlane) publish(ev core.OrchestrationEvent) {
+	o.seq++
+	if ev.ID == "" {
+		ev.ID = fmt.Sprintf("noop-evt-%d", o.seq)
+	}
+	if ev.At.IsZero() {
+		ev.At = time.Now()
+	}
+	for _, ch := range o.subscribers {
+		select {
+		case ch <- ev:
+		default:
+		}
 	}
 }
 
@@ -124,6 +152,16 @@ func (o *OrchestrationPlane) StartSession(_ context.Context, assignmentID string
 		StartedAt:    time.Now(),
 	}
 	o.sessions[sessID] = s
+	o.publish(core.OrchestrationEvent{
+		Kind:         "session_transition",
+		AssignmentID: a.ID,
+		SessionID:    sessID,
+		AgentID:      a.AgentID,
+		Payload: map[string]any{
+			"from": "",
+			"to":   string(s.Status),
+		},
+	})
 	return *s, nil
 }
 
@@ -139,7 +177,18 @@ func (o *OrchestrationPlane) PauseSession(_ context.Context, sessionID string, _
 		return *s, core.NewAdaptorError(core.KindSessionClosed,
 			"noop: session %q already terminal", sessionID)
 	}
+	prior := s.Status
 	s.Status = core.SessionSuspended
+	o.publish(core.OrchestrationEvent{
+		Kind:         "session_transition",
+		AssignmentID: s.AssignmentID,
+		SessionID:    s.ID,
+		AgentID:      s.AgentID,
+		Payload: map[string]any{
+			"from": string(prior),
+			"to":   string(s.Status),
+		},
+	})
 	return *s, nil
 }
 
@@ -155,7 +204,18 @@ func (o *OrchestrationPlane) ResumeSession(_ context.Context, sessionID string, 
 		return *s, core.NewAdaptorError(core.KindSessionClosed,
 			"noop: session %q already terminal", sessionID)
 	}
+	prior := s.Status
 	s.Status = core.SessionWorking
+	o.publish(core.OrchestrationEvent{
+		Kind:         "session_transition",
+		AssignmentID: s.AssignmentID,
+		SessionID:    s.ID,
+		AgentID:      s.AgentID,
+		Payload: map[string]any{
+			"from": string(prior),
+			"to":   string(s.Status),
+		},
+	})
 	return *s, nil
 }
 
@@ -183,6 +243,7 @@ func (o *OrchestrationPlane) EndSession(
 		return *s, nil
 	}
 
+	priorStatus := s.Status
 	switch mode {
 	case core.SessionEndFailed:
 		s.Status = core.SessionFailed
@@ -194,6 +255,17 @@ func (o *OrchestrationPlane) EndSession(
 	reason := core.CloseUserStop
 	s.CloseReason = &reason
 	o.closureNonces[sessionID] = nonce
+	o.publish(core.OrchestrationEvent{
+		Kind:         "session_transition",
+		AssignmentID: s.AssignmentID,
+		SessionID:    s.ID,
+		AgentID:      s.AgentID,
+		Payload: map[string]any{
+			"from":         string(priorStatus),
+			"to":           string(s.Status),
+			"close_reason": string(reason),
+		},
+	})
 	return *s, nil
 }
 
@@ -287,10 +359,25 @@ func (o *OrchestrationPlane) ResolveEscalation(
 }
 
 func (o *OrchestrationPlane) Subscribe(ctx context.Context, _ core.SubscribeFilter) (<-chan core.OrchestrationEvent, error) {
-	ch := make(chan core.OrchestrationEvent)
+	// Buffer keeps publish() non-blocking under bursts (start + pause +
+	// end in one test step) without forcing the caller to drain
+	// promptly. Slow subscribers still get backpressure-dropped at the
+	// publish edge per the channel's docstring.
+	ch := make(chan core.OrchestrationEvent, 16)
+	o.mu.Lock()
+	o.subscribers = append(o.subscribers, ch)
+	o.mu.Unlock()
 	go func() {
-		defer close(ch)
 		<-ctx.Done()
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		for i, sub := range o.subscribers {
+			if sub == ch {
+				o.subscribers = append(o.subscribers[:i], o.subscribers[i+1:]...)
+				break
+			}
+		}
+		close(ch)
 	}()
 	return ch, nil
 }
