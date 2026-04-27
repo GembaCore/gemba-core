@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	gembatesting "github.com/MikeBengtson/gemba/testing"
 )
 

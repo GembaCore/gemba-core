@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
 )

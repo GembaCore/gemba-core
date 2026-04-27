@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	nativeadapter "github.com/MikeBengtson/gemba/internal/adapter/native"
 	"github.com/MikeBengtson/gemba/core"
+	nativeadapter "github.com/MikeBengtson/gemba/internal/adapter/native"
 	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
 )
 

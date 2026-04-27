@@ -84,7 +84,9 @@ func errMissingField(name string) error { return &openapiInvalidError{field: nam
 
 type openapiInvalidError struct{ field string }
 
-func (e *openapiInvalidError) Error() string { return "openapi spec missing required field: " + e.field }
+func (e *openapiInvalidError) Error() string {
+	return "openapi spec missing required field: " + e.field
+}
 
 // openapiSpecHandler serves the embedded OpenAPI document. Cache-
 // Control: a fresh build embeds a fresh spec, so no cache while the

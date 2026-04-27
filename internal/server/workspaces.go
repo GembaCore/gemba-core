@@ -26,9 +26,9 @@ import (
 // NetIsolated, ProcIsolated — exact fields per
 // core.IsolationCapabilities).
 type workspaceKindEntry struct {
-	Kind       core.WorkspaceKind          `json:"kind"`
-	Default    bool                        `json:"default,omitempty"`
-	Isolation  core.IsolationCapabilities  `json:"isolation,omitempty"`
+	Kind      core.WorkspaceKind         `json:"kind"`
+	Default   bool                       `json:"default,omitempty"`
+	Isolation core.IsolationCapabilities `json:"isolation,omitempty"`
 }
 
 // workspaceKindsEnvelope is the response body of GET /api/v1/workspaces.

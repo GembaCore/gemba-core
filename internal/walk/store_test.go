@@ -28,8 +28,8 @@ func newTestStore() *MemoryStore {
 func startWalk(t *testing.T, s *MemoryStore, agenda ...AgendaItem) Walk {
 	t.Helper()
 	w, err := s.Start(context.Background(), StartParams{
-		Workspace:     "ws",
-		InitiatedBy:   "user-mike",
+		Workspace:      "ws",
+		InitiatedBy:    "user-mike",
 		PrimaryPersona: "project-manager",
 		InitialAgenda:  agenda,
 		Now:            time.Date(2026, 4, 27, 12, 0, 0, 0, time.UTC),
@@ -275,12 +275,18 @@ func TestMemoryStore_TerminalRefusesMutation(t *testing.T) {
 		t.Fatalf("End: %v", err)
 	}
 	cases := map[string]func() error{
-		"AddAgendaItem":          func() error { _, e := s.AddAgendaItem(context.Background(), w.ID, AgendaItem{ID: "x", Status: AgendaQueued}); return e },
-		"UpdateAgendaItemStatus": func() error { _, e := s.UpdateAgendaItemStatus(context.Background(), w.ID, "x", AgendaQueued); return e },
-		"AppendTurn":             func() error { _, e := s.AppendTurn(context.Background(), w.ID, WalkTurn{Content: "x"}); return e },
-		"Pause":                  func() error { _, e := s.Pause(context.Background(), w.ID); return e },
-		"Resume":                 func() error { _, e := s.Resume(context.Background(), w.ID); return e },
-		"End again":              func() error { _, e := s.End(context.Background(), w.ID, StatusCompleted, time.Now()); return e },
+		"AddAgendaItem": func() error {
+			_, e := s.AddAgendaItem(context.Background(), w.ID, AgendaItem{ID: "x", Status: AgendaQueued})
+			return e
+		},
+		"UpdateAgendaItemStatus": func() error {
+			_, e := s.UpdateAgendaItemStatus(context.Background(), w.ID, "x", AgendaQueued)
+			return e
+		},
+		"AppendTurn": func() error { _, e := s.AppendTurn(context.Background(), w.ID, WalkTurn{Content: "x"}); return e },
+		"Pause":      func() error { _, e := s.Pause(context.Background(), w.ID); return e },
+		"Resume":     func() error { _, e := s.Resume(context.Background(), w.ID); return e },
+		"End again":  func() error { _, e := s.End(context.Background(), w.ID, StatusCompleted, time.Now()); return e },
 	}
 	for name, fn := range cases {
 		if err := fn(); err == nil {

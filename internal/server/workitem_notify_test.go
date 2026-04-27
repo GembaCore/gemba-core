@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 )

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/config"
 )
 
 func bannerManifest() core.CapabilityManifest {

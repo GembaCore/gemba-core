@@ -76,7 +76,7 @@ func (w *WorkPlane) runWatcher(ctx context.Context, beadsPath string) {
 	// the watcher alive but rely on the floor ticker.
 	fs, err := fsnotify.NewWatcher()
 	if err == nil {
-		defer fs.Close()
+		defer func() { _ = fs.Close() }()
 		if err := fs.Add(beadsPath); err == nil {
 			go w.runFsnotifyLoop(ctx, fs, tick)
 		}

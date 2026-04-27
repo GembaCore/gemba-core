@@ -43,7 +43,12 @@ func TestContextID_NilContextSafe(t *testing.T) {
 			t.Errorf("IDFromContext(nil) panicked: %v", r)
 		}
 	}()
-	if id := IDFromContext(nil); id != "" {
+	// staticcheck SA1012: passing a nil context is forbidden by
+	// convention, but the helper's contract is "nil-safe" — we test
+	// it via a typed-nil cast so the contract is exercised without
+	// upsetting the linter.
+	var ctx context.Context //nolint:staticcheck // intentionally nil
+	if id := IDFromContext(ctx); id != "" {
 		t.Errorf("nil ctx id = %q, want empty", id)
 	}
 }

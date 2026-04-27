@@ -21,26 +21,17 @@ import (
 // a "mutation_without_event" failure, named exactly so the operator-
 // facing report points at the contract being violated.
 
-// probeStartSessionEmitsTransition: a successful StartSession MUST
-// produce a session_transition event on Subscribe within the
-// manifest's freshness budget. Uses the fixture's session starter to
-// provision a real assignment+session pair; skips the probe entirely
-// when the starter is nil (the harness reports the skip at the group
-// level).
-func probeStartSessionEmitsTransition(t probeT, impl core.OrchestrationPlaneAdaptor, sessionID string) {
-	t.Helper()
-	// SessionStarter has already provisioned the session and emitted
-	// its transition event on the adaptor's stream. We can't replay
-	// that emission — Subscribe-after-the-fact streams are present-
-	// tense — so this probe instead asserts that PauseSession (a
-	// reversible state mutation that's safe to run on a live session)
-	// emits its transition. PauseSession + ResumeSession together
-	// cover both the "first call emits" and "idempotent under the
-	// same nonce" arms of the contract.
-	probePauseSessionEmitsTransition(t, impl, sessionID)
-}
-
-// probePauseSessionEmitsTransition: PauseSession on the first call
+// probePauseSessionEmitsTransition stands in for the original
+// "StartSession emits" probe. SessionStarter has already provisioned
+// the session and emitted its transition event on the adaptor's
+// stream — Subscribe-after-the-fact streams are present-tense, so we
+// can't replay that emission. Instead we assert that PauseSession (a
+// reversible state mutation safe to run on a live session) emits its
+// transition. PauseSession + ResumeSession together cover both the
+// "first call emits" and "idempotent under the same nonce" arms of
+// the contract.
+//
+// PauseSession on the first call
 // MUST emit session_transition. Same-nonce replays MUST emit nothing
 // (the conformance B group already enforces the same-nonce idempotency
 // for state; this probe enforces the same-nonce idempotency for events

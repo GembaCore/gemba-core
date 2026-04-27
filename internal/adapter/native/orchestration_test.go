@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 )
 
 func TestDescribeReturnsManifest(t *testing.T) {

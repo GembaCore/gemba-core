@@ -87,7 +87,7 @@ func TestDispatcher_Apply_PurviewBlockedSurfaceTypedError(t *testing.T) {
 		t,
 		corepersona.PurviewBlocking,
 		[]corepersona.Phase{"building"},
-		[]string{"docs_edit"},          // declared authority
+		[]string{"docs_edit"}, // declared authority
 		purviewgate.MutationKind("release_publish"), // requested kind — NOT in declared list
 		func() corepersona.Phase { return "building" },
 	)
@@ -153,7 +153,7 @@ func TestDispatcher_Apply_PurviewDormantOutOfPhaseAllows(t *testing.T) {
 		corepersona.PurviewBlocking,
 		[]corepersona.Phase{"building"}, // active in building only
 		[]string{"docs_edit"},
-		purviewgate.MutationKind("release_publish"), // out of scope, but...
+		purviewgate.MutationKind("release_publish"),    // out of scope, but...
 		func() corepersona.Phase { return "shipping" }, // dormant phase
 	)
 

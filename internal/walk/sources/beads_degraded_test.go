@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 )
 
 type fakeHealthBus struct {

@@ -21,8 +21,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	nativeadapter "github.com/MikeBengtson/gemba/internal/adapter/native"
 	"github.com/MikeBengtson/gemba/core"
+	nativeadapter "github.com/MikeBengtson/gemba/internal/adapter/native"
 	"github.com/MikeBengtson/gemba/internal/server/dispatch"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
 )

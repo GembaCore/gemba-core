@@ -80,9 +80,9 @@ var gastownManifest = core.OrchestrationCapabilityManifest{
 	// Transport: API (HTTP+JSON per gm-root DD-12, gm-e7.6). The v1
 	// channel is the `gt` CLI invoked with --json — every method is
 	// a one-shot JSON request/response cycle. See transport.go.
-	Transport:      core.TransportAPI,
-	WorkspaceKinds: []core.WorkspaceKind{core.WorkspaceWorktree},
-	DefaultWorkspaceKind:    core.WorkspaceWorktree,
+	Transport:            core.TransportAPI,
+	WorkspaceKinds:       []core.WorkspaceKind{core.WorkspaceWorktree},
+	DefaultWorkspaceKind: core.WorkspaceWorktree,
 	PerKindIsolation: map[core.WorkspaceKind]core.IsolationCapabilities{
 		core.WorkspaceWorktree: {FSScoped: true},
 	},
@@ -100,8 +100,8 @@ var gastownManifest = core.OrchestrationCapabilityManifest{
 		core.EscalationOrchestratorPause,
 		core.EscalationHITLApproval,
 	},
-	PeekModes:       []core.PeekMode{core.PeekTranscript},
-	EventDelivery:   core.EventDeliveryPoll,
+	PeekModes:     []core.PeekMode{core.PeekTranscript},
+	EventDelivery: core.EventDeliveryPoll,
 }
 
 // Describe returns the capability manifest. Subsequent gm-e7.x beads

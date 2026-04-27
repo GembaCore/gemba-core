@@ -85,11 +85,11 @@ type HITLLister interface {
 // gm-uf7) so the interface is callable today; gm-uf7's session
 // store maps its native shape onto this projection.
 type HITLAgendaItem struct {
-	SessionID  string       `json:"session_id"`
-	WorkerID   core.AgentID `json:"worker_id"`
-	Question   string       `json:"question"`
-	AskedAt    time.Time    `json:"asked_at"`
-	Urgency    string       `json:"urgency,omitempty"`
+	SessionID  string          `json:"session_id"`
+	WorkerID   core.AgentID    `json:"worker_id"`
+	Question   string          `json:"question"`
+	AskedAt    time.Time       `json:"asked_at"`
+	Urgency    string          `json:"urgency,omitempty"`
 	WorkItemID core.WorkItemID `json:"work_item_id,omitempty"`
 }
 

@@ -177,7 +177,7 @@ func runBuiltinBdWork(transport core.Transport, f testFlags) (*gembatesting.Repo
 	if err != nil {
 		return nil, fmt.Errorf("init bd WorkPlane: %w", err)
 	}
-	defer impl.Close()
+	defer func() { _ = impl.Close() }()
 	m, err := impl.Describe(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("describe: %w", err)

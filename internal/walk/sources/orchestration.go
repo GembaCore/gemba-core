@@ -117,10 +117,10 @@ const escalationKindPrefix = "escalation."
 // only and shouldn't churn the agenda. capability.refresh by itself
 // is fine to ignore — only the degraded variant matters.
 var agendaTriggerKinds = map[string]struct{}{
-	"budget.warn":                  {},
-	"budget.stop":                  {},
-	"capability.refresh-degraded":  {},
-	"adaptor.degraded":             {},
+	"budget.warn":                 {},
+	"budget.stop":                 {},
+	"capability.refresh-degraded": {},
+	"adaptor.degraded":            {},
 }
 
 // StartOrchestrationBridge subscribes to the OrchestrationPlane's
@@ -225,4 +225,3 @@ func translateEscalationEvent(adaptorID string, ev core.OrchestrationEvent) even
 	}
 	return out
 }
-
