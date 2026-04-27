@@ -115,6 +115,11 @@ type Router struct {
 	// mutation is allowed in the project's current phase.
 	phaseStore phase.Store
 
+	// bootstrapStore backs the /api/bootstrap/* surface (gm-ad1u).
+	// Required for every bootstrap handler; a nil store returns
+	// 503 from each route. Bind via Router.AttachBootstrap.
+	bootstrapStore BootstrapStore
+
 	mux http.Handler
 }
 
@@ -356,6 +361,16 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Post("/v1/walks/{id}/pause", r.pauseWalk)
 		api.Post("/v1/walks/{id}/resume", r.resumeWalk)
 		api.Post("/v1/walks/{id}/end", r.endWalk)
+
+		// gm-ad1u: /bootstrap wizard (ui-spec §5.15) backend. Mirrors
+		// web/src/api/bootstrap.ts wire shapes verbatim. start /
+		// progress / plan are read-style; commit is nonce-gated so
+		// SPA double-clicks can't double-write project config.
+		api.Post("/bootstrap/start", r.bootstrapStart)
+		api.Get("/bootstrap/progress", r.bootstrapProgress)
+		api.Get("/bootstrap/plan", r.bootstrapPlan)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/bootstrap/commit", r.bootstrapCommit)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {
