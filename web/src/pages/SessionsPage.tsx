@@ -12,6 +12,8 @@ import { useSessions, useEndSession } from '@/hooks/useSessions';
 import { useEscalations } from '@/hooks/useEscalations';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
 import { EscalationPanel } from '@/components/sessions/EscalationPanel';
+import { ParallelismPill } from '@/components/sessions/ParallelismPill';
+import { useSessionParallelism } from '@/hooks/useSessionParallelism';
 import type { Session } from '@/api/sessions';
 
 export function SessionsPage() {
@@ -94,6 +96,7 @@ export function SessionsPage() {
                 <Th>Bead</Th>
                 <Th>Agent</Th>
                 <Th>Status</Th>
+                <Th>Parallel</Th>
                 <Th>Pending</Th>
                 <Th>Worktree</Th>
                 <Th>Started</Th>
@@ -145,6 +148,7 @@ function Row({
   const worktree = typeof s.provider_metadata?.worktree === 'string' ? s.provider_metadata.worktree : '';
   const beadID = typeof s.provider_metadata?.bead_id === 'string' ? s.provider_metadata.bead_id : s.assignment_id;
   const agent = typeof s.provider_metadata?.agent_type === 'string' ? s.provider_metadata.agent_type : s.agent_id;
+  const par = useSessionParallelism(s.id);
   return (
     <tr
       data-testid={`session-row-${s.id}`}
@@ -171,6 +175,18 @@ function Row({
         >
           {s.status}
         </span>
+      </Td>
+      <Td>
+        {par ? (
+          <ParallelismPill
+            inFlight={par.in_flight}
+            maxParallel={par.max_parallel}
+            intraParallel={par.intra_parallel}
+            testid={`session-row-${s.id}-pill`}
+          />
+        ) : (
+          <span className="text-xs text-neutral-400">—</span>
+        )}
       </Td>
       <Td>
         {escalationCount > 0 ? (

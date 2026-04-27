@@ -19,6 +19,8 @@ import type {
   PlannerSessionIntent,
 } from '@/api/planner';
 import { cn } from '@/lib/utils';
+import { ParallelismPill } from '@/components/sessions/ParallelismPill';
+import { useSessionParallelism } from '@/hooks/useSessionParallelism';
 
 export interface AgentContextCardProps {
   ctx: PlannerOperationalContext;
@@ -99,6 +101,8 @@ export function AgentContextCard({
 }
 
 function CardHeader({ ctx }: { ctx: PlannerOperationalContext }) {
+  const sid = ctx.session?.id ?? '';
+  const par = useSessionParallelism(sid);
   return (
     <>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -106,8 +110,18 @@ function CardHeader({ ctx }: { ctx: PlannerOperationalContext }) {
           <Users className="h-3 w-3" />
           {ctx.agent?.id ?? '(anon)'}
         </span>
-        <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-neutral-800">
-          {ctx.session?.status ?? 'unknown'}
+        <span className="flex items-center gap-1.5">
+          {par ? (
+            <ParallelismPill
+              inFlight={par.in_flight}
+              maxParallel={par.max_parallel}
+              intraParallel={par.intra_parallel}
+              testid={`agent-context-${sid || 'unknown'}-pill`}
+            />
+          ) : null}
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-neutral-800">
+            {ctx.session?.status ?? 'unknown'}
+          </span>
         </span>
       </div>
       <div className="mb-1 truncate font-medium">{ctx.agent?.name ?? ctx.session?.id ?? 'Unknown session'}</div>

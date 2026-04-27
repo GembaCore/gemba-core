@@ -6,6 +6,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { routeEvent, startSSE, type EventSourceLike, type GembaEvent } from '../sse';
+import {
+  getParallelismMap,
+  resetParallelism,
+  SESSION_PARALLEL_CHANGED,
+} from '@/api/parallelism';
 
 class MockEventSource implements EventSourceLike {
   url: string;
@@ -101,6 +106,80 @@ describe('routeEvent', () => {
   it('ignores unknown kinds (additive-extensible contract)', () => {
     routeEvent(qc, { ...baseEvent, kind: 'epic.future_kind' } as GembaEvent);
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  describe('session.parallel.changed', () => {
+    afterEach(() => {
+      resetParallelism();
+    });
+
+    it('routes payload into the parallelism store (no invalidate)', () => {
+      routeEvent(qc, {
+        ...baseEvent,
+        kind: SESSION_PARALLEL_CHANGED,
+        session_id: 'sess-A',
+        payload: {
+          session_id: 'sess-A',
+          agent_id: 'claude',
+          in_flight: 2,
+          max_parallel: 3,
+          intra_parallel: true,
+        },
+      } as GembaEvent);
+      expect(invalidateSpy).not.toHaveBeenCalled();
+      expect(getParallelismMap()['sess-A']).toEqual({
+        session_id: 'sess-A',
+        agent_id: 'claude',
+        in_flight: 2,
+        max_parallel: 3,
+        intra_parallel: true,
+      });
+    });
+
+    it('drops a malformed event (missing in_flight / max_parallel)', () => {
+      routeEvent(qc, {
+        ...baseEvent,
+        kind: SESSION_PARALLEL_CHANGED,
+        session_id: 'sess-bad',
+        payload: { session_id: 'sess-bad', agent_id: 'claude', intra_parallel: true },
+      } as GembaEvent);
+      expect(getParallelismMap()['sess-bad']).toBeUndefined();
+    });
+
+    it('falls back to GembaEvent.session_id when payload omits it', () => {
+      routeEvent(qc, {
+        ...baseEvent,
+        kind: SESSION_PARALLEL_CHANGED,
+        session_id: 'sess-B',
+        payload: {
+          agent_id: 'claude',
+          in_flight: 1,
+          max_parallel: 2,
+          intra_parallel: true,
+        },
+      } as GembaEvent);
+      expect(getParallelismMap()['sess-B']?.in_flight).toBe(1);
+    });
+
+    it('subsequent events overwrite earlier per-session state', () => {
+      const fire = (in_flight: number) =>
+        routeEvent(qc, {
+          ...baseEvent,
+          kind: SESSION_PARALLEL_CHANGED,
+          session_id: 'sess-C',
+          payload: {
+            session_id: 'sess-C',
+            agent_id: 'claude',
+            in_flight,
+            max_parallel: 3,
+            intra_parallel: true,
+          },
+        } as GembaEvent);
+      fire(1);
+      fire(2);
+      fire(3);
+      expect(getParallelismMap()['sess-C']?.in_flight).toBe(3);
+    });
   });
 });
 

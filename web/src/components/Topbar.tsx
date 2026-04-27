@@ -3,6 +3,7 @@ import { Command, MessageSquare, Moon, Sun, User, ChevronDown } from 'lucide-rea
 import { useTheme } from '@/lib/theme-context';
 import { usePalette } from '@/components/palette/PaletteContext';
 import { usePmPanel } from '@/components/pm/PmPanelContext';
+import { GlobalInFlightCounter } from '@/components/sessions/GlobalInFlightCounter';
 import { cn } from '@/lib/utils';
 import { getServerConfig, type BeadsSource } from '@/api/config';
 
@@ -81,7 +82,8 @@ export function Topbar() {
         </kbd>
       </button>
 
-      <div className="ml-auto flex items-center gap-1">
+      <div className="ml-auto flex items-center gap-2">
+        <GlobalInFlightCounter />
         <button
           type="button"
           onClick={pm.toggle}

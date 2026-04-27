@@ -12,6 +12,11 @@
 // new event Kinds land.
 
 import type { QueryClient } from '@tanstack/react-query';
+import {
+  applyEvent as applyParallelismToStore,
+  SESSION_PARALLEL_CHANGED,
+  type SessionParallelismChangedPayload,
+} from '@/api/parallelism';
 
 // GembaEvent mirrors internal/events/schema.go. Kept in this module
 // rather than @/types so the SSE consumer is self-contained; when
@@ -113,6 +118,7 @@ export function startSSE(qc: QueryClient, opts: StartSSEOptions = {}): () => voi
   const knownKinds = [
     'session.transition',
     'session.state_reported',
+    SESSION_PARALLEL_CHANGED,
     'escalation.opened',
     'escalation.resolved',
     'workitem.created',
@@ -135,10 +141,43 @@ export function startSSE(qc: QueryClient, opts: StartSSEOptions = {}): () => voi
 // routeEvent dispatches a parsed GembaEvent to react-query
 // invalidations. Exported for direct unit-test access.
 export function routeEvent(qc: QueryClient, ev: GembaEvent): void {
+  // session.parallel.changed is special: rather than invalidate a
+  // backend-served query (no list endpoint exists for the per-session
+  // parallelism map), fold the payload into a SPA-internal store
+  // (api/parallelism) that pills + the global counter subscribe to.
+  // gm-root.16.2.
+  if (ev.kind === SESSION_PARALLEL_CHANGED) {
+    const payload = parsedParallelismPayload(ev);
+    if (payload) applyParallelismToStore(payload);
+    return;
+  }
   for (const route of KIND_ROUTES) {
     if (!route.matches(ev.kind)) continue;
     for (const key of route.keys) {
       qc.invalidateQueries({ queryKey: key });
     }
   }
+}
+
+// parsedParallelismPayload validates that an event's payload matches
+// SessionParallelismChangedPayload before we fold it in. Defensive
+// against a malformed event body — better to drop than to render
+// "NaN/undefined" in a pill.
+function parsedParallelismPayload(
+  ev: GembaEvent
+): SessionParallelismChangedPayload | null {
+  const p = ev.payload;
+  if (!p || typeof p !== 'object') return null;
+  const session_id =
+    typeof p.session_id === 'string' && p.session_id !== ''
+      ? p.session_id
+      : ev.session_id;
+  if (!session_id) return null;
+  const agent_id = typeof p.agent_id === 'string' ? p.agent_id : (ev.agent_id ?? '');
+  const in_flight = typeof p.in_flight === 'number' ? p.in_flight : NaN;
+  const max_parallel = typeof p.max_parallel === 'number' ? p.max_parallel : NaN;
+  const intra_parallel =
+    typeof p.intra_parallel === 'boolean' ? p.intra_parallel : false;
+  if (!Number.isFinite(in_flight) || !Number.isFinite(max_parallel)) return null;
+  return { session_id, agent_id, in_flight, max_parallel, intra_parallel };
 }

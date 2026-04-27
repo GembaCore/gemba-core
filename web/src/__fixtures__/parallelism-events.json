@@ -1,0 +1,65 @@
+{
+  "_doc": "gm-root.16.2 fixture — sample session.parallel.changed events the SPA consumes. Mirrors the contract this slice develops against; align with WS-A's testdata fixture once it lands.",
+  "events": [
+    {
+      "id": "evt-1",
+      "kind": "session.parallel.changed",
+      "at": "2026-04-27T17:00:00Z",
+      "source": { "plane": "orchestration", "adaptor_id": "native" },
+      "session_id": "sess-A",
+      "agent_id": "claude",
+      "payload": {
+        "session_id": "sess-A",
+        "agent_id": "claude",
+        "in_flight": 1,
+        "max_parallel": 3,
+        "intra_parallel": true
+      }
+    },
+    {
+      "id": "evt-2",
+      "kind": "session.parallel.changed",
+      "at": "2026-04-27T17:00:01Z",
+      "source": { "plane": "orchestration", "adaptor_id": "native" },
+      "session_id": "sess-A",
+      "agent_id": "claude",
+      "payload": {
+        "session_id": "sess-A",
+        "agent_id": "claude",
+        "in_flight": 2,
+        "max_parallel": 3,
+        "intra_parallel": true
+      }
+    },
+    {
+      "id": "evt-3",
+      "kind": "session.parallel.changed",
+      "at": "2026-04-27T17:00:02Z",
+      "source": { "plane": "orchestration", "adaptor_id": "native" },
+      "session_id": "sess-A",
+      "agent_id": "claude",
+      "payload": {
+        "session_id": "sess-A",
+        "agent_id": "claude",
+        "in_flight": 3,
+        "max_parallel": 3,
+        "intra_parallel": true
+      }
+    },
+    {
+      "id": "evt-4",
+      "kind": "session.parallel.changed",
+      "at": "2026-04-27T17:00:03Z",
+      "source": { "plane": "orchestration", "adaptor_id": "native" },
+      "session_id": "sess-B",
+      "agent_id": "shell-only",
+      "payload": {
+        "session_id": "sess-B",
+        "agent_id": "shell-only",
+        "in_flight": 1,
+        "max_parallel": 0,
+        "intra_parallel": false
+      }
+    }
+  ]
+}
