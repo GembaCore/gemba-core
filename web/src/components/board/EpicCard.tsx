@@ -1,24 +1,34 @@
-// EpicCard (gm-root.6 / ui-spec §4.2): the primary card on the board's
-// default Epic-primary view. Differences from WorkItemCard:
+// EpicCard (gm-root.6 / ui-spec §4.2 / gm-pd2): the primary card on the
+// board's default Epic-primary view. The §4.2 anatomy:
+//
+//   1. Priority stripe (3px left edge, color-coded P0-P4)
+//   2. Title (14px, bold, 3-line max then ellipsis)
+//   3. Readiness counts ('3/7 ready · 2 blocked · 1 in progress · 1 done')
+//   4. Token-budget gauge (horizontal bar, hidden until Sprint+TokenBudget
+//      data is wired through — see gm-e11.5)
+//   5. Badges row: parallel-group glyph (gm-lkx), escalation dot
+//      (gm-e11.3), purview-violation dot, perspective indicators —
+//      each rendered conditionally; row collapses when none present
+//
+// Differences from WorkItemCard:
 //   - kind chip ("EPIC") replaces the implicit-task look
 //   - child progress bar replaces the assignee/glyphs row
 //   - clicking opens the EpicDrawer, not the WorkItem drawer
-//
-// Per-state child counts are rendered as a tiny segmented bar so an
-// operator can see "this epic is mostly Started" at a glance without
-// expanding the swimlane.
 
 import type { KeyboardEvent } from 'react';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './relativeTime';
 
-const PRIORITY_STYLES: Record<string, string> = {
-  P0: 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300',
-  P1: 'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300',
-  P2: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300',
-  P3: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
-  P4: 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-400',
+// Stripe colors live as static Tailwind class strings so the JIT picks
+// them up. Keep in sync with PRIORITY_STYLES in WorkItemCard so
+// priority signal reads consistently across cards.
+const PRIORITY_STRIPE: Record<string, string> = {
+  P0: 'border-l-rose-500',
+  P1: 'border-l-orange-500',
+  P2: 'border-l-amber-500',
+  P3: 'border-l-sky-500',
+  P4: 'border-l-neutral-400 dark:border-l-neutral-500',
 };
 
 const STATE_DOT: Record<StateCategory, string> = {
@@ -53,6 +63,41 @@ export interface EpicChildCounts {
   total: number;
   // Per-state-category breakdown of those children.
   byState: Record<StateCategory, number>;
+  // Optional readiness aggregate from child DerivedSignals (gm-gsh).
+  // Populated by buildChildCounts when children carry the signals;
+  // absent when the source data is unavailable, in which case the
+  // readiness row is hidden rather than rendering as zeros (the
+  // operator can't tell "everyone unblocked" from "no signal yet").
+  readiness?: EpicReadinessCounts;
+}
+
+export interface EpicReadinessCounts {
+  // Children with derived.agent_claimable === true.
+  ready: number;
+  // Children with derived.human_action_required === true.
+  blocked: number;
+}
+
+// EpicCardTokenBudget is the shape the §4.2 gauge reads. Wired through
+// once Sprint+TokenBudget (gm-e11.5) lands; today every caller passes
+// undefined and the gauge stays hidden.
+export interface EpicCardTokenBudget {
+  used: number;
+  budget: number;
+}
+
+// EpicCardBadges is the §4.2 badges row. Each sub-field is an
+// independent toggle: the row renders the badges that have data and
+// collapses entirely when none do. Sub-beads driving each:
+//   parallelGroup    — gm-lkx
+//   escalations      — gm-e11.3 (count of open EscalationRequests)
+//   purviewViolation — purview gate when wired
+//   perspectives     — persona perspectives surface
+export interface EpicCardBadges {
+  parallelGroup?: string;
+  escalations?: number;
+  purviewViolation?: boolean;
+  perspectives?: string[];
 }
 
 export interface EpicCardProps {
@@ -65,6 +110,8 @@ export interface EpicCardProps {
   // shortcut is preserved so non-DnD contexts stay accessible. Flipped
   // on by EpicView when gm-75u wires the DndContext.
   draggable?: boolean;
+  tokenBudget?: EpicCardTokenBudget;
+  badges?: EpicCardBadges;
 }
 
 function priorityLabel(priority: number | null | undefined): string | null {
@@ -73,23 +120,31 @@ function priorityLabel(priority: number | null | undefined): string | null {
   return `P${priority}`;
 }
 
-export function EpicCard({ item, childCounts, onSelect, draggable }: EpicCardProps) {
+function hasAnyBadge(b: EpicCardBadges | undefined): boolean {
+  if (!b) return false;
+  return (
+    !!b.parallelGroup ||
+    (typeof b.escalations === 'number' && b.escalations > 0) ||
+    !!b.purviewViolation ||
+    (Array.isArray(b.perspectives) && b.perspectives.length > 0)
+  );
+}
+
+export function EpicCard({
+  item,
+  childCounts,
+  onSelect,
+  draggable,
+  tokenBudget,
+  badges,
+}: EpicCardProps) {
   const pri = priorityLabel(item.priority);
   const interactive = !!onSelect;
-  // ui-spec §4.5: primary card interaction is drag (restage);
-  // double-click opens the drawer. In draggable mode we drop the
-  // single-click handler because the pointer-down is the drag-start
-  // gesture. Keyboard (Enter / Space) still opens the drawer so the
-  // card is navigable without a pointer.
   const handleClick = !draggable && onSelect ? () => onSelect(item.id) : undefined;
   const handleDoubleClick = onSelect ? () => onSelect(item.id) : undefined;
-  // In draggable mode dnd-kit's KeyboardSensor claims Space/Enter on
-  // the draggable wrapper to run the keyboard-drag cycle (Space =
-  // start, arrows = move, Space/Enter = drop). Handling the same keys
-  // here would race the sensor — so we use `o` as the keyboard
-  // drawer-open shortcut (gm-fqiw, mirrors DEFAULT_HOTKEYS' drawer-open
-  // entry). When not draggable, Enter / Space stay wired so non-board
-  // contexts (Backlog list etc.) keep their familiar shortcut.
+  // In draggable mode dnd-kit's KeyboardSensor claims Space/Enter, so
+  // 'o' opens the drawer (gm-fqiw); non-draggable contexts keep the
+  // familiar Enter / Space.
   const handleKeyDown = onSelect
     ? (e: KeyboardEvent<HTMLElement>) => {
         if (e.key === 'o' || e.key === 'O') {
@@ -104,10 +159,13 @@ export function EpicCard({ item, childCounts, onSelect, draggable }: EpicCardPro
       }
     : undefined;
 
+  const showBadges = hasAnyBadge(badges);
+
   return (
     <article
       data-work-item-id={item.id}
       data-epic-card="true"
+      data-priority={pri ?? undefined}
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? `Open epic ${item.id}` : undefined}
@@ -115,13 +173,20 @@ export function EpicCard({ item, childCounts, onSelect, draggable }: EpicCardPro
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
       className={cn(
-        'group rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm',
+        'group relative rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm',
+        // §4.2: 3px priority stripe along the left edge.
+        'border-l-[3px]',
+        pri ? PRIORITY_STRIPE[pri] : '',
         'hover:border-neutral-300 hover:shadow',
         'dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700',
         interactive &&
           'cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-neutral-50 dark:focus:ring-offset-neutral-950'
       )}
     >
+      {/* Screen-reader-only priority callout — the stripe is purely
+          visual, so AT users get the equivalent signal from this label. */}
+      {pri && <span className="sr-only">Priority {pri}</span>}
+
       <header className="mb-1.5 flex items-center gap-2">
         <span
           aria-hidden
@@ -134,21 +199,16 @@ export function EpicCard({ item, childCounts, onSelect, draggable }: EpicCardPro
         <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950 dark:text-violet-300">
           epic
         </span>
-        {pri && (
-          <span
-            className={cn(
-              'ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-              PRIORITY_STYLES[pri]
-            )}
-          >
-            {pri}
-          </span>
-        )}
       </header>
 
-      <h3 className="line-clamp-2 font-medium text-neutral-900 dark:text-neutral-100">
+      {/* §4.2: title is bold and clamps at 3 lines. */}
+      <h3 className="line-clamp-3 font-bold leading-snug text-neutral-900 dark:text-neutral-100">
         {item.title}
       </h3>
+
+      {childCounts.readiness && childCounts.total > 0 && (
+        <ReadinessRow counts={childCounts} />
+      )}
 
       {childCounts.total > 0 ? (
         <ProgressBar counts={childCounts} />
@@ -157,6 +217,8 @@ export function EpicCard({ item, childCounts, onSelect, draggable }: EpicCardPro
           no child items
         </div>
       )}
+
+      {tokenBudget && <TokenBudgetGauge {...tokenBudget} />}
 
       <footer className="mt-2 flex items-center gap-2 text-[11px] text-neutral-500 dark:text-neutral-400">
         <span>
@@ -168,7 +230,51 @@ export function EpicCard({ item, childCounts, onSelect, draggable }: EpicCardPro
           </time>
         ) : null}
       </footer>
+
+      {showBadges && <BadgesRow badges={badges!} />}
     </article>
+  );
+}
+
+// ReadinessRow renders the "3/7 ready · 2 blocked · 1 in progress · 1
+// done" line. "in progress" and "done" are state-derived (started /
+// completed); "ready" and "blocked" come from DerivedSignals
+// aggregates the parent provides via childCounts.readiness.
+function ReadinessRow({ counts }: { counts: EpicChildCounts }) {
+  const r = counts.readiness!;
+  const inProgress = counts.byState.started ?? 0;
+  const done = counts.byState.completed ?? 0;
+  return (
+    <div
+      className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-neutral-600 dark:text-neutral-400"
+      data-testid="epic-readiness"
+    >
+      <span data-testid="epic-readiness-ready">
+        <span className="font-semibold text-emerald-700 dark:text-emerald-400">{r.ready}</span>
+        /{counts.total} ready
+      </span>
+      <span aria-hidden>·</span>
+      <span data-testid="epic-readiness-blocked">
+        <span
+          className={cn(
+            'font-semibold',
+            r.blocked > 0 ? 'text-rose-700 dark:text-rose-400' : ''
+          )}
+        >
+          {r.blocked}
+        </span>{' '}
+        blocked
+      </span>
+      <span aria-hidden>·</span>
+      <span data-testid="epic-readiness-in-progress">
+        <span className="font-semibold text-amber-700 dark:text-amber-400">{inProgress}</span> in
+        progress
+      </span>
+      <span aria-hidden>·</span>
+      <span data-testid="epic-readiness-done">
+        <span className="font-semibold text-neutral-700 dark:text-neutral-300">{done}</span> done
+      </span>
+    </div>
   );
 }
 
@@ -197,6 +303,91 @@ function ProgressBar({ counts }: { counts: EpicChildCounts }) {
           />
         );
       })}
+    </div>
+  );
+}
+
+// TokenBudgetGauge renders the §4.2 horizontal token-spend bar with a
+// usage label. Color shifts to amber once usage crosses 70% and rose
+// once over 100% so the operator sees a visual warning before the
+// hard stop tier (gm-e11.5 inform/warn/stop ladder will eventually
+// drive the thresholds; the static 70/100 split here matches the
+// inform/warn defaults named in the design).
+function TokenBudgetGauge({ used, budget }: EpicCardTokenBudget) {
+  const safeBudget = Math.max(budget, 0);
+  const safeUsed = Math.max(used, 0);
+  const pct = safeBudget === 0 ? 0 : Math.min(100, (safeUsed / safeBudget) * 100);
+  const tone =
+    safeBudget > 0 && safeUsed > safeBudget
+      ? 'bg-rose-500'
+      : pct >= 70
+        ? 'bg-amber-500'
+        : 'bg-emerald-500';
+  return (
+    <div className="mt-2" data-testid="epic-token-budget">
+      <div className="mb-0.5 flex items-baseline justify-between text-[10px] text-neutral-600 dark:text-neutral-400">
+        <span>Tokens</span>
+        <span>
+          {safeUsed.toLocaleString()} / {safeBudget.toLocaleString()}
+        </span>
+      </div>
+      <div className="h-1 w-full overflow-hidden rounded bg-neutral-200 dark:bg-neutral-800">
+        <div className={cn('h-full', tone)} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// BadgesRow renders the §4.2 badges. Each badge appears only when its
+// data is set; absent the row collapses (the parent gates on
+// hasAnyBadge before rendering this at all).
+function BadgesRow({ badges }: { badges: EpicCardBadges }) {
+  return (
+    <div
+      className="mt-2 flex flex-wrap items-center gap-1.5 text-[10px]"
+      data-testid="epic-badges"
+    >
+      {badges.parallelGroup && (
+        <span
+          className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-indigo-100 px-1 font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+          title={`Parallel group ${badges.parallelGroup}`}
+          data-testid="epic-badge-parallel-group"
+        >
+          {badges.parallelGroup}
+        </span>
+      )}
+      {typeof badges.escalations === 'number' && badges.escalations > 0 && (
+        <span
+          className="inline-flex h-4 items-center gap-0.5 rounded-full bg-rose-100 px-1.5 font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+          title={`${badges.escalations} open escalation${badges.escalations === 1 ? '' : 's'}`}
+          data-testid="epic-badge-escalations"
+        >
+          <span aria-hidden>!</span>
+          <span>{badges.escalations}</span>
+        </span>
+      )}
+      {badges.purviewViolation && (
+        <span
+          className="inline-flex h-4 items-center rounded-full bg-amber-100 px-1.5 font-semibold text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+          title="Purview violation"
+          data-testid="epic-badge-purview"
+        >
+          purview
+        </span>
+      )}
+      {badges.perspectives && badges.perspectives.length > 0 && (
+        <span className="flex items-center gap-0.5" data-testid="epic-badge-perspectives">
+          {badges.perspectives.slice(0, 3).map((p) => (
+            <span
+              key={p}
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-sky-100 text-[9px] font-semibold text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+              title={`Perspective: ${p}`}
+            >
+              {p.slice(0, 1).toUpperCase()}
+            </span>
+          ))}
+        </span>
+      )}
     </div>
   );
 }

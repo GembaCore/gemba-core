@@ -353,10 +353,15 @@ function DraggableEpicCard({ item, childCounts, onSelect }: DraggableEpicCardPro
 }
 
 // buildChildCounts pre-computes child counts so each EpicCard render
-// doesn't re-walk the relationship graph. O(items) per call.
-function buildChildCounts(items: WorkItem[]): Map<string, EpicChildCounts> {
+// doesn't re-walk the relationship graph. O(items) per call. Also
+// aggregates DerivedSignals (gm-pd2 readiness row) when at least one
+// child carries them — when none do, readiness is left undefined so
+// the EpicCard hides the row rather than rendering as zeros.
+//
+// Exported so the readiness-aggregation rules can be unit-tested
+// without standing up the full EpicView render tree.
+export function buildChildCounts(items: WorkItem[]): Map<string, EpicChildCounts> {
   const out = new Map<string, EpicChildCounts>();
-  // Collect direct children for every epic id we see in the dataset.
   const childrenByParent = new Map<string, WorkItem[]>();
   for (const it of items) {
     for (const r of it.relationships ?? []) {
@@ -369,9 +374,20 @@ function buildChildCounts(items: WorkItem[]): Map<string, EpicChildCounts> {
   }
   for (const [parentID, kids] of childrenByParent) {
     const counts = emptyCounts();
+    let sawDerived = false;
+    let ready = 0;
+    let blocked = 0;
     for (const k of kids) {
       counts.byState[k.state_category] = (counts.byState[k.state_category] ?? 0) + 1;
       counts.total++;
+      if (k.derived) {
+        sawDerived = true;
+        if (k.derived.agent_claimable) ready++;
+        if (k.derived.human_action_required) blocked++;
+      }
+    }
+    if (sawDerived) {
+      counts.readiness = { ready, blocked };
     }
     out.set(parentID, counts);
   }
