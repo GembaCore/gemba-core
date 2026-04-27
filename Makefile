@@ -1,8 +1,20 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# `make install` installs the binary under $(PREFIX)/bin. Defaults to
+# /usr/local — override for a userland install:
+#   make install PREFIX=$$HOME/.local
+# Toolchain prerequisites (matches what `make deps` bootstraps):
+#   - Go     >= 1.25  (see go.mod)
+#   - Node   >= 20
+#   - pnpm   >= 9     (corepack enable; pnpm@9)
+#   - git, make, a POSIX shell
+PREFIX     ?= /usr/local
+BINDIR     ?= $(PREFIX)/bin
+SYSTEMDDIR ?= /etc/systemd/system
 
 LDFLAGS := -s -w \
   -X main.version=$(VERSION) \
@@ -95,6 +107,40 @@ codegen: ## regenerate OpenAPI client (web/src/api/gen) + Go core TS types
 lint-openapi: ## run Spectral against docs/api/openapi.json
 	@command -v pnpx >/dev/null 2>&1 || { echo "install pnpm: https://pnpm.io"; exit 1; }
 	pnpx --package=@stoplight/spectral-cli spectral lint docs/api/openapi.json --ruleset .spectral.yaml
+
+## --- Install (build-from-source path; gm-e14.7) ---
+
+deps: ## bootstrap toolchain (Go modules + frontend pnpm install)
+	@command -v go   >/dev/null 2>&1 || { echo "install Go >= 1.25: https://go.dev/dl/"; exit 1; }
+	@command -v pnpm >/dev/null 2>&1 || { echo "install pnpm: corepack enable && corepack prepare pnpm@latest --activate"; exit 1; }
+	go mod download
+	cd web && pnpm install --frozen-lockfile
+
+install: build ## install the gemba binary to $(BINDIR) (default /usr/local/bin); override with PREFIX=...
+	@install -d "$(DESTDIR)$(BINDIR)"
+	install -m 0755 bin/gemba "$(DESTDIR)$(BINDIR)/gemba"
+	@echo "installed $(DESTDIR)$(BINDIR)/gemba"
+	@echo
+	@echo "next steps:"
+	@echo "  - copy systemd unit:    sudo cp packaging/systemd/gemba.service $(SYSTEMDDIR)/"
+	@echo "  - copy env example:     sudo install -d /etc/gemba && sudo cp packaging/systemd/gemba.env.example /etc/gemba/gemba.env"
+	@echo "  - enable + start:       sudo systemctl daemon-reload && sudo systemctl enable --now gemba"
+	@echo "  - rotate auth token:    sudo -u gemba $(BINDIR)/gemba auth token rotate"
+	@echo "  - verify:               curl -fsS http://127.0.0.1:7666/api/v1/capabilities"
+
+uninstall: ## remove the installed binary and (if present) the systemd unit
+	rm -f "$(DESTDIR)$(BINDIR)/gemba"
+	rm -f "$(DESTDIR)$(SYSTEMDDIR)/gemba.service"
+	@echo "removed $(DESTDIR)$(BINDIR)/gemba and $(DESTDIR)$(SYSTEMDDIR)/gemba.service (if they existed)"
+	@echo "note: /etc/gemba and /var/lib/gemba (if any) are left in place — remove manually if desired"
+
+smoke: build-go-only ## build-only smoke: assert the binary exists and `gemba --help` exits 0
+	@test -x bin/gemba || { echo "smoke: bin/gemba is missing or not executable"; exit 1; }
+	@./bin/gemba --help >/dev/null 2>&1 || { echo "smoke: bin/gemba --help did not exit 0"; exit 1; }
+	@./bin/gemba version >/dev/null 2>&1 || { echo "smoke: bin/gemba version did not exit 0"; exit 1; }
+	@test -f packaging/systemd/gemba.service || { echo "smoke: packaging/systemd/gemba.service missing"; exit 1; }
+	@grep -q '^ExecStart=' packaging/systemd/gemba.service || { echo "smoke: systemd unit missing ExecStart"; exit 1; }
+	@echo "smoke: ok ($$( ./bin/gemba version 2>/dev/null | head -1 ))"
 
 ## --- Release ---
 
