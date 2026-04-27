@@ -1,0 +1,127 @@
+name: Release Container Image
+
+# Builds and publishes the gemba-server container image to GHCR
+# (ghcr.io/mikebengtson/gemba-server) on tag push. Uses ko for a
+# Dockerfile-free, multi-arch (linux/amd64 + linux/arm64) build.
+#
+# Manual workflow_dispatch runs build-only (no push) so we can verify
+# the ko config without cutting a release.
+#
+# Image signing is keyless via cosign + GitHub OIDC — no key material in
+# secrets, no key rotation. Verification:
+#   cosign verify ghcr.io/mikebengtson/gemba-server:<tag> \
+#     --certificate-identity-regexp=https://github.com/MikeBengtson/gemba/.* \
+#     --certificate-oidc-issuer=https://token.actions.githubusercontent.com
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      push:
+        description: 'Push to ghcr.io? (false = build-only smoke test)'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: read
+  packages: write   # publish to ghcr.io
+  id-token: write   # cosign keyless signing via GitHub OIDC
+
+env:
+  KO_DOCKER_REPO: ghcr.io/mikebengtson/gemba-server
+
+jobs:
+  release-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build SPA (embedded in binary)
+        run: |
+          cd web && pnpm install --frozen-lockfile && pnpm build
+          touch dist/.keep
+
+      - uses: ko-build/setup-ko@v0.8
+        with:
+          version: v0.16.0
+
+      - name: Login to GHCR
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute build metadata
+        id: meta
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+            TAGS="${VERSION},latest"
+          else
+            VERSION="$(git describe --tags --always --dirty 2>/dev/null || echo dev)"
+            TAGS="$(git rev-parse --short HEAD)"
+          fi
+          {
+            echo "version=${VERSION}"
+            echo "commit=$(git rev-parse --short HEAD)"
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "tags=${TAGS}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build + push multi-arch image
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.push == 'true'
+        id: build
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
+          DATE: ${{ steps.meta.outputs.date }}
+        run: |
+          IMAGE=$(ko build --bare \
+            --tags="${{ steps.meta.outputs.tags }}" \
+            --platform=linux/amd64,linux/arm64 \
+            ./cmd/gemba)
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "Published: ${IMAGE}"
+
+      - name: Build-only smoke test (no push)
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.push != 'true'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
+          DATE: ${{ steps.meta.outputs.date }}
+        run: |
+          ko build --bare \
+            --tags="${{ steps.meta.outputs.tags }}" \
+            --platform=linux/amd64 \
+            --push=false \
+            ./cmd/gemba
+
+      - uses: sigstore/cosign-installer@v3
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.push == 'true'
+
+      - name: Sign image (keyless via GitHub OIDC)
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.push == 'true'
+        env:
+          COSIGN_EXPERIMENTAL: '1'
+        run: |
+          cosign sign --yes "${{ steps.build.outputs.image }}"

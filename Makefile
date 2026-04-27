@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi image image-push image-load image-build-only
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -103,6 +103,45 @@ release: ## build a local snapshot release via goreleaser
 	goreleaser release --snapshot --clean
 
 release-dry: release ## alias for `make release` (snapshot, no publish)
+
+## --- Container image (gm-e14.8) ---
+##
+## ko (https://ko.build) builds OCI images straight from Go source. The
+## SPA is embedded in the binary, so ko packages exactly what `make build`
+## produces — no Dockerfile needed. See .ko.yaml for the base image,
+## platforms, and ldflags injection. The frontend must be pre-built so
+## the //go:embed all:web/dist directive picks up real assets.
+##
+## Set KO_DOCKER_REPO to choose the registry, e.g.:
+##   KO_DOCKER_REPO=ghcr.io/mikebengtson/gemba-server make image-push
+##
+## Image tags default to the git rev; the workflow (.github/workflows/
+## release-image.yml) overrides this with the release tag on tag push.
+
+KO_DOCKER_REPO ?= ghcr.io/mikebengtson/gemba-server
+KO_TAGS        ?= $(COMMIT),latest
+
+# Inject the same ldflags ko consumes via templating in .ko.yaml.
+KO_ENV := VERSION=$(VERSION) COMMIT=$(COMMIT) DATE=$(DATE) KO_DOCKER_REPO=$(KO_DOCKER_REPO)
+
+image: frontend-build ## build container image (local OCI tarball, no push)
+	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
+	$(KO_ENV) ko build --bare --tags=$(KO_TAGS) --platform=linux/amd64,linux/arm64 --push=false ./cmd/gemba
+
+image-load: frontend-build ## build + load image into the active Docker daemon (single-arch, current host)
+	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
+	$(KO_ENV) ko build --bare --tags=$(KO_TAGS) --local ./cmd/gemba
+
+image-push: frontend-build ## build + push multi-arch image to KO_DOCKER_REPO
+	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
+	$(KO_ENV) ko build --bare --tags=$(KO_TAGS) --platform=linux/amd64,linux/arm64 ./cmd/gemba
+
+# Smoke-test target: builds the image config without pushing or requiring
+# a registry login. Used in CI to verify .ko.yaml stays consumable on
+# every PR, without burning the bandwidth of a full multi-arch publish.
+image-build-only: dist-sentinel ## smoke-test ko config (single-arch, local, no push)
+	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
+	$(KO_ENV) ko build --bare --tags=$(COMMIT) --push=false --platform=linux/amd64 ./cmd/gemba
 
 ## --- Housekeeping ---
 
