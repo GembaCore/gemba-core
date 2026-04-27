@@ -58,6 +58,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newConceptsCmd(),
 		newBeadCmd(),
 		newSessionCmd(),
+		newAgentCmd(),
 	)
 
 	return root

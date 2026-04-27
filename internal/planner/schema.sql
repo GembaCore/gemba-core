@@ -53,6 +53,38 @@ CREATE TABLE IF NOT EXISTS session_profiles (
   KEY idx_session_profiles_assignment (assignment_id)
 );
 
+-- agent_profiles (gm-v5z2.2)
+--
+-- Persistent agent profile — sister to session_profiles, keyed on
+-- AgentRef.ID. Survives `gt handoff`: a fresh session inherits the
+-- agent's profile as a warm starting point. Decay is per-day
+-- (default half-life 14d) — distinct from session_profiles'
+-- per-event decay.
+--
+-- The retrospective hook writes both profiles on bead completion:
+-- session row gets full weight, agent row gets contribution scaled
+-- by 1 / lifetime_bead_count so a single bead doesn't dominate.
+--
+-- last_activity_at is the wall-clock of the most-recent completion;
+-- the writer uses (now - last_activity_at) as the decay input for
+-- AgeByDays so an idle profile fades correctly even when no fresh
+-- read has happened since the last bump.
+
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  agent_id              VARCHAR(255) NOT NULL,
+
+  concepts              JSON,
+  files                 JSON,
+
+  lifetime_bead_count   BIGINT       NOT NULL DEFAULT 0,
+  last_activity_at      DATETIME(6)  NOT NULL,
+
+  created_at            DATETIME(6)  NOT NULL,
+  updated_at            DATETIME(6)  NOT NULL,
+
+  PRIMARY KEY (agent_id)
+);
+
 -- session_intents (gm-v5z2.3)
 --
 -- One row per session carrying the operator-pinned focus directive

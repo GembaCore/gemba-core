@@ -19,6 +19,7 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
+	"github.com/MikeBengtson/gemba/internal/agentprofile"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/planner"
@@ -64,6 +65,21 @@ func (f *fakeProfiles) RecordClaim(_ context.Context, _ planner.ClaimEvent) (*pl
 	return nil, nil
 }
 func (f *fakeProfiles) UpsertProfile(_ context.Context, _ *planner.SessionProfile) error { return nil }
+
+// fakeAgentProfiles records calls to AgentProfileWriter.RecordCompletion
+// so the runner test can assert the agent profile writeback fires.
+type fakeAgentProfiles struct {
+	mu    sync.Mutex
+	calls []agentprofile.CompletionEvent
+	err   error
+}
+
+func (f *fakeAgentProfiles) RecordCompletion(_ context.Context, ev agentprofile.CompletionEvent) (*agentprofile.AgentProfile, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, ev)
+	return &agentprofile.AgentProfile{AgentID: ev.AgentID}, f.err
+}
 
 func newRunnerWithStore(t *testing.T) (*Runner, *Store, sqlmock.Sqlmock, *sql.DB) {
 	t.Helper()
@@ -125,6 +141,64 @@ func TestRunOne_WritesGradeAndUpdatesProfile(t *testing.T) {
 	}
 	if len(got.ActualFiles) != 2 || len(got.ActualConcepts) != 2 {
 		t.Errorf("profile actuals not threaded through: %+v", got)
+	}
+}
+
+func TestRunOne_AlsoWritesAgentProfile(t *testing.T) {
+	r, _, mock, db := newRunnerWithStore(t)
+	defer db.Close()
+	r.Declared = &fakeDeclared{}
+	r.Actual = &fakeActual{a: Actual{
+		Files:    []string{"src/auth.go"},
+		Concepts: []planner.ConceptTag{"auth"},
+	}}
+	r.Profiles = &fakeProfiles{}
+	agentProfiles := &fakeAgentProfiles{}
+	r.AgentProfiles = agentProfiles
+
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scorer_grades")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	if err := r.RunOne(context.Background(), closedEvent(t, "gm-1", "sess-1")); err != nil {
+		t.Fatalf("RunOne: %v", err)
+	}
+	if len(agentProfiles.calls) != 1 {
+		t.Fatalf("expected 1 agent-profile RecordCompletion; got %d", len(agentProfiles.calls))
+	}
+	call := agentProfiles.calls[0]
+	if call.AgentID != "mike2" || call.BeadID != "gm-1" {
+		t.Errorf("agent-profile call shape: %+v", call)
+	}
+	if len(call.Files) != 1 || len(call.Concepts) != 1 {
+		t.Errorf("actuals not threaded into agent-profile call: %+v", call)
+	}
+}
+
+func TestRunOne_NoAgentIDSkipsAgentProfile(t *testing.T) {
+	r, _, mock, db := newRunnerWithStore(t)
+	defer db.Close()
+	r.Declared = &fakeDeclared{}
+	r.Actual = &fakeActual{a: Actual{Files: []string{"x"}}}
+	agentProfiles := &fakeAgentProfiles{}
+	r.AgentProfiles = agentProfiles
+
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO scorer_grades")).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	// Closed event with empty AgentID — common during early bring-up
+	// before the orchestration plane is wired.
+	ev := events.GembaEvent{
+		Kind:       events.WorkItemClosed,
+		At:         mustParseRetroTime(t),
+		WorkItemID: "gm-1",
+		SessionID:  "sess-1",
+		// AgentID intentionally empty.
+	}
+	if err := r.RunOne(context.Background(), ev); err != nil {
+		t.Fatalf("RunOne: %v", err)
+	}
+	if len(agentProfiles.calls) != 0 {
+		t.Errorf("agent-profile writeback fired with empty AgentID; got %d calls", len(agentProfiles.calls))
 	}
 }
 

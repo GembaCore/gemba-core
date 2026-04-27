@@ -54,8 +54,8 @@ type Drivers struct {
 	ContextPressure float64 `json:"context_pressure"`
 	ConceptDrift    float64 `json:"concept_drift"`
 	Calibration     float64 `json:"calibration"`
-	Headroom        float64 `json:"headroom"`         // 1 - pressure
-	DriftPenalty    float64 `json:"drift_penalty"`    // weight * drift
+	Headroom        float64 `json:"headroom"`      // 1 - pressure
+	DriftPenalty    float64 `json:"drift_penalty"` // weight * drift
 }
 
 // Inputs bundles everything Estimate needs. Health is required

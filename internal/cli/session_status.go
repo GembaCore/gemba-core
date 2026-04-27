@@ -49,14 +49,14 @@ type SessionStatusOut struct {
 }
 
 type SessionStatusRow struct {
-	SessionID         string         `json:"session_id"`
-	AgentID           string         `json:"agent_id,omitempty"`
-	ContextPressure   float64        `json:"context_pressure"`
-	ConceptDrift      float64        `json:"concept_drift"`
-	TimeOnTaskSeconds float64        `json:"time_on_task_seconds"`
-	PressureLevel     string         `json:"pressure_level"`
-	DriftLevel        string         `json:"drift_level"`
-	Runway            runway.Runway  `json:"runway"`
+	SessionID         string        `json:"session_id"`
+	AgentID           string        `json:"agent_id,omitempty"`
+	ContextPressure   float64       `json:"context_pressure"`
+	ConceptDrift      float64       `json:"concept_drift"`
+	TimeOnTaskSeconds float64       `json:"time_on_task_seconds"`
+	PressureLevel     string        `json:"pressure_level"`
+	DriftLevel        string        `json:"drift_level"`
+	Runway            runway.Runway `json:"runway"`
 }
 
 func newSessionStatusCmd() *cobra.Command {

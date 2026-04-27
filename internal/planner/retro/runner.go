@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MikeBengtson/gemba/internal/agentprofile"
 	"github.com/MikeBengtson/gemba/internal/core"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/planner"
@@ -59,6 +60,14 @@ type ActualSource interface {
 // indexed working tree).
 var ErrUnavailable = errors.New("retro: actuals unavailable")
 
+// AgentProfileWriter is the narrow interface the runner uses to
+// fan a bead-completion contribution into the agent's persistent
+// profile. *agentprofile.Store satisfies it; tests substitute a
+// fake.
+type AgentProfileWriter interface {
+	RecordCompletion(ctx context.Context, ev agentprofile.CompletionEvent) (*agentprofile.AgentProfile, error)
+}
+
 // Runner orchestrates retrospective execution. Wire one per server
 // process; call Run(ctx, hub) to start consuming events.
 //
@@ -73,9 +82,15 @@ type Runner struct {
 	Declared DeclaredSource
 	Actual   ActualSource
 	Profiles planner.ProfileWriter
+	// AgentProfiles, when set, gets the same actuals written to the
+	// per-agent persistent profile. Distinct from Profiles because
+	// the per-day decay axis + scaling rule are agent-specific
+	// (work-planning.md §4 Layer 1.2). nil = skip agent profile
+	// writeback.
+	AgentProfiles AgentProfileWriter
 
-	// HalfLife passes through to RecordCompletion. Zero means
-	// planner.DefaultDecayHalfLife.
+	// HalfLife passes through to Profiles.RecordCompletion. Zero
+	// means planner.DefaultDecayHalfLife.
 	HalfLife int
 
 	// OnError, when set, receives every error produced during a
@@ -215,6 +230,22 @@ func (r *Runner) runOne(ctx context.Context, ev events.GembaEvent) error {
 		})
 		if err != nil {
 			return fmt.Errorf("retro %s: profile writeback: %w", beadID, err)
+		}
+	}
+
+	// Agent profile writeback — same actuals, scaled by
+	// 1/lifetime_bead_count so a single bead doesn't dominate the
+	// long-running profile. Spec §4 Layer 1.2.
+	if r.AgentProfiles != nil && ev.AgentID != "" {
+		_, err := r.AgentProfiles.RecordCompletion(ctx, agentprofile.CompletionEvent{
+			AgentID:  core.AgentID(ev.AgentID),
+			BeadID:   beadID,
+			Concepts: actual.Concepts,
+			Files:    actual.Files,
+			Now:      r.Now,
+		})
+		if err != nil {
+			return fmt.Errorf("retro %s: agent profile writeback: %w", beadID, err)
 		}
 	}
 	return nil
