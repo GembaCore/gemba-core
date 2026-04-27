@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 	gembatesting "github.com/MikeBengtson/gemba/testing"
 )
 

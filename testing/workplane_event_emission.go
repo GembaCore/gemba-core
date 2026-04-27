@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // gm-e3.6.3 — Group D probes for the WorkPlane: every state-changing

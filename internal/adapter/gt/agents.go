@@ -77,8 +77,11 @@ var gastownManifest = core.OrchestrationCapabilityManifest{
 	AdaptorID:               "gastown",
 	AdaptorVersion:          "0.1.0",
 	OrchestrationAPIVersion: core.ProtocolVersion,
-	Transport:               core.TransportJSONL,
-	WorkspaceKinds:          []core.WorkspaceKind{core.WorkspaceWorktree},
+	// Transport: API (HTTP+JSON per gm-root DD-12, gm-e7.6). The v1
+	// channel is the `gt` CLI invoked with --json — every method is
+	// a one-shot JSON request/response cycle. See transport.go.
+	Transport:      core.TransportAPI,
+	WorkspaceKinds: []core.WorkspaceKind{core.WorkspaceWorktree},
 	DefaultWorkspaceKind:    core.WorkspaceWorktree,
 	PerKindIsolation: map[core.WorkspaceKind]core.IsolationCapabilities{
 		core.WorkspaceWorktree: {FSScoped: true},
