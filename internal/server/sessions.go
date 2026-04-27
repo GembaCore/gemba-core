@@ -14,13 +14,16 @@ package server
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	nativeadapter "github.com/MikeBengtson/gemba/internal/adapter/native"
 	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/internal/server/dispatch"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
 )
 
@@ -88,6 +91,12 @@ type startSessionRequest struct {
 	Title     string `json:"title,omitempty"`
 	Workspace string `json:"workspace,omitempty"`
 
+	// PaneID is an explicit reuse-pane override. When set, the server
+	// skips the dispatcher policy entirely and threads this directly to
+	// the adaptor as gemba:reuse_pane_id. Used when the SPA presents
+	// "send to existing session" UI. See gm-root.16.4.
+	PaneID string `json:"pane_id,omitempty"`
+
 	// Manual-mode fields. Required when Kind == "manual"; ignored
 	// otherwise.
 	PersonaID    string `json:"persona_id,omitempty"`
@@ -140,6 +149,41 @@ func (r *Router) startBeadSession(w http.ResponseWriter, req *http.Request, body
 		return
 	}
 	nonce := req.Header.Get(ConfirmHeader)
+	op := r.host.OrchestrationPlane()
+
+	// Pick a reuse target. Explicit PaneID overrides the policy. When
+	// neither the body nor the policy yields one, the prompt extension
+	// is left empty and the adaptor spawns a fresh pane (the historical
+	// behavior).
+	reusePaneID := body.PaneID
+	if reusePaneID == "" {
+		reusePaneID = pickReusePane(op, body.AgentType)
+	}
+
+	prompt := buildBeadPrompt(body, nonce, reusePaneID)
+
+	// AssignmentID is generally provisioned by the orchestrator from the
+	// bead; for the native adaptor's MVP we use bead_id directly so the
+	// session record's AssignmentID is operator-meaningful.
+	sess, err := op.StartSession(req.Context(), body.BeadID, prompt)
+	if err != nil && reusePaneID != "" && body.PaneID == "" && isCapRace(err) {
+		// Race: the picked pane filled between policy check and dispatch.
+		// Retry with no reuse so a fresh pane absorbs the bead instead
+		// of bubbling a confusing 4xx up to the SPA.
+		retryPrompt := buildBeadPrompt(body, nonce, "")
+		sess, err = op.StartSession(req.Context(), body.BeadID, retryPrompt)
+	}
+	if err != nil {
+		httperr.WriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, sess)
+}
+
+// buildBeadPrompt assembles the SessionPrompt for a bead-driven start.
+// Centralized so the policy + retry path produce identical extension
+// maps modulo the reuse_pane_id key.
+func buildBeadPrompt(body startSessionRequest, nonce, reusePaneID string) core.SessionPrompt {
 	prompt := core.SessionPrompt{
 		Extension: map[string]any{
 			"gemba:bead_id":    body.BeadID,
@@ -153,15 +197,56 @@ func (r *Router) startBeadSession(w http.ResponseWriter, req *http.Request, body
 	if body.Title != "" {
 		prompt.Extension["gemba:title"] = body.Title
 	}
-	// AssignmentID is generally provisioned by the orchestrator from the
-	// bead; for the native adaptor's MVP we use bead_id directly so the
-	// session record's AssignmentID is operator-meaningful.
-	sess, err := r.host.OrchestrationPlane().StartSession(req.Context(), body.BeadID, prompt)
-	if err != nil {
-		httperr.WriteError(w, err)
-		return
+	if reusePaneID != "" {
+		prompt.Extension["gemba:reuse_pane_id"] = reusePaneID
 	}
-	writeJSON(w, http.StatusCreated, sess)
+	return prompt
+}
+
+// pickReusePane consults the dispatcher policy to find an existing
+// intra-parallel session of the right agent type with capacity. Today
+// only the native adaptor exposes the candidate set; on adaptors that
+// don't, we degrade gracefully to "no reuse target" so dispatch falls
+// through to a fresh spawn.
+func pickReusePane(op core.OrchestrationPlaneAdaptor, agentType string) string {
+	src, ok := op.(interface {
+		SessionsByAgentType(string) []nativeadapter.SessionDispatchInfo
+	})
+	if !ok {
+		return ""
+	}
+	infos := src.SessionsByAgentType(agentType)
+	if len(infos) == 0 {
+		return ""
+	}
+	cands := make([]dispatch.Candidate, 0, len(infos))
+	for _, info := range infos {
+		cands = append(cands, dispatch.Candidate{
+			SessionID:   info.SessionID,
+			PaneID:      info.PaneID,
+			StartedAt:   info.StartedAt,
+			InFlight:    info.InFlight,
+			MaxParallel: info.MaxParallel,
+		})
+	}
+	pane, ok := dispatch.Pick(cands)
+	if !ok {
+		return ""
+	}
+	return pane
+}
+
+// isCapRace recognizes the dispatch race surfaced by the native
+// adaptor when a picked pane filled between policy and dispatch. The
+// adaptor uses KindValidation for both genuine validation errors and
+// the race; we treat any KindValidation from a reuse-mode StartSession
+// as retryable so the operator never sees a 4xx for a mechanical race.
+func isCapRace(err error) bool {
+	var aerr *core.AdaptorError
+	if !errors.As(err, &aerr) {
+		return false
+	}
+	return aerr.Kind == core.KindValidation
 }
 
 func (r *Router) startManualSession(w http.ResponseWriter, req *http.Request, body startSessionRequest) {
