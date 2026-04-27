@@ -1,8 +1,11 @@
-// CapabilitiesPage tests (gm-e12.14). Pins the rendering invariants
-// for the read-only adaptor browser:
+// CapabilitiesPage tests (gm-e12.14, restructured by gm-bi5). Pins the
+// rendering invariants for the read-only adaptor browser:
 //
-//   * tabs render only for planes that exist (no orchestration tab
-//     when no orchestration plane is bound, and vice-versa)
+//   * top-level surface sections (Organization vs Execution) always
+//     render, with the conceptual subtitle copy from the bead
+//   * adaptors are placed under the section their `adaptor_name`
+//     classifies to (see lib/surfaceKind.ts)
+//   * each adaptor card carries a surface badge
 //   * health pill reads the cached /api/adaptors data the SSE pump
 //     feeds — no fetch of its own
 //   * state map / extension tables / conformance flags all render
@@ -13,7 +16,7 @@
 // pre-populated into the QueryClient cache on the ['adaptors'] key.
 
 import { describe, expect, it } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -179,7 +182,22 @@ describe('CapabilitiesPage', () => {
     expect(card.toLowerCase()).toContain('read-only');
   });
 
-  it('switches to the orchestration tab when both planes are present', () => {
+  it('renders both surface sections with their conceptual subtitles', () => {
+    const Wrapper = buildWrapper({
+      initial: { work_plane: workManifest(), orchestration_plane: null },
+    });
+    render(<CapabilitiesPage />, { wrapper: Wrapper });
+    const org = screen.getByTestId('surface-section-organization');
+    const exec = screen.getByTestId('surface-section-execution');
+    expect(org.textContent ?? '').toContain(
+      'Organization surface: what your team already does.'
+    );
+    expect(exec.textContent ?? '').toContain(
+      'Execution surface: what happens in this workspace.'
+    );
+  });
+
+  it('places the beads work-plane card under the execution surface', () => {
     const Wrapper = buildWrapper({
       initial: {
         work_plane: workManifest(),
@@ -187,27 +205,48 @@ describe('CapabilitiesPage', () => {
       },
     });
     render(<CapabilitiesPage />, { wrapper: Wrapper });
-    // Default = work.
-    expect(screen.getByTestId('work-plane-card')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('tab-orchestration-plane'));
-    // Tab switch is synchronous (useState); the orchestration card
-    // replaces the work card on the next render.
-    expect(screen.queryByTestId('orchestration-plane-card')).toBeTruthy();
-    const chips = screen.getByTestId('workspace-kinds').textContent ?? '';
-    expect(chips).toContain('worktree');
-    expect(chips).toContain('container');
-    expect(chips).toContain('default');
+    const exec = screen.getByTestId('surface-section-execution');
+    // beads (work plane) and native (orchestration) are both
+    // execution-surface adaptors per the classifier.
+    expect(within(exec).getByTestId('work-plane-card')).toBeTruthy();
+    expect(within(exec).getByTestId('orchestration-plane-card')).toBeTruthy();
+    // Organization section is empty.
+    expect(screen.getByTestId('surface-empty-organization')).toBeTruthy();
   });
 
-  it('hides the orchestration tab when no orchestration plane is bound', () => {
+  it('places a jira work-plane card under the organization surface', () => {
     const Wrapper = buildWrapper({
-      initial: { work_plane: workManifest(), orchestration_plane: null },
+      initial: {
+        work_plane: workManifest({ adaptor_name: 'jira' }),
+        orchestration_plane: null,
+      },
     });
     render(<CapabilitiesPage />, { wrapper: Wrapper });
-    // Tab button still exists so the layout is stable, but it's
-    // disabled and never has the active treatment.
-    const orchTab = screen.getByTestId('tab-orchestration-plane') as HTMLButtonElement;
-    expect(orchTab.disabled).toBe(true);
+    const org = screen.getByTestId('surface-section-organization');
+    expect(within(org).getByTestId('work-plane-card').textContent ?? '').toContain('jira');
+    // Execution section is empty.
+    expect(screen.getByTestId('surface-empty-execution')).toBeTruthy();
+  });
+
+  it('renders the surface badge on each adaptor card', () => {
+    const Wrapper = buildWrapper({
+      initial: {
+        work_plane: workManifest({ adaptor_name: 'jira' }),
+        orchestration_plane: orchManifest(),
+      },
+    });
+    render(<CapabilitiesPage />, { wrapper: Wrapper });
+    const orgCard = within(screen.getByTestId('surface-section-organization')).getByTestId(
+      'work-plane-card'
+    );
+    expect(within(orgCard).getByTestId('surface-badge-organization').textContent).toMatch(/org/i);
+
+    const execCard = within(screen.getByTestId('surface-section-execution')).getByTestId(
+      'orchestration-plane-card'
+    );
+    expect(within(execCard).getByTestId('surface-badge-execution').textContent).toMatch(
+      /workspace/i
+    );
   });
 
   it('shows an empty state when neither plane is bound', () => {

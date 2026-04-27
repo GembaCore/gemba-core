@@ -10,6 +10,7 @@ import {
   Mail,
   Terminal,
   CircuitBoard,
+  Settings,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -28,6 +29,7 @@ const items: Item[] = [
   { to: '/escalations', label: 'Escalations', Icon: AlertTriangle },
   { to: '/capabilities', label: 'Capability Browser', Icon: Boxes },
   { to: '/mail', label: 'Mail', Icon: Mail, gated: true },
+  { to: '/settings', label: 'Settings', Icon: Settings },
 ];
 
 export function Sidebar() {
