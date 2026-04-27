@@ -30,7 +30,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // WitnessFinding is the projection the lister consumes. Every

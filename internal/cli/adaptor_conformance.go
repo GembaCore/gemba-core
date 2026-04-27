@@ -11,7 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/noop"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 	gembatesting "github.com/MikeBengtson/gemba/testing"
 )
 

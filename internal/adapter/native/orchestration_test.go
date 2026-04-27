@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 func TestDescribeReturnsManifest(t *testing.T) {

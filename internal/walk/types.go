@@ -5,7 +5,7 @@ package walk
 import (
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // ID is the walk identifier. Stable for the life of the walk;

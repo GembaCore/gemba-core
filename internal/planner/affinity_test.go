@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 const eps = 1e-9

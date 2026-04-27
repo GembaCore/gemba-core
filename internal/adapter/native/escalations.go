@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // escalationIndex is the in-memory store the native adaptor uses

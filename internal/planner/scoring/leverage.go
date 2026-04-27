@@ -11,7 +11,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // DefaultLeverageK is the saturation knob: score = 1 - exp(-k * weight).

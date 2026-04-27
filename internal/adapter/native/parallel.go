@@ -3,7 +3,7 @@ package native
 import (
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // EventKindSessionParallelChanged is emitted whenever a pane's

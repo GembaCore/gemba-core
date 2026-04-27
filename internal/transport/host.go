@@ -10,7 +10,7 @@ package transport
 import (
 	"fmt"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Plane names which half of the two-plane architecture (gm-root DD-1) a

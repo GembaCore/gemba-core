@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // --- Group G: dep-graph evolution (R3) ----------------------------

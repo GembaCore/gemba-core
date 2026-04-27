@@ -17,7 +17,7 @@ package shader
 import (
 	"context"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Wrap returns a WorkPlane whose reads run through Shader.DecodeFromRead

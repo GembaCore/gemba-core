@@ -18,7 +18,7 @@ import (
 	"sort"
 
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // personaSummary is the row shape for /api/v1/personas. Keep the

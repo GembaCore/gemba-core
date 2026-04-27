@@ -3,7 +3,7 @@ package jsonl
 import (
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // TestBoundaryDecodeFailsAtTransport is the gm-io4 contract test for

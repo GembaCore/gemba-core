@@ -13,7 +13,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // BeadConceptLookup retrieves the concept profile for a previously

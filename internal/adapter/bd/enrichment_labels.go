@@ -1,6 +1,6 @@
 package bd
 
-import "github.com/MikeBengtson/gemba/internal/core"
+import "github.com/MikeBengtson/gemba/core"
 
 // gm-s47n.1.1: Layer 0 enrichment labels project bead labels onto the
 // four typed core.WorkItem enrichment fields (targets, concepts,

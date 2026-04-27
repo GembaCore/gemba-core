@@ -32,7 +32,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // ProfileWriter is the narrow interface adaptor-side hooks code

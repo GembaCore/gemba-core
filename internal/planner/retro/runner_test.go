@@ -20,7 +20,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 
 	"github.com/MikeBengtson/gemba/internal/agentprofile"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/planner"
 	"github.com/MikeBengtson/gemba/internal/planner/targets"

@@ -1,5 +1,5 @@
 // Package transport contains the shims that translate between
-// internal/core types and the wire formats Gemba speaks: JSON over HTTP
+// core types and the wire formats Gemba speaks: JSON over HTTP
 // (api), newline-delimited JSON (jsonl), and the Model Context Protocol
 // (mcp). Each lives in its own subpackage so they can evolve independently.
 //

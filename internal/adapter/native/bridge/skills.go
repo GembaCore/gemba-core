@@ -3,7 +3,7 @@ package bridge
 import (
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // SkillSection is one extracted "## Questions" or "## Blockers" block

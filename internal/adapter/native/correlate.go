@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Correlator consumes OrchestrationEvents (gm-native.14) and attaches

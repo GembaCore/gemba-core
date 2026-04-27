@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Sanity-check the programmable-hook + call-recording contract documented

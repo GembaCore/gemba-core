@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // peekBackend is a fakeBackend with a programmable CapturePane so peek

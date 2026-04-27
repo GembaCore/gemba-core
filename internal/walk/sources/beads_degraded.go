@@ -27,7 +27,7 @@ import (
 	"time"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // HealthSnapshotter is the minimal HealthBus surface the lister

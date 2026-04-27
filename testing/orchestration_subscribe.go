@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // probeSubscribeChannel asserts Group D's minimum contract: Subscribe

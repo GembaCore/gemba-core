@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/native/claudemd"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // recordingOP captures the StartSession call inputs so the test can

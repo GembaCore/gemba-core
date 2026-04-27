@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/bd"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // TestAgentRefSynthesisFromLabels locks the gm-e6.3 DoD: listing a bead

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Phase names a project-level mode (gm-9rv §3). The string values are

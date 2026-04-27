@@ -1,8 +1,8 @@
-// Command gen-core-types writes the TypeScript mirror of internal/core.
+// Command gen-core-types writes the TypeScript mirror of core.
 //
 // Invoked via `make gen` or `go run ./cmd/gen-core-types`. Output goes
 // to web/src/types/core.gen.ts (overwrite). The source of truth is the
-// CoreTypesTS constant in internal/core.
+// CoreTypesTS constant in core.
 package main
 
 import (
@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 func main() {

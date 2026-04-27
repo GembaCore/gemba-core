@@ -1,7 +1,7 @@
 package events
 
 import (
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // FromOrchestrationEvent converts a core.OrchestrationEvent (the

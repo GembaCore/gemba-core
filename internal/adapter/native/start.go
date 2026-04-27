@@ -15,7 +15,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/native/install"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/preamble"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/worktrees"
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/persona"
 )
 

@@ -40,7 +40,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // RefineryRejection is the projection the lister consumes. Adaptors

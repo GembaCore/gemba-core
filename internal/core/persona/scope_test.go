@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 func newRepoRegistry(t *testing.T, repos ...*core.Repository) *core.RepositoryRegistry {

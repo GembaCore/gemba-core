@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // SessionDispatchInfo summarizes a live session's state for the

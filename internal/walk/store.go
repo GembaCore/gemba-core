@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // ErrNotFound is returned by Store.Get / Update / End when the

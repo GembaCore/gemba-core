@@ -1,7 +1,7 @@
 package native
 
 import (
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // handleStateEvent reacts to the bridge's session_state_reported

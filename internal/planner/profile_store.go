@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // ProfileStore is a *sql.DB-backed reader for the session_profiles

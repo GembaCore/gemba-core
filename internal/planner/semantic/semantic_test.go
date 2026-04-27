@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/planner/conflicts"
 	"github.com/MikeBengtson/gemba/internal/planner/targets"
 	"github.com/MikeBengtson/gemba/internal/sourceanalysis"

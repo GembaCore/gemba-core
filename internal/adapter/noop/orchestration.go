@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // OrchestrationPlane is a minimal in-memory core.OrchestrationPlaneAdaptor.

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // DefaultDemotionFactor is the multiplier applied to a candidate

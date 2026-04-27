@@ -3,7 +3,7 @@ package bd
 import (
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Edge mapping for gm-e6.2: Beads's 7 native edge types split into the

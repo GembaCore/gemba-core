@@ -1,6 +1,6 @@
 package native
 
-import "github.com/MikeBengtson/gemba/internal/core"
+import "github.com/MikeBengtson/gemba/core"
 
 // AdaptorID is the stable identifier surfaced in CapabilityManifest.
 // Kept short + lowercase so CLI flags (--orchestration=native) and SPA

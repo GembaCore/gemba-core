@@ -3,7 +3,7 @@ package bd
 import (
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // labelRepoPrefix is the bd label prefix that names a Repository the

@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Synthesize returns a default DoD for the given WorkItem. Never

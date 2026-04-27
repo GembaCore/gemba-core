@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // ── ConceptDrift cosine math ───────────────────────────────────────

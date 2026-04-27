@@ -14,7 +14,7 @@ import (
 	// name on import.
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 )
 
 // Config configures a direct-to-Dolt WorkPlane. URL is the only

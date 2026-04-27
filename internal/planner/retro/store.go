@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/planner"
 	"github.com/MikeBengtson/gemba/internal/planner/targets"
 )
