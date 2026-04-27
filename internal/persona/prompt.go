@@ -82,6 +82,15 @@ type ComposeRequest struct {
 	ProjectGoals      []string
 	WorkspaceValues   []string
 	ContextChunks     []string
+
+	// WalkID, when non-empty, appends the walk-mode system prompt
+	// fragment to the persona's base prompt (gm-4p6). The HTTP
+	// layer detects an active walk via walk.IDFromContext on the
+	// inbound request and passes the id through; a zero value
+	// keeps the prompt unchanged so non-walk consults pay nothing.
+	// The id itself is also rendered into the fragment so a debug
+	// trail can grep prompts by walk.
+	WalkID string
 }
 
 // Composed is the result of [Compose]: the system prompt the
@@ -122,6 +131,13 @@ func Compose(req ComposeRequest) (Composed, error) {
 
 	personaSystem := req.Template.ApplyTemplate(req.Persona.SystemPrompt)
 	personaSystem = strings.TrimSpace(personaSystem)
+	if ext := WalkPromptExtension(req.WalkID); ext != "" {
+		// Append walk-mode framing only when a walk is active
+		// (gm-4p6). Persona's base rules are preserved verbatim
+		// above; the fragment teaches the model the per-item
+		// frame/propose/yield/apply rhythm.
+		personaSystem = personaSystem + "\n\n" + strings.TrimSpace(ext)
+	}
 	skillFragment := strings.TrimSpace(req.Skill.SkillPrompt())
 
 	env := prompt.Envelope{

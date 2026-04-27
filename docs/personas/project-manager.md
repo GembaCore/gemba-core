@@ -199,6 +199,12 @@ All routes are nonce-gated where they mutate; the `X-GEMBA-Confirm` middleware c
 - **No SSE push yet.** The drawer polls `/api/consults/{id}` every 1.5s; `/insights/personas` polls `/api/consults` every 5s. SSE upgrade for `events.SkillOutputEmitted` is a follow-up — `events.FanFromHub` already subscribes server-side so the SPA upgrade is the remaining work.
 - **Model auth is Claude Code's problem.** The operator authenticates `claude` once; gemba never sees `ANTHROPIC_API_KEY`. The dispatcher's audit-log row carries the model + token usage Claude Code reports; if the model changes between sessions the row shows the change.
 
+## Gemba walk
+
+When the PM is invoked inside an active **Gemba walk** (`gm-rfy` core, `gm-wgv` HTTP, `gm-4p6` prompt extension), the dispatcher appends a walk-mode framing fragment to the persona's base system prompt. The fragment teaches the model the per-item rhythm: **frame** the topic, **summarize** the source context, **propose** 1-3 concrete actions as `SuggestedAction`s, then **yield** to the operator. The operator responds with ratify / modify / reject / defer / handoff before the persona moves to the next agenda item. Brevity is load-bearing — the operator may have twenty items to walk in a single session.
+
+Wiring: the HTTP `/walks/:id/turn` handler detects an active walk via `walk.IDFromContext` on the request context and passes the walk id through `BeginRequest.WalkID`; `Compose` then appends the extension via `WalkPromptExtension`. Non-walk consults leave `WalkID` empty and the PM persona behaves exactly as documented above. On resume (`POST /walks/:id/resume`), the handler calls `persona.RenderResumePrompt(w, userMsg)` once to prepend a deterministic synopsis (`walk.BuildResumeContext`) to the operator's first post-resume message so the persona has lossless state without depending on an LLM-condensed summary. v1 ships SuggestedActions only — the agentic mutation-authority path (`gm-uf7`) lands later and will extend this contract without breaking it.
+
 ## Related design
 
 - `docs/design/persona-pppp.md` — Persona axes (Personality / Perspective / Purview / Phases) — gm-9rv
