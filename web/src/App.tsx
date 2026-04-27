@@ -8,6 +8,7 @@ import { CoachPage } from '@/pages/CoachPage';
 import { WalkPage } from '@/pages/WalkPage';
 import { WalkDetailPage } from '@/pages/WalkDetailPage';
 import { ProjectConfigPage } from '@/pages/ProjectConfigPage';
+import { BootstrapPage } from '@/pages/BootstrapPage';
 import { InsightsPersonasPage } from '@/pages/InsightsPersonasPage';
 import {
   EscalationsPage,
@@ -56,6 +57,11 @@ export default function App() {
         <Route path="/walk" element={<WalkPage />} />
         <Route path="/walks/:id" element={<WalkDetailPage />} />
         <Route path="/project/config" element={<ProjectConfigPage />} />
+        {/* gm-uipx.7: /bootstrap 4-step wizard. Each step has its own
+            slug so back/forward navigation works and tests can land
+            on a specific step. Bare /bootstrap redirects to Step 1. */}
+        <Route path="/bootstrap" element={<Navigate to="/bootstrap/source" replace />} />
+        <Route path="/bootstrap/:step" element={<BootstrapPage />} />
         {features.mail && <Route path="/mail" element={<MailPage />} />}
         <Route path="/health" element={<HealthPage />} />
         <Route path="*" element={<NotFoundPage />} />
