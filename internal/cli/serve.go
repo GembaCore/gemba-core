@@ -144,6 +144,21 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 			"note", "mutations will not require confirmation for this session")
 	}
 
+	// gm-e3.6.1: register the W3C trace-context propagator and (when
+	// OTEL_EXPORTER_OTLP_ENDPOINT is set) an OTLP HTTP exporter. The
+	// propagator registration is required even with no exporter so the
+	// trace middleware can extract incoming traceparent headers and
+	// stamp event.TraceID at the adaptor boundary.
+	otelShutdown, err := initOTEL(ctx, b)
+	if err != nil {
+		return fmt.Errorf("init otel: %w", err)
+	}
+	defer func() {
+		if err := otelShutdown(context.Background()); err != nil {
+			slog.Warn("otel: exporter shutdown failed", "err", err)
+		}
+	}()
+
 	// Token auth: verify against the argon2id hash file on disk. If the
 	// file is missing, bootstrap it by generating a fresh token, printing
 	// it ONCE to stderr, and persisting only the hash. The plaintext
