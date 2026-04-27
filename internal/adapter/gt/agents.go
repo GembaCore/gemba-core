@@ -86,9 +86,15 @@ var gastownManifest = core.OrchestrationCapabilityManifest{
 	PerKindIsolation: map[core.WorkspaceKind]core.IsolationCapabilities{
 		core.WorkspaceWorktree: {FSScoped: true},
 	},
-	GroupModes:      []core.GroupMode{core.GroupStatic, core.GroupPool},
-	CostAxes:        []core.CostAxis{core.CostWallclock},
-	EscalationKinds: []core.EscalationKind{core.EscalationHITLApproval},
+	GroupModes: []core.GroupMode{core.GroupStatic, core.GroupPool},
+	CostAxes:   []core.CostAxis{core.CostWallclock},
+	// EscalationKinds: gm-e7.5 surfaces every `gt escalate` row as
+	// EscalationOrchestratorPause; HITLApproval stays declared for
+	// the persona-suspension surface that lands with gm-uf7.
+	EscalationKinds: []core.EscalationKind{
+		core.EscalationOrchestratorPause,
+		core.EscalationHITLApproval,
+	},
 	PeekModes:       []core.PeekMode{core.PeekTranscript},
 	EventDelivery:   core.EventDeliveryPoll,
 }
@@ -539,9 +545,7 @@ func (o *OrchestrationPlane) ListSessions(context.Context, core.SessionFilter) (
 	return nil, unsupported("ListSessions")
 }
 
-func (o *OrchestrationPlane) ListOpenEscalations(context.Context, core.EscalationFilter) ([]core.EscalationRequest, error) {
-	return nil, unsupported("ListOpenEscalations")
-}
+// ListOpenEscalations is implemented in escalations.go (gm-e7.5).
 
 func (o *OrchestrationPlane) ResolveEscalation(context.Context, string, core.EscalationResolution, core.ConfirmNonce) (core.EscalationRequest, error) {
 	return core.EscalationRequest{}, unsupported("ResolveEscalation")
