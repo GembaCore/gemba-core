@@ -35,6 +35,7 @@ Group B: WorkItem CRUD round-trip
 Group C: edge / relationship round-trip
   [PASS] C_edge_extensions_are_structurally_valid
   [SKIP] C_edge_round_trip_get_work_item
+        fixture.SeedWorkItemWithEdges not provided
 Group D: subscribe / event delivery
   [PASS] D_create_emits_event
   [PASS] D_update_emits_event
@@ -43,13 +44,40 @@ Group E: capability-declared optional features
   [PASS] E_capability_denial_matches_manifest
 Group F: error semantics
   [PASS] F_not_found_is_tagged_adaptor_error
-Group G: R3 dep-graph evolution               [SKIP × 2]
-Group H: R4 versioned transport round-trip    [SKIP × 5]
+Group G: R3 dep-graph evolution
+  [SKIP] G_ready_set_graph_evolution
+        fixture.ReadySetGraphEvolution not provided
+  [SKIP] G_discovered_from_mid_execution
+        fixture.DiscoveredFromMidExecution not provided
+Group H: R4 versioned transport round-trip
+  [SKIP] H_versioned_state_round_trip_git
+        fixture.VersionedStateRoundTrip not provided
+  [SKIP] H_branch_merge_round_trip_git
+        fixture.BranchMergeRoundTrip not provided
+  [SKIP] H_versioned_state_round_trip_dolt
+        fixture.VersionedStateRoundTrip not provided
+  [SKIP] H_branch_merge_round_trip_dolt
+        fixture.BranchMergeRoundTrip not provided
+  [SKIP] H_versioned_state_round_trip_jsonl
+        fixture.VersionedStateRoundTrip not provided
 Group I: R5 concurrency stress
   [PASS] I_concurrent_writer_stress_N16
   [SKIP] I_read_after_write_cross_writer
-Group J: R6 session decoupling                [SKIP × 2]
-Group K: R8 orchestrator hooks                [SKIP × 4]
+        fixture.ReadAfterWriteCrossWriter not provided
+Group J: R6 session decoupling
+  [SKIP] J_session_death_recovery
+        fixture.SessionDeathRecovery not provided
+  [SKIP] J_work_pickup_by_second_agent
+        fixture.WorkPickupBySecondAgent not provided
+Group K: R8 orchestrator hooks
+  [SKIP] K_ready_set_subscribe_latency
+        fixture.ReadySetSubscribeLatency not provided
+  [SKIP] K_claim_atomic
+        fixture.ClaimAtomic not provided
+  [SKIP] K_escalation_ingest_round_trip
+        fixture.EscalationIngestRoundTrip not provided
+  [SKIP] K_work_complete_ack
+        fixture.WorkCompleteAck not provided
 
 Summary: GREEN (passed=13 failed=0 skipped=15)
 ```
