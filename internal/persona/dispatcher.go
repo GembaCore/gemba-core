@@ -247,6 +247,15 @@ type BeginRequest struct {
 	ProjectGoals      []string
 	WorkspaceValues   []string
 	ContextChunks     []string
+
+	// WalkID, when non-empty, marks this consult as running inside
+	// an active Gemba walk (gm-4p6). The dispatcher forwards it to
+	// [Compose] which appends the walk-mode system-prompt
+	// extension. The HTTP /walks/:id/turn handler (gm-wgv's
+	// domain) populates this from walk.IDFromContext on the
+	// inbound request context. Zero value = non-walk consult; the
+	// PM persona then behaves as it always has.
+	WalkID string
 }
 
 // Begin starts a new consult. It runs Skill.ValidateInput on
@@ -311,6 +320,7 @@ func (d *Dispatcher) Begin(req BeginRequest) (*Consult, error) {
 		ProjectGoals:      req.ProjectGoals,
 		WorkspaceValues:   req.WorkspaceValues,
 		ContextChunks:     req.ContextChunks,
+		WalkID:            req.WalkID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("persona/dispatcher: compose prompt: %w", err)
