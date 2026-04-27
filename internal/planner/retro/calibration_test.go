@@ -277,6 +277,132 @@ func TestMedianDuration_OddAndEvenLengths(t *testing.T) {
 	}
 }
 
+// ── intent_miss ────────────────────────────────────────────────
+
+func TestAggregateRecommendationCalibration_IntentMissFires(t *testing.T) {
+	// 10 intent-set picks, 9 outside top-3 — 90% > 30% threshold.
+	rows := make([]PickCalibrationRow, 0, 10)
+	for i := 0; i < 9; i++ {
+		r := pickRow("im-"+string(rune('a'+i)), 0.4, 0.9, false, false)
+		r.IntentSet = true
+		rows = append(rows, r)
+	}
+	r := pickRow("im-z", 0.85, 0.9, true, true)
+	r.IntentSet = true
+	rows = append(rows, r)
+
+	got := AggregateRecommendationCalibration(rows, CalibrationOptions{})
+	if !hasKind(got, SuggestionIntentMiss) {
+		t.Fatalf("expected SuggestionIntentMiss; got %+v", got)
+	}
+	s := findKind(got, SuggestionIntentMiss)
+	if s.SampleSize != 10 {
+		t.Errorf("intent sample size = %d, want 10", s.SampleSize)
+	}
+	if s.Metric < 0.85 {
+		t.Errorf("intent miss rate = %v, want >= 0.85", s.Metric)
+	}
+}
+
+func TestAggregateRecommendationCalibration_IntentMissNeedsSubFloor(t *testing.T) {
+	// 5 intent-set rows, 5 non-intent rows. Aggregate-wide floor
+	// met (10 total); intent sub-population below the 10-row sub-
+	// floor — must NOT flag SuggestionIntentMiss even though every
+	// intent row missed top-3.
+	rows := make([]PickCalibrationRow, 0, 10)
+	for i := 0; i < 5; i++ {
+		r := pickRow("i-"+string(rune('a'+i)), 0.4, 0.9, false, false)
+		r.IntentSet = true
+		rows = append(rows, r)
+	}
+	for i := 0; i < 5; i++ {
+		// Plain top picks — keep override-top-3 from also firing.
+		rows = append(rows, pickRow("p-"+string(rune('a'+i)), 0.85, 0.9, true, true))
+	}
+	got := AggregateRecommendationCalibration(rows, CalibrationOptions{})
+	if hasKind(got, SuggestionIntentMiss) {
+		t.Errorf("intent sub-floor not met but flag fired: %+v", got)
+	}
+}
+
+// ── leverage_miss ──────────────────────────────────────────────
+
+func TestAggregateRecommendationCalibration_LeverageMissFires(t *testing.T) {
+	// 10 override rows where picked carries higher LeverageWeight
+	// than the recommendation — 100% > 30% threshold.
+	rows := make([]PickCalibrationRow, 0, 10)
+	for i := 0; i < 10; i++ {
+		r := pickRow("lm-"+string(rune('a'+i)), 0.4, 0.9, false, false)
+		r.PickedLeverageWeight = 5
+		r.RecommendedLeverageWeight = 1
+		rows = append(rows, r)
+	}
+	got := AggregateRecommendationCalibration(rows, CalibrationOptions{})
+	if !hasKind(got, SuggestionLeverageMiss) {
+		t.Fatalf("expected SuggestionLeverageMiss; got %+v", got)
+	}
+}
+
+func TestAggregateRecommendationCalibration_LeverageMissSkipsUninstrumentedRows(t *testing.T) {
+	// 10 override rows with no LeverageWeight populated — leverage
+	// signal denominator stays at 0; flag must not fire.
+	rows := make([]PickCalibrationRow, 0, 10)
+	for i := 0; i < 10; i++ {
+		rows = append(rows, pickRow("lm-"+string(rune('a'+i)), 0.4, 0.9, false, false))
+	}
+	got := AggregateRecommendationCalibration(rows, CalibrationOptions{})
+	if hasKind(got, SuggestionLeverageMiss) {
+		t.Errorf("expected no LeverageMiss without instrumentation; got %+v", got)
+	}
+}
+
+// ── runway_overtrust ───────────────────────────────────────────
+
+func TestAggregateRecommendationCalibration_RunwayOvertrustFires(t *testing.T) {
+	// 10 override rows where the recommendation was runway-demoted
+	// but the picked bead was not. 100% over the 30% threshold.
+	rows := make([]PickCalibrationRow, 0, 10)
+	for i := 0; i < 10; i++ {
+		r := pickRow("ro-"+string(rune('a'+i)), 0.4, 0.9, false, false)
+		r.RecommendedRunwayDemoted = true
+		r.PickedRunwayDemoted = false
+		rows = append(rows, r)
+	}
+	got := AggregateRecommendationCalibration(rows, CalibrationOptions{})
+	if !hasKind(got, SuggestionRunwayOvertrust) {
+		t.Fatalf("expected SuggestionRunwayOvertrust; got %+v", got)
+	}
+}
+
+func TestAggregateRecommendationCalibration_RunwayBothDemotedNoFlag(t *testing.T) {
+	// Both beads runway-demoted on every row → no over-trust signal
+	// (operator just preferred a different big bead).
+	rows := make([]PickCalibrationRow, 0, 10)
+	for i := 0; i < 10; i++ {
+		r := pickRow("ro-"+string(rune('a'+i)), 0.4, 0.9, false, false)
+		r.RecommendedRunwayDemoted = true
+		r.PickedRunwayDemoted = true
+		rows = append(rows, r)
+	}
+	got := AggregateRecommendationCalibration(rows, CalibrationOptions{})
+	if hasKind(got, SuggestionRunwayOvertrust) {
+		t.Errorf("both-demoted must not flag; got %+v", got)
+	}
+}
+
+func TestAggregateRecommendationCalibration_RunwayUninstrumentedRowsSkipped(t *testing.T) {
+	// 10 overrides with no runway flags populated → no signal,
+	// no flag.
+	rows := make([]PickCalibrationRow, 0, 10)
+	for i := 0; i < 10; i++ {
+		rows = append(rows, pickRow("ro-"+string(rune('a'+i)), 0.4, 0.9, false, false))
+	}
+	got := AggregateRecommendationCalibration(rows, CalibrationOptions{})
+	if hasKind(got, SuggestionRunwayOvertrust) {
+		t.Errorf("no runway instrumentation must not flag; got %+v", got)
+	}
+}
+
 func hasKind(ss []Suggestion, k SuggestionKind) bool {
 	for _, s := range ss {
 		if s.Kind == k {

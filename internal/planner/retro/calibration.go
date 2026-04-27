@@ -53,6 +53,32 @@ type PickCalibrationRow struct {
 	// to override) — kept on the row so a downstream consumer can
 	// filter rather than the aggregator silently dropping data.
 	Mode dispatch.Mode `json:"mode"`
+
+	// IntentSet records whether session intent was active at the
+	// time of the dispatch — a precondition for the
+	// SuggestionIntentMiss signal. Optional: callers populate when
+	// the session-intent layer is on the dispatch path. Empty rows
+	// are treated as "no intent" by the aggregator.
+	IntentSet bool `json:"intent_set,omitempty"`
+
+	// PickedLeverageWeight / RecommendedLeverageWeight are the
+	// blocks-weight values from the Layer 5 Leverage scorer for
+	// the two beads. Zero on either side disables the leverage-miss
+	// signal for that row (no signal ≠ zero signal). Populated by
+	// callers that have the per-bead leverage breakdown — typically
+	// the dispatch path that already runs the Leverage scorer.
+	PickedLeverageWeight      int `json:"picked_leverage_weight,omitempty"`
+	RecommendedLeverageWeight int `json:"recommended_leverage_weight,omitempty"`
+
+	// PickedRunwayDemoted / RecommendedRunwayDemoted record whether
+	// the runway gate fired against each bead at decision time.
+	// SuggestionRunwayOvertrust fires when the recommendation was
+	// demoted but the picked bead was not — i.e. the operator
+	// overrode the runway gate's pessimism. Both nil-safe defaults
+	// (false) — if a caller doesn't populate them the signal stays
+	// quiet rather than counting absence as agreement.
+	PickedRunwayDemoted      bool `json:"picked_runway_demoted,omitempty"`
+	RecommendedRunwayDemoted bool `json:"recommended_runway_demoted,omitempty"`
 }
 
 // PickCalibrationFromDecision derives a calibration row from a
@@ -147,6 +173,24 @@ type CalibrationOptions struct {
 	// systematically picks beads scoring 0.2 below the planner's
 	// top — the planner is over-confident).
 	MeanScoreDeltaThreshold float64
+	// IntentMissRateThreshold is the fraction of intent-set picks
+	// that landed outside the planner's top-3 above which the
+	// aggregator emits SuggestionIntentMiss. Has its own
+	// MinSampleSize sub-floor (the intent population must
+	// independently clear the floor — small intent samples don't
+	// flag). Default 0.30.
+	IntentMissRateThreshold float64
+	// LeverageMissRateThreshold is the fraction of override picks
+	// where the picked bead carries a higher LeverageWeight than
+	// the recommendation. Default 0.30. Override rows missing both
+	// LeverageWeight values are silently skipped from the
+	// numerator (no signal ≠ disagreement).
+	LeverageMissRateThreshold float64
+	// RunwayOvertrustRateThreshold is the fraction of override
+	// picks where the recommendation was runway-demoted but the
+	// picked bead was not. Default 0.30. Same skip rule as
+	// LeverageMiss for rows missing the runway flags.
+	RunwayOvertrustRateThreshold float64
 }
 
 // SuggestionKind names the calibration signals the aggregator can
@@ -165,6 +209,19 @@ const (
 	// thinks its top picks are decisively better; the operator
 	// disagrees — probably a missing signal, not a weight tweak.
 	SuggestionOverrideMeanDelta SuggestionKind = "override_mean_delta"
+	// SuggestionIntentMiss: when intent was set, operators land
+	// outside the planner's top-3 systematically — the intent
+	// demotion factor is too lenient (out-of-intent beads are
+	// slipping through).
+	SuggestionIntentMiss SuggestionKind = "intent_miss"
+	// SuggestionLeverageMiss: operator overrides systematically
+	// pick beads with higher blocks-weight than the
+	// recommendation — the Layer 5 Leverage weight is under-tuned.
+	SuggestionLeverageMiss SuggestionKind = "leverage_miss"
+	// SuggestionRunwayOvertrust: operators routinely override the
+	// runway gate's demotion (recommendation was demoted, picked
+	// was not). The runway estimator is too pessimistic.
+	SuggestionRunwayOvertrust SuggestionKind = "runway_overtrust"
 )
 
 // Suggestion is one calibration finding. The operator-review queue
@@ -255,14 +312,121 @@ func AggregateRecommendationCalibration(rows []PickCalibrationRow, opts Calibrat
 		}
 	}
 
+	// SuggestionIntentMiss — split sample on IntentSet. The intent
+	// sub-population needs to clear MinSampleSize independently;
+	// a 4-row intent sub-sample doesn't flag even if 100% of those
+	// rows missed top-3.
+	intentRows := make([]PickCalibrationRow, 0, len(coach))
+	for _, r := range coach {
+		if r.IntentSet {
+			intentRows = append(intentRows, r)
+		}
+	}
+	if len(intentRows) >= o.MinSampleSize {
+		missed := 0
+		missedBeads := make([]core.WorkItemID, 0, 10)
+		for _, r := range intentRows {
+			if !r.WasInTop3 {
+				missed++
+				if len(missedBeads) < 10 {
+					missedBeads = append(missedBeads, r.BeadID)
+				}
+			}
+		}
+		rate := float64(missed) / float64(len(intentRows))
+		if rate >= o.IntentMissRateThreshold {
+			out = append(out, Suggestion{
+				Kind:        SuggestionIntentMiss,
+				Reason:      "intent-set picks land outside the planner's top-3 — the intent demotion factor is too lenient",
+				SampleSize:  len(intentRows),
+				Metric:      rate,
+				Threshold:   o.IntentMissRateThreshold,
+				SampleBeads: missedBeads,
+			})
+		}
+	}
+
+	// SuggestionLeverageMiss — over the override slice (rows where
+	// the operator picked something other than the planner's top
+	// recommendation), how often did the picked bead carry a
+	// higher LeverageWeight than the recommendation? Rows missing
+	// the per-bead LeverageWeight are skipped from the denominator
+	// AND numerator (zero ≠ valid signal here — uninstrumented
+	// rows simply don't speak).
+	leverageDenom := 0
+	leverageNumer := 0
+	leverageBeads := make([]core.WorkItemID, 0, 10)
+	for _, r := range overrides {
+		if r.PickedLeverageWeight == 0 && r.RecommendedLeverageWeight == 0 {
+			continue
+		}
+		leverageDenom++
+		if r.PickedLeverageWeight > r.RecommendedLeverageWeight {
+			leverageNumer++
+			if len(leverageBeads) < 10 {
+				leverageBeads = append(leverageBeads, r.BeadID)
+			}
+		}
+	}
+	if leverageDenom >= o.MinSampleSize {
+		rate := float64(leverageNumer) / float64(leverageDenom)
+		if rate >= o.LeverageMissRateThreshold {
+			out = append(out, Suggestion{
+				Kind:        SuggestionLeverageMiss,
+				Reason:      "operator overrides prefer higher blocks-weight beads than the recommendation — Layer 5 Leverage weight is under-tuned",
+				SampleSize:  leverageDenom,
+				Metric:      rate,
+				Threshold:   o.LeverageMissRateThreshold,
+				SampleBeads: leverageBeads,
+			})
+		}
+	}
+
+	// SuggestionRunwayOvertrust — over overrides, how often was
+	// the recommendation runway-demoted while the picked bead was
+	// not? Same skip rule: rows where neither bead was demoted
+	// drop out (no runway signal at all in those rows).
+	runwayDenom := 0
+	runwayNumer := 0
+	runwayBeads := make([]core.WorkItemID, 0, 10)
+	for _, r := range overrides {
+		// Both flags false → no runway signal in this row.
+		if !r.PickedRunwayDemoted && !r.RecommendedRunwayDemoted {
+			continue
+		}
+		runwayDenom++
+		if r.RecommendedRunwayDemoted && !r.PickedRunwayDemoted {
+			runwayNumer++
+			if len(runwayBeads) < 10 {
+				runwayBeads = append(runwayBeads, r.BeadID)
+			}
+		}
+	}
+	if runwayDenom >= o.MinSampleSize {
+		rate := float64(runwayNumer) / float64(runwayDenom)
+		if rate >= o.RunwayOvertrustRateThreshold {
+			out = append(out, Suggestion{
+				Kind:        SuggestionRunwayOvertrust,
+				Reason:      "operators routinely override the runway gate — the runway estimator is too pessimistic",
+				SampleSize:  runwayDenom,
+				Metric:      rate,
+				Threshold:   o.RunwayOvertrustRateThreshold,
+				SampleBeads: runwayBeads,
+			})
+		}
+	}
+
 	return out
 }
 
 func (o CalibrationOptions) resolved() CalibrationOptions {
 	d := CalibrationOptions{
-		MinSampleSize:           10,
-		OverrideRateThreshold:   0.30,
-		MeanScoreDeltaThreshold: 0.20,
+		MinSampleSize:                10,
+		OverrideRateThreshold:        0.30,
+		MeanScoreDeltaThreshold:      0.20,
+		IntentMissRateThreshold:      0.30,
+		LeverageMissRateThreshold:    0.30,
+		RunwayOvertrustRateThreshold: 0.30,
 	}
 	if o.MinSampleSize > 0 {
 		d.MinSampleSize = o.MinSampleSize
@@ -272,6 +436,15 @@ func (o CalibrationOptions) resolved() CalibrationOptions {
 	}
 	if o.MeanScoreDeltaThreshold > 0 {
 		d.MeanScoreDeltaThreshold = o.MeanScoreDeltaThreshold
+	}
+	if o.IntentMissRateThreshold > 0 {
+		d.IntentMissRateThreshold = o.IntentMissRateThreshold
+	}
+	if o.LeverageMissRateThreshold > 0 {
+		d.LeverageMissRateThreshold = o.LeverageMissRateThreshold
+	}
+	if o.RunwayOvertrustRateThreshold > 0 {
+		d.RunwayOvertrustRateThreshold = o.RunwayOvertrustRateThreshold
 	}
 	return d
 }
