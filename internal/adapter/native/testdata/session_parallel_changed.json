@@ -1,0 +1,13 @@
+{
+  "id": "evt-2026-04-27-001",
+  "kind": "session_parallel_changed",
+  "at": "2026-04-27T07:58:00Z",
+  "session_id": "tmux:gm-abc.1:1714169123456789",
+  "payload": {
+    "session_id": "tmux:gm-abc.1:1714169123456789",
+    "agent_type": "claude",
+    "in_flight": 2,
+    "max_parallel": 3,
+    "delta": 1
+  }
+}

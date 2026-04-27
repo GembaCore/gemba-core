@@ -3,12 +3,14 @@
 # fields to match your install.
 
 [[agent]]
-name     = "claude"
-binary   = "claude"
-args     = []
-model    = "claude-opus-4-7"
-preamble = "claude_md"
-hooks    = "claude_code"
+name           = "claude"
+binary         = "claude"
+args           = []
+model          = "claude-opus-4-7"
+preamble       = "claude_md"
+hooks          = "claude_code"
+intra_parallel = true
+max_parallel   = 3
 
 [[agent]]
 name     = "shell-only"

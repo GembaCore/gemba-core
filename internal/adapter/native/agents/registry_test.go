@@ -96,6 +96,77 @@ hooks = "claude_code"
 	}
 }
 
+func TestParallelFieldsRoundTrip(t *testing.T) {
+	path := writeTmp(t, `
+[[agent]]
+name           = "claude"
+binary         = "claude"
+preamble       = "claude_md"
+hooks          = "claude_code"
+intra_parallel = true
+max_parallel   = 3
+`)
+	r, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	a, _ := r.Get("claude")
+	if !a.IntraParallel {
+		t.Fatal("intra_parallel=true expected")
+	}
+	if got, want := a.MaxParallel, 3; got != want {
+		t.Errorf("max_parallel: want %d got %d", want, got)
+	}
+	if got, want := a.ResolvedMaxParallel(), 3; got != want {
+		t.Errorf("ResolvedMaxParallel: want %d got %d", want, got)
+	}
+}
+
+func TestResolvedMaxParallelDefaultsToOne(t *testing.T) {
+	a := AgentType{Name: "x"}
+	if got, want := a.ResolvedMaxParallel(), 1; got != want {
+		t.Errorf("non-intra_parallel cap: want %d got %d", want, got)
+	}
+	a.MaxParallel = 5 // ignored — IntraParallel still false
+	if got, want := a.ResolvedMaxParallel(), 1; got != want {
+		t.Errorf("drift cap: want %d got %d", want, got)
+	}
+}
+
+func TestLoadRejectsIntraParallelWithoutCap(t *testing.T) {
+	path := writeTmp(t, `
+[[agent]]
+name           = "claude"
+binary         = "claude"
+preamble       = "claude_md"
+hooks          = "claude_code"
+intra_parallel = true
+`)
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "max_parallel") {
+		t.Fatalf("want max_parallel error, got %v", err)
+	}
+}
+
+func TestRegistryWarnsOnDriftedMaxParallel(t *testing.T) {
+	path := writeTmp(t, `
+[[agent]]
+name         = "claude"
+binary       = "claude"
+preamble     = "claude_md"
+hooks        = "claude_code"
+max_parallel = 4
+`)
+	r, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load (should warn not error): %v", err)
+	}
+	w := r.Warnings()
+	if len(w) != 1 || !strings.Contains(w[0], "max_parallel=4") {
+		t.Fatalf("want one max_parallel-drift warning, got %v", w)
+	}
+}
+
 func TestResolveMissingReturnsEmpty(t *testing.T) {
 	dir := t.TempDir()
 	if p := Resolve(dir); p != "" {

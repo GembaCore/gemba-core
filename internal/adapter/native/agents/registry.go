@@ -177,6 +177,19 @@ type AgentType struct {
 	// a tmux pane. See gm-root.15.6 /
 	// docs/design/containerized-sessions.md §11.
 	Container ContainerSpec `toml:"container"`
+	// IntraParallel declares whether a single session of this agent
+	// type can carry multiple concurrent beads (i.e. the prompt orders
+	// the agent to fan work out internally). Default false — one bead
+	// per session, parallelism only across sessions. See gm-root.16
+	// and docs/design/parallelism-boundary.md.
+	IntraParallel bool `toml:"intra_parallel"`
+	// MaxParallel is the hard cap on concurrent beads per session of
+	// this type. Required when IntraParallel is true. Ignored when
+	// false (effective cap is always 1). The dispatcher MUST refuse a
+	// new bead to a session at cap and fan to another session instead;
+	// deconfliction rules apply uniformly regardless of which axis the
+	// next bead lands on.
+	MaxParallel int `toml:"max_parallel"`
 }
 
 // ResolvedInteractionMode returns the agent's configured mode with
@@ -186,6 +199,17 @@ func (a AgentType) ResolvedInteractionMode() InteractionMode {
 		return DefaultInteractionMode
 	}
 	return a.InteractionMode
+}
+
+// ResolvedMaxParallel returns the effective per-session bead cap. For
+// agents without IntraParallel the cap is always 1 — config drift
+// (e.g. MaxParallel=3 with IntraParallel=false) is logged as a warning
+// at load time but does not change the runtime cap.
+func (a AgentType) ResolvedMaxParallel() int {
+	if !a.IntraParallel {
+		return 1
+	}
+	return a.MaxParallel
 }
 
 // Registry is the parsed agents.toml.
@@ -278,11 +302,33 @@ func (r Registry) Validate() error {
 		if a.Container.Present() {
 			problems = append(problems, validateContainer(prefix, a.Container)...)
 		}
+		if a.IntraParallel && a.MaxParallel <= 0 {
+			problems = append(problems, fmt.Sprintf(
+				"%s: intra_parallel=true requires max_parallel >= 1 (got %d)",
+				prefix, a.MaxParallel))
+		}
 	}
 	if len(problems) > 0 {
 		return fmt.Errorf("%s", strings.Join(problems, "; "))
 	}
 	return nil
+}
+
+// Warnings returns soft-failure messages the operator should see but
+// that don't block load. Currently flags max_parallel set without
+// intra_parallel — config drift that would silently have no effect.
+// Callers (Load's wrapper, future config-doctor command) decide how to
+// surface them.
+func (r Registry) Warnings() []string {
+	var out []string
+	for i, a := range r.Agents {
+		if !a.IntraParallel && a.MaxParallel > 0 {
+			out = append(out, fmt.Sprintf(
+				"agent[%d] (%q): max_parallel=%d set but intra_parallel=false — value is ignored (effective cap is 1)",
+				i, a.Name, a.MaxParallel))
+		}
+	}
+	return out
 }
 
 // validateContainer enforces the ContainerSpec invariants the rest of
