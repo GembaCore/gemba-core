@@ -4,6 +4,7 @@
   "at": "2026-04-27T07:58:00Z",
   "session_id": "tmux:gm-abc.1:1714169123456789",
   "payload": {
+    "pane_id": "%42",
     "session_id": "tmux:gm-abc.1:1714169123456789",
     "agent_type": "claude",
     "in_flight": 2,

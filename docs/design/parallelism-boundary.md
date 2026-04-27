@@ -47,11 +47,14 @@ ready beads
 
 ## What this implies for the native adaptor
 
-- The `paneActive` map is no longer "1 bead per pane" — for `intra_parallel=true` agents it tracks a counted set capped at `MaxParallel`.
-- The dispatcher's routing tries to reuse an active session of the right agent type with `count < MaxParallel` before spawning a new pane.
-- Each transition (count up on assignment, count down on completion) emits a `session_parallel_changed` event so the SPA can update pills without polling.
+The native adaptor models intra-parallelism as **multiple Session records sharing one pane**. Each `StartSession` call still represents one bead and produces its own logical Session id, but for an `intra_parallel=true` agent type a caller can hand the new bead a `gemba:reuse_pane_id` extension to co-locate it inside an existing pane instead of spawning a new one.
 
-The Layer 2 routing change is tracked separately (gm-root.16.1 follow-up); this doc is the contract that follow-up implements.
+- `paneSessions map[string][]string` (replaces `paneActive`) tracks every Session sharing a pane.
+- Cap enforcement: a reuse request is rejected when `len(paneSessions[paneID]) >= ResolvedMaxParallel(agent)`.
+- Pane teardown (quit sequence + Kill + CLAUDE.md sentinel cleanup) only runs on the **last session out** — earlier `EndSession` calls just decrement.
+- Each transition emits a `session_parallel_changed` event so the SPA can update pills without polling. Emission is via `Fanout.Publish`, the public injector for adaptor-synthesized events.
+
+The dispatcher *policy* (try reuse before spawning new) is intentionally **not** baked into the OrchestrationPlane. The plane provides the primitives — `PaneInFlight(paneID) int`, the reuse extension, cap enforcement — and a router upstream (operator click in the SPA, future auto-dispatcher) composes them. See `TestThreeBeadsTwoSessionsRouting` for a reference policy implementation.
 
 ## What this rules out
 

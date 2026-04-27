@@ -297,6 +297,18 @@ func (f *Fanout) Unregister(sessionID string) {
 // context to stop.
 func (f *Fanout) Events() <-chan core.OrchestrationEvent { return f.out }
 
+// Publish injects an event into the fanout pipeline. Used by the
+// adaptor itself to surface synthetic transitions (e.g.
+// session_parallel_changed) that aren't sourced from a bridge tail.
+// Best-effort drop when the input channel is full so a slow pump
+// can never stall a synchronous mutation path.
+func (f *Fanout) Publish(ev core.OrchestrationEvent) {
+	select {
+	case f.input <- ev:
+	default:
+	}
+}
+
 // Close stops every tailer and the pump. After Close the Fanout
 // must not be reused.
 func (f *Fanout) Close() {

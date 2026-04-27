@@ -28,7 +28,8 @@ const graceBeforeKill = 3 * time.Second
 //  5. If the pane is still alive, Backend.Kill.
 //  6. Remove the preamble sentinel block from CLAUDE.md.
 //  7. Unregister the bridge tailer.
-//  8. Remove state (session record, paneActive entry).
+//  8. Remove state (session record, paneSessions entry; pane teardown
+//     only when the last session sharing the pane exits — gm-root.16).
 //  9. Populate SessionCloseReason based on EndMode.
 func (o *OrchestrationPlane) EndSession(
 	ctx context.Context, sessionID string, mode core.SessionEndMode, nonce core.ConfirmNonce,
@@ -68,10 +69,24 @@ func (o *OrchestrationPlane) EndSession(
 	agentType, _ := sess.ProviderMetadata["agent_type"].(string)
 	o.mu.Unlock()
 
-	// Send quit sequence for the agent type. Best-effort — SendKeys
-	// may fail if the pane is already dead, which is exactly the
-	// case where we still want to proceed with kill + cleanup.
-	if paneID != "" {
+	// Determine pane occupancy AFTER this session is removed. When
+	// other beads still share the pane (intra_parallel agents,
+	// gm-root.16), we skip the pane-destructive cleanup — quit
+	// sequence, kill, preamble removal — because that would yank the
+	// rug out from under the surviving sessions. The last session out
+	// runs the full teardown.
+	o.mu.Lock()
+	remaining := o.removeSessionFromPaneLocked(paneID, sessionID)
+	maxParallel := 0
+	if a, found := o.cfg.Registry.Get(agentType); found {
+		maxParallel = a.ResolvedMaxParallel()
+	}
+	o.mu.Unlock()
+
+	if paneID != "" && remaining == 0 {
+		// Send quit sequence for the agent type. Best-effort — SendKeys
+		// may fail if the pane is already dead, which is exactly the
+		// case where we still want to proceed with kill + cleanup.
 		quit := quitSequenceForAgent(agentType)
 		if quit != "" {
 			_ = o.cfg.Backend.SendKeys(ctx, paneID, quit)
@@ -83,8 +98,10 @@ func (o *OrchestrationPlane) EndSession(
 		}
 	}
 
-	// Preamble cleanup.
-	if workspace != "" {
+	// Preamble cleanup is workspace-scoped, not pane-scoped, but a
+	// shared pane shares a workspace by definition — only remove the
+	// sentinel block when we're the last session out.
+	if workspace != "" && remaining == 0 {
 		_ = preamble.RemoveFromClaudeMD(workspace)
 	}
 
@@ -94,7 +111,8 @@ func (o *OrchestrationPlane) EndSession(
 	// file doesn't exist (best-effort, same as the preamble cleanup).
 	_ = persona.RemoveSurfaceFile(sessionID)
 
-	// Unregister bridge tailer.
+	// Unregister this session's bridge tailer. Sibling sessions on the
+	// same pane keep their own tailer registrations.
 	o.fanout.Unregister(sessionID)
 
 	// Finalize state.
@@ -109,12 +127,17 @@ func (o *OrchestrationPlane) EndSession(
 	default:
 		sess.Status = core.SessionCompleted
 	}
-	delete(o.paneActive, paneID)
 	if nonce != "" {
 		o.nonces[string(nonce)] = sessionID
 	}
 	cp := *sess
 	o.mu.Unlock()
+
+	// Emit the parallel-changed event after state is finalized so any
+	// observer reacting to the event sees a consistent view.
+	if paneID != "" {
+		o.fanout.Publish(parallelChanged(paneID, sessionID, agentType, remaining, maxParallel, -1))
+	}
 	return cp, nil
 }
 

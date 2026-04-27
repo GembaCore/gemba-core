@@ -103,7 +103,7 @@ func TestEndSessionFreesBusyPaneForReuse(t *testing.T) {
 		t.Fatal(err)
 	}
 	// With the old session ended, starting a new one must succeed —
-	// the paneActive index should be cleared.
+	// the pane occupancy map should be cleared.
 	_, err := p.StartSession(context.Background(), "a2", freshPrompt("gm-bar", nil))
 	if err != nil {
 		t.Fatalf("post-end StartSession should succeed: %v", err)

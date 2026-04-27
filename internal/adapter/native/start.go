@@ -99,58 +99,102 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		}
 	}
 
-	// Provision worktree. If a workspace was pre-resolved by the
-	// caller (operator pre-selected an existing worktree), honor it
-	// instead of auto-creating.
-	workspace, _ := prompt.Extension[extKeyWorkspace].(string)
-	if workspace == "" {
-		var err error
-		workspace, err = worktrees.Resolve(ctx, worktrees.Config{
-			RepoRoot:     o.cfg.RepoRoot,
-			WorktreesDir: o.cfg.WorktreesDir,
-		}, beadID)
-		if err != nil {
-			return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
-				"native: provision worktree for %s", beadID)
-		}
-	}
+	// Reuse-pane branch (gm-root.16.3): when the caller hands us a
+	// pane_id from a running same-agent-type session, skip worktree
+	// provisioning, bridge install, and SpawnPane — the existing pane
+	// already has all three. Validate cap before doing any work so a
+	// rejected reuse claim doesn't allocate resources.
+	reusePaneID, _ := prompt.Extension[extKeyReusePaneID].(string)
+	maxParallel := agent.ResolvedMaxParallel()
 
 	sessionID := fmt.Sprintf("%s:%s:%d", o.cfg.Backend.Name(), beadID, time.Now().UnixNano())
 	if override, _ := prompt.Extension[extKeySessionIDOverride].(string); override != "" {
 		sessionID = override
 	}
 
-	// Best-effort bridge install — the per-agent installer is
-	// idempotent; a populated worktree is a supported no-op.
-	// Failures are swallowed: degraded observability is better than
-	// failed dispatch.
-	_ = installBridgeForAgent(ctx, workspace, agent)
-
 	title, _ := prompt.Extension[extKeyTitle].(string)
 	if title == "" {
 		title = "gemba: " + beadID
 	}
 	surface, _ := prompt.Extension[extKeySurface].(*persona.Surface)
-	spec, err := buildSpawnSpec(agent, workspace, sessionID, agentType, title, surface)
-	if err != nil {
-		return core.Session{}, core.WrapAdaptorError(core.KindValidation, err,
-			"native: build spawn spec for %s", beadID)
-	}
 
-	// Layer 2 producer (gm-v8vr.1): persist the resolved surface so
-	// the gemba-bridge PreToolUse hook (gm-eazw) reads it instead of
-	// falling back to the deny-outside-cwd default. Best-effort — a
-	// write failure logs (TODO when slog lands here) but doesn't
-	// abort the session; the bridge degrades to the safe default.
-	if surface != nil {
-		_ = persona.WriteSurfaceFile(sessionID, *surface)
-	}
+	var (
+		pane      backend.Pane
+		workspace string
+	)
+	if reusePaneID != "" {
+		o.mu.Lock()
+		inFlight := o.paneInFlightLocked(reusePaneID)
+		if inFlight == 0 {
+			o.mu.Unlock()
+			return core.Session{}, core.NewAdaptorError(core.KindValidation,
+				"native: reuse_pane_id %q has no active session", reusePaneID)
+		}
+		if inFlight >= maxParallel {
+			o.mu.Unlock()
+			return core.Session{}, core.NewAdaptorError(core.KindValidation,
+				"native: pane %s at cap (%d/%d for agent %q)",
+				reusePaneID, inFlight, maxParallel, agentType)
+		}
+		anchor := o.sessions[o.paneSessions[reusePaneID][0]]
+		o.mu.Unlock()
+		if anchor == nil {
+			return core.Session{}, core.NewAdaptorError(core.KindAdaptorDegraded,
+				"native: pane %s has no anchor session record", reusePaneID)
+		}
+		anchorAgentType, _ := anchor.ProviderMetadata["agent_type"].(string)
+		if anchorAgentType != agentType {
+			return core.Session{}, core.NewAdaptorError(core.KindValidation,
+				"native: pane %s runs agent %q, cannot reuse for %q",
+				reusePaneID, anchorAgentType, agentType)
+		}
+		anchorWorkspace, _ := anchor.ProviderMetadata["worktree"].(string)
+		anchorTitle, _ := anchor.ProviderMetadata["pane_title"].(string)
+		anchorCwd, _ := anchor.ProviderMetadata["pane_cwd"].(string)
+		workspace = anchorWorkspace
+		pane = backend.Pane{ID: reusePaneID, Title: anchorTitle, Cwd: anchorCwd}
+	} else {
+		// Provision worktree. If a workspace was pre-resolved by the
+		// caller (operator pre-selected an existing worktree), honor it
+		// instead of auto-creating.
+		workspace, _ = prompt.Extension[extKeyWorkspace].(string)
+		if workspace == "" {
+			var err error
+			workspace, err = worktrees.Resolve(ctx, worktrees.Config{
+				RepoRoot:     o.cfg.RepoRoot,
+				WorktreesDir: o.cfg.WorktreesDir,
+			}, beadID)
+			if err != nil {
+				return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
+					"native: provision worktree for %s", beadID)
+			}
+		}
 
-	pane, err := o.cfg.Backend.SpawnPane(ctx, spec)
-	if err != nil {
-		return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
-			"native: spawn pane for %s (agent=%s, backend=%s)",
-			beadID, agentType, o.cfg.Backend.Name())
+		// Best-effort bridge install — the per-agent installer is
+		// idempotent; a populated worktree is a supported no-op.
+		_ = installBridgeForAgent(ctx, workspace, agent)
+
+		spec, err := buildSpawnSpec(agent, workspace, sessionID, agentType, title, surface)
+		if err != nil {
+			return core.Session{}, core.WrapAdaptorError(core.KindValidation, err,
+				"native: build spawn spec for %s", beadID)
+		}
+
+		// Layer 2 producer (gm-v8vr.1): persist the resolved surface so
+		// the gemba-bridge PreToolUse hook (gm-eazw) reads it instead of
+		// falling back to the deny-outside-cwd default. Best-effort — a
+		// write failure logs (TODO when slog lands here) but doesn't
+		// abort the session; the bridge degrades to the safe default.
+		if surface != nil {
+			_ = persona.WriteSurfaceFile(sessionID, *surface)
+		}
+
+		pane, err = o.cfg.Backend.SpawnPane(ctx, spec)
+		if err != nil {
+			return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
+				"native: spawn pane for %s (agent=%s, backend=%s)",
+				beadID, agentType, o.cfg.Backend.Name())
+		}
 	}
 
 	now := time.Now()
@@ -173,26 +217,39 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 			"pane_cwd":   pane.Cwd,
 			"pane_pid":   pane.Pid,
 			"started_at": now.Format(time.RFC3339Nano),
+			"reuse_pane": reusePaneID != "",
 		},
 	}
 
 	// Record session + pane + nonce under the lock.
 	o.mu.Lock()
-	if prior, busy := o.paneActive[pane.ID]; busy {
+	if reusePaneID == "" && o.paneInFlightLocked(pane.ID) > 0 {
+		// Brand-new pane that already has sessions — backend bug. Clean
+		// up to avoid the leak.
 		o.mu.Unlock()
-		// Clean up the spawned pane — leaving it alive would be a
-		// leak since no session record claims it. Best-effort; the
-		// operator will see a dangling pane if Kill also fails.
 		_ = o.cfg.Backend.Kill(ctx, pane.ID)
 		return core.Session{}, core.NewAdaptorError(core.KindValidation,
-			"native: pane %s is already running assignment %s", pane.ID, prior)
+			"native: pane %s already tracked (backend reused id?)", pane.ID)
+	}
+	if reusePaneID != "" && o.paneInFlightLocked(pane.ID) >= maxParallel {
+		// Race: another reuse claim filled the pane between the pre-check
+		// and the lock. Refuse rather than overflow.
+		o.mu.Unlock()
+		return core.Session{}, core.NewAdaptorError(core.KindValidation,
+			"native: pane %s reached cap during dispatch", pane.ID)
 	}
 	o.sessions[sessionID] = sess
-	o.paneActive[pane.ID] = sessionID
+	o.addSessionToPaneLocked(pane.ID, sessionID)
+	inFlight := o.paneInFlightLocked(pane.ID)
 	if nonce != "" {
 		o.nonces[nonce] = sessionID
 	}
 	o.mu.Unlock()
+
+	// Surface the parallelism transition so SPA pills + the global
+	// counter update without polling. Skipped on zero-delta no-ops by
+	// construction (this path always advances by +1).
+	o.fanout.Publish(parallelChanged(pane.ID, sessionID, agentType, inFlight, maxParallel, +1))
 
 	// Register a bridge tailer for this session so Subscribe()
 	// consumers see its events.

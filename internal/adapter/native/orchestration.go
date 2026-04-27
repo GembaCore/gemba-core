@@ -20,9 +20,14 @@ type OrchestrationPlane struct {
 	mu sync.Mutex
 	// sessions by id — populated on StartSession, removed on EndSession.
 	sessions map[string]*core.Session
-	// panes -> active session id so we can refuse double-dispatch on
-	// a pane that's already running an assignment.
-	paneActive map[string]string
+	// paneSessions tracks every session id currently sharing a pane.
+	// A pane with one entry is the historical single-bead case; panes
+	// with multiple entries are the intra-parallelism case (gm-root.16):
+	// an `intra_parallel=true` agent type can carry up to its
+	// MaxParallel beads in one pane, with each bead represented as its
+	// own logical Session record sharing pane_id. Cap enforcement and
+	// session_parallel_changed event emission key off len(slice).
+	paneSessions map[string][]string
 	// nonces dedupes StartSession retries by assignment id. Value is
 	// the session id we returned the first time so replays echo it.
 	nonces map[string]string
@@ -49,12 +54,12 @@ func NewWithConfig(cfg Config) *OrchestrationPlane {
 		fo = bridge.NewFanout()
 	}
 	p := &OrchestrationPlane{
-		cfg:         cfg,
-		fanout:      fo,
-		sessions:    make(map[string]*core.Session),
-		paneActive:  make(map[string]string),
-		nonces:      make(map[string]string),
-		escalations: newEscalationIndex(),
+		cfg:          cfg,
+		fanout:       fo,
+		sessions:     make(map[string]*core.Session),
+		paneSessions: make(map[string][]string),
+		nonces:       make(map[string]string),
+		escalations:  newEscalationIndex(),
 	}
 	// Wire the observer chain: escalation index first, then the
 	// session-state handler. Fanout supports a single observer; we
