@@ -41,6 +41,22 @@ const (
 	ProviderActiveEscalations ProviderID = "active_escalations"
 	// ProviderSprintContext — sprint budget posture + burn thresholds.
 	ProviderSprintContext ProviderID = "sprint_context"
+
+	// ProviderCodeAnalysisSummary — module inventory + health top-line
+	// from a codeanalysis.Provider (gm-bro). Default consumer: PM.
+	ProviderCodeAnalysisSummary ProviderID = "code_analysis_summary"
+	// ProviderSymbolContext — on-demand symbol context (callers /
+	// callees / enclosing module) from a codeanalysis.Provider
+	// (gm-bro). Default consumers: Architect, Code Reviewer (on
+	// request, with a "symbol" option).
+	ProviderSymbolContext ProviderID = "symbol_context"
+	// ProviderImpactAnalysis — cascade-of-change report for a symbol
+	// (gm-bro). Default consumers: Architect, Code Reviewer.
+	ProviderImpactAnalysis ProviderID = "impact_analysis"
+	// ProviderHealthReport — cycles, untested modules, god-classes,
+	// undocumented APIs (gm-bro). Default consumers: QA,
+	// Documentarian.
+	ProviderHealthReport ProviderID = "health_report"
 )
 
 // SeedProviderIDs is the v1 catalog, in the order personas SHOULD
@@ -59,6 +75,10 @@ var SeedProviderIDs = []ProviderID{
 	ProviderCIStatus,
 	ProviderActiveEscalations,
 	ProviderSprintContext,
+	ProviderCodeAnalysisSummary,
+	ProviderSymbolContext,
+	ProviderImpactAnalysis,
+	ProviderHealthReport,
 }
 
 // Config is the per-persona configuration for a single context
