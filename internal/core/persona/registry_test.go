@@ -315,7 +315,7 @@ func TestLoadRegistry_SeedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRegistry: %v", err)
 	}
-	want := []string{"documentarian", "project-manager"}
+	want := []string{"deployment-engineer", "documentarian", "project-manager"}
 	for _, id := range want {
 		p, ok := r.Get(id)
 		if !ok {
