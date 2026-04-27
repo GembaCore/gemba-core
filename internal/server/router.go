@@ -355,6 +355,12 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/v1/walks/{id}", r.getWalk)
 		api.Post("/v1/walks/{id}/agenda", r.addWalkAgenda)
 		api.Patch("/v1/walks/{id}/agenda/{item}", r.patchWalkAgenda)
+		// gm-bms: per-agenda-item perspective contributions. Read-only
+		// — surfaces inline notes from every persona whose
+		// Perspective.VolunteerMode == "always". v1 returns canned
+		// templated text; gm-4p6 wires real persona-dispatcher output
+		// without changing the wire shape.
+		api.Get("/v1/walks/{id}/agenda/{item}/perspectives", r.listWalkPerspectives)
 		api.Post("/v1/walks/{id}/turn", r.addWalkTurn)
 		api.Post("/v1/walks/{id}/decide/{item}", r.decideWalkItem)
 		api.Post("/v1/walks/{id}/consult", r.consultWalk)

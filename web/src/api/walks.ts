@@ -266,6 +266,43 @@ export async function endWalk(walkID: string): Promise<Walk> {
   });
 }
 
+// ── perspectives (gm-bms) ──────────────────────────────────────
+//
+// Per-agenda-item inline perspective contributions from active
+// personas with VolunteerMode == "always". v1 returns canned
+// templated stubs; gm-4p6 will swap in real persona-dispatcher
+// output without changing the wire shape.
+
+export type PerspectiveKind = 'blocking' | 'amendment' | 'note';
+
+export interface PerspectiveContribution {
+  persona_id: string;
+  persona_name?: string;
+  persona_icon?: string;
+  kind: PerspectiveKind;
+  content: string;
+  at: string;
+}
+
+export interface PerspectivesEnvelope {
+  walk_id: string;
+  agenda_item_id: string;
+  perspectives: PerspectiveContribution[];
+  total: number;
+}
+
+export async function getPerspectives(
+  walkID: string,
+  agendaItemID: string
+): Promise<PerspectivesEnvelope> {
+  if (!walkID || !agendaItemID) {
+    throw new Error('getPerspectives: walkID and agendaItemID are required');
+  }
+  return apiFetch<PerspectivesEnvelope>(
+    `/v1/walks/${encodeURIComponent(walkID)}/agenda/${encodeURIComponent(agendaItemID)}/perspectives`
+  );
+}
+
 // ── derived helpers (pure) ─────────────────────────────────────
 
 // isTerminal: walk is in a finite state and refuses further mutation.

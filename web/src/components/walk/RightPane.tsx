@@ -1,13 +1,14 @@
 // Right pane (gm-i65). 280px-wide column for "what's happening
 // elsewhere": open escalations the operator hasn't pulled into the
-// agenda yet, a budget gauge derived from walk.Cost, and a polecat-
-// peek thumbnail placeholder (gm-bms wires the live perspective
-// surface).
+// agenda yet, a budget gauge derived from walk.Cost, and (gm-bms)
+// the per-agenda-item perspective panel where every persona with
+// VolunteerMode == "always" surfaces an inline contribution.
 
 import { useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Coins, Eye, Plus } from 'lucide-react';
+import { AlertTriangle, Coins, Plus } from 'lucide-react';
 import { listEscalations, type EscalationRequest } from '@/api/escalations';
 import { cn } from '@/lib/utils';
+import { PerspectivePanel } from './PerspectivePanel';
 import { useWalk } from './WalkContext';
 
 export function RightPane(): JSX.Element {
@@ -18,7 +19,7 @@ export function RightPane(): JSX.Element {
     >
       <OpenEscalationsSection />
       <BudgetGauge />
-      <PolecatPeekStub />
+      <PerspectivePanel />
     </aside>
   );
 }
@@ -151,21 +152,3 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
-function PolecatPeekStub(): JSX.Element {
-  // Live polecat peek thumbnails land via gm-bms; this stub keeps
-  // the right pane visually balanced + reserves the slot.
-  return (
-    <section
-      data-testid="walk-right-peek"
-      className="flex-1 px-3 py-2"
-    >
-      <header className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-        <Eye className="h-3.5 w-3.5" aria-hidden />
-        <span>Polecats</span>
-      </header>
-      <p className="text-[11px] italic text-neutral-400">
-        Live polecat peek thumbnails land with gm-bms.
-      </p>
-    </section>
-  );
-}
