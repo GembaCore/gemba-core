@@ -49,7 +49,7 @@ func applyTestDispatcher(t *testing.T) (*Dispatcher, string) {
 
 func TestApply_RecordsAndReturnsLine(t *testing.T) {
 	d, id := applyTestDispatcher(t)
-	res, err := d.Apply(id, 0)
+	res, err := d.Apply(context.Background(), id, 0)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -67,10 +67,10 @@ func TestApply_RecordsAndReturnsLine(t *testing.T) {
 
 func TestApply_AppendsMultipleAppliesInOrder(t *testing.T) {
 	d, id := applyTestDispatcher(t)
-	if _, err := d.Apply(id, 1); err != nil {
+	if _, err := d.Apply(context.Background(), id, 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Apply(id, 0); err != nil {
+	if _, err := d.Apply(context.Background(), id, 0); err != nil {
 		t.Fatal(err)
 	}
 	c, _ := d.Get(id)
@@ -81,10 +81,10 @@ func TestApply_AppendsMultipleAppliesInOrder(t *testing.T) {
 
 func TestApply_RejectsDuplicateIdx(t *testing.T) {
 	d, id := applyTestDispatcher(t)
-	if _, err := d.Apply(id, 0); err != nil {
+	if _, err := d.Apply(context.Background(), id, 0); err != nil {
 		t.Fatal(err)
 	}
-	_, err := d.Apply(id, 0)
+	_, err := d.Apply(context.Background(), id, 0)
 	if err == nil || !strings.Contains(err.Error(), "already recorded") {
 		t.Errorf("err = %v, want 'already recorded'", err)
 	}
@@ -94,7 +94,7 @@ func TestApply_RejectsOutOfRange(t *testing.T) {
 	d, id := applyTestDispatcher(t)
 	cases := []int{-1, 2, 99}
 	for _, idx := range cases {
-		_, err := d.Apply(id, idx)
+		_, err := d.Apply(context.Background(), id, idx)
 		if err == nil || !strings.Contains(err.Error(), "out of range") {
 			t.Errorf("Apply(%d) err = %v, want out-of-range", idx, err)
 		}
@@ -103,7 +103,7 @@ func TestApply_RejectsOutOfRange(t *testing.T) {
 
 func TestApply_RejectsUnknownConsult(t *testing.T) {
 	d, _ := applyTestDispatcher(t)
-	_, err := d.Apply("never-existed", 0)
+	_, err := d.Apply(context.Background(), "never-existed", 0)
 	if err == nil || !strings.Contains(err.Error(), "unknown consult_id") {
 		t.Errorf("err = %v, want unknown consult_id", err)
 	}
@@ -111,17 +111,17 @@ func TestApply_RejectsUnknownConsult(t *testing.T) {
 
 func TestApply_EmptyConsultIDRejected(t *testing.T) {
 	d := NewDispatcher(NewAuditLog(t.TempDir()))
-	if _, err := d.Apply("", 0); err == nil {
+	if _, err := d.Apply(context.Background(), "", 0); err == nil {
 		t.Error("expected error for empty consult id")
 	}
 }
 
 func TestFinish_PersistsAppliedIdxToAuditRecord(t *testing.T) {
 	d, id := applyTestDispatcher(t)
-	if _, err := d.Apply(id, 0); err != nil {
+	if _, err := d.Apply(context.Background(), id, 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Apply(id, 1); err != nil {
+	if _, err := d.Apply(context.Background(), id, 1); err != nil {
 		t.Fatal(err)
 	}
 	rec, err := d.Finish(id, FinishInfo{})
@@ -138,7 +138,7 @@ func TestApply_DoesNotErrUnavailableSentinel(t *testing.T) {
 	// or context.Canceled. A future caller relying on errors.Is
 	// against well-known sentinels should never accidentally match.
 	d, _ := applyTestDispatcher(t)
-	_, err := d.Apply("missing", 0)
+	_, err := d.Apply(context.Background(), "missing", 0)
 	if errors.Is(err, context.Canceled) {
 		t.Errorf("Apply error matched context.Canceled: %v", err)
 	}

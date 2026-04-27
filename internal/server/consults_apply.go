@@ -33,10 +33,18 @@ import (
 // SPA's drawer can extract suggested_action without re-fetching the
 // full consult detail.
 type applyResponse struct {
-	ConsultID  string `json:"consult_id"`
-	Idx        int    `json:"idx"`
-	Line       any    `json:"line"`
-	AppliedIdx []int  `json:"applied_idx"`
+	ConsultID  string                `json:"consult_id"`
+	Idx        int                   `json:"idx"`
+	Line       any                   `json:"line"`
+	AppliedIdx []int                 `json:"applied_idx"`
+	// Executed reports whether a registered Applier ran the
+	// SuggestedAction (gm-twp2.1). False = record-only mode (no
+	// applier registered for the consult's skill); the operator
+	// dispatches manually.
+	Executed bool                  `json:"executed"`
+	// Executor is the applier's response when Executed=true. Zero
+	// value (Detail empty, Body nil) when Executed=false.
+	Executor persona.ApplierResult `json:"executor"`
 }
 
 func (r *Router) applyConsult(w http.ResponseWriter, req *http.Request) {
@@ -56,7 +64,7 @@ func (r *Router) applyConsult(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	res, err := r.personaDispatcher.Apply(id, idx)
+	res, err := r.personaDispatcher.Apply(req.Context(), id, idx)
 	if err != nil {
 		http.Error(w, applyErrorMessage(err), applyErrorStatus(err))
 		return
@@ -67,6 +75,8 @@ func (r *Router) applyConsult(w http.ResponseWriter, req *http.Request) {
 		Idx:        idx,
 		Line:       res.Line,
 		AppliedIdx: res.AppliedIdx,
+		Executed:   res.Executed,
+		Executor:   res.Executor,
 	})
 }
 
@@ -102,6 +112,14 @@ func applyErrorStatus(err error) int {
 		// Idempotency: same idx applied twice. The SPA treats this
 		// as "already done" — the apply state is already recorded.
 		return http.StatusConflict
+	case strings.Contains(msg, "applier for skill"),
+		strings.Contains(msg, "finished during applier"):
+		// gm-twp2.1: an applier was registered and the executor
+		// failed (e.g. WorkPlane mutation rejected, network error).
+		// 502 surfaces "the upstream we delegated to refused" and
+		// signals the SPA to enable a Retry button — AppliedIdx
+		// stays unrolled so the retry path doesn't 409.
+		return http.StatusBadGateway
 	default:
 		return http.StatusBadRequest
 	}

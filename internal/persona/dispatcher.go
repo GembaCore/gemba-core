@@ -1,6 +1,7 @@
 package persona
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -47,6 +48,12 @@ type Dispatcher struct {
 	// it nil. Read with the RLock; written by [SetSpawnFunc] under
 	// the write lock.
 	spawn SpawnFunc
+
+	// appliers is the per-skill executor registry (gm-twp2.1).
+	// Written by [SetApplier] at boot; Apply reads it to decide
+	// whether the apply path executes the SuggestedAction or just
+	// records intent.
+	appliers map[string]Applier
 
 	now   func() time.Time
 	newID func() string
@@ -479,11 +486,10 @@ type FinishInfo struct {
 // (typically a *RecommendationLine for epic_order); the SPA renders
 // its SuggestedAction so the operator knows what just got recorded.
 //
-// This slice records intent only — the dispatcher does NOT execute
-// the SuggestedAction. A follow-up bead (filed) wires per-skill
-// appliers that translate verb+path+body into actual WorkPlane
-// mutations. Until then the operator (or their automation) reads
-// the returned line and dispatches the action manually.
+// Executed reports whether a registered [Applier] ran the action.
+// True when an applier is registered for the consult's skill AND
+// it returned without error; false in record-only mode (no applier
+// registered). Executor is the applier's response when Executed.
 type ApplyResult struct {
 	// Line is the validated-output entry at the requested index.
 	// Type is skill-specific (e.g. *epic_order.RecommendationLine);
@@ -494,41 +500,87 @@ type ApplyResult struct {
 	// response so the SPA can render the apply history without a
 	// follow-up GET.
 	AppliedIdx []int
+	// Executed is true when a registered Applier ran the action.
+	// False in record-only mode — the operator dispatches the
+	// SuggestedAction manually.
+	Executed bool
+	// Executor is the applier's response. Zero value when
+	// Executed is false.
+	Executor ApplierResult
 }
 
 // Apply records that the operator applied the validated line at
-// idx. Returns ApplyResult with the line so the HTTP layer can echo
-// the SuggestedAction back. Errors:
+// idx and (when an applier is registered for the consult's skill)
+// executes the SuggestedAction. Errors:
 //
 //   - unknown consult_id (id never began OR already finished)
 //   - idx out of range (negative or ≥ len(ValidatedLines))
 //   - duplicate apply (idx already in AppliedIdx; idempotency gate)
+//   - applier failure (no AppliedIdx append on failure so a retry
+//     can re-attempt without hitting the duplicate gate)
 //
-// Concurrency: holds the dispatcher's write lock for the
-// append+snapshot.
-func (d *Dispatcher) Apply(consultID string, idx int) (ApplyResult, error) {
+// Concurrency: takes the write lock to validate + read the line +
+// look up the applier; releases before invoking the applier so a
+// slow WorkPlane mutation doesn't block other consults; re-takes
+// the write lock to append AppliedIdx on success.
+func (d *Dispatcher) Apply(ctx context.Context, consultID string, idx int) (ApplyResult, error) {
 	if strings.TrimSpace(consultID) == "" {
 		return ApplyResult{}, errors.New("persona/dispatcher: consult_id must not be empty")
 	}
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	c, ok := d.sessions[consultID]
 	if !ok {
+		d.mu.Unlock()
 		return ApplyResult{}, fmt.Errorf("persona/dispatcher: unknown consult_id %q", consultID)
 	}
 	if idx < 0 || idx >= len(c.ValidatedLines) {
+		d.mu.Unlock()
 		return ApplyResult{}, fmt.Errorf("persona/dispatcher: apply idx %d out of range (have %d lines)", idx, len(c.ValidatedLines))
 	}
 	for _, prior := range c.AppliedIdx {
 		if prior == idx {
+			d.mu.Unlock()
 			return ApplyResult{}, fmt.Errorf("persona/dispatcher: apply idx %d already recorded", idx)
 		}
+	}
+	line := c.ValidatedLines[idx]
+	applier := d.applierFor(c.SkillID)
+	d.mu.Unlock()
+
+	// Executor pass — runs outside the lock so a slow WorkPlane
+	// mutation doesn't block other consults' Receive / Apply
+	// calls.
+	var executorResult ApplierResult
+	executed := false
+	if applier != nil {
+		var err error
+		executorResult, err = applier.Apply(ctx, line)
+		if err != nil {
+			// Roll-forward never happened — the action did not
+			// land. AppliedIdx stays untouched so the operator's
+			// retry is allowed (would otherwise 409 the next
+			// click).
+			return ApplyResult{}, fmt.Errorf("persona/dispatcher: applier for skill %q: %w", c.SkillID, err)
+		}
+		executed = true
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	// Re-fetch under the lock — the consult may have been
+	// Finished while the executor ran. Surface as "unknown" so
+	// the operator gets the same error as a stale id.
+	c, ok = d.sessions[consultID]
+	if !ok {
+		return ApplyResult{}, fmt.Errorf("persona/dispatcher: consult %q finished during applier", consultID)
 	}
 	c.AppliedIdx = append(c.AppliedIdx, idx)
 	snapshot := append([]int(nil), c.AppliedIdx...)
 	return ApplyResult{
-		Line:       c.ValidatedLines[idx],
+		Line:       line,
 		AppliedIdx: snapshot,
+		Executed:   executed,
+		Executor:   executorResult,
 	}, nil
 }
 

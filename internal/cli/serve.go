@@ -264,6 +264,15 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	personaRegistry := loadPersonaRegistry(cfg)
 	handler.AttachPersonaDispatcher(personaDispatcher, skillRegistry, personaRegistry)
 
+	// gm-twp2.1: per-skill applier executor. When a WorkPlane is
+	// bound, register epic_order's PATCH /api/work-items/{id}
+	// executor on the dispatcher. Without this the apply endpoint
+	// stays in record-only mode (operator dispatches the
+	// SuggestedAction manually).
+	if wp := host.WorkPlane(); wp != nil {
+		personaDispatcher.SetApplier(epic_order.ID, epic_order.NewApplier(wp))
+	}
+
 	// gm-twp2: bridge tailer → dispatcher.Receive plumbing. The
 	// orchestration plane's GembaSkillOutput frames already land in
 	// the events hub as Kind=skill.output_emitted; FanFromHub

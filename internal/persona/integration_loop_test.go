@@ -27,7 +27,7 @@
 // emits emit_skill_output frames the bridge can parse" — orthogonal
 // to this test's "the in-process loop wires up correctly".
 
-package persona
+package persona_test
 
 import (
 	"context"
@@ -40,6 +40,7 @@ import (
 
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
 )
 
@@ -77,10 +78,10 @@ func TestIntegration_ConsultLoop_BeginToFinish(t *testing.T) {
 
 	// Build the real machinery: dispatcher, audit log on a temp
 	// dir, real skill, real hub, the bridge subscriber.
-	auditLog := NewAuditLog(t.TempDir())
-	d := NewDispatcher(auditLog,
-		WithWorkspaceDir(t.TempDir()),
-		WithClock(func() time.Time { return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC) }),
+	auditLog := persona.NewAuditLog(t.TempDir())
+	d := persona.NewDispatcher(auditLog,
+		persona.WithWorkspaceDir(t.TempDir()),
+		persona.WithClock(func() time.Time { return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC) }),
 	)
 	skill := epic_order.New()
 	if err := registerSkillForTest(t, d, skill); err != nil {
@@ -93,7 +94,7 @@ func TestIntegration_ConsultLoop_BeginToFinish(t *testing.T) {
 	defer cancel()
 	bridgeDone := make(chan struct{})
 	go func() {
-		FanFromHub(ctx, d, hub)
+		persona.FanFromHub(ctx, d, hub)
 		close(bridgeDone)
 	}()
 	// Wait for the FanFromHub subscriber to register before we
@@ -106,7 +107,7 @@ func TestIntegration_ConsultLoop_BeginToFinish(t *testing.T) {
 	// keyed by consult.ID. Mirrors the bridge translator's payload
 	// exactly so the FanFromHub → Dispatcher.Receive path runs
 	// against the real wire shape.
-	d.SetSpawnFunc(func(_ context.Context, c *Consult) error {
+	d.SetSpawnFunc(func(_ context.Context, c *persona.Consult) error {
 		hub.Publish(events.GembaEvent{
 			ID:        "ev-fixture-1",
 			Kind:      events.SkillOutputEmitted,
@@ -138,12 +139,12 @@ func TestIntegration_ConsultLoop_BeginToFinish(t *testing.T) {
   ],
   "constraints": {}
 }`)
-	c, err := d.Begin(BeginRequest{
+	c, err := d.Begin(persona.BeginRequest{
 		Persona:   pm,
 		Skill:     skill,
 		Workspace: "gemba",
 		RawInput:  rawInput,
-		Template: TemplateValues{
+		Template: persona.TemplateValues{
 			WorkspaceName: "Gemba",
 			ProjectPrefix: "gm",
 		},
@@ -190,7 +191,7 @@ func TestIntegration_ConsultLoop_BeginToFinish(t *testing.T) {
 
 	// Apply the recommendation at idx 1 — proves the dispatcher's
 	// Apply path against a real skill-output line.
-	res, err := d.Apply(c.ID, 1)
+	res, err := d.Apply(ctx, c.ID, 1)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
@@ -200,13 +201,13 @@ func TestIntegration_ConsultLoop_BeginToFinish(t *testing.T) {
 
 	// Duplicate apply MUST 409 (dispatcher's own gate, not the
 	// HTTP nonce middleware which we're not exercising here).
-	if _, err := d.Apply(c.ID, 1); err == nil {
+	if _, err := d.Apply(ctx, c.ID, 1); err == nil {
 		t.Error("duplicate Apply did not error; gate is not effective")
 	}
 
 	// Finish the consult — proves the audit-log write and the
 	// AppliedIdx persistence end-to-end.
-	rec, err := d.Finish(c.ID, FinishInfo{
+	rec, err := d.Finish(c.ID, persona.FinishInfo{
 		Tokens: corepersona.TokenUsage{In: 100, Out: 250},
 		Model:  "fixture",
 	})
@@ -249,7 +250,7 @@ func TestIntegration_ConsultLoop_BeginToFinish(t *testing.T) {
 // registerSkillForTest mirrors what cmd/gemba serve does at boot —
 // the dispatcher itself doesn't own the registry; tests bind one and
 // hand the skill in via Begin.
-func registerSkillForTest(t *testing.T, _ *Dispatcher, _ corepersona.Skill) error {
+func registerSkillForTest(t *testing.T, _ *persona.Dispatcher, _ corepersona.Skill) error {
 	t.Helper()
 	// No-op for now: the dispatcher uses the skill passed via
 	// BeginRequest directly; the registry lives at the HTTP layer.
@@ -262,7 +263,7 @@ func registerSkillForTest(t *testing.T, _ *Dispatcher, _ corepersona.Skill) erro
 // lineCount peeks at the live consult's line count without holding
 // the dispatcher's lock — best-effort for the timeout's error
 // message; the real assertion is the loop's Get + len check.
-func lineCount(d *Dispatcher, id string) int {
+func lineCount(d *persona.Dispatcher, id string) int {
 	c, ok := d.Get(id)
 	if !ok {
 		return -1
@@ -283,14 +284,14 @@ func TestIntegration_ConsultLoop_FailsCleanlyOnInvalidInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := NewDispatcher(NewAuditLog(t.TempDir()),
-		WithWorkspaceDir(t.TempDir()),
-		WithClock(func() time.Time { return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC) }),
+	d := persona.NewDispatcher(persona.NewAuditLog(t.TempDir()),
+		persona.WithWorkspaceDir(t.TempDir()),
+		persona.WithClock(func() time.Time { return time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC) }),
 	)
 	skill := epic_order.New()
 
 	// Missing required fields (workspace + candidate_epics).
-	_, err = d.Begin(BeginRequest{
+	_, err = d.Begin(persona.BeginRequest{
 		Persona:   pm,
 		Skill:     skill,
 		Workspace: "gemba",
