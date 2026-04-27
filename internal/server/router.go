@@ -17,6 +17,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/MikeBengtson/gemba/internal/core/phase"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/persona"
@@ -106,6 +107,13 @@ type Router struct {
 	// the transition and emits the SSE event but does not write the
 	// markdown summary. Bind via Router.AttachWalkSummary.
 	walkSummary *walk_summary.Skill
+
+	// phaseStore backs the /api/v1/phase + /api/v1/phase/advance
+	// surface (gm-jt9). Optional — when nil both routes return 503.
+	// Bind via Router.AttachPhase. The same store is consumed by the
+	// Purview-as-gate path (gm-3on) to decide whether a Manager
+	// mutation is allowed in the project's current phase.
+	phaseStore phase.Store
 
 	mux http.Handler
 }
@@ -317,6 +325,15 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// will extend the response with phase + active-purview state
 		// without breaking the existing shape.
 		api.Get("/v1/personas", r.listPersonasV1)
+
+		// gm-jt9: project Phase primitive. GET returns the workspace's
+		// current Phase + history; POST /advance is nonce-gated. Both
+		// return 503 until AttachPhase binds a phase.Store. The
+		// Purview-as-gate path (gm-3on) reads the same store to decide
+		// whether a Manager mutation is allowed.
+		api.Get("/v1/phase", r.getPhase)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/phase/advance", r.advancePhase)
 
 		// gm-wgv: Gemba walk HTTP surface. Mounted under /api/v1/
 		// per the design's §API table; rest of /api stays unversioned
