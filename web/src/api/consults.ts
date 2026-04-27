@@ -93,3 +93,76 @@ export async function listSkills(): Promise<SkillSummary[]> {
   const env = await apiFetch<ListSkillsEnvelope>('/skills');
   return env.skills ?? [];
 }
+
+// CreateConsultRequest mirrors the server's createConsultRequest
+// shape (internal/server/consults_post.go). raw_input is opaque
+// JSON the bound skill validates; the SPA assembles it per-skill.
+export interface CreateConsultRequest {
+  persona_id: string;
+  skill_id: string;
+  workspace: string;
+  raw_input: unknown;
+  guidance?: string;
+  template?: {
+    workspace_name?: string;
+    role?: string;
+    project_prefix?: string;
+  };
+  repository_override?: string;
+  project_values?: string[];
+  project_guardrails?: string[];
+  project_goals?: string[];
+  workspace_values?: string[];
+  context_chunks?: string[];
+  // spawn=false lets the operator iterate on prompt composition
+  // without launching a real Claude Code session.
+  spawn?: boolean;
+}
+
+export async function createConsult(
+  body: CreateConsultRequest,
+  nonce: string,
+): Promise<ConsultSummary> {
+  return apiFetch<ConsultSummary>('/consults', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-GEMBA-Confirm': nonce,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+// ApplyConsultResponse mirrors the server's applyResponse shape
+// (internal/server/consults_apply.go). `line` is the validated
+// entry the operator chose; type-narrow at the call site.
+export interface ApplyConsultResponse {
+  consult_id: string;
+  idx: number;
+  line: unknown;
+  applied_idx: number[];
+}
+
+export async function applyConsult(
+  consultID: string,
+  idx: number,
+  nonce: string,
+): Promise<ApplyConsultResponse> {
+  return apiFetch<ApplyConsultResponse>(
+    `/consults/${encodeURIComponent(consultID)}/apply/${idx}`,
+    {
+      method: 'POST',
+      headers: { 'X-GEMBA-Confirm': nonce },
+    },
+  );
+}
+
+// freshNonce mirrors the helper in api/workItems.ts so callers don't
+// have to import it across module boundaries. Per-call UUID is the
+// idempotency key the X-GEMBA-Confirm middleware caches against.
+export function freshNonce(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `nonce-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}

@@ -21,6 +21,7 @@ import {
 } from '@/api/planner';
 import { AgentContextStrip } from '@/components/agents/AgentContextStrip';
 import { SessionHealthPanel } from '@/components/health/SessionHealthPanel';
+import { RecommendOrderDrawer } from '@/components/persona/RecommendOrderDrawer';
 import { cn } from '@/lib/utils';
 
 const POLL_MS = 30_000;
@@ -33,6 +34,7 @@ export function CoachPage() {
     staleTime: POLL_MS / 2,
   });
   const [hoverBead, setHoverBead] = useState<string | null>(null);
+  const [recommendOpen, setRecommendOpen] = useState(false);
 
   if (error) {
     return (
@@ -46,7 +48,17 @@ export function CoachPage() {
   }
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="coach-page">
-      <Header notices={data.notices ?? []} batchCount={data.batches.length} />
+      <Header
+        notices={data.notices ?? []}
+        batchCount={data.batches.length}
+        onRecommendOrder={() => setRecommendOpen(true)}
+      />
+      <RecommendOrderDrawer
+        open={recommendOpen}
+        onClose={() => setRecommendOpen(false)}
+        workspace={data.ready_beads[0]?.repository ?? 'default'}
+        readyBeads={data.ready_beads}
+      />
       <div className="px-8 py-3">
         <SessionHealthPanel sessions={data.sessions} sortBySeverity testid="coach-health-panel" />
       </div>
@@ -115,17 +127,39 @@ function CoachSessionStrip({
   );
 }
 
-function Header({ notices, batchCount }: { notices: string[]; batchCount: number }) {
+function Header({
+  notices,
+  batchCount,
+  onRecommendOrder,
+}: {
+  notices: string[];
+  batchCount: number;
+  onRecommendOrder: () => void;
+}) {
   return (
     <header className="border-b border-neutral-200 px-8 py-4 dark:border-neutral-800">
-      <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
-        <Boxes className="h-5 w-5" aria-hidden />
-        Coach
-      </h1>
-      <p className="text-xs text-neutral-500 dark:text-neutral-400">
-        Dispatch grid backed by the planner. Hover a bead row to see its
-        conflict siblings; the strip shows what each session is primed for.
-      </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+            <Boxes className="h-5 w-5" aria-hidden />
+            Coach
+          </h1>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            Dispatch grid backed by the planner. Hover a bead row to see its
+            conflict siblings; the strip shows what each session is primed for.
+          </p>
+        </div>
+        {/* gm-twp2: PM persona consult entrypoint. Spawns a Claude
+            Code session that ranks the current ready beads. */}
+        <button
+          type="button"
+          onClick={onRecommendOrder}
+          data-testid="coach-recommend-order"
+          className="inline-flex items-center gap-1.5 rounded-md border border-sky-600 bg-white px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:bg-neutral-950 dark:text-sky-400 dark:hover:bg-sky-950/30"
+        >
+          Recommend order
+        </button>
+      </div>
       <div className="mt-2 flex items-center gap-3 text-xs text-neutral-500">
         <span data-testid="coach-batch-count">
           {batchCount} parallel-safe batch{batchCount === 1 ? '' : 'es'}
