@@ -1,6 +1,6 @@
 # WorkPlane adaptor contract
 
-> Source: `internal/core/workplane.go`. Resolves DDs 9, 12, 14, 15.
+> Source: `core/workplane.go`. Resolves DDs 9, 12, 14, 15.
 
 Every Gemba deployment binds exactly one `WorkPlane` adaptor to one
 `OrchestrationPlane` adaptor (gm-root DD-1). This document is the

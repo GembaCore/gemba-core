@@ -9,7 +9,7 @@ LangGraph, CrewAI, OpenHands, Devin, Factory, Gas City, etc. use the
 same contract. This document is the authoring reference for anyone
 implementing that contract in Go.
 
-It matches `internal/core/orchestration.go` and the design in
+It matches `core/orchestration.go` and the design in
 `gemba_prime/crew/mike/domain.md` §3.
 
 ---
@@ -408,8 +408,8 @@ guide (gm-e14.5).
 
 ## Related
 
-- `internal/core/orchestration.go` — the Go source of truth.
-- `internal/core/types.go` — `AgentRef`, `WorkItemID`, `AgentID`.
+- `core/orchestration.go` — the Go source of truth.
+- `core/types.go` — `AgentRef`, `WorkItemID`, `AgentID`.
 - `docs/adaptors/workplane.md` — the paired WorkPlane contract
   (gm-e3.2).
 - `testing/` — importable conformance harness (gm-2am).
