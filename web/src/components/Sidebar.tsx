@@ -13,6 +13,7 @@ import {
   Settings,
   GitCompare,
   Users,
+  CalendarRange,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -23,6 +24,7 @@ type Item = { to: string; label: string; Icon: LucideIcon; gated?: boolean };
 const items: Item[] = [
   { to: '/board', label: 'Board', Icon: LayoutGrid },
   { to: '/backlog', label: 'Backlog', Icon: ListTodo },
+  { to: '/sprints', label: 'Sprints', Icon: CalendarRange },
   { to: '/sessions', label: 'Sessions', Icon: Terminal },
   { to: '/agent-groups', label: 'Agent groups', Icon: Users },
   { to: '/coach', label: 'Coach', Icon: CircuitBoard },

@@ -16,6 +16,9 @@ import { DriftPage } from '@/pages/DriftPage';
 import { AgentDetailPage } from '@/pages/agents/AgentDetailPage';
 // gm-e12.8: AgentGroup board view (mode: static | pool | graph).
 import { AgentGroupsPage } from '@/pages/agent-groups/AgentGroupsPage';
+// gm-e11.5: sprint roster + detail pages (token-budget surface deferred).
+import { SprintsPage } from '@/pages/SprintsPage';
+import { SprintDetailPage } from '@/pages/SprintDetailPage';
 import {
   EscalationsPage,
   HealthPage,
@@ -58,6 +61,10 @@ export default function App() {
         {/* gm-e12.8: AgentGroup board (mode-dispatched: static | pool
             | graph). Empty when no orchestration plane is bound. */}
         <Route path="/agent-groups" element={<AgentGroupsPage />} />
+        {/* gm-e11.5: sprint roster + per-sprint detail. Token-budget
+            gauges + enforcement deferred to a follow-up under gm-root.14. */}
+        <Route path="/sprints" element={<SprintsPage />} />
+        <Route path="/sprints/:id" element={<SprintDetailPage />} />
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />
         {/* gm-twp2: persona consult activity. The first concrete
