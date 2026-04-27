@@ -12,6 +12,8 @@ import { ProjectConfigPage } from '@/pages/ProjectConfigPage';
 import { BootstrapPage } from '@/pages/BootstrapPage';
 import { InsightsPersonasPage } from '@/pages/InsightsPersonasPage';
 import { DriftPage } from '@/pages/DriftPage';
+// gm-e12.15: provider-aware agent detail view (Workspace.kind switch).
+import { AgentDetailPage } from '@/pages/agents/AgentDetailPage';
 import {
   EscalationsPage,
   HealthPage,
@@ -47,6 +49,10 @@ export default function App() {
           element={<Navigate to="/board?layout=list&power=1" replace />}
         />
         <Route path="/sessions" element={<SessionsPage />} />
+        {/* gm-e12.15: provider-aware agent detail. :id is matched
+            against session.id, agent.id, or assignment_id — see
+            AgentDetailPage.findContext for the lookup order. */}
+        <Route path="/agents/:id" element={<AgentDetailPage />} />
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />
         {/* gm-twp2: persona consult activity. The first concrete
