@@ -155,6 +155,41 @@ func (c ServeConfig) ValidateBindPolicy() error {
 	return nil
 }
 
+// ValidateTLSFlags enforces the TLS selector contract: either pass
+// --tls-cert AND --tls-key together (operator-supplied chain), or pass
+// --tls-self-signed alone (server generates an ephemeral cert at boot),
+// or pass nothing (plain HTTP). Mixing the two paths or supplying only
+// one half of the cert/key pair is an error so the operator sees the
+// problem before the listener opens.
+//
+// Per gm-root locked decision #8 (AUTH): TLS is the recommended
+// transport for any non-loopback bind, and the self-signed mode exists
+// so an operator can stand up an HTTPS listener with one flag while
+// they wait for a real cert.
+func (c ServeConfig) ValidateTLSFlags() error {
+	hasCert := c.TLSCert != ""
+	hasKey := c.TLSKey != ""
+	if hasCert != hasKey {
+		return fmt.Errorf(
+			"--tls-cert and --tls-key must be set together; " +
+				"got one without the other")
+	}
+	if (hasCert || hasKey) && c.TLSSelfSigned {
+		return fmt.Errorf(
+			"--tls-self-signed is mutually exclusive with --tls-cert/--tls-key; " +
+				"pick one path\n" +
+				"  --tls-cert/--tls-key      load an operator-supplied cert from disk\n" +
+				"  --tls-self-signed         generate an ephemeral self-signed cert at startup")
+	}
+	return nil
+}
+
+// TLSEnabled reports whether the server should bind an HTTPS listener
+// based on the configured TLS flags.
+func (c ServeConfig) TLSEnabled() bool {
+	return c.TLSCert != "" || c.TLSKey != "" || c.TLSSelfSigned
+}
+
 // ValidateWorkPlaneFlags enforces the WorkPlane selector contract:
 // exactly one of --beads-dir and --dolt-url must be set. Both select a
 // beads backend but by different means; a server asked to honor both

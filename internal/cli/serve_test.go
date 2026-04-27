@@ -104,6 +104,63 @@ func TestServe_RejectsBothBeadsDirAndDoltURL(t *testing.T) {
 	}
 }
 
+// TestServe_TLSFlagsAccepted locks in the surface gm-e5.3 ships:
+// --tls-cert, --tls-key, and --tls-self-signed must all be present on
+// the serve command. The cert generation matrix lives in
+// internal/auth.TestGenerateSelfSignedCert; this test just guards the
+// flag wiring so an accidental rename doesn't silently strand the
+// feature.
+func TestServe_TLSFlagsAccepted(t *testing.T) {
+	cmd := newServeCmd(BuildInfo{})
+	for _, name := range []string{"tls-cert", "tls-key", "tls-self-signed"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Errorf("--%s flag missing from serve command", name)
+		}
+	}
+}
+
+// TestServe_RejectsTLSCertWithoutKey pins the "cert and key inseparable"
+// half of the TLS validator at the CLI layer. The rejection must
+// happen before the listener opens so the operator sees the error
+// before any partial setup.
+func TestServe_RejectsTLSCertWithoutKey(t *testing.T) {
+	cmd := newServeCmd(BuildInfo{})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{"--tls-cert", "/tmp/c.pem", "--beads-dir", "/tmp"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "must be set together") {
+		t.Errorf("error missing expected text: %v", err)
+	}
+}
+
+// TestServe_RejectsTLSSelfSignedWithCertKey pins the mutex between
+// the operator-supplied path and the self-signed path. Both cannot be
+// active simultaneously; the validator rejects before any cert work.
+func TestServe_RejectsTLSSelfSignedWithCertKey(t *testing.T) {
+	cmd := newServeCmd(BuildInfo{})
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"--tls-self-signed",
+		"--tls-cert", "/tmp/c.pem",
+		"--tls-key", "/tmp/k.pem",
+		"--beads-dir", "/tmp",
+	})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error missing expected text: %v", err)
+	}
+}
+
 // TestServe_RejectsNeitherBeadsDirNorDoltURL pins the "must pick one"
 // half of the WorkPlane selector contract at the CLI layer. Running
 // `gemba serve` with no adaptor flag has no WorkPlane to expose, so

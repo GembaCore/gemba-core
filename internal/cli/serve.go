@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +53,9 @@ network, pass --listen with a non-loopback address AND --auth to enable
 authentication. Binding a non-loopback interface without --auth is an error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := cfg.NormalizeListen(cmd.Flags().Changed("port")); err != nil {
+				return err
+			}
+			if err := cfg.ValidateTLSFlags(); err != nil {
 				return err
 			}
 			return runServe(cmd.Context(), cfg, b, quiet, cmd.OutOrStdout())
@@ -345,12 +349,24 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	// Resolve the TLS posture before opening the listener. Two modes:
+	//   1. operator-supplied --tls-cert/--tls-key: load from disk and
+	//      warn (don't abort) if the key file is world/group readable
+	//   2. --tls-self-signed: generate an ephemeral ECDSA P-256 cert
+	//      with SANs covering localhost + the configured bind host;
+	//      print the SHA-256 fingerprint at startup so the operator
+	//      can pin it from a curl --cacert / --pin run
+	// ValidateTLSFlags has already rejected partial/conflicting input.
+	if err := configureTLS(srv, &cfg); err != nil {
+		return err
+	}
+
 	ctx, cancel := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
 	go func() {
 		scheme := "http"
-		if cfg.TLSCert != "" || cfg.TLSSelfSigned {
+		if cfg.TLSEnabled() {
 			scheme = "https"
 		}
 		slog.Info("gemba listening",
@@ -358,8 +374,11 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 			"auth", cfg.EffectiveAuthMode())
 
 		var err error
-		if scheme == "https" {
-			err = srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey)
+		if cfg.TLSEnabled() {
+			// Cert + key already loaded into srv.TLSConfig.Certificates
+			// by configureTLS, so the empty-string args here select the
+			// embedded chain rather than re-reading from disk.
+			err = srv.ListenAndServeTLS("", "")
 		} else {
 			err = srv.ListenAndServe()
 		}
@@ -686,6 +705,75 @@ func ensurePrimaryToken(path string) error {
 	fmt.Fprintln(os.Stderr, "  Hash:   "+path)
 	fmt.Fprintln(os.Stderr, "==============================================================")
 	fmt.Fprintln(os.Stderr)
+	return nil
+}
+
+// configureTLS resolves the TLS posture for the http.Server based on
+// the validated ServeConfig flags. Three branches:
+//   - TLSSelfSigned: generate an ephemeral ECDSA P-256 cert and print
+//     its SHA-256 fingerprint to stderr so the operator can pin it
+//   - TLSCert/TLSKey: load operator-supplied chain from disk and warn
+//     (do not abort) if the key file is world/group readable
+//   - neither: leave srv.TLSConfig nil; plain HTTP path
+//
+// The cert is attached via srv.TLSConfig.Certificates so the
+// ListenAndServeTLS("","") call in runServe uses the in-memory chain
+// instead of re-reading from disk. ValidateTLSFlags has already
+// rejected conflicting input before we reach this point.
+func configureTLS(srv *http.Server, cfg *config.ServeConfig) error {
+	if !cfg.TLSEnabled() {
+		return nil
+	}
+
+	var cert tls.Certificate
+	if cfg.TLSSelfSigned {
+		c, fp, err := auth.GenerateSelfSignedCert(auth.SelfSignedCertOptions{
+			BindHost: cfg.Listen,
+		})
+		if err != nil {
+			return fmt.Errorf("tls self-signed: %w", err)
+		}
+		cert = c
+		// Stderr (not slog) keeps the fingerprint reachable on a `gemba
+		// serve | tee logs.json` pipeline without polluting structured
+		// logs an operator may forward to a SIEM. Same precedent as the
+		// auth-token bootstrap message above.
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "==============================================================")
+		fmt.Fprintln(os.Stderr, "  Gemba generated a self-signed TLS certificate.")
+		fmt.Fprintln(os.Stderr, "  Pin this fingerprint from clients to detect MITM:")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "  SHA-256: "+fp)
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "  curl --insecure works for quick checks, but pin in production.")
+		fmt.Fprintln(os.Stderr, "==============================================================")
+		fmt.Fprintln(os.Stderr)
+		slog.Info("tls: self-signed certificate generated",
+			"fingerprint_sha256", fp,
+			"valid_for", "365d")
+	} else {
+		// Operator-supplied chain. Permission warning is a soft signal:
+		// some deploys sit behind a chmod-relaxed shared volume and that
+		// is the operator's call. We log loudly but boot anyway.
+		if _, warn, err := auth.CheckCertKeyPermissions(cfg.TLSKey); err != nil {
+			return fmt.Errorf("tls key %s: %w", cfg.TLSKey, err)
+		} else if warn != "" {
+			slog.Warn("tls key permissions advisory", "msg", warn)
+		}
+		c, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		if err != nil {
+			return fmt.Errorf("load tls keypair: %w", err)
+		}
+		cert = c
+		slog.Info("tls: operator-supplied certificate loaded",
+			"cert", cfg.TLSCert,
+			"key", cfg.TLSKey)
+	}
+
+	srv.TLSConfig = &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}
 	return nil
 }
 

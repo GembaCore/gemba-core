@@ -324,6 +324,73 @@ func TestValidateWorkPlaneFlags_NeitherSetMentionsBothFlags(t *testing.T) {
 	}
 }
 
+// TestValidateTLSFlags pins the gm-e5.3 selector contract: --tls-cert
+// and --tls-key are inseparable; either of them is mutually exclusive
+// with --tls-self-signed; nothing set is fine (plain HTTP). The
+// startup gate must reject conflicting input before the listener
+// opens so the operator gets a clean error rather than a half-loaded
+// TLS chain.
+func TestValidateTLSFlags(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     ServeConfig
+		wantErr string // substring; empty means "no error expected"
+	}{
+		{"neither set", ServeConfig{}, ""},
+		{"self-signed only", ServeConfig{TLSSelfSigned: true}, ""},
+		{"cert+key together", ServeConfig{TLSCert: "/c.pem", TLSKey: "/k.pem"}, ""},
+		{"cert without key", ServeConfig{TLSCert: "/c.pem"}, "must be set together"},
+		{"key without cert", ServeConfig{TLSKey: "/k.pem"}, "must be set together"},
+		{"self-signed + cert/key",
+			ServeConfig{TLSCert: "/c.pem", TLSKey: "/k.pem", TLSSelfSigned: true},
+			"mutually exclusive"},
+		{"self-signed + cert alone",
+			ServeConfig{TLSCert: "/c.pem", TLSSelfSigned: true},
+			// cert without key fires first; that's fine — both error
+			// paths are operator-actionable
+			"must be set together"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.ValidateTLSFlags()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("want error containing %q, got nil", tc.wantErr)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("error missing %q; got %q", tc.wantErr, err.Error())
+			}
+		})
+	}
+}
+
+// TestTLSEnabled covers the small predicate the serve goroutine uses
+// to decide between ListenAndServe and ListenAndServeTLS.
+func TestTLSEnabled(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  ServeConfig
+		want bool
+	}{
+		{"empty", ServeConfig{}, false},
+		{"self-signed", ServeConfig{TLSSelfSigned: true}, true},
+		{"cert+key", ServeConfig{TLSCert: "/c", TLSKey: "/k"}, true},
+		{"cert alone", ServeConfig{TLSCert: "/c"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.TLSEnabled(); got != tc.want {
+				t.Errorf("TLSEnabled = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestEffectiveAuthMode(t *testing.T) {
 	if got := (ServeConfig{}).EffectiveAuthMode(); got != "none" {
 		t.Fatalf("default should be none, got %q", got)
