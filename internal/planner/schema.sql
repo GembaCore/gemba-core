@@ -244,6 +244,13 @@ CREATE TABLE IF NOT EXISTS dispatch_decisions (
   conflicts_json      JSON,
   ready_set_json      JSON,
 
+  -- gm-v5z2.8 §7.5: optional one-line operator explanation when a
+  -- coach pick differs from the planner's top recommendation. The
+  -- calibration aggregator surfaces these alongside (recommended_top,
+  -- picked, score_delta) so the operator-review queue can show
+  -- WHY the planner was overridden, not just THAT it was.
+  operator_reason     VARCHAR(512) NOT NULL DEFAULT '',
+
   created_at          DATETIME(6)  NOT NULL,
 
   PRIMARY KEY (id),

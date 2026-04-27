@@ -84,6 +84,7 @@ func TestInsert_HappyPath(t *testing.T) {
 			d.SessionID, string(d.AgentID), d.DecidedBy, string(d.Mode),
 			d.Affinity.Combined, sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(),
+			d.OperatorReason,
 			d.CreatedAt,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -112,6 +113,7 @@ func TestInsert_GeneratesIDWhenBlank(t *testing.T) {
 			d.SessionID, string(d.AgentID), d.DecidedBy, string(d.Mode),
 			d.Affinity.Combined, sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(),
+			d.OperatorReason,
 			d.CreatedAt,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -137,6 +139,7 @@ func TestInsert_DefaultsModeToCoachWhenBlank(t *testing.T) {
 			d.SessionID, string(d.AgentID), d.DecidedBy, string(ModeCoach),
 			d.Affinity.Combined, sqlmock.AnyArg(),
 			sqlmock.AnyArg(), sqlmock.AnyArg(),
+			d.OperatorReason,
 			d.CreatedAt,
 		).
 		WillReturnResult(sqlmock.NewResult(1, 1))
@@ -215,12 +218,14 @@ func TestGet_DecodesRowRoundTrip(t *testing.T) {
 		"session_id", "agent_id", "decided_by", "mode",
 		"affinity_combined", "affinity_json",
 		"conflicts_json", "ready_set_json",
+		"operator_reason",
 		"created_at",
 	}).AddRow(
 		"d-1", "gm-1", decided,
 		"sess-1", "mike2", "operator-mike", "coach",
 		0.7, affinityJSON,
 		conflictsJSON, readySetJSON,
+		"more important than the top pick",
 		decided,
 	)
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT")).
@@ -266,11 +271,13 @@ func TestList_FiltersByBead(t *testing.T) {
 		"session_id", "agent_id", "decided_by", "mode",
 		"affinity_combined", "affinity_json",
 		"conflicts_json", "ready_set_json",
+		"operator_reason",
 		"created_at",
 	}).AddRow(
 		"d-1", "gm-1", decided,
 		"sess-1", "mike2", "", "coach",
 		0.7, "", "", "",
+		"",
 		decided,
 	)
 	mock.ExpectQuery(regexp.QuoteMeta("WHERE 1=1 AND bead_id = ?")).
@@ -299,6 +306,7 @@ func TestList_FiltersBySession(t *testing.T) {
 			"session_id", "agent_id", "decided_by", "mode",
 			"affinity_combined", "affinity_json",
 			"conflicts_json", "ready_set_json",
+			"operator_reason",
 			"created_at",
 		}))
 
@@ -322,6 +330,7 @@ func TestList_FiltersByMode(t *testing.T) {
 			"session_id", "agent_id", "decided_by", "mode",
 			"affinity_combined", "affinity_json",
 			"conflicts_json", "ready_set_json",
+			"operator_reason",
 			"created_at",
 		}))
 
@@ -344,6 +353,7 @@ func TestList_AppliesAffinityThreshold(t *testing.T) {
 			"session_id", "agent_id", "decided_by", "mode",
 			"affinity_combined", "affinity_json",
 			"conflicts_json", "ready_set_json",
+			"operator_reason",
 			"created_at",
 		}))
 
@@ -364,6 +374,7 @@ func TestList_RespectsLimit(t *testing.T) {
 			"session_id", "agent_id", "decided_by", "mode",
 			"affinity_combined", "affinity_json",
 			"conflicts_json", "ready_set_json",
+			"operator_reason",
 			"created_at",
 		}))
 
@@ -383,6 +394,7 @@ func TestList_OrdersNewestFirst(t *testing.T) {
 			"session_id", "agent_id", "decided_by", "mode",
 			"affinity_combined", "affinity_json",
 			"conflicts_json", "ready_set_json",
+			"operator_reason",
 			"created_at",
 		}))
 

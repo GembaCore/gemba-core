@@ -70,6 +70,15 @@ type Decision struct {
 	// retrospective cannot answer without it.
 	ReadySet []ReadySetEntry `json:"ready_set,omitempty"`
 
+	// OperatorReason is the optional one-line explanation a coach-
+	// mode picker can attach via `gemba dispatch --reason "..."`
+	// (gm-v5z2.8 §7.5). Free-form; the calibration loop reads it
+	// alongside (recommended_top_bead, picked_bead, score_delta)
+	// to surface why an operator overrode the planner's top pick.
+	// Empty for auto-mode dispatches and for coach picks where
+	// the operator skipped the prompt.
+	OperatorReason string `json:"operator_reason,omitempty"`
+
 	// CreatedAt is when this row was written; distinct from
 	// DecidedAt which is when the human pressed the button. The
 	// store stamps it from now() when zero.
@@ -161,13 +170,15 @@ func (s *Store) Insert(ctx context.Context, d Decision) (string, error) {
 			session_id, agent_id, decided_by, mode,
 			affinity_combined, affinity_json,
 			conflicts_json, ready_set_json,
+			operator_reason,
 			created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err = s.db.ExecContext(ctx, stmt,
 		d.ID, string(d.BeadID), d.DecidedAt,
 		d.SessionID, string(d.AgentID), d.DecidedBy, string(d.Mode),
 		d.Affinity.Combined, string(affinityJSON),
 		string(conflictsJSON), readySetJSON,
+		d.OperatorReason,
 		createdAt,
 	)
 	if err != nil {
@@ -181,6 +192,7 @@ const decisionSelectColumns = `
 	session_id, agent_id, decided_by, mode,
 	affinity_combined, affinity_json,
 	conflicts_json, ready_set_json,
+	operator_reason,
 	created_at
 `
 
@@ -292,11 +304,13 @@ func scanDecision(row rowScanner) (*Decision, error) {
 		createdAt     time.Time
 		combined      float64
 	)
+	var operatorReason sql.NullString
 	err := row.Scan(
 		&d.ID, &beadID, &decidedAt,
 		&d.SessionID, &agentID, &d.DecidedBy, &mode,
 		&combined, &affinityJSON,
 		&conflictsJSON, &readySetJSON,
+		&operatorReason,
 		&createdAt,
 	)
 	if err != nil {
@@ -311,6 +325,9 @@ func scanDecision(row rowScanner) (*Decision, error) {
 	d.DecidedAt = decidedAt
 	d.CreatedAt = createdAt
 	d.Affinity.Combined = combined
+	if operatorReason.Valid {
+		d.OperatorReason = operatorReason.String
+	}
 
 	if affinityJSON.Valid && affinityJSON.String != "" {
 		if err := json.Unmarshal([]byte(affinityJSON.String), &d.Affinity); err != nil {
