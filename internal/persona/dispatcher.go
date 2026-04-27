@@ -13,6 +13,7 @@ import (
 
 	"github.com/MikeBengtson/gemba/internal/core"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/MikeBengtson/gemba/internal/persona/purviewgate"
 )
 
 // Dispatcher is the in-memory orchestrator for persona consults. It
@@ -55,9 +56,36 @@ type Dispatcher struct {
 	// records intent.
 	appliers map[string]Applier
 
+	// mutationKindResolver maps (skillID, line) → MutationKind so
+	// the Purview gate (gm-3on) knows which authority the action
+	// requires. nil = no Purview gating wired (backward compat with
+	// pre-gm-3on tests + skills that don't declare a mutation kind).
+	mutationKindResolver MutationKindResolver
+
+	// phaseSource returns the project's current Phase for the
+	// Purview gate. nil = phase unspecified (gm-jt9 fallback).
+	// Wiring lands when gm-jt9's phase store is available.
+	phaseSource PhaseSource
+
 	now   func() time.Time
 	newID func() string
 }
+
+// MutationKindResolver maps a SkillID + validated line value to the
+// [purviewgate.MutationKind] the action would invoke. Returning the
+// empty string means "this line has no mutation kind" — the gate is
+// skipped for that line. The dispatcher invokes the resolver under
+// no lock; implementations MUST be pure.
+type MutationKindResolver func(skillID string, line any) purviewgate.MutationKind
+
+// PhaseSource returns the project's currently-active Phase. The gate
+// uses this to decide whether a persona's Purview is dormant or
+// binding. The dispatcher invokes it under no lock; implementations
+// MUST be pure / fast / non-blocking. Returns
+// [purviewgate.PhaseUnspecified] when the phase is unknown — the
+// gate's fallback behavior treats that as "dormant" for any persona
+// declaring ActivePhases (see purviewgate.Allow doc).
+type PhaseSource func() corepersona.Phase
 
 // DispatcherOption tunes a [Dispatcher] at construction. All options
 // have safe defaults; tests use them to inject deterministic time
@@ -90,6 +118,26 @@ func WithRepositoryRegistry(repos *core.RepositoryRegistry) DispatcherOption {
 // empty for such a consult.
 func WithWorkspaceDir(dir string) DispatcherOption {
 	return func(d *Dispatcher) { d.workspaceDir = dir }
+}
+
+// WithMutationKindResolver wires the Purview gate (gm-3on) by
+// teaching the dispatcher how to derive a [purviewgate.MutationKind]
+// from a validated skill output line. Without a resolver registered
+// the gate is skipped — callers retain pre-gm-3on behavior. With one
+// registered, every Manager-variety Apply call routes through
+// [purviewgate.Allow] before the applier runs; deny short-circuits
+// with [ErrPurviewBlocked].
+func WithMutationKindResolver(r MutationKindResolver) DispatcherOption {
+	return func(d *Dispatcher) { d.mutationKindResolver = r }
+}
+
+// WithPhaseSource wires the Phase primitive (gm-jt9) into the gate.
+// nil leaves the dispatcher in the "phase unspecified" fallback —
+// the gate dorms any Purview that declares ActivePhases. Once
+// gm-jt9's phase store is available, the HTTP wiring should pass a
+// closure that reads `phase.WorkspaceState.Phase`.
+func WithPhaseSource(s PhaseSource) DispatcherOption {
+	return func(d *Dispatcher) { d.phaseSource = s }
 }
 
 // NewDispatcher returns a Dispatcher writing audit rows to the
@@ -206,6 +254,13 @@ type Consult struct {
 	// during Receive. Unexported so json.Marshal (and the HTTP
 	// /api/v1/consult/:id encoder) skips it without ceremony.
 	skill corepersona.Skill
+
+	// persona is the bound persona definition. Stored so
+	// [Dispatcher.Apply] can run the Purview gate (gm-3on)
+	// without an extra registry lookup. Unexported — the JSON
+	// encoder skips it; the HTTP layer surfaces persona metadata
+	// via PersonaID + dedicated endpoints.
+	persona *corepersona.Persona
 }
 
 // LineError is one rejected MCP-tool emission. Index is the offset
@@ -340,6 +395,7 @@ func (d *Dispatcher) Begin(req BeginRequest) (*Consult, error) {
 		RawRequest:     append(json.RawMessage(nil), req.RawInput...),
 		ValidatedInput: validated,
 		skill:          req.Skill,
+		persona:        req.Persona,
 	}
 
 	d.mu.Lock()
@@ -555,7 +611,38 @@ func (d *Dispatcher) Apply(ctx context.Context, consultID string, idx int) (Appl
 	}
 	line := c.ValidatedLines[idx]
 	applier := d.applierFor(c.SkillID)
+	persona := c.persona
+	skillID := c.SkillID
+	resolver := d.mutationKindResolver
+	phaseSource := d.phaseSource
 	d.mu.Unlock()
+
+	// Purview gate (gm-3on). Runs outside the lock — pure check
+	// against persona config + an optional phase source. Skips
+	// silently if no resolver is wired (pre-gm-3on behavior). Coach
+	// personas bypass the gate inside [purviewgate.Allow]; we still
+	// invoke for symmetry + audit clarity. Deny short-circuits the
+	// applier path entirely so the mutation never lands; the
+	// AppliedIdx stays untouched so a corrected retry is allowed
+	// (matches the applier-failure semantics).
+	if resolver != nil && persona != nil && persona.Variety == corepersona.VarietyManager {
+		kind := resolver(skillID, line)
+		if kind != "" {
+			currentPhase := purviewgate.PhaseUnspecified
+			if phaseSource != nil {
+				currentPhase = phaseSource()
+			}
+			decision := purviewgate.Allow(persona, kind, currentPhase)
+			if !decision.Allowed {
+				return ApplyResult{}, &purviewgate.ErrPurviewBlocked{
+					PersonaID:    persona.ID,
+					MutationKind: kind,
+					Phase:        currentPhase,
+					Reason:       decision.Reason,
+				}
+			}
+		}
+	}
 
 	// Executor pass — runs outside the lock so a slow WorkPlane
 	// mutation doesn't block other consults' Receive / Apply
