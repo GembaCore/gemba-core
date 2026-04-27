@@ -12,8 +12,12 @@
 // roster view.
 
 import { useMemo } from 'react';
-import { AlertTriangle, Box, Clock, GitBranch, Sparkles, Users } from 'lucide-react';
-import type { PlannerOperationalContext } from '@/api/planner';
+import { AlertTriangle, Box, Clock, Crosshair, GitBranch, Gauge, Sparkles, Users } from 'lucide-react';
+import type {
+  PlannerOperationalContext,
+  PlannerRunway,
+  PlannerSessionIntent,
+} from '@/api/planner';
 import { cn } from '@/lib/utils';
 
 export interface AgentContextCardProps {
@@ -30,6 +34,19 @@ export interface AgentContextCardProps {
   // tests asserting on the card without a stable session id can
   // pin a custom value.
   testidPrefix?: string;
+  // intent renders the operator-pinned focus directive
+  // (gm-v5z2.9). Optional — surfaces only when a focus is active.
+  intent?: PlannerSessionIntent | null;
+  // runway renders the runway estimate (gm-v5z2.4) so the
+  // operator sees what bead-size bucket this session can
+  // realistically take next. Optional — older callers leave it
+  // undefined.
+  runway?: PlannerRunway | null;
+  // onSetFocus opens the focus dialog when present. The card
+  // renders a "Set focus" affordance only when the callback is
+  // bound — read-only surfaces (static roster) leave it
+  // undefined.
+  onSetFocus?: () => void;
 }
 
 export function AgentContextCard({
@@ -37,6 +54,9 @@ export function AgentContextCard({
   inConflict,
   affinityForHovered,
   testidPrefix,
+  intent,
+  runway,
+  onSetFocus,
 }: AgentContextCardProps) {
   const sid = ctx.session?.id ?? '';
   const baseTestId = testidPrefix ?? `agent-context-${sid || 'unknown'}`;
@@ -65,6 +85,8 @@ export function AgentContextCard({
       <CardWorkspace ctx={ctx} />
       <CardConcepts top={topConcepts} testid={`${baseTestId}-concepts`} />
       <CardHealth ctx={ctx} testid={baseTestId} />
+      <CardIntent intent={intent ?? null} onSetFocus={onSetFocus} testid={`${baseTestId}-intent`} />
+      <CardRunway runway={runway ?? null} testid={`${baseTestId}-runway`} />
       {affinityForHovered ? (
         <AffinityBadge
           beadId={affinityForHovered.beadId}
@@ -196,6 +218,94 @@ function Stat({
       </span>
     </span>
   );
+}
+
+function CardIntent({
+  intent,
+  onSetFocus,
+  testid,
+}: {
+  intent: PlannerSessionIntent | null;
+  onSetFocus?: () => void;
+  testid: string;
+}) {
+  // No intent set + no callback to set one → render nothing.
+  // (Static surfaces should not show an empty intent line.)
+  if (!intent && !onSetFocus) return null;
+
+  const summary = intent ? intentSummary(intent) : null;
+  const demote = intent?.demotion_factor ?? 0.4;
+  return (
+    <div
+      data-testid={testid}
+      className="mt-2 flex items-center justify-between gap-2 rounded border border-violet-200 bg-violet-50 px-2 py-1 text-[11px] text-violet-800 dark:border-violet-900/40 dark:bg-violet-950/30 dark:text-violet-200"
+    >
+      <span className="inline-flex items-center gap-1">
+        <Crosshair className="h-3 w-3" aria-hidden />
+        {summary ? (
+          <>
+            <span className="font-mono">{summary}</span>
+            <span className="font-mono text-[10px] opacity-70">×{demote.toFixed(2)}</span>
+          </>
+        ) : (
+          <span className="opacity-70">no focus pinned</span>
+        )}
+      </span>
+      {onSetFocus ? (
+        <button
+          type="button"
+          onClick={onSetFocus}
+          data-testid={`${testid}-set-focus`}
+          className="rounded border border-violet-300 px-1.5 py-0.5 font-mono text-[10px] hover:bg-violet-100 dark:border-violet-700 dark:hover:bg-violet-900/40"
+        >
+          {intent ? 'edit' : 'set focus'}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function intentSummary(i: PlannerSessionIntent): string {
+  if (i.epic_id) return `epic=${i.epic_id}`;
+  if (i.label) return `label=${i.label}`;
+  if (i.bead_id_regex) return `regex=${i.bead_id_regex}`;
+  return '(empty)';
+}
+
+function CardRunway({
+  runway,
+  testid,
+}: {
+  runway: PlannerRunway | null;
+  testid: string;
+}) {
+  if (!runway) return null;
+  return (
+    <div
+      data-testid={testid}
+      className={cn(
+        'mt-2 flex items-center justify-between gap-2 rounded border px-2 py-1 text-[11px]',
+        runwayTone(runway.bucket)
+      )}
+    >
+      <span className="inline-flex items-center gap-1">
+        <Gauge className="h-3 w-3" aria-hidden />
+        <span>runway: {runway.bucket}</span>
+      </span>
+      <span className="font-mono text-[10px] opacity-70">{runway.score.toFixed(2)}</span>
+    </div>
+  );
+}
+
+function runwayTone(bucket: PlannerRunway['bucket']): string {
+  switch (bucket) {
+    case 'large':
+      return 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/30 dark:text-emerald-200';
+    case 'medium':
+      return 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-200';
+    default:
+      return 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200';
+  }
 }
 
 function AffinityBadge({

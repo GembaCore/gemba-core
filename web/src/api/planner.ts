@@ -120,6 +120,62 @@ export interface PlannerCoachResponse {
   affinity: PlannerAffinityRow[];
   batches: PlannerBatch[];
   notices?: string[];
+  // selection is the per-(bead, session) Selection.Result the
+  // server emits when WP2.0 Layer 5 is wired (gm-v5z2.7). Optional
+  // because the field landed after the rest of the response shape;
+  // SPA components branch on its presence to render the
+  // Justification + dispatch_status badge.
+  selection?: PlannerSelectionResult[];
+}
+
+// PlannerSessionIntent mirrors planner/intent.Intent. Surfaces the
+// operator's pinned focus directive on the agent context strip
+// (gm-v5z2.9). Empty restrictors mean "no focus active."
+export interface PlannerSessionIntent {
+  session_id: string;
+  epic_id?: string;
+  label?: string;
+  bead_id_regex?: string;
+  rationale?: string;
+  demotion_factor?: number;
+}
+
+// PlannerRunway is the per-session runway snapshot (gm-v5z2.4).
+// Bucket maps to the same enum as bead.estimated_size so the
+// runway gate is a one-line comparison.
+export interface PlannerRunway {
+  bucket: 'small' | 'medium' | 'large';
+  score: number;
+  drivers: {
+    context_pressure: number;
+    concept_drift: number;
+    calibration: number;
+    headroom: number;
+    drift_penalty: number;
+  };
+}
+
+// PlannerSelectionResult mirrors planner/selection.Result —
+// per-(bead, session) gate outcome + composed score + the
+// Justification slice the SPA renders verbatim under each cell.
+export interface PlannerSelectionResult {
+  bead_id: string;
+  session_id?: string;
+  outcome: 'dispatchable' | 'rejected';
+  reason?: string; // gate name for rejected
+  score: number;
+  components: {
+    affinity: number;
+    affinity_full?: PlannerAffinityScores;
+    leverage: number;
+    leverage_weight: number;
+    epic_affinity: number;
+    pre_gate_score: number;
+    runway_demoted?: boolean;
+    intent_demoted?: boolean;
+    fairness_boost?: number;
+  };
+  justification: string[];
 }
 
 export async function getCoach(): Promise<PlannerCoachResponse> {

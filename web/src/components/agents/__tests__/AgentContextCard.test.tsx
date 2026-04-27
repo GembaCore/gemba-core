@@ -147,4 +147,86 @@ describe('AgentContextCard', () => {
     );
     expect(screen.getByTestId('agent-context-sess-naked')).toBeTruthy();
   });
+
+  // gm-v5z2.9 additions: intent + runway badges + Set focus affordance.
+
+  it('renders the runway badge with bucket + score when supplied', () => {
+    render(
+      <AgentContextCard
+        ctx={ctx()}
+        runway={{
+          bucket: 'medium',
+          score: 0.55,
+          drivers: {
+            context_pressure: 0.4,
+            concept_drift: 0.1,
+            calibration: 1,
+            headroom: 0.6,
+            drift_penalty: 0.05,
+          },
+        }}
+      />
+    );
+    const badge = screen.getByTestId('agent-context-sess-1-runway');
+    expect(badge.textContent).toContain('runway: medium');
+    expect(badge.textContent).toContain('0.55');
+  });
+
+  it('omits the runway badge when not supplied', () => {
+    render(<AgentContextCard ctx={ctx()} />);
+    expect(screen.queryByTestId('agent-context-sess-1-runway')).toBeNull();
+  });
+
+  it('renders the intent badge with epic summary + demote factor', () => {
+    render(
+      <AgentContextCard
+        ctx={ctx()}
+        intent={{ session_id: 'sess-1', epic_id: 'gm-s47n', demotion_factor: 0.4 }}
+      />
+    );
+    const badge = screen.getByTestId('agent-context-sess-1-intent');
+    expect(badge.textContent).toContain('epic=gm-s47n');
+    expect(badge.textContent).toContain('×0.40');
+  });
+
+  it('summarises label + regex intents distinctly', () => {
+    const { rerender } = render(
+      <AgentContextCard ctx={ctx()} intent={{ session_id: 'sess-1', label: 'planner' }} />
+    );
+    expect(screen.getByTestId('agent-context-sess-1-intent').textContent).toContain('label=planner');
+    rerender(
+      <AgentContextCard
+        ctx={ctx()}
+        intent={{ session_id: 'sess-1', bead_id_regex: '^gm-s47n\\..*$' }}
+      />
+    );
+    expect(screen.getByTestId('agent-context-sess-1-intent').textContent).toContain(
+      'regex=^gm-s47n\\..*$'
+    );
+  });
+
+  it('renders the Set focus affordance when onSetFocus is bound', () => {
+    let calls = 0;
+    render(<AgentContextCard ctx={ctx()} onSetFocus={() => (calls += 1)} />);
+    const btn = screen.getByTestId('agent-context-sess-1-intent-set-focus');
+    expect(btn.textContent).toBe('set focus');
+    btn.click();
+    expect(calls).toBe(1);
+  });
+
+  it('shows "edit" instead of "set focus" when an intent already exists', () => {
+    render(
+      <AgentContextCard
+        ctx={ctx()}
+        intent={{ session_id: 'sess-1', epic_id: 'gm-e3' }}
+        onSetFocus={() => {}}
+      />
+    );
+    expect(screen.getByTestId('agent-context-sess-1-intent-set-focus').textContent).toBe('edit');
+  });
+
+  it('omits the intent block when neither intent nor onSetFocus is supplied', () => {
+    render(<AgentContextCard ctx={ctx()} />);
+    expect(screen.queryByTestId('agent-context-sess-1-intent')).toBeNull();
+  });
 });
