@@ -132,9 +132,9 @@ describe('applyView post-filter + sort', () => {
 
   it('mine matches by assignee.id OR assignee.name', () => {
     const items = [
-      wi({ id: 'by-id',   assignee: { id: 'gemba/crew/mike3', name: 'mike3' } as any }),
-      wi({ id: 'by-name', assignee: { id: 'something-else',    name: 'mike3' } as any }),
-      wi({ id: 'other',   assignee: { id: 'someone',           name: 'someone' } as any }),
+      wi({ id: 'by-id',   assignee: { id: 'gemba/crew/mike3', name: 'mike3', agent_kind: 'human' } }),
+      wi({ id: 'by-name', assignee: { id: 'something-else',    name: 'mike3', agent_kind: 'human' } }),
+      wi({ id: 'other',   assignee: { id: 'someone',           name: 'someone', agent_kind: 'human' } }),
       wi({ id: 'unassigned' }),
     ];
     const view = findView('mine')!;
@@ -143,7 +143,7 @@ describe('applyView post-filter + sort', () => {
   });
 
   it('mine returns nothing when currentAgent is empty', () => {
-    const items = [wi({ id: 'a', assignee: { id: 'whoever', name: 'whoever' } as any })];
+    const items = [wi({ id: 'a', assignee: { id: 'whoever', name: 'whoever', agent_kind: 'human' } })];
     const view = findView('mine')!;
     expect(applyView(items, view, { ...ctx, currentAgent: '' })).toEqual([]);
   });
