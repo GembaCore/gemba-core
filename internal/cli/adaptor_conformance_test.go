@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -46,6 +47,34 @@ func TestAdaptorTest_NoopOrchestrationIsGreen(t *testing.T) {
 	}
 	if !strings.Contains(out, "Summary: GREEN") {
 		t.Errorf("noop orchestration must report green:\n%s", out)
+	}
+}
+
+// gm-e7.7: the gt adaptor must report green via skip-counted-not-failed
+// semantics. Group A passes today (manifest is well-formed); B/D-fixture/F
+// skip cleanly until the lifecycle methods land in the rest of gm-e7.x.
+//
+// Skipped when `gt` is not on PATH so CI without Gas Town installed
+// doesn't fail the build (the conformance run requires a live `gt`).
+func TestAdaptorTest_GastownIsGreen(t *testing.T) {
+	if _, err := exec.LookPath("gt"); err != nil {
+		t.Skip("gt CLI not on PATH; gm-e7.7 conformance requires Gas Town installed")
+	}
+	out, err := runTest(t, "--transport", "api", "--target", "builtin:gastown")
+	if err != nil {
+		t.Fatalf("adaptor test: unexpected error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Summary: GREEN") {
+		t.Errorf("gastown adaptor must report green:\n%s", out)
+	}
+	// At least Group A's two probes must PASS — they don't depend on
+	// any fixture and they're the canonical proof the manifest is
+	// well-formed.
+	if !strings.Contains(out, "[PASS] A_describe_returns_valid_manifest") {
+		t.Errorf("expected describe probe to pass:\n%s", out)
+	}
+	if !strings.Contains(out, "[PASS] A_manifest_round_trips_json") {
+		t.Errorf("expected manifest round-trip probe to pass:\n%s", out)
 	}
 }
 

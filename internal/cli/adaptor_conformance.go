@@ -10,8 +10,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/noop"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/gt"
+	"github.com/MikeBengtson/gemba/internal/adapter/noop"
 	gembatesting "github.com/MikeBengtson/gemba/testing"
 )
 
@@ -53,6 +54,11 @@ probe fails.
 
   builtin:noop-work    in-process noop WorkPlane reference adaptor
   builtin:noop-orch    in-process noop OrchestrationPlane reference adaptor
+  builtin:gastown      in-process Gas Town OrchestrationPlane (gm-e7.x).
+                       Requires the 'gt' CLI on PATH. Group B / F probes
+                       skip cleanly when the adaptor's lifecycle methods
+                       are not yet wired (gm-e7.7 reports green via
+                       skip-counted-not-failed semantics).
 
   <URL|socket|cmd>     dial a remote adaptor over --transport. Transport
                        wire clients land incrementally in gm-e3.5 / gm-e4.x;
@@ -131,6 +137,8 @@ func runBuiltinOrRemote(_ context.Context, f testFlags, transport core.Transport
 		return runBuiltinNoopWork(transport, f)
 	case "builtin:noop-orch":
 		return runBuiltinNoopOrchestration(transport, f)
+	case "builtin:gastown":
+		return runBuiltinGastown(transport, f)
 	default:
 		return nil, fmt.Errorf(
 			"remote --target %q over --transport %s: not-yet-implemented "+
@@ -203,6 +211,42 @@ func runBuiltinNoopOrchestration(transport core.Transport, f testFlags) (*gembat
 // conformanceAssignSeq mints unique assignment ids for the noop
 // orchestration fixture across Group B probes.
 var conformanceAssignSeq uint64
+
+// runBuiltinGastown wires the in-process Gas Town OrchestrationPlane
+// to the conformance harness (gm-e7.7). Group A (describe + manifest
+// shape) covers the gt adaptor today; Groups B/D-fixture/F skip
+// cleanly because StartSession + ListSessions + StopSession are
+// still `unsupported` (their wiring lands in the rest of the gm-e7.x
+// epic). Skip-counted-not-failed: the report comes back green.
+//
+// Requires `gt` on PATH — NewOrchestrationPlane() returns a clean
+// adaptor_degraded error otherwise so CI gates surface the missing
+// tool rather than a misleading conformance failure.
+func runBuiltinGastown(transport core.Transport, f testFlags) (*gembatesting.Report, error) {
+	if f.plane != "" && f.plane != "orchestration" {
+		return nil, fmt.Errorf(
+			"--plane=%q is incompatible with --target=builtin:gastown (implicit plane is orchestration)",
+			f.plane)
+	}
+	impl, err := gt.NewOrchestrationPlane()
+	if err != nil {
+		return nil, fmt.Errorf("gastown adaptor init: %w", err)
+	}
+	if got := impl.Describe().Transport; got != transport {
+		return nil, fmt.Errorf(
+			"transport mismatch: --transport=%s but adaptor declares %s (gm-root DD-12)",
+			transport, got)
+	}
+	// No fixture wiring — the gt adaptor's lifecycle methods aren't
+	// implemented yet (StartSession/ListSessions/StopSession all return
+	// KindUnsupported). The harness records "Skipped" for probes that
+	// need a ProgrammaticSessionStarter / KnownMissingSessionID, and
+	// Passed() ignores skipped probes. When gm-e7.2 / gm-e7.3 land,
+	// this fixture grows the starter and KnownMissingSessionID for the
+	// next conformance pass.
+	fixture := &gembatesting.OrchestrationFixture{}
+	return gembatesting.RunOrchestrationProbes(impl, fixture), nil
+}
 
 func emitReport(out io.Writer, r *gembatesting.Report, f testFlags) error {
 	if f.jsonOut {
