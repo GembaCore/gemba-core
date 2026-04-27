@@ -78,6 +78,8 @@ const projects: Project[] = [
       // repos / sticky-nav). The rest of the Setup section family
       // will land here as it ships.
       'setup/**/*.spec.ts',
+      // gm-uipx.7 — /bootstrap 4-step wizard.
+      'bootstrap/**/*.spec.ts',
     ],
     use: {
       ...devices['Desktop Chrome'],

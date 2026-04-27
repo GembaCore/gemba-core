@@ -556,6 +556,64 @@ function dispatch(route: Route, stores: FakeStores): unknown {
       notice: 'no .gemba/repositories/ directory in workspace; configure repositories there',
     });
   }
+  // /api/bootstrap/* (gm-uipx.7). The /bootstrap wizard SPA hits
+  // start → progress → plan → commit. Backend handlers are not yet
+  // wired (filed as a follow-up); this fake dispatcher returns a
+  // canned analysis run so the e2e suite proves the SPA flow end-to-
+  // end without the backend. Real-mode coverage lands when the
+  // backend bead does.
+  if (path === '/api/bootstrap/start' && method === 'POST') {
+    return json({ analysis_id: 'fake-analysis-1' });
+  }
+  if (path === '/api/bootstrap/progress') {
+    // One-shot terminal frame: tests run against a "done" analysis so
+    // the SPA's continue button enables immediately. Real-mode tests
+    // exercise multi-frame streaming.
+    return json({
+      frames: [
+        { seq: 1, line: 'Scanning 247 issues…', at: new Date().toISOString() },
+        { seq: 2, line: 'Analyzing module structure…', at: new Date().toISOString() },
+        {
+          seq: 3,
+          line: 'Generating epic decomposition…',
+          at: new Date().toISOString(),
+          done: true,
+        },
+      ],
+    });
+  }
+  if (path === '/api/bootstrap/plan') {
+    return json({
+      analysis_id: 'fake-analysis-1',
+      source: 'fresh',
+      plan: [
+        {
+          id: 'epic-1',
+          kind: 'epic',
+          title: 'Onboard the team',
+          detail: 'Initial configuration milestone.',
+          children: [
+            { id: 'milestone-1', kind: 'milestone', title: 'M1 — define values' },
+            { id: 'milestone-2', kind: 'milestone', title: 'M2 — wire adaptors' },
+          ],
+        },
+        { id: 'sprint-1', kind: 'sprint', title: 'Sprint 1' },
+      ],
+      findings: [
+        { id: 'f1', level: 'pass', title: 'Project skeleton is well-formed' },
+        {
+          id: 'f2',
+          level: 'warn',
+          title: 'No owner set for Sprint 1',
+          detail: 'Assign an owner via the Personas section after ratify.',
+        },
+      ],
+    });
+  }
+  if (path === '/api/bootstrap/commit' && method === 'POST') {
+    return json({ project_path: '.gemba/project.toml', board_url: '/board' });
+  }
+
   if (isPath(path, '/api/capabilities')) return json(capabilitiesPlane.get());
   if (isPath(path, '/api/adaptors')) return json({ adaptors: adaptorsState.get() });
   if (isPath(path, '/api/health')) return json({ status: 'ok' });
