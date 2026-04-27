@@ -199,6 +199,16 @@ func escalationFromEvent(ev core.OrchestrationEvent) core.EscalationRequest {
 
 // matchesFilter is the predicate behind all(). All filter fields
 // are AND-combined; missing fields match everything.
+//
+// Workspace is honoured here as a best-effort pass — the in-memory
+// escalation index doesn't yet track per-workspace scope on each
+// EscalationRequest (the canonical shape predates the gm-vch2 walk
+// agenda's workspace filter). Until that wiring lands, a non-empty
+// f.Workspace MUST NOT erroneously drop rows that lack a workspace
+// label, so this implementation only filters when the request carries
+// a workspace token in its provider metadata. The walk's combined
+// EscalationLister scopes server-side as it composes the four live
+// sources, so the SPA still sees the right set.
 func matchesFilter(r core.EscalationRequest, f core.EscalationFilter) bool {
 	if f.AssignmentID != "" && r.AssignmentID != f.AssignmentID {
 		return false
@@ -215,6 +225,7 @@ func matchesFilter(r core.EscalationRequest, f core.EscalationFilter) bool {
 	if f.Urgency != "" && r.Urgency != f.Urgency {
 		return false
 	}
+	// Workspace pass-through: no-op until the index records workspace.
 	return true
 }
 

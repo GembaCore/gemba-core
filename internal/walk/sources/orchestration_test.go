@@ -38,7 +38,7 @@ func TestOrchestrationPlaneEscalationLister_PassesThrough(t *testing.T) {
 	fk := &fakeLister{out: want}
 	l := newListerFromMin(fk)
 
-	got, err := l.ListOpenEscalations(context.Background(), "any-workspace-string-ignored")
+	got, err := l.ListOpenEscalations(context.Background(), "ws-alpha")
 	if err != nil {
 		t.Fatalf("ListOpenEscalations: %v", err)
 	}
@@ -53,10 +53,13 @@ func TestOrchestrationPlaneEscalationLister_PassesThrough(t *testing.T) {
 	if fk.called != 1 {
 		t.Errorf("upstream called %d times; want 1", fk.called)
 	}
-	// The workspace argument is intentionally dropped — the upstream
-	// must see the empty filter (documented gap on the type).
-	if fk.last != (core.EscalationFilter{}) {
-		t.Errorf("upstream filter = %+v; want zero-value (workspace arg must be ignored)", fk.last)
+	// gm-vch2: workspace flows through to EscalationFilter.Workspace.
+	if fk.last.Workspace != "ws-alpha" {
+		t.Errorf("upstream filter.Workspace = %q; want ws-alpha", fk.last.Workspace)
+	}
+	// And no other field bled through.
+	if fk.last.AssignmentID != "" || fk.last.AgentID != "" || fk.last.Source != "" {
+		t.Errorf("upstream filter = %+v; only Workspace should be set", fk.last)
 	}
 }
 
@@ -284,18 +287,65 @@ func TestIsEscalationEvent(t *testing.T) {
 	}
 }
 
-func TestStubSources_ReturnEmpty(t *testing.T) {
-	for _, fn := range []func(context.Context, string) ([]core.EscalationRequest, error){
-		StubWitnessLister,
-		StubRefineryRejectionLister,
-		StubBeadsDegradedLister,
-	} {
-		got, err := fn(context.Background(), "ws")
-		if err != nil {
-			t.Errorf("stub returned err: %v", err)
+func TestShouldRepublish(t *testing.T) {
+	cases := []struct {
+		kind string
+		want bool
+	}{
+		{"escalation.raised", true},
+		{"escalation.resolved", true},
+		// gm-vch2 additions — agenda triggers.
+		{"budget.warn", true},
+		{"budget.stop", true},
+		{"capability.refresh-degraded", true},
+		{"adaptor.degraded", true},
+		// budget.inform is informational only — must NOT churn the agenda.
+		{"budget.inform", false},
+		// capability.refresh (without -degraded) is benign.
+		{"capability.refresh", false},
+		{"session.transition", false},
+		{"workspace.acquired", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := shouldRepublish(c.kind); got != c.want {
+			t.Errorf("shouldRepublish(%q) = %v; want %v", c.kind, got, c.want)
 		}
-		if len(got) != 0 {
-			t.Errorf("stub returned %d items; want 0", len(got))
-		}
+	}
+}
+
+func TestStartOrchestrationBridge_RepublishesAgendaTriggers(t *testing.T) {
+	cases := []string{"budget.warn", "budget.stop", "capability.refresh-degraded", "adaptor.degraded"}
+	for _, kind := range cases {
+		t.Run(kind, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			hub := events.NewHub(events.Config{})
+			defer hub.Close()
+
+			out := hub.Subscribe(ctx, events.Filter{Kinds: []events.Kind{WalkEscalationChanged}})
+
+			sub := newFakeSubscriber("test-adaptor")
+			startOrchestrationBridge(ctx, sub, hub)
+
+			sub.ch <- core.OrchestrationEvent{
+				ID:   "ev-trigger",
+				Kind: kind,
+				At:   time.Now(),
+			}
+
+			select {
+			case ev := <-out:
+				if ev.Kind != WalkEscalationChanged {
+					t.Errorf("Kind = %q; want %q", ev.Kind, WalkEscalationChanged)
+				}
+				if ev.Payload["upstream_kind"] != kind {
+					t.Errorf("upstream_kind = %v; want %q", ev.Payload["upstream_kind"], kind)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("timed out waiting for republished %q event", kind)
+			}
+		})
 	}
 }
