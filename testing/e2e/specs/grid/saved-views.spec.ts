@@ -97,7 +97,7 @@ test.describe('Grid column presets @route', () => {
         visibility: { id: true, title: true, kind: true, state: true },
       };
       window.localStorage.setItem(
-        'gemba.grid.column-presets',
+        'gemba.board.column-presets',
         JSON.stringify([preset])
       );
     });

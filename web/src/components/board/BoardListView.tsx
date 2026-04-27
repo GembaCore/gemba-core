@@ -4,14 +4,23 @@
 // URL search params (?layout=list&view=…&state_category=…) instead
 // of the URL-hash + localStorage hybrid the old BacklogPage used.
 //
+// gm-uipx.17: when `power` is true the list also exposes column
+// visibility presets, the bulk-action surface, and the JSONL import
+// dialog — the four features that used to distinguish the standalone
+// /grid route. Power is a separate URL param (?power=1) so the
+// operator can toggle it inside list mode without losing their view /
+// chip selections.
+//
 // Selection — ?bead=<id> — is owned by BoardPage so the WorkItemDrawer
 // stays a single instance regardless of layout.
 
-import { useMemo } from 'react';
-import { Search } from 'lucide-react';
-import { useFilteredWorkItems } from '@/hooks/useWorkItems';
-import { WorkItemGrid } from '@/components/grid/WorkItemGrid';
-import type { WorkItemListFilter } from '@/api/workItems';
+import { useCallback, useMemo, useState } from 'react';
+import { Search, Upload } from 'lucide-react';
+import { useFilteredWorkItems, useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { WorkItemGrid, type BulkAction } from '@/components/grid/WorkItemGrid';
+import { BulkEditDialog } from '@/components/grid/BulkEditDialog';
+import { JsonlImportDialog } from '@/components/grid/JsonlImportDialog';
+import type { WorkItemListFilter, WorkItemPatch } from '@/api/workItems';
 import {
   applyView,
   type ViewContext,
@@ -19,6 +28,13 @@ import {
 } from '@/lib/workItemViews';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+
+// Storage key for the power-mode column-visibility presets. Renamed
+// from `gemba.grid.column-presets` to drop the dead-route prefix; an
+// operator's old saved presets are not migrated (this is a single-user
+// dogfood project — the cost of re-saving once is lower than the
+// migration code carrying its own bug surface).
+const POWER_PRESETS_STORAGE_KEY = 'gemba.board.column-presets';
 
 const KIND_CHIPS = ['task', 'bug', 'epic'] as const;
 
@@ -41,6 +57,11 @@ export interface BoardListViewProps {
   onChangeSearch: (next: string) => void;
   onSelectWorkItem: (id: string) => void;
   viewContext?: ViewContext;
+  // power lights up the column-presets menu, the bulk-action surface
+  // (selection model + Cmd-E/D + context menu), and the JSONL import
+  // entry point. Off by default; the toolbar toggle in BoardPage flips
+  // it. gm-uipx.17.
+  power?: boolean;
 }
 
 export function BoardListView({
@@ -53,7 +74,43 @@ export function BoardListView({
   onChangeSearch,
   onSelectWorkItem,
   viewContext,
+  power = false,
 }: BoardListViewProps) {
+  const updateWorkItem = useUpdateWorkItem();
+  const [importOpen, setImportOpen] = useState(false);
+  const [bulkEdit, setBulkEdit] = useState<{ ids: string[] } | null>(null);
+
+  // applyBulkPatch fans the patch out across the selection. Each PATCH
+  // gets its own auto-minted nonce (api/workItems.ts) — the server
+  // dedupes per-id replays, so a double-applied dialog can't double-
+  // apply the change. We don't await the chain; the optimistic cache
+  // updates land per-mutation and the list invalidation happens once
+  // each mutation settles.
+  const applyBulkPatch = useCallback(
+    (ids: string[], patch: WorkItemPatch) => {
+      for (const id of ids) {
+        updateWorkItem.mutate({ id, patch });
+      }
+    },
+    [updateWorkItem]
+  );
+
+  const handleBulkAction = useCallback(
+    (action: BulkAction, ids: string[]) => {
+      if (action === 'edit') {
+        setBulkEdit({ ids });
+      } else if (action === 'defer') {
+        applyBulkPatch(ids, { state_category: 'backlog' });
+      } else if (action === 'delete') {
+        // No DELETE endpoint on the work-item surface yet; stub by
+        // marking canceled so the operator's intent is recorded
+        // without dropping data. Replace once a destructive endpoint
+        // lands.
+        applyBulkPatch(ids, { state_category: 'canceled' });
+      }
+    },
+    [applyBulkPatch]
+  );
   // Effective filter = explicit chips, falling back to the named
   // view's base filter when the operator hasn't touched a chip. Once
   // they start toggling chips the URL carries explicit values and
@@ -136,6 +193,17 @@ export function BoardListView({
             data-testid="board-list-search"
           />
         </label>
+        {power ? (
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:hover:bg-neutral-800"
+            data-testid="grid-import-jsonl"
+          >
+            <Upload className="h-3 w-3" />
+            Import JSONL
+          </button>
+        ) : null}
       </div>
 
       <div
@@ -166,9 +234,32 @@ export function BoardListView({
             No work items match the current filters.
           </div>
         ) : (
-          <WorkItemGrid rows={filtered as WorkItem[]} onSelect={onSelectWorkItem} />
+          <WorkItemGrid
+            rows={filtered as WorkItem[]}
+            onSelect={onSelectWorkItem}
+            presets={power ? { storageKey: POWER_PRESETS_STORAGE_KEY } : undefined}
+            onBulkAction={power ? handleBulkAction : undefined}
+          />
         )}
       </div>
+      {power ? (
+        <>
+          <JsonlImportDialog
+            open={importOpen}
+            onClose={() => setImportOpen(false)}
+            existing={data}
+          />
+          <BulkEditDialog
+            open={bulkEdit !== null}
+            ids={bulkEdit?.ids ?? []}
+            onClose={() => setBulkEdit(null)}
+            onApply={(patch) => {
+              if (bulkEdit) applyBulkPatch(bulkEdit.ids, patch);
+              setBulkEdit(null);
+            }}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

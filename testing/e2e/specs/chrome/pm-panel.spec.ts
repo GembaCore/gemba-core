@@ -75,11 +75,13 @@ test.describe('PM panel @chrome', () => {
     ).toBeVisible();
   });
 
-  test('panel is global — visible from /grid as well as /board', async ({ page }) => {
+  test('panel is global — visible from list+power layout as well as default Board', async ({ page }) => {
     await page.getByTestId('pm-panel-toggle').click();
     await expect(page.getByTestId('pm-panel')).toBeVisible();
 
-    await page.goto('/grid');
+    // gm-uipx.17: /grid folded into /board?layout=list&power=1; the
+    // panel must still ride along on every Board layout.
+    await page.goto('/board?layout=list&power=1');
     await expect(page.getByTestId('pm-panel')).toBeVisible();
   });
 });

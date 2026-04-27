@@ -10,19 +10,26 @@ import { test, expect } from '../../fixtures/server';
 
 // gm-e12.19.1: "Backlog" sidebar item still points at /backlog but
 // the route is now a permanent redirect to Board's list mode +
-// Backlog preset. Click-then-URL assertion lands on the resolved
-// URL. The sidebar item itself is removed in gm-e12.19.3.
+// Backlog view. Click-then-URL assertion lands on the resolved URL.
+//
+// gm-uipx.17: the "Grid" sidebar entry was dropped — /grid folded
+// into Board's list+power layout, so Grid is no longer a top-level
+// destination. The /grid bookmark redirect is covered by the
+// dedicated grid-redirect spec.
 const NAV_LINKS = [
   { label: 'Board', path: '/board' },
-  { label: 'Backlog', path: '/board\\?view=list&preset=backlog' },
-  { label: 'Grid', path: '/grid' },
+  { label: 'Backlog', path: '/board\\?layout=list&view=backlog' },
   { label: 'Sessions', path: '/sessions' },
-  { label: 'Agents', path: '/agents' },
+  { label: 'Gemba walk', path: '/walk' },
   { label: 'Graph', path: '/graph' },
   { label: 'Insights', path: '/insights' },
   { label: 'Escalations', path: '/escalations' },
   { label: 'Capability Browser', path: '/capabilities' },
-  { label: 'Gemba walk', path: '/walk' },
+  // Coach is rendered in the sidebar (asserted by the renders test
+  // below) but excluded from the click-nav loop because /coach
+  // currently throws on mount in the route-fake harness — investigated
+  // in its own bead, not in scope for gm-uipx.17.
+  { label: 'Coach', path: '/coach', clickNav: false },
 ] as const;
 
 test.describe('Sidebar @chrome', () => {
@@ -42,22 +49,23 @@ test.describe('Sidebar @chrome', () => {
     await page.goto('/board');
     const sidebar = page.locator('aside').first();
 
-    for (const { label, path } of NAV_LINKS) {
-      await sidebar.getByRole('link', { name: label }).click();
-      await expect(page).toHaveURL(new RegExp(`${path}(?:[?/].*)?$`));
+    for (const link of NAV_LINKS) {
+      if ('clickNav' in link && link.clickNav === false) continue;
+      await sidebar.getByRole('link', { name: link.label }).click();
+      await expect(page).toHaveURL(new RegExp(`${link.path}(?:[?/].*)?$`));
     }
   });
 
   test('the active link reflects the current route', async ({ page }) => {
-    await page.goto('/grid');
-    const grid = page.locator('aside').first().getByRole('link', { name: 'Grid' });
+    await page.goto('/sessions');
+    const sessions = page.locator('aside').first().getByRole('link', { name: 'Sessions' });
     // NavLink stamps an `active` className when the route matches; we
     // assert the visual cue (bg-neutral-200 dark variant) only via
     // attribute, not the class string itself which churns with Tailwind.
-    await expect(grid).toHaveAttribute('href', '/grid');
+    await expect(sessions).toHaveAttribute('href', '/sessions');
     // Active-link is the only link inside the aside whose computed
     // background isn't the hover transparent. Use aria-current as the
     // semantic check — react-router sets it on the active NavLink.
-    await expect(grid).toHaveAttribute('aria-current', 'page');
+    await expect(sessions).toHaveAttribute('aria-current', 'page');
   });
 });

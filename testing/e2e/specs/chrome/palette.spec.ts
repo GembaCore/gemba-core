@@ -43,12 +43,14 @@ test.describe('Command palette @chrome', () => {
     const dialog = page.getByTestId('command-palette-dialog');
     await expect(dialog).toBeVisible();
 
+    // Grid was folded into Board's list+power layout (gm-uipx.17) but
+    // the palette entry is preserved for muscle-memory and routes to
+    // the canonical power-list URL. Agents was removed in gm-e12.4.
     for (const label of [
       'Board',
       'Backlog',
       'Grid',
       'Dependency graph',
-      'Agents',
       'Sessions',
       'Escalations',
       'Capabilities',
@@ -59,15 +61,15 @@ test.describe('Command palette @chrome', () => {
   });
 
   test('selecting a Navigate item routes there and closes the palette', async ({ page }) => {
-    await page.goto('/grid');
+    await page.goto('/board');
     await page.keyboard.press('Meta+K');
     const dialog = page.getByTestId('command-palette-dialog');
 
     await dialog.getByRole('option', { name: /^Backlog$/ }).click();
 
-    // gm-e12.19.1: Backlog palette item routes to Board's list mode +
-    // Backlog preset (the collapsed surface).
-    await expect(page).toHaveURL(/\/board\?view=list&preset=backlog$/);
+    // gm-e12.19.1 + gm-uipx.18: Backlog palette item routes to
+    // Board's list layout + Backlog view (the canonical surface).
+    await expect(page).toHaveURL(/\/board\?layout=list&view=backlog$/);
     await expect(dialog).toBeHidden();
   });
 

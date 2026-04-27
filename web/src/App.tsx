@@ -1,7 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/layouts/AppShell';
 import { BoardPage } from '@/pages/BoardPage';
-import { GridPage } from '@/pages/GridPage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { GraphPage } from '@/pages/GraphPage';
 import CapabilitiesPage from '@/pages/CapabilitiesPage';
@@ -34,9 +33,15 @@ export default function App() {
             Board's list mode + Backlog preset. */}
         <Route
           path="/backlog"
-          element={<Navigate to="/board?view=list&preset=backlog" replace />}
+          element={<Navigate to="/board?layout=list&view=backlog" replace />}
         />
-        <Route path="/grid" element={<GridPage />} />
+        {/* /grid folded into /board's list layout + power mode
+            (gm-uipx.17). Permanent redirect so existing bookmarks
+            land on the equivalent power-list URL. */}
+        <Route
+          path="/grid"
+          element={<Navigate to="/board?layout=list&power=1" replace />}
+        />
         <Route path="/sessions" element={<SessionsPage />} />
         <Route path="/graph" element={<GraphPage />} />
         <Route path="/insights" element={<InsightsPage />} />

@@ -31,11 +31,12 @@ export const COLUMN_LABEL: Record<ColumnId, string> = {
 };
 
 export class BoardPage extends AppShell {
-  // The flat WorkItem grid (?view=workitem). Lives in BoardPage.tsx
-  // under data-testid="board-workitem".
+  // The flat WorkItem grid (?layout=workitem post-uipx.18). Lives in
+  // BoardPage.tsx under data-testid="board-workitem".
   readonly workItemBoard: Locator;
-  // The list-mode pane (?view=list). Lifted from the former
-  // /backlog page in gm-e12.19.1; lives under data-testid="board-list".
+  // The list-mode pane (?layout=list post-uipx.18). Lifted from the
+  // former /backlog page in gm-e12.19.1; lives under
+  // data-testid="board-list".
   readonly listView: Locator;
   readonly viewToggleEpic: Locator;
   readonly viewToggleWorkItem: Locator;
@@ -70,21 +71,21 @@ export class BoardPage extends AppShell {
     await this.expectShellRendered();
   }
 
-  // gotoWorkItemView is the M1 flat-board variant: /board?view=workitem.
-  // Spec L293 in the ui-spec calls this the "alternate" view; the
-  // default is Epic-primary.
+  // gotoWorkItemView is the M1 flat-board variant:
+  // /board?layout=workitem (post-uipx.18). Spec L293 in the ui-spec
+  // calls this the "alternate" view; the default is Epic-primary.
   async gotoWorkItemView(): Promise<void> {
-    await this.goto('/board?view=workitem');
+    await this.goto('/board?layout=workitem');
     await this.expectShellRendered();
     await expect(this.workItemBoard).toBeVisible();
   }
 
   // gotoListView is the gm-e12.19.1 third mode — the list pane that
   // absorbed the former /backlog surface. Defaults to the Backlog
-  // preset because that's where /backlog redirects today; specs that
-  // need other presets can pass through goto() directly.
+  // named view because that's where /backlog redirects today; specs
+  // that need other views can pass through goto() directly.
   async gotoListView(): Promise<void> {
-    await this.goto('/board?view=list&preset=backlog');
+    await this.goto('/board?layout=list&view=backlog');
     await this.expectShellRendered();
     await expect(this.listView).toBeVisible();
   }

@@ -13,13 +13,13 @@ const EIGHT_DAYS_AGO = '2026-04-17T12:00:00Z';
 
 test.describe('Grid default views (ui-spec §6.8) @route', () => {
   test('picker exposes all five named views', async ({ page }) => {
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     for (const id of [
-      'grid-view-staged',
-      'grid-view-in-progress',
-      'grid-view-blocked',
-      'grid-view-ready-to-stage',
-      'grid-view-recently-done',
+      'board-preset-staged',
+      'board-preset-in-progress',
+      'board-preset-blocked',
+      'board-preset-ready-to-stage',
+      'board-preset-done-recent',
     ]) {
       await expect(page.getByTestId(id)).toBeVisible();
     }
@@ -31,9 +31,9 @@ test.describe('Grid default views (ui-spec §6.8) @route', () => {
       { id: 'gm-2', kind: 'task', title: 'an unstarted',   status: 'open',        state_category: 'unstarted', created_at: NOW, updated_at: NOW },
       { id: 'gm-3', kind: 'task', title: 'in progress',    status: 'in_progress', state_category: 'started',   created_at: NOW, updated_at: NOW },
     ]);
-    await page.goto('/grid');
-    await page.getByTestId('grid-view-staged').click();
-    await expect(page.locator('[data-testid^="grid-row-"]')).toHaveCount(1);
+    await page.goto('/board?layout=list&power=1');
+    await page.getByTestId('board-preset-staged').click();
+    await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(1);
     await expect(page.getByText('a staged item', { exact: false })).toBeVisible();
   });
 
@@ -43,9 +43,9 @@ test.describe('Grid default views (ui-spec §6.8) @route', () => {
       { id: 'gm-2', kind: 'task', title: 'progress two',   status: 'in_progress', state_category: 'started',   created_at: NOW, updated_at: NOW },
       { id: 'gm-3', kind: 'task', title: 'a staged item',  status: 'open',        state_category: 'staged',    created_at: NOW, updated_at: NOW },
     ]);
-    await page.goto('/grid');
-    await page.getByTestId('grid-view-in-progress').click();
-    await expect(page.locator('[data-testid^="grid-row-"]')).toHaveCount(2);
+    await page.goto('/board?layout=list&power=1');
+    await page.getByTestId('board-preset-in-progress').click();
+    await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(2);
     await expect(page.getByText('progress one', { exact: false })).toBeVisible();
     await expect(page.getByText('progress two', { exact: false })).toBeVisible();
   });
@@ -60,9 +60,9 @@ test.describe('Grid default views (ui-spec §6.8) @route', () => {
       { id: 'gm-2', kind: 'task', title: 'unblocked item', status: 'open', state_category: 'started',   created_at: NOW, updated_at: NOW, derived: { agent_claimable: true,  human_action_required: false, review_pending: false } },
       { id: 'gm-3', kind: 'task', title: 'no derived',     status: 'open', state_category: 'unstarted', created_at: NOW, updated_at: NOW },
     ]);
-    await page.goto('/grid');
-    await page.getByTestId('grid-view-blocked').click();
-    await expect(page.locator('[data-testid^="grid-row-"]')).toHaveCount(1);
+    await page.goto('/board?layout=list&power=1');
+    await page.getByTestId('board-preset-blocked').click();
+    await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(1);
     await expect(page.getByText('blocked item', { exact: false })).toBeVisible();
   });
 
@@ -72,9 +72,9 @@ test.describe('Grid default views (ui-spec §6.8) @route', () => {
       { id: 'gm-2', kind: 'task', title: 'not ready',      status: 'open', state_category: 'unstarted', created_at: NOW, updated_at: NOW, derived: { agent_claimable: false, human_action_required: false, review_pending: false } },
       { id: 'gm-3', kind: 'task', title: 'wrong state',    status: 'open', state_category: 'staged',    created_at: NOW, updated_at: NOW, derived: { agent_claimable: true,  human_action_required: false, review_pending: false } },
     ]);
-    await page.goto('/grid');
-    await page.getByTestId('grid-view-ready-to-stage').click();
-    await expect(page.locator('[data-testid^="grid-row-"]')).toHaveCount(1);
+    await page.goto('/board?layout=list&power=1');
+    await page.getByTestId('board-preset-ready-to-stage').click();
+    await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(1);
     await expect(page.getByText('ready bead', { exact: false })).toBeVisible();
   });
 
@@ -90,11 +90,11 @@ test.describe('Grid default views (ui-spec §6.8) @route', () => {
     // deterministic. The fake-mode dispatcher returns updated_at
     // unchanged from the seed.
     await page.clock.install({ time: new Date(NOW) });
-    await page.goto('/grid');
-    await page.getByTestId('grid-view-recently-done').click();
-    await expect(page.locator('[data-testid^="grid-row-"]')).toHaveCount(2);
+    await page.goto('/board?layout=list&power=1');
+    await page.getByTestId('board-preset-done-recent').click();
+    await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(2);
     // Sort: newest updated_at first (gm-now before gm-recent).
-    const rows = page.locator('[data-testid^="grid-row-"]');
+    const rows = page.locator('[data-testid^="grid-row-gm-"]');
     const titles = await rows.allInnerTexts();
     expect(titles[0]).toContain('closed-now');
     expect(titles[1]).toContain('closed-fresh');
@@ -105,13 +105,13 @@ test.describe('Grid default views (ui-spec §6.8) @route', () => {
       { id: 'gm-1', kind: 'task', title: 'staged',     status: 'open',        state_category: 'staged',    created_at: NOW, updated_at: NOW },
       { id: 'gm-2', kind: 'task', title: 'in-progress', status: 'in_progress', state_category: 'started',   created_at: NOW, updated_at: NOW },
     ]);
-    await page.goto('/grid');
-    await page.getByTestId('grid-view-staged').click();
-    await expect(page.locator('[data-testid^="grid-row-"]')).toHaveCount(1);
-    await page.getByTestId('grid-view-staged').click();
+    await page.goto('/board?layout=list&power=1');
+    await page.getByTestId('board-preset-staged').click();
+    await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(1);
+    await page.getByTestId('board-preset-staged').click();
     // After clearing, no view filter is active — the chip filter
     // also reset, so all seeded rows show.
-    await expect(page.locator('[data-testid^="grid-row-"]')).toHaveCount(2);
+    await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(2);
   });
 
   test('?view= URL param activates the view on first paint', async ({ page, workPlane }) => {
@@ -119,8 +119,8 @@ test.describe('Grid default views (ui-spec §6.8) @route', () => {
       { id: 'gm-1', kind: 'task', title: 'a staged item',  status: 'open',        state_category: 'staged',  created_at: NOW, updated_at: NOW },
       { id: 'gm-2', kind: 'task', title: 'in progress',    status: 'in_progress', state_category: 'started', created_at: NOW, updated_at: NOW },
     ]);
-    await page.goto('/grid?view=staged');
-    await expect(page.getByTestId('grid-view-staged')).toHaveAttribute('data-active', 'true');
-    await expect(page.locator('[data-testid^="grid-row-"]')).toHaveCount(1);
+    await page.goto('/board?layout=list&power=1&view=staged');
+    await expect(page.getByTestId('board-preset-staged')).toHaveAttribute('data-active', 'true');
+    await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(1);
   });
 });

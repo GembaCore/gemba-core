@@ -26,7 +26,7 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom';
-import { LayoutGrid, List, ListChecks, Plus, RotateCcw } from 'lucide-react';
+import { LayoutGrid, List, ListChecks, Plus, RotateCcw, Zap } from 'lucide-react';
 import { BoardColumn } from '@/components/board/BoardColumn';
 import { BoardListView } from '@/components/board/BoardListView';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
@@ -60,6 +60,33 @@ import { cn } from '@/lib/utils';
 // pinned to the LegacyBoardView name for back-compat with future
 // callers.
 type LayoutMode = LegacyBoardView;
+
+// Power-mode persistence (gm-uipx.17). The URL is the source of
+// truth (?power=1) so a deep-link or bookmark lands directly in
+// power mode; the localStorage entry is a fallback used when the
+// operator opens /board?layout=list with no explicit ?power= param,
+// so their last-used preference sticks across sessions.
+const POWER_PARAM = 'power';
+const POWER_STORAGE_KEY = 'gemba.board.power';
+
+function readStoredPower(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(POWER_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredPower(on: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (on) window.localStorage.setItem(POWER_STORAGE_KEY, '1');
+    else window.localStorage.removeItem(POWER_STORAGE_KEY);
+  } catch {
+    /* storage unavailable (private mode); URL param still works */
+  }
+}
 
 // Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
 // Progress → Done → Canceled). The internal core enum keeps its
@@ -132,6 +159,27 @@ export function BoardPage() {
 
   const view = findView(params.get(VIEW_PARAM));
   const layout = layoutFromQuery(params, view);
+
+  // Power-mode resolution. Explicit ?power=1 / ?power=0 in the URL
+  // wins; absent that, fall back to the last-used localStorage value
+  // so an operator's preference survives a refresh. Anything else
+  // (e.g. ?power=foo) is treated as off.
+  const power = useMemo(() => {
+    const raw = params.get(POWER_PARAM);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+    return readStoredPower();
+  }, [params]);
+  const setPower = useCallback(
+    (next: boolean) => {
+      const p = new URLSearchParams(params);
+      if (next) p.set(POWER_PARAM, '1');
+      else p.delete(POWER_PARAM);
+      writeStoredPower(next);
+      setParams(p, { replace: true });
+    },
+    [params, setParams]
+  );
   // The route is /board/* so the matched suffix lands under the splat
   // param. bd ids carry slashes ("gemba/gemba/gm-e1"); a :epicId
   // segment would only catch the first chunk.
@@ -176,10 +224,13 @@ export function BoardPage() {
       const p = new URLSearchParams(params);
       if (nextId === null) p.delete(VIEW_PARAM);
       else p.set(VIEW_PARAM, nextId);
-      // Switching named views clears any explicit layout override
-      // and explicit chip selections so the new view's defaults
-      // take hold cleanly. The bead drawer (?bead=) is preserved.
-      p.delete(LAYOUT_PARAM);
+      // Switching named views clears explicit chip selections so the
+      // new view's defaults take hold cleanly. The explicit
+      // ?layout= is preserved — an operator who deep-linked or
+      // toggled into a specific layout (e.g. list+power for spreadsheet
+      // workflow) shouldn't be yanked out into the view's preferred
+      // kanban every time they switch chips. The bead drawer
+      // (?bead=) is preserved.
       p.delete('state_category');
       p.delete('kind');
       setParams(p, { replace: true });
@@ -283,6 +334,8 @@ export function BoardPage() {
         onChangeSwimlane={setSwimlane}
         view={view}
         onChangeView={setView}
+        power={power}
+        onChangePower={setPower}
         onNewWorkItem={() => setNewItemOpen(true)}
       />
       {layout === 'list' ? (
@@ -295,6 +348,7 @@ export function BoardPage() {
           onChangeKinds={setListKinds}
           onChangeSearch={setListSearch}
           onSelectWorkItem={setOpenWorkItemId}
+          power={power}
         />
       ) : !data || data.length === 0 ? (
         <EmptyState onCreate={() => setNewItemOpen(true)} />
@@ -328,6 +382,8 @@ interface BoardHeaderProps {
   onChangeSwimlane: (s: SwimlaneMode) => void;
   view: WorkItemView | null;
   onChangeView: (id: string | null) => void;
+  power: boolean;
+  onChangePower: (next: boolean) => void;
   onNewWorkItem: () => void;
 }
 function BoardHeader({
@@ -337,6 +393,8 @@ function BoardHeader({
   onChangeSwimlane,
   view,
   onChangeView,
+  power,
+  onChangePower,
   onNewWorkItem,
 }: BoardHeaderProps) {
   return (
@@ -380,6 +438,18 @@ function BoardHeader({
           icon={<List className="h-3 w-3" />}
           testid="view-toggle-list"
         />
+        {layout === 'list' ? (
+          <>
+            <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
+            <ToggleButton
+              active={power}
+              onClick={() => onChangePower(!power)}
+              label="Power"
+              icon={<Zap className="h-3 w-3" />}
+              testid="board-power-toggle"
+            />
+          </>
+        ) : null}
       </div>
     </div>
   );

@@ -20,11 +20,11 @@ test.describe('@error network-error inline alerts', () => {
       (url) => new URL(url).pathname.startsWith('/api/work-items'),
       (route) => route.fulfill({ status: 500, json: { error: 'internal' } })
     );
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     // The shell still rendered.
     await expect(page.locator('main')).toBeVisible();
     // The error block is visible inside the grid pane.
-    await expect(page.getByTestId('grid-error')).toBeVisible();
+    await expect(page.getByTestId('board-list-error')).toBeVisible();
     // Network errors hitting react-query bubble up as console errors
     // by default — that's fine, but should not be a *page* error
     // (uncaught exception would show as pageerror in consoleErrors).
@@ -39,9 +39,9 @@ test.describe('@error network-error inline alerts', () => {
       (url) => new URL(url).pathname.startsWith('/api/work-items'),
       (route) => route.abort('connectionrefused')
     );
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     await expect(page.locator('main')).toBeVisible();
-    await expect(page.getByTestId('grid-error')).toBeVisible();
+    await expect(page.getByTestId('board-list-error')).toBeVisible();
     // Shell is still interactive — sidebar links keep working.
     await page.getByRole('link', { name: 'Board' }).click();
     await expect(page).toHaveURL(/\/board/);
@@ -60,7 +60,7 @@ test.describe('@error network-error inline alerts', () => {
       (url) => new URL(url).pathname.startsWith('/api/work-items'),
       (route) => route.fulfill({ status: 503, json: { error: 'temporary' } })
     );
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     await page.waitForLoadState('networkidle');
     await expect(page.getByTestId('adaptor-banner')).toHaveCount(0);
   });

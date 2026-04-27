@@ -115,9 +115,9 @@ describe('Palette', () => {
     });
 
     // Backlog folded into Board (gm-e12.19.1) — palette routes to
-    // the list-mode + Backlog-preset URL on Board.
+    // the canonical list-layout + Backlog-view URL on Board (post-uipx.18).
     await waitFor(() =>
-      expect(screen.getByTestId('loc').textContent).toBe('/board?view=list&preset=backlog')
+      expect(screen.getByTestId('loc').textContent).toBe('/board?layout=list&view=backlog')
     );
     // Selecting an item closes the palette.
     expect(screen.queryByTestId('command-palette-input')).toBeNull();

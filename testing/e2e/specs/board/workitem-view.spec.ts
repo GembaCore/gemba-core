@@ -1,11 +1,13 @@
-// specs/board/workitem-view.spec.ts (gm-5v8v.5, gm-e12.19.1).
+// specs/board/workitem-view.spec.ts (gm-5v8v.5, gm-e12.19.1, gm-uipx.18).
 //
-// Tier: route. Pins the three Board view modes (gm-e12.19.1 absorbed
-// the former /backlog surface as a third "list" mode):
+// Tier: route. Pins the three Board layout modes (gm-e12.19.1 absorbed
+// the former /backlog surface as the "list" mode; gm-uipx.18 split the
+// layout slot into ?layout= so the ?view= slot is reserved for named
+// views):
 //
-//   ?view (absent)   → Epic kanban (default)
-//   ?view=workitem   → flat WorkItem kanban (ui-spec L293)
-//   ?view=list       → flat WorkItem list (gm-e12.19.1)
+//   ?layout (absent)   → Epic kanban (default)
+//   ?layout=workitem   → flat WorkItem kanban (ui-spec L293)
+//   ?layout=list       → flat WorkItem list (gm-e12.19.1)
 //
 // Plus the two view-toggle hotkeys: Cmd-Shift-W (Epic ↔ WorkItem)
 // and Cmd-Shift-L (Kanban ↔ List). Both are best-effort because
@@ -16,14 +18,14 @@ import { expect, test } from '../../fixtures/server';
 import { BoardPage } from '../../pages/BoardPage';
 import { workItem, epic } from '../../builders/workitem';
 
-test('?view=workitem renders the flat WorkItemBoard @board', async ({ page, workPlane }) => {
+test('?layout=workitem renders the flat WorkItemBoard @board', async ({ page, workPlane }) => {
   workPlane.seed([workItem({ state_category: 'unstarted' })]);
   const board = new BoardPage(page);
   await board.gotoWorkItemView();
   await expect(board.workItemBoard).toBeVisible();
 });
 
-test('header toggle flips Epic ↔ WorkItem and updates ?view= in the URL @board', async ({
+test('header toggle flips Epic ↔ WorkItem and updates ?layout= in the URL @board', async ({
   page,
   workPlane,
 }) => {
@@ -36,15 +38,15 @@ test('header toggle flips Epic ↔ WorkItem and updates ?view= in the URL @board
   await expect(board.viewToggleEpic).toHaveAttribute('data-active', 'true');
   await expect(page).toHaveURL(/\/board(\?.*)?$/);
 
-  // Click "Item" → ?view=workitem.
+  // Click "Item" → ?layout=workitem.
   await board.viewToggleWorkItem.click();
-  await expect(page).toHaveURL(/[?&]view=workitem/);
+  await expect(page).toHaveURL(/[?&]layout=workitem/);
   await expect(board.viewToggleWorkItem).toHaveAttribute('data-active', 'true');
 
-  // Click "Epic" → ?view= drops out (default lives in the absence of
+  // Click "Epic" → ?layout= drops out (default lives in the absence of
   // the param).
   await board.viewToggleEpic.click();
-  await expect(page).not.toHaveURL(/[?&]view=workitem/);
+  await expect(page).not.toHaveURL(/[?&]layout=workitem/);
 });
 
 // The hotkey may be OS-swallowed (macOS browsers grab Cmd-W for tab
@@ -70,7 +72,7 @@ test('Cmd/Ctrl+Shift+W hotkey toggles the view when not OS-swallowed @board', as
   // is the authoritative path. If one did fire, assert the toggle
   // landed the URL change.
   const url = page.url();
-  if (url.includes('view=workitem')) {
+  if (url.includes('layout=workitem')) {
     await expect(board.viewToggleWorkItem).toHaveAttribute('data-active', 'true');
   } else {
     test.info().annotations.push({
@@ -81,10 +83,10 @@ test('Cmd/Ctrl+Shift+W hotkey toggles the view when not OS-swallowed @board', as
   }
 });
 
-// gm-e12.19.1: list-mode toggle (?view=list). Pins both the URL
-// surface and the in-page toggle button so the collapsed-Backlog
-// path stays exercised under route-fake.
-test('?view=list renders the flat list pane @board', async ({ page, workPlane }) => {
+// gm-e12.19.1: list-mode toggle (?layout=list post-uipx.18). Pins
+// both the URL surface and the in-page toggle button so the
+// collapsed-Backlog path stays exercised under route-fake.
+test('?layout=list renders the flat list pane @board', async ({ page, workPlane }) => {
   workPlane.seed([workItem({ state_category: 'unstarted' })]);
   const board = new BoardPage(page);
   await board.gotoListView();
@@ -92,7 +94,7 @@ test('?view=list renders the flat list pane @board', async ({ page, workPlane })
   await expect(board.viewToggleList).toHaveAttribute('data-active', 'true');
 });
 
-test('header toggle reaches the List mode and updates ?view= in the URL @board', async ({
+test('header toggle reaches the List mode and updates ?layout= in the URL @board', async ({
   page,
   workPlane,
 }) => {
@@ -101,13 +103,13 @@ test('header toggle reaches the List mode and updates ?view= in the URL @board',
   await board.gotoEpicView();
 
   await board.viewToggleList.click();
-  await expect(page).toHaveURL(/[?&]view=list/);
+  await expect(page).toHaveURL(/[?&]layout=list/);
   await expect(board.viewToggleList).toHaveAttribute('data-active', 'true');
   await expect(board.listView).toBeVisible();
 
-  // Click "Epic" → ?view= drops out (default in absence of param).
+  // Click "Epic" → ?layout= drops out (default in absence of param).
   await board.viewToggleEpic.click();
-  await expect(page).not.toHaveURL(/[?&]view=list/);
+  await expect(page).not.toHaveURL(/[?&]layout=list/);
 });
 
 // gm-e12.19.1 / hotkey defaults: Mod+Shift+L toggles kanban ↔ list.
@@ -124,7 +126,7 @@ test('Cmd/Ctrl+Shift+L hotkey toggles list mode when not OS-swallowed @board', a
   await page.keyboard.press('Control+Shift+L');
   await page.keyboard.press('Meta+Shift+L');
   const url = page.url();
-  if (url.includes('view=list')) {
+  if (url.includes('layout=list')) {
     await expect(board.viewToggleList).toHaveAttribute('data-active', 'true');
   } else {
     test.info().annotations.push({

@@ -137,15 +137,15 @@ test.describe('WorkItemDrawer @route', () => {
     page,
     workPlane,
   }) => {
-    // Workitem-flat view (?view=workitem) renders WorkItemCard — its
-    // keydown handler treats `o` as drawer-open (gm-fqiw). Seed a
-    // single bead, focus the card, press 'o', assert the drawer
-    // opens with the seeded id.
+    // Workitem-flat layout (?layout=workitem post-uipx.18) renders
+    // WorkItemCard — its keydown handler treats `o` as drawer-open
+    // (gm-fqiw). Seed a single bead, focus the card, press 'o',
+    // assert the drawer opens with the seeded id.
     const id = 'gm-hot-o';
     workPlane.seed([build.workItem({ id, title: 'Hotkey o target' })]);
 
     const drawer = new WorkItemDrawerPO(page);
-    await page.goto('/board?view=workitem');
+    await page.goto('/board?layout=workitem');
     // The card carries data-work-item-id and role=button; locate by
     // the id attribute (no card-level testid on the SPA side).
     const card = page.locator(`[data-work-item-id="${id}"]`);

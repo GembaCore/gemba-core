@@ -1,10 +1,17 @@
-// pages/GridPage.ts — POM for /grid (gm-5v8v.6).
+// pages/GridPage.ts — POM for the Board's list+power layout
+// (gm-uipx.17). Originally pointed at the standalone /grid route
+// (gm-5v8v.6); after gm-uipx.17 /grid was folded into
+// /board?layout=list&power=1 — same WorkItemGrid component, same
+// column-presets + bulk-action + JSONL-import features, just hosted
+// inside Board's chrome instead of its own page.
 //
-// /grid hosts the WorkItemGrid (gm-e12.3.1) wrapped with column
-// presets (gm-e12.3.3) and a JSONL import entry point. The grid
-// virtualizes rows via @tanstack/react-virtual — only the visible
-// slice is in the DOM, so spec assertions count `grid-row-*` from
-// what's rendered now, not the full row set.
+// Class name kept as GridPage so spec imports stay stable; the
+// `goto()` default and chrome-level locators were rewritten to point
+// at Board's list view + the new ?power=1 flag.
+//
+// The grid virtualizes rows via @tanstack/react-virtual — only the
+// visible slice is in the DOM, so spec assertions count `grid-row-*`
+// from what's rendered now, not the full row set.
 
 import { expect, type Locator, type Page } from '@playwright/test';
 import { AppShell } from './AppShell';
@@ -18,6 +25,7 @@ export class GridPage extends AppShell {
   readonly count: Locator;
   readonly search: Locator;
   readonly importButton: Locator;
+  readonly powerToggle: Locator;
   readonly columnsToggle: Locator;
   readonly columnsMenu: Locator;
   readonly presetsToggle: Locator;
@@ -28,11 +36,18 @@ export class GridPage extends AppShell {
     super(page);
     this.grid = page.getByTestId('work-item-grid');
     this.scroll = page.getByTestId('grid-scroll');
-    this.empty = page.getByTestId('grid-empty');
-    this.error = page.getByTestId('grid-error');
-    this.count = page.getByTestId('grid-count');
-    this.search = page.getByTestId('grid-search');
+    // Chrome-level testids are board-list-* — rendered by
+    // BoardListView (the host of the WorkItemGrid in list mode).
+    this.empty = page.getByTestId('board-list-empty');
+    this.error = page.getByTestId('board-list-error');
+    this.count = page.getByTestId('board-list-count');
+    this.search = page.getByTestId('board-list-search');
+    // Power toggle and the import button are exposed by BoardPage /
+    // BoardListView only when ?power=1 is set.
     this.importButton = page.getByTestId('grid-import-jsonl');
+    this.powerToggle = page.getByTestId('board-power-toggle');
+    // WorkItemGrid component testids stay grid-* — the component is
+    // unchanged; only its host moved.
     this.columnsToggle = page.getByTestId('grid-columns-toggle');
     this.columnsMenu = page.getByTestId('grid-columns-menu');
     this.presetsToggle = page.getByTestId('grid-presets-toggle');
@@ -40,10 +55,11 @@ export class GridPage extends AppShell {
     this.presetsSave = page.getByTestId('grid-presets-save');
   }
 
-  // goto lands on /grid and confirms the AppShell renders. Caller is
-  // responsible for seeding the WorkPlane before navigating — the
-  // empty state is its own assertion path.
-  override async goto(path: string = '/grid'): Promise<void> {
+  // goto lands on Board's list+power layout. The /grid bookmark
+  // still resolves (App.tsx Navigate) but specs use the canonical URL
+  // so a regression in the redirect surfaces in its own dedicated
+  // spec, not as a failure here.
+  override async goto(path: string = '/board?layout=list&power=1'): Promise<void> {
     await super.goto(path);
     await this.expectShellRendered();
   }
@@ -101,6 +117,6 @@ export class GridPage extends AppShell {
 
   // toggleStateChip toggles a state-category filter chip.
   async toggleStateChip(state: StateCategory): Promise<void> {
-    await this.page.getByTestId(`grid-state-${state}`).click();
+    await this.page.getByTestId(`board-list-state-${state}`).click();
   }
 }

@@ -8,7 +8,6 @@ import {
   Boxes,
   Footprints,
   Mail,
-  Table2,
   Terminal,
   CircuitBoard,
 } from 'lucide-react';
@@ -21,7 +20,6 @@ type Item = { to: string; label: string; Icon: LucideIcon; gated?: boolean };
 const items: Item[] = [
   { to: '/board', label: 'Board', Icon: LayoutGrid },
   { to: '/backlog', label: 'Backlog', Icon: ListTodo },
-  { to: '/grid', label: 'Grid', Icon: Table2 },
   { to: '/sessions', label: 'Sessions', Icon: Terminal },
   { to: '/coach', label: 'Coach', Icon: CircuitBoard },
   { to: '/walk', label: 'Gemba walk', Icon: Footprints },
