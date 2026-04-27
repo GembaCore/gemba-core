@@ -427,29 +427,65 @@ blocking_authority = "strong"
 	}
 }
 
-// gm-8qr: PPPP blocks are optional. Existing seed personas
-// (project-manager, documentarian) — which do NOT declare any of the
-// three blocks — must still load cleanly.
-func TestLoadRegistry_SeedFiles_PPPPZeroValueOK(t *testing.T) {
+// gm-1w7: the seed personas now ship with concrete Personality +
+// Perspective blocks per the gm-9rv design. Documentarian also
+// declares a [purview] block (domain="docs", advisory). The PM
+// intentionally OMITS [purview] per gm-9rv invariant #31 — PM is
+// orchestrator, not domain-owner — so its Purview must remain the
+// zero value.
+func TestLoadRegistry_SeedFiles_PPPPPopulated(t *testing.T) {
 	r, err := LoadRegistry("../../../.gemba/personas")
 	if err != nil {
 		t.Fatalf("LoadRegistry: %v", err)
 	}
-	for _, id := range []string{"project-manager", "documentarian"} {
-		p, ok := r.Get(id)
-		if !ok {
-			t.Errorf("seed persona %q missing", id)
-			continue
-		}
-		if !p.Personality.IsZero() {
-			t.Errorf("%s: Personality should be zero-value, got %+v", id, p.Personality)
-		}
-		if !p.Perspective.IsZero() {
-			t.Errorf("%s: Perspective should be zero-value, got %+v", id, p.Perspective)
-		}
-		if !p.Purview.IsZero() {
-			t.Errorf("%s: Purview should be zero-value, got %+v", id, p.Purview)
-		}
+
+	pm, ok := r.Get("project-manager")
+	if !ok {
+		t.Fatal("project-manager seed missing")
+	}
+	if pm.Personality.IsZero() {
+		t.Error("project-manager: Personality must be populated (gm-1w7)")
+	}
+	if pm.Personality.ID == "" || pm.Personality.Description == "" {
+		t.Errorf("project-manager: Personality.ID/Description must be set, got %+v", pm.Personality)
+	}
+	if pm.Perspective.IsZero() {
+		t.Error("project-manager: Perspective must be populated (gm-1w7)")
+	}
+	if pm.Perspective.VolunteerMode != VolunteerOnDemand {
+		t.Errorf("project-manager: Perspective.VolunteerMode = %q, want on_demand", pm.Perspective.VolunteerMode)
+	}
+	// gm-9rv invariant #31: PM has no Purview. The orchestrator does
+	// not own a gateable domain.
+	if !pm.Purview.IsZero() {
+		t.Errorf("project-manager: Purview must remain zero-value per gm-9rv invariant #31, got %+v", pm.Purview)
+	}
+
+	docs, ok := r.Get("documentarian")
+	if !ok {
+		t.Fatal("documentarian seed missing")
+	}
+	if docs.Personality.IsZero() {
+		t.Error("documentarian: Personality must be populated (gm-1w7)")
+	}
+	if docs.Perspective.IsZero() {
+		t.Error("documentarian: Perspective must be populated (gm-1w7)")
+	}
+	// Per gm-9rv design, Documentarian volunteers always — the design's
+	// canonical example of an `always`-mode persona.
+	if docs.Perspective.VolunteerMode != VolunteerAlways {
+		t.Errorf("documentarian: Perspective.VolunteerMode = %q, want always", docs.Perspective.VolunteerMode)
+	}
+	if docs.Purview.IsZero() {
+		t.Error("documentarian: Purview must be populated (gm-1w7)")
+	}
+	if docs.Purview.Domain == "" {
+		t.Errorf("documentarian: Purview.Domain must be set, got %+v", docs.Purview)
+	}
+	// Documentarian is `advisory` — per the design's "Example roster"
+	// row "(any phase; advisory)".
+	if docs.Purview.BlockingAuthority != PurviewAdvisory {
+		t.Errorf("documentarian: Purview.BlockingAuthority = %q, want advisory", docs.Purview.BlockingAuthority)
 	}
 }
 
