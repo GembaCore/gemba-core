@@ -15,6 +15,9 @@ import (
 	// with internal/adapter/native/install so `gemba install-bridge`
 	// can copy them into a fresh worktree (gm-native.18).
 	_ "github.com/MikeBengtson/gemba/cmd/gemba-bridge/skills"
+	// Side-effect: replaces the codeanalysis registry's gitnexus
+	// placeholder with the live CLI-backed adapter (gm-56z).
+	_ "github.com/MikeBengtson/gemba/internal/adapter/gitnexus/codeanalysis"
 )
 
 // Injected at build time via -ldflags. See Makefile.
