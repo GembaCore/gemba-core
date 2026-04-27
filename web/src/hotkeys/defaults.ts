@@ -28,6 +28,44 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
   { id: 'bulk-delete', keys: ['*', 'x'], description: 'Bulk delete', category: 'bulk' },
   { id: 'bulk-label', keys: ['*', 'l'], description: 'Bulk label', category: 'bulk' },
 
+  // Gemba walk navigation/lifecycle (gm-0tl). The four 'w / n / d /
+  // Enter' chords from gemba-walk.md §UI live in two scopes:
+  //
+  //   - 'walk-toggle-panel' (`w`) is global — pressing it from any
+  //     route navigates to /walk; pressing again from /walk returns
+  //     to the prior route. AppHotkeys owns the handler.
+  //   - 'walk-next' (`n`), 'walk-defer' (`d`), and 'walk-suggested-apply'
+  //     (Enter) live under the 'walk-active' scope, which AppWalkBindings
+  //     pushes whenever walk.active is true. That keeps the chords inert
+  //     outside an active walk so they don't shadow the global 'new'
+  //     placeholder + Enter focus semantics.
+  //
+  // Registration order matters: 'walk-next' MUST come before 'new'
+  // (and 'walk-defer' before any other `d` chord) because the matcher
+  // returns the first scope-active hotkey via `find`. When walk-active
+  // is on, 'n' / 'd' / Enter resolve to the walk verbs; when it's off,
+  // they fall through to 'new' / Enter graph navigation / etc.
+  {
+    id: 'walk-toggle-panel',
+    keys: ['w'],
+    description: 'Toggle Gemba walk panel',
+    category: 'walk',
+  },
+  {
+    id: 'walk-next',
+    keys: ['n'],
+    description: 'Walk: Next agenda item',
+    category: 'walk',
+    scope: 'walk-active',
+  },
+  {
+    id: 'walk-suggested-apply',
+    keys: ['Enter'],
+    description: 'Walk: Apply focused suggested action',
+    category: 'walk',
+    scope: 'walk-active',
+  },
+
   // Creation
   { id: 'new', keys: ['n'], description: 'New item', category: 'creation' },
   { id: 'clone', keys: ['c'], description: 'Clone item', category: 'creation' },
@@ -151,12 +189,16 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
     category: 'walk',
     scope: 'walk',
   },
+  // walk-defer is the one R/M/X/D verb that lives under 'walk-active'
+  // rather than the page-only 'walk' scope (gm-0tl). Operators need to
+  // defer the current item from anywhere — e.g. while the PM panel is
+  // open on /board — without first navigating back to /walk.
   {
     id: 'walk-defer',
     keys: ['d'],
     description: 'Walk: Defer active item',
     category: 'walk',
-    scope: 'walk',
+    scope: 'walk-active',
   },
 
   // Help

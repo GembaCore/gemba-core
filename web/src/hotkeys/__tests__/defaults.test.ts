@@ -16,9 +16,24 @@ describe('DEFAULT_HOTKEYS', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('has unique key sequences (no conflicts)', () => {
-    const seqs = DEFAULT_HOTKEYS.map((h) => h.keys.join(' '));
-    expect(new Set(seqs).size).toBe(seqs.length);
+  it('has unique key sequences within each scope (gm-0tl)', () => {
+    // Chord uniqueness is per-scope rather than global so the same
+    // chord can have a different meaning when a scope is active. e.g.
+    // `n` is `new` in global and `walk-next` under 'walk-active';
+    // `d` is `walk-defer` under 'walk-active' but does nothing
+    // globally; `Enter` is `walk-suggested-apply` under 'walk-active'
+    // and `graph-open` under 'graph'.
+    const byScope = new Map<string, string[]>();
+    for (const hk of DEFAULT_HOTKEYS) {
+      const scope = hk.scope ?? 'global';
+      const seq = hk.keys.join(' ');
+      const list = byScope.get(scope) ?? [];
+      list.push(seq);
+      byScope.set(scope, list);
+    }
+    for (const [scope, seqs] of byScope) {
+      expect(new Set(seqs).size, `duplicate chord in scope ${scope}`).toBe(seqs.length);
+    }
   });
 
   it('covers the Foolery pattern set plus Gemba additions', () => {

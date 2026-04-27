@@ -1,5 +1,5 @@
-import { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useHotkey } from './hooks';
 import { HelpOverlay } from './HelpOverlay';
 
@@ -10,6 +10,13 @@ import { HelpOverlay } from './HelpOverlay';
 // file.
 export function AppHotkeys() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Remember the route we were on before the operator pressed `w`
+  // so a second press from /walk navigates back. Stored in a ref
+  // (not state) because we don't want a re-render on each
+  // route change — the value is only read inside the hotkey
+  // handler.
+  const priorPathRef = useRef<string>('/board');
 
   const go = useCallback((to: string) => () => navigate(to), [navigate]);
   const clickTarget = useCallback(
@@ -53,6 +60,22 @@ export function AppHotkeys() {
   useHotkey('workspace-switch', clickTarget('workspace-switcher'));
   useHotkey('open-palette', clickTarget('command-palette'));
   useHotkey('focus-search', clickTarget('command-palette'));
+
+  // gm-0tl: 'w' toggles the walk panel — navigate to /walk from
+  // anywhere; press again from /walk to return to the prior route.
+  // Reversibility avoids the operator getting trapped on /walk
+  // when `w` was a passing glance ("does anything need decisions?").
+  // The walk lifecycle itself is owned by Cmd-G / AppWalkBindings —
+  // this binding is purely about surface visibility.
+  useHotkey('walk-toggle-panel', () => {
+    if (location.pathname === '/walk') {
+      const back = priorPathRef.current;
+      navigate(back && back !== '/walk' ? back : '/board');
+      return;
+    }
+    priorPathRef.current = location.pathname + location.search + location.hash;
+    navigate('/walk');
+  });
 
   return <HelpOverlay />;
 }
