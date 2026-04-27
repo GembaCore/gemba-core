@@ -33,15 +33,15 @@ import (
 // SPA's drawer can extract suggested_action without re-fetching the
 // full consult detail.
 type applyResponse struct {
-	ConsultID  string                `json:"consult_id"`
-	Idx        int                   `json:"idx"`
-	Line       any                   `json:"line"`
-	AppliedIdx []int                 `json:"applied_idx"`
+	ConsultID  string `json:"consult_id"`
+	Idx        int    `json:"idx"`
+	Line       any    `json:"line"`
+	AppliedIdx []int  `json:"applied_idx"`
 	// Executed reports whether a registered Applier ran the
 	// SuggestedAction (gm-twp2.1). False = record-only mode (no
 	// applier registered for the consult's skill); the operator
 	// dispatches manually.
-	Executed bool                  `json:"executed"`
+	Executed bool `json:"executed"`
 	// Executor is the applier's response when Executed=true. Zero
 	// value (Detail empty, Body nil) when Executed=false.
 	Executor persona.ApplierResult `json:"executor"`

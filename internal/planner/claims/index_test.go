@@ -39,8 +39,8 @@ func TestSet_StoresAndGetsBack(t *testing.T) {
 
 func TestSet_RejectsEmptyFields(t *testing.T) {
 	i := NewIndex()
-	i.Set(Claim{}) // empty bead and session
-	i.Set(Claim{BeadID: "gm-1"}) // empty session
+	i.Set(Claim{})                    // empty bead and session
+	i.Set(Claim{BeadID: "gm-1"})      // empty session
 	i.Set(Claim{SessionID: "sess-A"}) // empty bead
 	if i.Len() != 0 {
 		t.Errorf("partial claims should be ignored; len=%d", i.Len())

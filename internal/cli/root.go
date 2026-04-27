@@ -59,6 +59,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newBeadCmd(),
 		newSessionCmd(),
 		newAgentCmd(),
+		newSizeCalibrationCmd(),
 	)
 
 	return root
