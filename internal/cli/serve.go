@@ -34,6 +34,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/shader/gastown"
 	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
+	"github.com/MikeBengtson/gemba/internal/walk"
 	walksources "github.com/MikeBengtson/gemba/internal/walk/sources"
 )
 
@@ -318,6 +319,21 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	if op := host.OrchestrationPlane(); op != nil {
 		personaDispatcher.SetSpawnFunc(persona.NativeSpawn(op, "claude"))
 	}
+
+	// gm-vch2: wire the gemba walk surface. The Sources factory bundles
+	// the live OrchestrationPlane / Witness / Refinery / Beads-degraded
+	// listers so cross-worker escalations land on every walk's agenda.
+	// Witness and Refinery default to no-op sources today — a deployment
+	// with a live witness or refinery rig swaps in a custom
+	// WitnessFindingSource / RefineryRejectionSource via a follow-up
+	// configuration knob (no live in-tree adaptor yet).
+	walkSources := walksources.LiveSources(walksources.LiveSourcesConfig{
+		Plane:     host.OrchestrationPlane(),
+		HealthBus: handler.HealthBus(),
+		// Witness + Refinery left nil; the no-op default contributes
+		// zero items until an upstream source is wired.
+	})
+	handler.AttachWalk(walk.NewMemoryStore(), walkSources)
 
 	srv := &http.Server{
 		Addr:              addr,

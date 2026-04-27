@@ -94,6 +94,28 @@ const (
 	// "## Questions" section in the assistant's transcript (gm-97w7.1).
 	// Always Channel=ChannelTranscript; Urgency mode-dependent.
 	EscalationQuestion EscalationKind = "question"
+	// EscalationWitnessFinding — a witness pipeline finding promoted to
+	// an EscalationRequest so the gemba walk agenda surfaces it
+	// alongside other cross-worker escalations (gm-vch2). Today the
+	// witness rig writes findings into mail; the lister in
+	// internal/walk/sources/witness.go does the mail → EscalationRequest
+	// translation. Once witness emits escalation.raised events natively
+	// the canonical kind stays the same — only the bridge changes.
+	EscalationWitnessFinding EscalationKind = "witness_finding"
+	// EscalationRefineryRejection — a refinery rig merge rejection
+	// promoted to an EscalationRequest so the operator's gemba walk
+	// surfaces "this PR was rejected and needs a human" alongside
+	// other escalations (gm-vch2). The refinery rig's reject path
+	// must publish through the OrchestrationPlane carrying this kind;
+	// see internal/walk/sources/refinery.go for the typed lister and
+	// the upstream-publish follow-up.
+	EscalationRefineryRejection EscalationKind = "refinery_rejection"
+	// EscalationBeadsDegraded — synthetic escalation minted by the
+	// walk's BeadsDegradedLister (gm-vch2) when an adaptor probe
+	// reports Healthy=false. The escalation persists for the lifetime
+	// of the degraded span (stable id) and disappears on the first
+	// healthy probe afterwards.
+	EscalationBeadsDegraded EscalationKind = "beads_degraded"
 )
 
 // EscalationChannel identifies how an EscalationRequest reached Gemba.
@@ -656,12 +678,21 @@ type ReadyFilter struct {
 }
 
 // EscalationFilter narrows ListOpenEscalations.
+//
+// Workspace was added in gm-vch2 so the Gemba walk agenda can scope a
+// cross-worker escalation listing to a specific workspace (matching
+// AgentFilter.Workspace's semantics). Adaptors that don't model
+// per-workspace escalations MAY ignore this field; the canonical
+// in-memory adaptor (native) treats it as a no-op until per-workspace
+// scope rides through the EscalationRequest payload (declared-state /
+// observed-state diff per gm-root §Novel-Mechanism §8).
 type EscalationFilter struct {
 	AssignmentID string            `json:"assignment_id,omitempty"`
 	WorkItemID   WorkItemID        `json:"work_item_id,omitempty"`
 	AgentID      AgentID           `json:"agent_id,omitempty"`
 	Source       EscalationKind    `json:"source,omitempty"`
 	Urgency      EscalationUrgency `json:"urgency,omitempty"`
+	Workspace    string            `json:"workspace,omitempty"`
 }
 
 // SubscribeFilter narrows Subscribe to a subset of OrchestrationEvents.

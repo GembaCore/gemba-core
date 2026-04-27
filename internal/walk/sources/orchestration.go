@@ -28,18 +28,12 @@ type orchestrationLister interface {
 // in cmd/gemba serve (or wherever the host plane is bound) and
 // pass it as walk.Sources.Escalations when starting a walk.
 //
-// Workspace gap (documented). The walk's EscalationLister
-// interface takes a workspace string — this is the only signature
-// the agenda aggregator can wire today, but core.EscalationFilter
-// has no Workspace field (escalations are assignment-scoped in the
-// core model). This lister therefore ignores the workspace
-// argument and returns the full open set; downstream filtering
-// happens in the SPA. Adding a Workspace field to EscalationFilter
-// is a follow-up to gm-3jv: the OrchestrationPlane would need to
-// know which assignment lives in which workspace, which is the
-// declared-state / observed-state diff that gm-root §Novel-Mechanism
-// §8 already exposes — wiring that join is the right place to
-// scope the filter, not on this adapter.
+// gm-vch2: the workspace argument now flows through to
+// core.EscalationFilter.Workspace (added on the same bead). Adaptors
+// that don't model per-workspace escalations treat it as a no-op
+// until the declared-state / observed-state diff (gm-root
+// §Novel-Mechanism §8) carries the workspace join — see the field
+// doc on EscalationFilter for the contract.
 type OrchestrationPlaneEscalationLister struct {
 	plane orchestrationLister
 }
@@ -65,13 +59,13 @@ func newListerFromMin(plane orchestrationLister) *OrchestrationPlaneEscalationLi
 	return &OrchestrationPlaneEscalationLister{plane: plane}
 }
 
-// ListOpenEscalations satisfies walk.EscalationLister. The workspace
-// argument is intentionally dropped — see the type doc.
-func (l *OrchestrationPlaneEscalationLister) ListOpenEscalations(ctx context.Context, _ string) ([]core.EscalationRequest, error) {
+// ListOpenEscalations satisfies walk.EscalationLister. Workspace is
+// passed through as core.EscalationFilter.Workspace (gm-vch2).
+func (l *OrchestrationPlaneEscalationLister) ListOpenEscalations(ctx context.Context, workspace string) ([]core.EscalationRequest, error) {
 	if l == nil || l.plane == nil {
 		return nil, nil
 	}
-	return l.plane.ListOpenEscalations(ctx, core.EscalationFilter{})
+	return l.plane.ListOpenEscalations(ctx, core.EscalationFilter{Workspace: workspace})
 }
 
 // Compile-time: confirm the interface match.
@@ -104,6 +98,30 @@ const WalkEscalationChanged events.Kind = "walk.escalation_changed"
 // ResolveEscalation). The prefix match is intentional — future
 // kinds in the same namespace participate without a code change.
 const escalationKindPrefix = "escalation."
+
+// agendaTriggerKinds is the explicit set of non-escalation
+// OrchestrationEvent kinds the gm-vch2 bridge republishes as
+// walk.escalation_changed frames. The list is intentionally narrow —
+// every entry is something that *should* prompt a walk to refresh
+// its agenda because the resulting EscalationRequest set might have
+// changed:
+//
+//   - budget.warn / budget.stop — sprint TokenBudget thresholds the
+//     walk surfaces as escalations (gemba-walk.md §Escalation-source).
+//   - capability.refresh-degraded — adaptor capability manifest now
+//     reports degraded health (gm-root.7 + gm-b1).
+//   - adaptor.degraded — direct degraded-state signal published when
+//     an adaptor probe transitions to Healthy=false.
+//
+// A pure prefix match is wrong here: budget.inform is informational
+// only and shouldn't churn the agenda. capability.refresh by itself
+// is fine to ignore — only the degraded variant matters.
+var agendaTriggerKinds = map[string]struct{}{
+	"budget.warn":                  {},
+	"budget.stop":                  {},
+	"capability.refresh-degraded":  {},
+	"adaptor.degraded":             {},
+}
 
 // StartOrchestrationBridge subscribes to the OrchestrationPlane's
 // event stream and republishes escalation.* events as
@@ -155,7 +173,7 @@ func pumpOrchestrationBridge(ctx context.Context, in <-chan core.OrchestrationEv
 			if !ok {
 				return
 			}
-			if !isEscalationEvent(ev.Kind) {
+			if !shouldRepublish(ev.Kind) {
 				continue
 			}
 			hub.Publish(translateEscalationEvent(adaptorID, ev))
@@ -167,6 +185,17 @@ func pumpOrchestrationBridge(ctx context.Context, in <-chan core.OrchestrationEv
 // participates in the escalation lifecycle namespace.
 func isEscalationEvent(kind string) bool {
 	return strings.HasPrefix(kind, escalationKindPrefix)
+}
+
+// shouldRepublish is the predicate the bridge applies to incoming
+// OrchestrationEvent kinds (gm-vch2). True for any kind in the
+// escalation.* namespace plus the explicit agendaTriggerKinds set.
+func shouldRepublish(kind string) bool {
+	if isEscalationEvent(kind) {
+		return true
+	}
+	_, ok := agendaTriggerKinds[kind]
+	return ok
 }
 
 // translateEscalationEvent shapes an OrchestrationEvent into the
@@ -197,41 +226,3 @@ func translateEscalationEvent(adaptorID string, ev core.OrchestrationEvent) even
 	return out
 }
 
-// ── Stub sources (TODO — see doc.go) ────────────────────────────
-
-// StubWitnessLister is the placeholder for the witness-finding
-// escalation source. Witness currently surfaces findings via mail
-// rather than as core.EscalationRequest; once the witness rig
-// emits escalation.raised events (or a mail→escalation bridge
-// lands), swap this for a live implementation. Tracked as a
-// follow-up to gm-3jv.
-//
-// Returns an empty slice so a Sources struct that wires this stub
-// is the same shape as one that wires a future live lister.
-func StubWitnessLister(_ context.Context, _ string) ([]core.EscalationRequest, error) {
-	// TODO(gm-3jv-followup): wire witness mail → EscalationRequest.
-	return nil, nil
-}
-
-// StubRefineryRejectionLister is the placeholder for the refinery
-// merge-rejection source. Refinery currently writes a beads
-// comment on rejection without an orchestration event; the
-// follow-up needs an EscalationKind "refinery_rejection" plus a
-// way for the refinery rig to publish through the
-// OrchestrationPlane (or a side-channel adaptor).
-func StubRefineryRejectionLister(_ context.Context, _ string) ([]core.EscalationRequest, error) {
-	// TODO(gm-3jv-followup): wire refinery rejection → EscalationRequest.
-	return nil, nil
-}
-
-// StubBeadsDegradedLister is the placeholder for synthesizing
-// escalations from beads-daemon degraded health (gm-b1). Today the
-// signal is exposed via /api/adaptors and /api/adaptors/stream as
-// a HealthBus state — promoting it to a walk agenda item needs a
-// translator that mints a stable EscalationRequest.ID per
-// degraded-state span (so a still-degraded daemon doesn't surface
-// a fresh agenda row on every walk).
-func StubBeadsDegradedLister(_ context.Context, _ string) ([]core.EscalationRequest, error) {
-	// TODO(gm-3jv-followup): translate adaptor HealthBus degraded → EscalationRequest.
-	return nil, nil
-}

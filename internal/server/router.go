@@ -409,6 +409,14 @@ func (r *Router) StartHealthBus() {
 	}
 }
 
+// HealthBus returns the registry.HealthBus this router caches
+// adaptor status against. cmd/gemba serve uses this to wire the
+// gemba walk's BeadsDegradedLister against the same probe ticker
+// the SPA banner reads from (gm-vch2). Returns nil only when the
+// router was built without one — test paths that don't exercise
+// adaptor health.
+func (r *Router) HealthBus() *registry.HealthBus { return r.healthBus }
+
 // AttachMetricsHandler binds an http.Handler to GET /metrics. Calling
 // with nil leaves the route returning 503 — useful for tests that
 // want to skip the metrics surface entirely. cmd/gemba serve calls
