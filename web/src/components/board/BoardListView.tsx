@@ -1,11 +1,11 @@
 // BoardListView (gm-e12.19.1). Flat WorkItem list rendering for
-// Board's `view=list` mode. Replaces the standalone BacklogPage —
+// Board's `layout=list` mode. Replaces the standalone BacklogPage —
 // same chip-bar, search, and grid renderer, but driven by Board's
-// URL search params (?view=list&preset=…&state_category=…) instead
+// URL search params (?layout=list&view=…&state_category=…) instead
 // of the URL-hash + localStorage hybrid the old BacklogPage used.
 //
 // Selection — ?bead=<id> — is owned by BoardPage so the WorkItemDrawer
-// stays a single instance regardless of view-mode.
+// stays a single instance regardless of layout.
 
 import { useMemo } from 'react';
 import { Search } from 'lucide-react';
@@ -13,12 +13,10 @@ import { useFilteredWorkItems } from '@/hooks/useWorkItems';
 import { WorkItemGrid } from '@/components/grid/WorkItemGrid';
 import type { WorkItemListFilter } from '@/api/workItems';
 import {
-  BOARD_PRESET_FILTERS,
-  BOARD_PRESET_POST_FILTERS,
-  BOARD_PRESET_SORTS,
-  type BoardPreset,
-  type BoardPresetContext,
-} from '@/lib/boardPresets';
+  applyView,
+  type ViewContext,
+  type WorkItemView,
+} from '@/lib/workItemViews';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 
@@ -34,7 +32,7 @@ const STATE_LABELS: Record<StateCategory, string> = {
 };
 
 export interface BoardListViewProps {
-  preset: BoardPreset | null;
+  view: WorkItemView | null;
   stateCategories: StateCategory[];
   kinds: string[];
   search: string;
@@ -42,11 +40,11 @@ export interface BoardListViewProps {
   onChangeKinds: (next: string[]) => void;
   onChangeSearch: (next: string) => void;
   onSelectWorkItem: (id: string) => void;
-  presetContext?: BoardPresetContext;
+  viewContext?: ViewContext;
 }
 
 export function BoardListView({
-  preset,
+  view,
   stateCategories,
   kinds,
   search,
@@ -54,27 +52,27 @@ export function BoardListView({
   onChangeKinds,
   onChangeSearch,
   onSelectWorkItem,
-  presetContext,
+  viewContext,
 }: BoardListViewProps) {
-  // Effective filter = explicit chips, falling back to the preset's
-  // base filter when the operator hasn't touched a chip. Once they
-  // start toggling chips the URL carries explicit values and the
-  // preset stops contributing to the API filter (it still drives the
-  // post-filter so `mine` / `done-recent` keep working).
+  // Effective filter = explicit chips, falling back to the named
+  // view's base filter when the operator hasn't touched a chip. Once
+  // they start toggling chips the URL carries explicit values and
+  // the view stops contributing to the API filter (it still drives
+  // the post-filter so `mine` / `done-recent` keep working).
   // Memoized so the conditional fallback doesn't re-allocate on every
   // render (which would invalidate the apiFilter useMemo below).
   const effectiveStates = useMemo(
     () =>
       stateCategories.length > 0
         ? stateCategories
-        : preset
-          ? BOARD_PRESET_FILTERS[preset].state_category
+        : view
+          ? view.baseFilter.state_category
           : [],
-    [stateCategories, preset]
+    [stateCategories, view]
   );
   const effectiveKinds = useMemo(
-    () => (kinds.length > 0 ? kinds : preset ? BOARD_PRESET_FILTERS[preset].kind : []),
-    [kinds, preset]
+    () => (kinds.length > 0 ? kinds : view ? view.baseFilter.kind : []),
+    [kinds, view]
   );
 
   const apiFilter = useMemo<WorkItemListFilter>(() => {
@@ -87,17 +85,11 @@ export function BoardListView({
   const { data = [], isLoading, error } = useFilteredWorkItems(apiFilter);
 
   const filtered = useMemo(() => {
-    let rows = data;
-    if (preset) {
-      const post = BOARD_PRESET_POST_FILTERS[preset];
-      if (post) rows = rows.filter((it) => post(it, presetContext ?? {}));
-      const sort = BOARD_PRESET_SORTS[preset];
-      if (sort) rows = [...rows].sort(sort);
-    }
+    let rows = applyView(data, view, viewContext ?? {});
     const needle = search.trim().toLowerCase();
     if (needle) rows = rows.filter((it) => it.title.toLowerCase().includes(needle));
     return rows;
-  }, [data, search, preset, presetContext]);
+  }, [data, search, view, viewContext]);
 
   const toggleArrayValue = <T extends string>(arr: T[], value: T): T[] =>
     arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];

@@ -19,21 +19,20 @@ import { BulkEditDialog } from '@/components/grid/BulkEditDialog';
 import type { WorkItemListFilter, WorkItemPatch } from '@/api/workItems';
 import type { BacklogFilter } from '@/lib/backlogFilter';
 import {
-  NAMED_VIEWS,
-  VIEW_FILTERS,
-  VIEW_LABELS,
-  VIEW_POST_FILTERS,
-  VIEW_SORTS,
-  isKnownView,
-  type NamedView,
-} from '@/lib/gridViews';
+  applyView as applyViewFilter,
+  canonicaliseViewName,
+  findView,
+  readLegacyViewStorage,
+  VIEW_PARAM,
+  VIEW_STORAGE_KEY,
+  WORK_ITEM_VIEWS,
+  type WorkItemView,
+} from '@/lib/workItemViews';
 import { STATE_CATEGORIES, type StateCategory } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 
 const FILTER_STORAGE_KEY = 'gemba.grid.filter';
 const PRESETS_STORAGE_KEY = 'gemba.grid.column-presets';
-const VIEW_STORAGE_KEY = 'gemba.grid.view';
-const VIEW_QUERY_PARAM = 'view';
 
 const KIND_CHIPS = ['task', 'bug', 'epic'] as const;
 
@@ -48,7 +47,7 @@ const STATE_LABELS: Record<StateCategory, string> = {
 
 export function GridPage() {
   const [filter, setFilter] = usePersistedFilter(FILTER_STORAGE_KEY);
-  const [activeView, setActiveView] = useState<NamedView | null>(initialViewFromEnv);
+  const [activeView, setActiveView] = useState<WorkItemView | null>(initialViewFromEnv);
   const [openId, setOpenId] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [bulkEdit, setBulkEdit] = useState<{ ids: string[] } | null>(null);
@@ -94,10 +93,10 @@ export function GridPage() {
     if (typeof window === 'undefined') return;
     const url = new URL(window.location.href);
     if (activeView) {
-      url.searchParams.set(VIEW_QUERY_PARAM, activeView);
-      safeSet(VIEW_STORAGE_KEY, activeView);
+      url.searchParams.set(VIEW_PARAM, activeView.id);
+      safeSet(VIEW_STORAGE_KEY, activeView.id);
     } else {
-      url.searchParams.delete(VIEW_QUERY_PARAM);
+      url.searchParams.delete(VIEW_PARAM);
       safeSet(VIEW_STORAGE_KEY, '');
     }
     if (url.toString() !== window.location.href) {
@@ -106,7 +105,7 @@ export function GridPage() {
   }, [activeView]);
 
   const applyView = useCallback(
-    (next: NamedView | null) => {
+    (next: WorkItemView | null) => {
       if (next === null) {
         // Clearing the view also drops the filter so the operator
         // sees the full unfiltered set — clicking a view chip a
@@ -115,18 +114,17 @@ export function GridPage() {
         setFilter({ state_category: [], kind: [], search: filter.search });
         return;
       }
-      // Each view ships a base filter preset; the search box is
-      // preserved across view switches so a typed query keeps the
-      // operator's working set intact.
-      const preset = VIEW_FILTERS[next];
-      setFilter({ ...preset, search: filter.search });
+      // Each view ships a base filter; the search box is preserved
+      // across view switches so a typed query keeps the operator's
+      // working set intact.
+      setFilter({ ...next.baseFilter, search: filter.search });
       setActiveView(next);
     },
     [filter.search, setFilter]
   );
 
   // First-mount: if the URL or storage seeded an active view, apply
-  // its base filter preset so the visible rows match what the chip
+  // its base filter so the visible rows match what the chip
   // promised. Without this, ?view=staged would light up the chip but
   // leave the filter at its default-staged-state default and nothing
   // would render.
@@ -135,8 +133,7 @@ export function GridPage() {
     if (mountedRef.current) return;
     mountedRef.current = true;
     if (activeView !== null) {
-      const preset = VIEW_FILTERS[activeView];
-      setFilter({ ...preset, search: filter.search });
+      setFilter({ ...activeView.baseFilter, search: filter.search });
     }
     // Run once at mount; activeView/filter changes after this go
     // through applyView / patch / patchSearch which already handle
@@ -156,12 +153,7 @@ export function GridPage() {
   const rows = useMemo(() => {
     const needle = filter.search.trim().toLowerCase();
     let out = needle ? data.filter((it) => it.title.toLowerCase().includes(needle)) : data;
-    if (activeView) {
-      const post = VIEW_POST_FILTERS[activeView];
-      if (post) out = out.filter(post);
-      const sort = VIEW_SORTS[activeView];
-      if (sort) out = [...out].sort(sort);
-    }
+    out = applyViewFilter(out, activeView, {});
     return out;
   }, [data, filter.search, activeView]);
 
@@ -201,14 +193,14 @@ export function GridPage() {
         data-testid="grid-views"
       >
         <FilterGroup label="View">
-          {NAMED_VIEWS.map((v) => (
+          {WORK_ITEM_VIEWS.map((v) => (
             <Chip
-              key={v}
-              active={activeView === v}
-              onClick={() => applyView(activeView === v ? null : v)}
-              testid={`grid-view-${v}`}
+              key={v.id}
+              active={activeView?.id === v.id}
+              onClick={() => applyView(activeView?.id === v.id ? null : v)}
+              testid={`grid-view-${v.id}`}
             >
-              {VIEW_LABELS[v]}
+              {v.label}
             </Chip>
           ))}
         </FilterGroup>
@@ -304,22 +296,16 @@ export function GridPage() {
 }
 
 // initialViewFromEnv resolves the starting view at mount time:
-// URL ?view= wins (shareable links), falling back to localStorage,
-// then null (no view active). Mirrors usePersistedFilter's priority.
-function initialViewFromEnv(): NamedView | null {
+// URL ?view= wins (shareable links), falling back to localStorage
+// (with a one-time migration from the legacy gemba.grid.view key
+// that survived gm-uipx.18). Returns null when nothing was set.
+function initialViewFromEnv(): WorkItemView | null {
   if (typeof window === 'undefined') return null;
   const url = new URL(window.location.href);
-  const fromQuery = isKnownView(url.searchParams.get(VIEW_QUERY_PARAM));
-  if (fromQuery) return fromQuery;
-  return isKnownView(safeGet(VIEW_STORAGE_KEY));
-}
-
-function safeGet(key: string): string | null {
-  try {
-    return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
-  } catch {
-    return null;
-  }
+  const fromQuery = canonicaliseViewName(url.searchParams.get(VIEW_PARAM) ?? '');
+  if (fromQuery) return findView(fromQuery);
+  const fromStorage = readLegacyViewStorage();
+  return fromStorage ? findView(fromStorage) : null;
 }
 
 function safeSet(key: string, value: string): void {

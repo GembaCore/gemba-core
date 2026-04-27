@@ -1,25 +1,26 @@
-// Board pane (gm-root.6 / ui-spec §4). Default view is Epic-primary
-// with swimlanes by parent-epic. Two alternate views ride the same
+// Board pane (gm-root.6 / ui-spec §4). Default layout is Epic-primary
+// kanban with swimlanes by parent-epic. Three layouts share the same
 // URL state and drawer plumbing:
 //
-//   ?view=workitem  flat WorkItem kanban (M1.7a behaviour, Cmd-Shift-W)
-//   ?view=list      flat WorkItem list   (former /backlog surface,
-//                   Cmd-Shift-L; gm-e12.19.1)
+//   ?layout=epic      Epic kanban with swimlanes (default)
+//   ?layout=workitem  flat WorkItem kanban (Cmd-W toggle)
+//   ?layout=list      flat WorkItem list   (former /backlog surface,
+//                     Cmd-Shift-L; gm-e12.19.1)
 //
-// Presets layer on top via ?preset=<name> (ui-spec §4.11). The
-// /backlog route is a permanent redirect to ?view=list&preset=backlog
-// so the legacy URL keeps working.
+// Named views layer on top via ?view=<name> (gm-uipx.18). The legacy
+// ?preset= and ?view=epic|workitem|list shapes are migrated on
+// first paint by migrateLegacyParams; existing bookmarks resolve.
 //
 // URL is the source of truth:
 //   /board                              → Epic kanban, no drawer
-//   /board?view=workitem                → flat WorkItem kanban
-//   /board?view=list                    → flat WorkItem list
-//   /board?view=list&preset=backlog     → list + Backlog preset
-//   /board?bead=X                       → any view + WorkItemDrawer open on X
+//   /board?layout=workitem              → flat WorkItem kanban
+//   /board?layout=list                  → flat WorkItem list
+//   /board?layout=list&view=backlog     → list + Backlog named view
+//   /board?bead=X                       → any layout + WorkItemDrawer on X
 //   /board/:epicId                      → Epic kanban + EpicDrawer auto-open
 //   /board/:epicId?bead=X               → Epic drawer + WorkItemDrawer stacked
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   useNavigate,
   useParams,
@@ -39,17 +40,26 @@ import {
   type SwimlaneMode,
 } from '@/components/board/swimlaneMode';
 import {
-  BOARD_PRESETS,
-  BOARD_PRESET_DEFAULT_VIEW,
-  BOARD_PRESET_LABELS,
-  isKnownPreset,
-  type BoardPreset,
-  type BoardView,
-} from '@/lib/boardPresets';
+  findView,
+  LAYOUT_PARAM,
+  LEGACY_FROM_LAYOUT,
+  migrateLegacyParams,
+  VIEW_PARAM,
+  WORK_ITEM_VIEWS,
+  type LegacyBoardView,
+  type WorkItemView,
+} from '@/lib/workItemViews';
 import { useWorkItems } from '@/hooks/useWorkItems';
 import { useHotkey } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+
+// LayoutMode aliases the LegacyBoardView union — Board's three
+// kanban+list layouts. Renaming the type-local alias keeps the page
+// vocabulary current ("layout") while the cross-package type stays
+// pinned to the LegacyBoardView name for back-compat with future
+// callers.
+type LayoutMode = LegacyBoardView;
 
 // Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
 // Progress → Done → Canceled). The internal core enum keeps its
@@ -63,15 +73,13 @@ const COLUMN_LABELS: Record<StateCategory, string> = {
   canceled: 'Canceled',
 };
 
-function viewFromQuery(p: URLSearchParams, preset: BoardPreset | null): BoardView {
-  const v = p.get('view');
-  if (v === 'workitem') return 'workitem';
-  if (v === 'list') return 'list';
-  if (v === 'epic') return 'epic';
-  // No explicit ?view=: fall back to the active preset's preferred
-  // view so /board?preset=backlog lands on list mode without the
-  // operator having to spell it out. Default-default = epic.
-  if (preset) return BOARD_PRESET_DEFAULT_VIEW[preset];
+function layoutFromQuery(p: URLSearchParams, view: WorkItemView | null): LayoutMode {
+  const v = p.get(LAYOUT_PARAM);
+  if (v === 'workitem' || v === 'list' || v === 'epic') return v;
+  // No explicit ?layout=: fall back to the active named view's
+  // preferred default so /board?view=backlog lands on list mode
+  // without the operator having to spell it out. Default-default = epic.
+  if (view) return LEGACY_FROM_LAYOUT[view.defaultLayout];
   return 'epic';
 }
 
@@ -103,9 +111,27 @@ function groupByStateCategory(items: WorkItem[]): Record<StateCategory, WorkItem
 
 export function BoardPage() {
   const { data, isLoading, isError, error, refetch } = useWorkItems();
-  const [params, setParams] = useSearchParams();
-  const preset = isKnownPreset(params.get('preset'));
-  const view = viewFromQuery(params, preset);
+  const [rawParams, setParams] = useSearchParams();
+
+  // First-paint migration: rewrite legacy URL shapes (?preset=X,
+  // ?view=epic|workitem|list) into the canonical (?view=<named>,
+  // ?layout=<mode>) so the rest of this render reads from the
+  // unified vocabulary. The migrated params drive the page even
+  // before setParams flushes the new URL — that way a deep-link
+  // to a legacy URL renders the right page on first paint
+  // instead of flashing the wrong layout.
+  const params = useMemo(() => {
+    const next = new URLSearchParams(rawParams);
+    return migrateLegacyParams(next) ? next : rawParams;
+  }, [rawParams]);
+  useEffect(() => {
+    if (params !== rawParams) {
+      setParams(params, { replace: true });
+    }
+  }, [params, rawParams, setParams]);
+
+  const view = findView(params.get(VIEW_PARAM));
+  const layout = layoutFromQuery(params, view);
   // The route is /board/* so the matched suffix lands under the splat
   // param. bd ids carry slashes ("gemba/gemba/gm-e1"); a :epicId
   // segment would only catch the first chunk.
@@ -129,29 +155,31 @@ export function BoardPage() {
     [params, setParams]
   );
 
-  const setView = useCallback(
-    (next: BoardView) => {
+  const setLayout = useCallback(
+    (next: LayoutMode) => {
       const p = new URLSearchParams(params);
-      // Drop ?view= when the choice matches the current default
-      // (epic, or whatever the active preset prefers) so the URL
-      // stays clean for the common case.
-      const defaultView = preset ? BOARD_PRESET_DEFAULT_VIEW[preset] : 'epic';
-      if (next === defaultView) p.delete('view');
-      else p.set('view', next);
+      // Drop ?layout= when the choice matches the current default
+      // (epic, or whatever the active named view prefers) so the
+      // URL stays clean for the common case.
+      const defaultLayout = view
+        ? LEGACY_FROM_LAYOUT[view.defaultLayout]
+        : ('epic' as LayoutMode);
+      if (next === defaultLayout) p.delete(LAYOUT_PARAM);
+      else p.set(LAYOUT_PARAM, next);
       setParams(p, { replace: true });
     },
-    [params, setParams, preset]
+    [params, setParams, view]
   );
 
-  const setPreset = useCallback(
-    (next: BoardPreset | null) => {
+  const setView = useCallback(
+    (nextId: string | null) => {
       const p = new URLSearchParams(params);
-      if (next === null) p.delete('preset');
-      else p.set('preset', next);
-      // Switching presets clears any explicit view override and
-      // explicit chip selections so the new preset's defaults take
-      // hold cleanly. The bead drawer (?bead=) is preserved.
-      p.delete('view');
+      if (nextId === null) p.delete(VIEW_PARAM);
+      else p.set(VIEW_PARAM, nextId);
+      // Switching named views clears any explicit layout override
+      // and explicit chip selections so the new view's defaults
+      // take hold cleanly. The bead drawer (?bead=) is preserved.
+      p.delete(LAYOUT_PARAM);
       p.delete('state_category');
       p.delete('kind');
       setParams(p, { replace: true });
@@ -209,21 +237,21 @@ export function BoardPage() {
   // Cmd-W toggles the kanban granularity (epic ↔ workitem). It does
   // not pivot through list — the list/kanban swap is its own hotkey
   // (Cmd-Shift-L) so the two axes stay independent.
-  const toggleView = useCallback(
-    () => setView(view === 'epic' ? 'workitem' : 'epic'),
-    [setView, view]
+  const toggleLayout = useCallback(
+    () => setLayout(layout === 'epic' ? 'workitem' : 'epic'),
+    [setLayout, layout]
   );
-  useHotkey('view-toggle-board', toggleView);
+  useHotkey('view-toggle-board', toggleLayout);
 
   const toggleListMode = useCallback(() => {
-    if (view === 'list') {
+    if (layout === 'list') {
       // Returning from list → kanban: prefer epic (the global
-      // default) unless the active preset prefers workitem.
-      setView(preset ? BOARD_PRESET_DEFAULT_VIEW[preset] : 'epic');
+      // default) unless the active named view prefers workitem.
+      setLayout(view ? LEGACY_FROM_LAYOUT[view.defaultLayout] : 'epic');
     } else {
-      setView('list');
+      setLayout('list');
     }
-  }, [setView, view, preset]);
+  }, [setLayout, layout, view]);
   useHotkey('view-toggle-list', toggleListMode);
 
   const openEpic = useCallback(
@@ -240,26 +268,26 @@ export function BoardPage() {
 
   const [newItemOpen, setNewItemOpen] = useState(false);
 
-  // List view runs its own filtered query; the kanban-level loading
-  // and error gates only apply to the kanban renderers.
-  if (view !== 'list' && isLoading) return <SkeletonBoard />;
-  if (view !== 'list' && isError)
+  // List layout runs its own filtered query; the kanban-level
+  // loading and error gates only apply to the kanban renderers.
+  if (layout !== 'list' && isLoading) return <SkeletonBoard />;
+  if (layout !== 'list' && isError)
     return <ErrorState message={error?.message ?? 'Unknown error.'} onRetry={() => void refetch()} />;
 
   return (
     <>
       <BoardHeader
-        view={view}
-        onChangeView={setView}
+        layout={layout}
+        onChangeLayout={setLayout}
         swimlane={swimlane}
         onChangeSwimlane={setSwimlane}
-        preset={preset}
-        onChangePreset={setPreset}
+        view={view}
+        onChangeView={setView}
         onNewWorkItem={() => setNewItemOpen(true)}
       />
-      {view === 'list' ? (
+      {layout === 'list' ? (
         <BoardListView
-          preset={preset}
+          view={view}
           stateCategories={listStates}
           kinds={listKinds}
           search={listSearch}
@@ -270,7 +298,7 @@ export function BoardPage() {
         />
       ) : !data || data.length === 0 ? (
         <EmptyState onCreate={() => setNewItemOpen(true)} />
-      ) : view === 'epic' ? (
+      ) : layout === 'epic' ? (
         <EpicView items={data} onSelectEpic={openEpic} mode={swimlane} />
       ) : (
         <WorkItemBoard data={data} onSelectWorkItem={setOpenWorkItemId} />
@@ -290,25 +318,25 @@ export function BoardPage() {
   );
 }
 
-// BoardHeader holds the view picker — three view buttons (Epic /
-// Item / List), the swimlane partition selector (kanban-only), and
-// the preset chip rail (ui-spec §4.11).
+// BoardHeader holds the layout picker — three layout buttons (Epic
+// / Item / List), the swimlane partition selector (epic-only), and
+// the named-view chip rail (gm-uipx.18).
 interface BoardHeaderProps {
-  view: BoardView;
-  onChangeView: (v: BoardView) => void;
+  layout: LayoutMode;
+  onChangeLayout: (v: LayoutMode) => void;
   swimlane: SwimlaneMode;
   onChangeSwimlane: (s: SwimlaneMode) => void;
-  preset: BoardPreset | null;
-  onChangePreset: (p: BoardPreset | null) => void;
+  view: WorkItemView | null;
+  onChangeView: (id: string | null) => void;
   onNewWorkItem: () => void;
 }
 function BoardHeader({
-  view,
-  onChangeView,
+  layout,
+  onChangeLayout,
   swimlane,
   onChangeSwimlane,
-  preset,
-  onChangePreset,
+  view,
+  onChangeView,
   onNewWorkItem,
 }: BoardHeaderProps) {
   return (
@@ -316,10 +344,10 @@ function BoardHeader({
       data-testid="board-view-toggle"
       className="flex flex-wrap items-center gap-3 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
     >
-      {view === 'epic' ? (
+      {layout === 'epic' ? (
         <SwimlaneSwitcher value={swimlane} onChange={onChangeSwimlane} />
       ) : null}
-      <PresetSwitcher value={preset} onChange={onChangePreset} />
+      <ViewSwitcher value={view} onChange={onChangeView} />
       <div className="ml-auto flex items-center gap-1">
         <button
           type="button"
@@ -332,22 +360,22 @@ function BoardHeader({
         </button>
         <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
         <ToggleButton
-          active={view === 'epic'}
-          onClick={() => onChangeView('epic')}
+          active={layout === 'epic'}
+          onClick={() => onChangeLayout('epic')}
           label="Epic"
           icon={<LayoutGrid className="h-3 w-3" />}
           testid="view-toggle-epic"
         />
         <ToggleButton
-          active={view === 'workitem'}
-          onClick={() => onChangeView('workitem')}
+          active={layout === 'workitem'}
+          onClick={() => onChangeLayout('workitem')}
           label="Item"
           icon={<ListChecks className="h-3 w-3" />}
           testid="view-toggle-workitem"
         />
         <ToggleButton
-          active={view === 'list'}
-          onClick={() => onChangeView('list')}
+          active={layout === 'list'}
+          onClick={() => onChangeLayout('list')}
           label="List"
           icon={<List className="h-3 w-3" />}
           testid="view-toggle-list"
@@ -357,29 +385,34 @@ function BoardHeader({
   );
 }
 
-interface PresetSwitcherProps {
-  value: BoardPreset | null;
-  onChange: (p: BoardPreset | null) => void;
+// ViewSwitcher renders one chip per registry entry (gm-uipx.18).
+// Replaces the old PresetSwitcher; the testids keep the
+// `board-preset-*` prefix (with the canonical view ids) so existing
+// e2e selectors that don't carry a strong vocabulary contract on the
+// chip name itself stay green.
+interface ViewSwitcherProps {
+  value: WorkItemView | null;
+  onChange: (id: string | null) => void;
 }
-function PresetSwitcher({ value, onChange }: PresetSwitcherProps) {
+function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
   return (
     <div className="flex items-center gap-1" data-testid="board-preset-switcher">
-      <span className="text-neutral-500">Preset</span>
-      {BOARD_PRESETS.map((p) => (
+      <span className="text-neutral-500">View</span>
+      {WORK_ITEM_VIEWS.map((v) => (
         <button
-          key={p}
+          key={v.id}
           type="button"
-          data-testid={`board-preset-${p}`}
-          data-active={value === p || undefined}
-          onClick={() => onChange(value === p ? null : p)}
+          data-testid={`board-preset-${v.id}`}
+          data-active={value?.id === v.id || undefined}
+          onClick={() => onChange(value?.id === v.id ? null : v.id)}
           className={cn(
             'rounded border px-2 py-0.5 text-xs transition-colors',
-            value === p
+            value?.id === v.id
               ? 'border-sky-700 bg-sky-700 text-white'
               : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800'
           )}
         >
-          {BOARD_PRESET_LABELS[p]}
+          {v.label}
         </button>
       ))}
     </div>
