@@ -207,6 +207,26 @@ type Persona struct {
 	// in the UI. Optional.
 	Icon string `toml:"icon" json:"icon,omitempty"`
 
+	// Personality is the tonal flavor injected into this persona's
+	// system prompt (gm-9rv §1). Optional — the zero value means
+	// "no personality declared". Decorative only (invariant #27);
+	// safe to swap without affecting correctness.
+	Personality Personality `toml:"personality" json:"personality,omitzero"`
+
+	// Perspective is the deterministic lens this persona always
+	// applies (gm-9rv §2). Optional — the zero value means "no
+	// perspective declared". Perspectives never gate state
+	// transitions (invariant #28).
+	Perspective Perspective `toml:"perspective" json:"perspective,omitzero"`
+
+	// Purview declares the domain in which this persona has gate
+	// authority and the phases that authority is active in
+	// (gm-9rv §3). Optional — the zero value means "no purview
+	// declared" (the persona is advisory-only everywhere). The
+	// Manager-mutation-path binding lands with gm-3on; this bead
+	// delivers the type + config surface only.
+	Purview Purview `toml:"purview" json:"purview,omitzero"`
+
 	// Skills lists the Skill IDs this persona ships with. The Skill
 	// registry is the source of truth for what the IDs resolve to;
 	// the loader does NOT validate that every entry is registered
@@ -253,6 +273,174 @@ type Persona struct {
 	// or "" when constructed programmatically (tests). Unexported so
 	// it never leaks into the wire format; surfaced via [Registry.SourcePath].
 	sourcePath string `toml:"-" json:"-"`
+}
+
+// Personality is the tonal flavor injected into a persona's system
+// prompt as voice/tone qualifiers (gm-9rv). Personality is decorative
+// only — invariant #27: two personas with identical Perspective +
+// Purview but different Personalities produce equivalent
+// correctness-affecting output. Safe to experiment with.
+//
+// All fields are optional; the zero value means "no personality
+// declared" and the prompt layer renders nothing for it. The actual
+// injection of Personality into the system prompt lands with gm-3on
+// (Purview-as-gate binding); this bead delivers only the type + TOML
+// surface + API surfacing.
+type Personality struct {
+	// ID is the canonical identifier for this personality flavor
+	// (e.g. "laconic", "warm", "wry"). Free-form so workspaces can
+	// author bespoke personalities; the loader does not enumerate.
+	ID string `toml:"id" json:"id,omitempty"`
+
+	// Description is the prompt-injected voice qualifier — appended
+	// to the system prompt as `Voice: {description}` by the prompt
+	// layer (gm-3on owns the actual injection).
+	Description string `toml:"description" json:"description,omitempty"`
+
+	// Examples are optional few-shot anchors illustrating the voice.
+	// Currently advisory; future skills may splice them.
+	Examples []string `toml:"examples,omitempty" json:"examples,omitempty"`
+}
+
+// IsZero reports whether the personality is the zero value. Used by
+// JSON `omitzero` callers and the registry test fixtures.
+func (p Personality) IsZero() bool {
+	return p.ID == "" && p.Description == "" && len(p.Examples) == 0
+}
+
+// VolunteerMode controls when a persona's Perspective surfaces an
+// inline comment without being explicitly consulted (gm-9rv §2.
+// Perspective). Invariant #28: Perspectives never block — they only
+// produce comments.
+type VolunteerMode string
+
+const (
+	// VolunteerNever — only speaks when explicitly consulted.
+	VolunteerNever VolunteerMode = "never"
+	// VolunteerOnDemand — speaks when the operator asks
+	// "any perspectives?" on a piece of work.
+	VolunteerOnDemand VolunteerMode = "on_demand"
+	// VolunteerOnTrigger — speaks when one of [Perspective.Triggers]
+	// matches the active context (label, area, edge pattern, …).
+	VolunteerOnTrigger VolunteerMode = "on_trigger"
+	// VolunteerAlways — speaks every turn. Use sparingly.
+	VolunteerAlways VolunteerMode = "always"
+)
+
+// Validate checks that v is one of the known volunteer modes. The
+// empty string is treated as "unset" by callers (it normalizes to
+// VolunteerNever in [Persona.normalize]) and is rejected here so a
+// typoed mode doesn't silently fall through to "never".
+func (v VolunteerMode) Validate() error {
+	switch v {
+	case VolunteerNever, VolunteerOnDemand, VolunteerOnTrigger, VolunteerAlways:
+		return nil
+	default:
+		return fmt.Errorf("persona: unknown volunteer_mode %q (want never | on_demand | on_trigger | always)", string(v))
+	}
+}
+
+// Perspective is the deterministic lens a persona always applies when
+// consulted (gm-9rv §2). Every persona has at most one Perspective;
+// the zero value means "no perspective declared".
+//
+// Perspectives never gate state transitions. A persona that wants
+// blocking authority needs a Purview with PurviewBlocking authority
+// in an active phase; without it, opinions are advisory-only
+// (invariant #28).
+type Perspective struct {
+	// Statement is the lens, in human-readable form. E.g.
+	// "design integrity, module boundaries, type-system cleanness,
+	// coupling cost".
+	Statement string `toml:"statement" json:"statement,omitempty"`
+
+	// Triggers are label-or-signal patterns that should surface a
+	// volunteered comment (used when VolunteerMode == on_trigger).
+	// Free-form — the trigger matcher (gm-perspective-volunteer) is
+	// the source of truth for the pattern grammar.
+	Triggers []string `toml:"triggers,omitempty" json:"triggers,omitempty"`
+
+	// VolunteerMode controls when this persona speaks unbidden. The
+	// zero value normalizes to VolunteerNever via [Persona.normalize].
+	VolunteerMode VolunteerMode `toml:"volunteer_mode" json:"volunteer_mode,omitempty"`
+
+	// CostTier names the model tier the dispatcher should route a
+	// volunteered comment through. Free-form so cost tiers can shift
+	// without a schema bump; the design doc names "haiku" (default
+	// for volunteered) | "sonnet" | "opus" (explicit consult).
+	CostTier string `toml:"cost_tier,omitempty" json:"cost_tier,omitempty"`
+}
+
+// IsZero reports whether the perspective is the zero value.
+func (p Perspective) IsZero() bool {
+	return p.Statement == "" && len(p.Triggers) == 0 && p.VolunteerMode == "" && p.CostTier == ""
+}
+
+// Phase names a project-level mode that determines which Purviews are
+// active (gm-9rv §3). The Phase primitive proper lands with gm-jt9 —
+// this bead defines the type so [Purview.ActivePhases] has a typed
+// slot but does NOT enumerate or validate phase values. Treat the
+// type as opaque-string until gm-jt9 ratifies the canonical enum.
+type Phase string
+
+// PurviewAuthority is the gate strength a Purview carries while its
+// phase is active (gm-9rv §3).
+type PurviewAuthority string
+
+const (
+	// PurviewAdvisory — always a Coach; strong opinions, never
+	// blocks. Documentarian-style.
+	PurviewAdvisory PurviewAuthority = "advisory"
+	// PurviewStrong — can block with persona consensus + user
+	// override. Coaches cap here.
+	PurviewStrong PurviewAuthority = "strong"
+	// PurviewBlocking — hard-block in active phases; override
+	// requires nonce + justification. Manager-only.
+	PurviewBlocking PurviewAuthority = "blocking"
+)
+
+// Validate checks that a is one of the known authority tiers. The
+// empty string is treated as "unset" by callers and rejected here.
+func (a PurviewAuthority) Validate() error {
+	switch a {
+	case PurviewAdvisory, PurviewStrong, PurviewBlocking:
+		return nil
+	default:
+		return fmt.Errorf("persona: unknown blocking_authority %q (want advisory | strong | blocking)", string(a))
+	}
+}
+
+// Purview is the domain in which a persona has gate authority
+// (gm-9rv §3). Purviews are phase-conditional (invariant #29):
+// dormant outside their active phases, binding (up to blocking)
+// during them. The zero value means "no purview declared" — the
+// persona has no gate authority anywhere.
+//
+// The Manager-mutation-path binding (Purview-as-gate) lands with
+// gm-3on; this bead delivers only the type + TOML round-trip + API
+// surface. The Project Phase primitive that drives ActivePhases is
+// owned by gm-jt9.
+type Purview struct {
+	// Domain names the gated area, free-form so workspaces can
+	// declare custom domains. The design doc names: design | testing
+	// | auth | release | copy | docs | code | …
+	Domain string `toml:"domain" json:"domain,omitempty"`
+
+	// ActivePhases lists the project phases in which this Purview
+	// is binding. Outside these phases the Purview is dormant —
+	// equivalent to no Purview at all. Free-form Phase strings
+	// pending gm-jt9's enum ratification.
+	ActivePhases []Phase `toml:"active_phases,omitempty" json:"active_phases,omitempty"`
+
+	// BlockingAuthority is the gate strength while ActivePhases
+	// includes the project's current phase. The zero value
+	// normalizes to PurviewAdvisory via [Persona.normalize].
+	BlockingAuthority PurviewAuthority `toml:"blocking_authority" json:"blocking_authority,omitempty"`
+}
+
+// IsZero reports whether the purview is the zero value.
+func (p Purview) IsZero() bool {
+	return p.Domain == "" && len(p.ActivePhases) == 0 && p.BlockingAuthority == ""
 }
 
 // MutationScope bounds where a Manager-variety persona may mutate.
@@ -305,9 +493,22 @@ func (c ContextProvidersConfig) IsZero() bool {
 // Currently: Variety defaults to Coach. Called by the loader after
 // decode and before Validate; tests and external callers should call
 // it explicitly when constructing a Persona in code.
+//
+// PPPP defaults (gm-9rv): a Perspective without a volunteer_mode
+// defaults to "never" (the persona only speaks when consulted), and
+// a Purview without a blocking_authority defaults to "advisory" (the
+// safest cap for an under-specified purview). These defaults only
+// apply when the operator declared the block at all — a fully
+// omitted [perspective] / [purview] block stays the zero value.
 func (p *Persona) normalize() {
 	if p.Variety == "" {
 		p.Variety = VarietyCoach
+	}
+	if !p.Perspective.IsZero() && p.Perspective.VolunteerMode == "" {
+		p.Perspective.VolunteerMode = VolunteerNever
+	}
+	if !p.Purview.IsZero() && p.Purview.BlockingAuthority == "" {
+		p.Purview.BlockingAuthority = PurviewAdvisory
 	}
 }
 
@@ -350,6 +551,19 @@ func (p Persona) Validate() error {
 	}
 	if p.Variety == VarietyManager && len(p.MutationAuthority) == 0 {
 		return fmt.Errorf("persona %q: manager variety must declare at least one mutation_authority", p.ID)
+	}
+	// PPPP enum validation (gm-9rv): only checked when the block was
+	// declared at all — a fully zero-value Perspective / Purview is a
+	// valid "no-op" for a persona that opts out of the new axes.
+	if !p.Perspective.IsZero() {
+		if err := p.Perspective.VolunteerMode.Validate(); err != nil {
+			return fmt.Errorf("persona %q: perspective: %w", p.ID, err)
+		}
+	}
+	if !p.Purview.IsZero() {
+		if err := p.Purview.BlockingAuthority.Validate(); err != nil {
+			return fmt.Errorf("persona %q: purview: %w", p.ID, err)
+		}
 	}
 	return nil
 }
