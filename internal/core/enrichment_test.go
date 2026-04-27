@@ -4,15 +4,15 @@ import "testing"
 
 func TestDispatchStatus_IsValid(t *testing.T) {
 	cases := map[DispatchStatus]bool{
-		"":                         true, // empty = unset, normalised to ready
-		DispatchReady:              true,
-		DispatchAwaitingDesign:     true,
-		DispatchAwaitingVendor:     true,
-		DispatchAwaitingReview:     true,
-		DispatchNotNow:             true,
-		"bogus":                    false,
-		"awaiting-something-else":  false,
-		"READY":                    false, // case-sensitive on purpose
+		"":                        true, // empty = unset, normalised to ready
+		DispatchReady:             true,
+		DispatchAwaitingDesign:    true,
+		DispatchAwaitingVendor:    true,
+		DispatchAwaitingReview:    true,
+		DispatchNotNow:            true,
+		"bogus":                   false,
+		"awaiting-something-else": false,
+		"READY":                   false, // case-sensitive on purpose
 	}
 	for in, want := range cases {
 		if got := in.IsValid(); got != want {

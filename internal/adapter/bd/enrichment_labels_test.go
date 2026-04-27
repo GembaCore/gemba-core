@@ -37,14 +37,14 @@ func TestDispatchStatusFromLabels_FirstCanonicalWins(t *testing.T) {
 		in   []string
 		want core.DispatchStatus
 	}{
-		"unset":            {nil, ""},
-		"ready-explicit":   {[]string{"dispatch:ready"}, core.DispatchReady},
-		"awaiting-design":  {[]string{"dispatch:awaiting-design"}, core.DispatchAwaitingDesign},
-		"awaiting-vendor":  {[]string{"dispatch:awaiting-vendor"}, core.DispatchAwaitingVendor},
-		"awaiting-review":  {[]string{"dispatch:awaiting-review"}, core.DispatchAwaitingReview},
-		"not-now":          {[]string{"dispatch:not-now"}, core.DispatchNotNow},
-		"unknown-dropped":  {[]string{"dispatch:bogus"}, ""},
-		"first-wins":       {[]string{"dispatch:awaiting-vendor", "dispatch:ready"}, core.DispatchAwaitingVendor},
+		"unset":             {nil, ""},
+		"ready-explicit":    {[]string{"dispatch:ready"}, core.DispatchReady},
+		"awaiting-design":   {[]string{"dispatch:awaiting-design"}, core.DispatchAwaitingDesign},
+		"awaiting-vendor":   {[]string{"dispatch:awaiting-vendor"}, core.DispatchAwaitingVendor},
+		"awaiting-review":   {[]string{"dispatch:awaiting-review"}, core.DispatchAwaitingReview},
+		"not-now":           {[]string{"dispatch:not-now"}, core.DispatchNotNow},
+		"unknown-dropped":   {[]string{"dispatch:bogus"}, ""},
+		"first-wins":        {[]string{"dispatch:awaiting-vendor", "dispatch:ready"}, core.DispatchAwaitingVendor},
 		"unknown-then-good": {[]string{"dispatch:bogus", "dispatch:not-now"}, core.DispatchNotNow},
 	}
 	for name, tc := range cases {

@@ -53,6 +53,63 @@ CREATE TABLE IF NOT EXISTS session_profiles (
   KEY idx_session_profiles_assignment (assignment_id)
 );
 
+-- session_intents (gm-v5z2.3)
+--
+-- One row per session carrying the operator-pinned focus directive
+-- (work-planning.md §4 Layer 1.3). Three orthogonal restrictors —
+-- epic_id / label / bead_id_regex — AND together; at least one MUST
+-- be set for a row to exist (an empty intent is the "cleared"
+-- state, represented by the row's absence rather than NULL columns).
+--
+-- Selection (gm-v5z2.7) reads ctx.intent and demotes out-of-intent
+-- candidates by demotion_factor (default 0.4 — set as the column
+-- default so a hand-rolled INSERT picks up the canonical value).
+--
+-- session_id is PK + FK-by-convention to core.Session.id. The
+-- companion lifecycle hook clears the row on session end so a
+-- recycled session id can never inherit a stale intent.
+
+CREATE TABLE IF NOT EXISTS session_intents (
+  session_id          VARCHAR(255) NOT NULL,
+
+  epic_id             VARCHAR(255) NOT NULL DEFAULT '',
+  label               VARCHAR(255) NOT NULL DEFAULT '',
+  bead_id_regex       VARCHAR(512) NOT NULL DEFAULT '',
+  rationale           TEXT,
+
+  demotion_factor     DOUBLE       NOT NULL DEFAULT 0.4,
+
+  created_at          DATETIME(6)  NOT NULL,
+  updated_at          DATETIME(6)  NOT NULL,
+
+  PRIMARY KEY (session_id)
+);
+
+-- session_intent_audit (gm-v5z2.3)
+--
+-- Append-only history of every intent change. Every set/clear via
+-- the CLI or SPA writes a row so the retrospective can attribute
+-- "the session was focused on gm-e3 when this bead landed" without
+-- re-reading the live row (which may have been cleared by then).
+--
+-- prior_json / next_json carry the full Intent struct as JSON so
+-- the retrospective doesn't have to reconstruct the shape from
+-- denormalised columns. Schema additions to Intent ride this without
+-- a migration.
+
+CREATE TABLE IF NOT EXISTS session_intent_audit (
+  id                  BIGINT       NOT NULL AUTO_INCREMENT,
+  session_id          VARCHAR(255) NOT NULL,
+  action              VARCHAR(16)  NOT NULL,
+  prior_json          JSON,
+  next_json           JSON,
+  actor               VARCHAR(255) NOT NULL DEFAULT '',
+  at                  DATETIME(6)  NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_session_intent_audit_session (session_id),
+  KEY idx_session_intent_audit_at (at)
+);
+
 -- scorer_grades (gm-s47n.8.2)
 --
 -- One row per (bead, retrospective run) capturing the comparator
