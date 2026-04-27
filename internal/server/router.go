@@ -21,6 +21,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
+	"github.com/MikeBengtson/gemba/internal/walk"
 )
 
 // healthBusInterval is the ticker cadence for the registry HealthBus
@@ -88,6 +89,15 @@ type Router struct {
 	personaDispatcher *persona.Dispatcher
 	skillRegistry     *corepersona.SkillRegistry
 	personaRegistry   *corepersona.Registry
+
+	// walkStore + walkSources back the /api/v1/walks/* surface
+	// (gm-wgv). walkStore is required for every walk handler; a nil
+	// store returns 503 from each route. walkSources is zero-value-
+	// safe — nil listers contribute zero items to BuildAgenda, which
+	// is the intended state until gm-3jv ships the cross-worker
+	// escalation aggregator. Bind via Router.AttachWalk.
+	walkStore   walk.Store
+	walkSources walk.Sources
 
 	mux http.Handler
 }
@@ -284,6 +294,28 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// the operator acted on.
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/consults/{id}/apply/{idx}", r.applyConsult)
+
+		// gm-wgv: Gemba walk HTTP surface. Mounted under /api/v1/
+		// per the design's §API table; rest of /api stays unversioned
+		// for now. The "verb" routes (walks:start, walks:recent) sit
+		// alongside the "resource" routes (walks/{id}/...) — colon
+		// is a literal path-segment character in chi, not a param
+		// marker. Walk routes do NOT carry a nonce gate — the store
+		// operations are in-memory + low-blast-radius today, and the
+		// /events stream already dedupes by GembaEvent.ID. Add
+		// requireConfirmNonce when /turn or /decide grows persona-
+		// applier side effects (gm-4p6).
+		api.Post("/v1/walks:start", r.startWalk)
+		api.Get("/v1/walks:recent", r.listRecentWalks)
+		api.Get("/v1/walks/{id}", r.getWalk)
+		api.Post("/v1/walks/{id}/agenda", r.addWalkAgenda)
+		api.Patch("/v1/walks/{id}/agenda/{item}", r.patchWalkAgenda)
+		api.Post("/v1/walks/{id}/turn", r.addWalkTurn)
+		api.Post("/v1/walks/{id}/decide/{item}", r.decideWalkItem)
+		api.Post("/v1/walks/{id}/consult", r.consultWalk)
+		api.Post("/v1/walks/{id}/pause", r.pauseWalk)
+		api.Post("/v1/walks/{id}/resume", r.resumeWalk)
+		api.Post("/v1/walks/{id}/end", r.endWalk)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {
