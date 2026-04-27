@@ -11,7 +11,8 @@
 // executable contract anchor so when the feature lands, the DoD is
 // already enforceable.
 
-import { test } from '../../fixtures/server';
+import { readFileSync } from 'node:fs';
+import { test, expect } from '../../fixtures/server';
 
 test.fixme(
   'drag epic to In Progress shows a Toast and does NOT open a confirm dialog @modes',
@@ -45,13 +46,22 @@ test.fixme(
   }
 );
 
-test.fixme(
-  '@deep server respects unsupervised mode in audit-log entries @modes',
-  () => {
-    /* fixme: deep-mode variant. The ui-spec implies the mode is the
-       UI's responsibility (server is mode-agnostic, just nonce-gates
-       writes), but if the server records the operator's mode for
-       audit purposes the assertion lives here. Confirm with backend
-       owner before flipping into a real test. */
-  }
-);
+// gm-5v8v.11.1 — fixture-level deep test. The Go backend's audit log
+// is mode-agnostic today; this spec pins the persistence contract so
+// when the audit envelope grows a mode field, the file the server
+// reads at boot is already known-good. See the parallel spec in
+// supervised.spec.ts and managed.spec.ts.
+test.describe('@deep server respects unsupervised mode @modes', () => {
+  test.skip(({ backend }) => backend !== 'real', 'deep-only — needs a real listener');
+
+  test('fixture writes unsupervised workspace.toml and gemba boots cleanly', async ({ authServer }) => {
+    const srv = await authServer({ mode: 'unsupervised' });
+    expect(srv.mode).toBe('unsupervised');
+    expect(srv.workspaceTomlPath).toBeTruthy();
+    const body = readFileSync(srv.workspaceTomlPath as string, 'utf8');
+    expect(body).toMatch(/^mode = "unsupervised"$/m);
+
+    const res = await fetch(`${srv.baseURL}/api/health`);
+    expect(res.status).toBe(200);
+  });
+});

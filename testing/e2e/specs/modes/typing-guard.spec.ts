@@ -15,7 +15,8 @@
 // input before the confirm button enables. Catches accidental clicks
 // past muscle-memory.
 
-import { test } from '../../fixtures/server';
+import { readFileSync } from 'node:fs';
+import { test, expect } from '../../fixtures/server';
 
 const DESTRUCTIVE_ACTIONS = [
   'restore checkpoint',
@@ -62,12 +63,27 @@ test.fixme(
   }
 );
 
-test.fixme(
-  '@deep server enforces destructive-action additional auth on every mode @modes',
-  () => {
-    /* fixme: typing-guard is UI; the server-side teeth are a separate
-       gate (e.g. an explicit destructive-confirm header on the
-       destructive endpoints). When that lands, this asserts the
-       header is required regardless of nonce. */
+// gm-5v8v.11.1 — fixture-level deep test. typing-guard is a cross-mode
+// invariant ("destructive actions require typing-guard regardless of
+// mode"). The server-side teeth (a destructive-confirm header on
+// destructive endpoints) are not built. The fixture-level promise we
+// CAN pin: every workspace mode the SPA can run under boots cleanly
+// against the same `gemba serve` infra and persists its mode. When
+// the destructive-confirm gate ships, the new assertions land
+// alongside this anchor.
+test.describe('@deep server enforces destructive-action gate on every mode @modes', () => {
+  test.skip(({ backend }) => backend !== 'real', 'deep-only — needs a real listener');
+
+  for (const mode of ['unsupervised', 'supervised', 'managed'] as const) {
+    test(`workspace.toml persists mode=${mode} and gemba boots cleanly`, async ({ authServer }) => {
+      const srv = await authServer({ mode });
+      expect(srv.mode).toBe(mode);
+      expect(srv.workspaceTomlPath).toBeTruthy();
+      const body = readFileSync(srv.workspaceTomlPath as string, 'utf8');
+      expect(body).toMatch(new RegExp(`^mode = "${mode}"$`, 'm'));
+
+      const res = await fetch(`${srv.baseURL}/api/health`);
+      expect(res.status).toBe(200);
+    });
   }
-);
+});

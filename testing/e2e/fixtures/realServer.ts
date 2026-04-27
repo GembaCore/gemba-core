@@ -23,11 +23,20 @@
 // and tests fast. Tests reset bead state between runs via BdClient.
 
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
+
+/**
+ * Workspace mode (gm-5v8v.11.1) — persisted in
+ * `<beadsDir>/.gemba/workspace.toml` BEFORE `gemba serve` starts so the
+ * future workspace-config reader (mode-gated nonce / audit-chain
+ * behavior) sees a stable value at boot. Mirrors the fixture-side
+ * WorkspaceMode in fixtures/modes.ts.
+ */
+export type WorkspaceMode = 'unsupervised' | 'supervised' | 'managed';
 
 export type RealServer = {
   /** http://127.0.0.1:<port> — pass to Playwright as baseURL. */
@@ -60,6 +69,22 @@ export type RealServer = {
   env: NodeJS.ProcessEnv;
   /** Captured server stderr — handy when a spec fails. */
   stderr(): string;
+  /**
+   * Workspace mode the fixture wrote into `.gemba/workspace.toml`
+   * before spawning gemba (gm-5v8v.11.1). Undefined when the spec did
+   * not pass `mode` — the fixture does not write a default file in
+   * that case so the caller's tempdir is byte-identical to the
+   * pre-gm-5v8v.11.1 layout.
+   */
+  mode?: WorkspaceMode;
+  /**
+   * Absolute path of `.gemba/workspace.toml` the fixture wrote
+   * (gm-5v8v.11.1). Specs assert on the persisted file via this path
+   * — the contract the deep-mode tests exercise is "the file gemba
+   * sees at boot lives here and contains the chosen mode". Undefined
+   * when `mode` was not passed.
+   */
+  workspaceTomlPath?: string;
   /** Kill the server + remove the tempdir. Idempotent. */
   dispose(): Promise<void>;
 };
@@ -102,6 +127,18 @@ export type SpinOptions = {
    * loopback / bind-policy negative tests (gm-99g).
    */
   expectBootFailure?: boolean;
+
+  // gm-5v8v.11.1 — workspace-mode fixture
+  /**
+   * Workspace mode to persist into `<beadsDir>/.gemba/workspace.toml`
+   * BEFORE spawning `gemba serve`. The file is written with a single
+   * `mode = "<value>"` line (plus a fixture-attribution comment) so a
+   * future workspace-config reader sees a stable mode at boot.
+   *
+   * Omit to keep the pre-gm-5v8v.11.1 behavior (no .gemba/ created by
+   * the fixture).
+   */
+  mode?: WorkspaceMode;
 };
 
 /** Spin a real gemba serve instance against a per-worker beads workspace. */
@@ -177,6 +214,24 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     throw err;
   }
 
+  // gm-5v8v.11.1: persist the workspace mode BEFORE the server boots.
+  // Future readers (mode-gated nonce + audit-chain) parse this file
+  // during gemba's startup; writing AFTER spawn would race the boot.
+  // The .gemba directory lives alongside .beads in the workspace root,
+  // matching the convention used by .gemba/personas, .gemba/agents.toml,
+  // and .gemba/repositories elsewhere in the codebase.
+  let workspaceTomlPath: string | undefined;
+  if (opts.mode) {
+    const gembaDir = join(baseDir, '.gemba');
+    mkdirSync(gembaDir, { recursive: true });
+    workspaceTomlPath = join(gembaDir, 'workspace.toml');
+    const body =
+      `# gm-5v8v.11.1 — written by testing/e2e/fixtures/realServer.ts\n` +
+      `# Workspace mode for the deep-modes spec matrix. Do not edit by hand.\n` +
+      `mode = "${opts.mode}"\n`;
+    writeFileSync(workspaceTomlPath, body, { encoding: 'utf8' });
+  }
+
   const listen = opts.listen ?? '127.0.0.1';
   const port = await pickFreePort();
 
@@ -230,6 +285,8 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
       env: isolatedEnv,
       exitCode: exitInfo.code,
       exitSignal: exitInfo.signal,
+      mode: opts.mode,
+      workspaceTomlPath,
       stderr: () => stderrChunks.join(''),
       dispose: async () => { /* no-op — already cleaned */ },
     };
@@ -269,6 +326,8 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     pid: child.pid ?? -1,
     authToken,
     env: isolatedEnv,
+    mode: opts.mode,
+    workspaceTomlPath,
     stderr: () => stderrChunks.join(''),
     dispose: async () => {
       if (disposed) return;

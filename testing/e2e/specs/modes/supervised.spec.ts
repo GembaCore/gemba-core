@@ -9,7 +9,8 @@
 // dialogs, or batch summaries yet. Every test fixme'd; this file
 // documents the supervised-mode contract.
 
-import { test } from '../../fixtures/server';
+import { readFileSync } from 'node:fs';
+import { test, expect } from '../../fixtures/server';
 
 test.fixme(
   'single-card drag shows an inline confirm chip on the row @modes',
@@ -54,11 +55,23 @@ test.fixme(
   }
 );
 
-test.fixme(
-  '@deep server respects supervised mode in nonce + audit chain @modes',
-  () => {
-    /* fixme: deep-mode parity check — same as unsupervised, the
-       server today is mode-agnostic. Defer until the backend owner
-       confirms whether mode is part of the audit envelope. */
-  }
-);
+// gm-5v8v.11.1 — fixture-level deep test. The Go backend's nonce +
+// audit chain is mode-agnostic today; the contract this spec pins is
+// the fixture-level guarantee that "supervised" reaches the persisted
+// workspace.toml gemba sees at boot. When the backend grows mode-aware
+// audit envelopes, the assertion grows here alongside the fixture
+// anchor — the spec name stays.
+test.describe('@deep server respects supervised mode @modes', () => {
+  test.skip(({ backend }) => backend !== 'real', 'deep-only — needs a real listener');
+
+  test('fixture writes supervised workspace.toml and gemba boots cleanly', async ({ authServer }) => {
+    const srv = await authServer({ mode: 'supervised' });
+    expect(srv.mode).toBe('supervised');
+    expect(srv.workspaceTomlPath).toBeTruthy();
+    const body = readFileSync(srv.workspaceTomlPath as string, 'utf8');
+    expect(body).toMatch(/^mode = "supervised"$/m);
+
+    const res = await fetch(`${srv.baseURL}/api/health`);
+    expect(res.status).toBe(200);
+  });
+});

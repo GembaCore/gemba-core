@@ -17,18 +17,33 @@
 // stay backend-agnostic and run identically against either backend.
 
 import { test as base, expect, type Page, type Route } from '@playwright/test';
-import { spinRealServer, type AuthMode, type RealServer } from './realServer';
+import { spinRealServer, type AuthMode, type RealServer, type WorkspaceMode } from './realServer';
 
 /**
  * Options for the per-test authServer factory (gm-5v8v.12.1). Mirrors
  * the parts of SpinOptions auth specs care about; everything else
  * defaults from the fixture.
+ *
+ * gm-5v8v.11.1: `mode` is plumbed here too so deep-mode specs in
+ * specs/modes/** can drive the same factory rather than introducing a
+ * parallel modeServer one. Naming stays `authServer` because every
+ * surface a per-test gemba spawn cares about (auth, listen, mode,
+ * yolo) is a knob on the same one server — keeping a single factory
+ * keeps spec teardown predictable.
  */
 export type AuthServerOptions = {
   auth?: AuthMode;
   listen?: string;
   dangerouslySkipPermissions?: boolean;
   expectBootFailure?: boolean;
+  /**
+   * Workspace mode (gm-5v8v.11.1). When set, the fixture writes
+   * `.gemba/workspace.toml` with `mode = "<value>"` BEFORE spawning
+   * gemba so future workspace-config readers see a stable mode at
+   * boot. Specs that don't pass `mode` get the pre-gm-5v8v.11.1
+   * layout (no .gemba/ in the tempdir).
+   */
+  mode?: WorkspaceMode;
 };
 import { BdClient } from './bdClient';
 import { createWorkPlane, type WorkPlaneStore } from './workplane';
