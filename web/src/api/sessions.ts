@@ -60,9 +60,32 @@ export async function listSessions(filter?: SessionListFilter): Promise<Session[
   return env.sessions ?? [];
 }
 
-export interface StartSessionRequest {
+// StartSessionRequest is the discriminated wire shape POST /api/sessions
+// accepts. Two variants:
+//
+//   { kind: "bead", bead_id, agent_type, title?, workspace? } — the
+//     historical bead-driven spawn. Default when `kind` is omitted so
+//     existing callers keep working.
+//
+//   { kind: "manual", agent_type, repository_id, prompt, persona_id?,
+//     title?, workspace? } — gm-hmqj. The launcher uses this when the
+//     operator wants to start a session ad-hoc with no bead in flight.
+export type StartSessionRequest = StartBeadSessionRequest | StartManualSessionRequest;
+
+export interface StartBeadSessionRequest {
+  kind?: 'bead';
   bead_id: string;
   agent_type: string;
+  title?: string;
+  workspace?: string;
+}
+
+export interface StartManualSessionRequest {
+  kind: 'manual';
+  agent_type: string;
+  repository_id: string;
+  prompt: string;
+  persona_id?: string;
   title?: string;
   workspace?: string;
 }

@@ -12,8 +12,11 @@
 package server
 
 import (
+	"crypto/rand"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -64,15 +67,32 @@ func (r *Router) listSessions(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// startSessionRequest is the wire body of POST /api/sessions. The
-// operator picks a bead + agent type from the SPA dialog; the server
-// turns that into the SessionPrompt the adaptor expects (workspace
-// auto-provisioned by the adaptor when omitted).
+// startSessionRequest is the wire body of POST /api/sessions. Two
+// shapes share one endpoint, discriminated by Kind:
+//
+//	"bead" (default, back-compat): operator picks bead_id + agent_type;
+//	  the bead's id doubles as the AssignmentID so the session row is
+//	  operator-meaningful.
+//
+//	"manual" (gm-hmqj): no bead. Operator picks agent_type + a
+//	  repository_id (working dir) + a free-form prompt. The server
+//	  mints a synthetic AssignmentID — "manual-<unixnano>-<rand4>" —
+//	  so the orchestrator can still key on it without colliding with
+//	  real bead ids.
 type startSessionRequest struct {
-	BeadID    string `json:"bead_id"`
+	// Kind selects "bead" (default) or "manual". Empty defaults to
+	// "bead" so existing /api/sessions callers keep working.
+	Kind      string `json:"kind,omitempty"`
+	BeadID    string `json:"bead_id,omitempty"`
 	AgentType string `json:"agent_type"`
 	Title     string `json:"title,omitempty"`
 	Workspace string `json:"workspace,omitempty"`
+
+	// Manual-mode fields. Required when Kind == "manual"; ignored
+	// otherwise.
+	PersonaID    string `json:"persona_id,omitempty"`
+	RepositoryID string `json:"repository_id,omitempty"`
+	Prompt       string `json:"prompt,omitempty"`
 }
 
 // startSession handles POST /api/sessions. Wraps OrchestrationPlane's
@@ -90,10 +110,28 @@ func (r *Router) startSession(w http.ResponseWriter, req *http.Request) {
 	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error":   "invalid_body",
-			"message": "request body must be JSON {bead_id, agent_type}",
+			"message": "request body must be JSON {kind, bead_id|persona_id+repository_id+prompt, agent_type}",
 		})
 		return
 	}
+	kind := body.Kind
+	if kind == "" {
+		kind = "bead"
+	}
+	switch kind {
+	case "bead":
+		r.startBeadSession(w, req, body)
+	case "manual":
+		r.startManualSession(w, req, body)
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":   "invalid_kind",
+			"message": `kind must be "bead" or "manual"`,
+		})
+	}
+}
+
+func (r *Router) startBeadSession(w http.ResponseWriter, req *http.Request, body startSessionRequest) {
 	if body.BeadID == "" || body.AgentType == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error":   "missing_field",
@@ -124,6 +162,63 @@ func (r *Router) startSession(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, sess)
+}
+
+func (r *Router) startManualSession(w http.ResponseWriter, req *http.Request, body startSessionRequest) {
+	if body.AgentType == "" || body.RepositoryID == "" || body.Prompt == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":   "missing_field",
+			"message": "manual session requires agent_type + repository_id + prompt",
+		})
+		return
+	}
+	if body.BeadID != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error":   "unexpected_field",
+			"message": `bead_id must be empty when kind="manual" (use kind="bead" to dispatch a bead-driven session)`,
+		})
+		return
+	}
+	nonce := req.Header.Get(ConfirmHeader)
+	prompt := core.SessionPrompt{
+		Text: body.Prompt,
+		Extension: map[string]any{
+			"gemba:kind":          "manual",
+			"gemba:agent_type":    body.AgentType,
+			"gemba:repository_id": body.RepositoryID,
+			"gemba:nonce":         nonce,
+		},
+	}
+	if body.PersonaID != "" {
+		prompt.Extension["gemba:persona_id"] = body.PersonaID
+	}
+	if body.Workspace != "" {
+		prompt.Extension["gemba:workspace"] = body.Workspace
+	}
+	if body.Title != "" {
+		prompt.Extension["gemba:title"] = body.Title
+	}
+	// Synthetic assignment id so a manual session is keyable without
+	// colliding with a bead id. The "manual-" prefix lets downstream
+	// readers (audit log, retro pipeline) detect manual sessions
+	// without inspecting the prompt extensions.
+	assignmentID := newManualAssignmentID()
+	sess, err := r.host.OrchestrationPlane().StartSession(req.Context(), assignmentID, prompt)
+	if err != nil {
+		httperr.WriteError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, sess)
+}
+
+// newManualAssignmentID mints a unique id for a manual session.
+// Format: "manual-<unixnano>-<4 hex chars>". The unixnano keeps it
+// monotonic per process; the random suffix guards against same-
+// nano collisions when a script fires two starts back-to-back.
+func newManualAssignmentID() string {
+	var buf [2]byte
+	_, _ = rand.Read(buf[:])
+	return fmt.Sprintf("manual-%d-%x", time.Now().UnixNano(), buf)
 }
 
 // endSession handles DELETE /api/sessions/{id}. The mode comes from a

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -201,4 +202,157 @@ func (s *endSessionStub) EndSession(_ context.Context, id string, mode core.Sess
 	s.gotID = id
 	s.gotMode = mode
 	return core.Session{ID: id, Status: core.SessionCompleted}, nil
+}
+
+// startSessionStub captures every StartSession call so the manual-
+// session tests can assert on the synthetic AssignmentID + threaded
+// SessionPrompt without real adaptor state.
+type startSessionStub struct {
+	*testadaptors.FakeOrchestrationPlane
+	gotAssignment string
+	gotPrompt     core.SessionPrompt
+}
+
+func (s *startSessionStub) StartSession(_ context.Context, assignmentID string, prompt core.SessionPrompt) (core.Session, error) {
+	s.gotAssignment = assignmentID
+	s.gotPrompt = prompt
+	return core.Session{
+		ID:           "sess-" + assignmentID,
+		AssignmentID: assignmentID,
+		Status:       core.SessionReady,
+		StartedAt:    time.Now(),
+	}, nil
+}
+
+// gm-hmqj — manual session launcher path.
+
+func TestStartSession_ManualHappyPath(t *testing.T) {
+	op := testadaptors.NewFakeOrchestrationPlane(core.TransportAPI)
+	stub := &startSessionStub{FakeOrchestrationPlane: op}
+	h := newRouterWithOrch(t, stub)
+
+	body := bytes.NewBufferString(`{
+		"kind": "manual",
+		"agent_type": "claude",
+		"persona_id": "coach",
+		"repository_id": "gemba",
+		"prompt": "Explore the auth subsystem"
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", body)
+	req.Header.Set(ConfirmHeader, "nonce-manual-1")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.HasPrefix(stub.gotAssignment, "manual-") {
+		t.Errorf("assignment id should be synthetic and prefixed; got %q", stub.gotAssignment)
+	}
+	if stub.gotPrompt.Text != "Explore the auth subsystem" {
+		t.Errorf("prompt text not threaded; got %q", stub.gotPrompt.Text)
+	}
+	if stub.gotPrompt.Extension["gemba:kind"] != "manual" {
+		t.Errorf("manual marker missing from prompt extension: %+v", stub.gotPrompt.Extension)
+	}
+	if stub.gotPrompt.Extension["gemba:repository_id"] != "gemba" {
+		t.Errorf("repository_id not threaded: %+v", stub.gotPrompt.Extension)
+	}
+	if stub.gotPrompt.Extension["gemba:persona_id"] != "coach" {
+		t.Errorf("persona_id not threaded: %+v", stub.gotPrompt.Extension)
+	}
+}
+
+func TestStartSession_ManualMissingPrompt_400(t *testing.T) {
+	op := testadaptors.NewFakeOrchestrationPlane(core.TransportAPI)
+	h := newRouterWithOrch(t, op)
+	body := bytes.NewBufferString(`{
+		"kind": "manual",
+		"agent_type": "claude",
+		"repository_id": "gemba"
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", body)
+	req.Header.Set(ConfirmHeader, "nonce-manual-2")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400; got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !contains(rec.Body.String(), "missing_field") {
+		t.Errorf("envelope missing missing_field code: %s", rec.Body.String())
+	}
+}
+
+func TestStartSession_ManualMissingRepository_400(t *testing.T) {
+	op := testadaptors.NewFakeOrchestrationPlane(core.TransportAPI)
+	h := newRouterWithOrch(t, op)
+	body := bytes.NewBufferString(`{
+		"kind": "manual",
+		"agent_type": "claude",
+		"prompt": "do a thing"
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", body)
+	req.Header.Set(ConfirmHeader, "nonce-manual-3")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400; got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestStartSession_ManualWithBeadID_400(t *testing.T) {
+	// kind=manual + bead_id is contradictory — surface a clear error
+	// instead of silently dropping one of the fields.
+	op := testadaptors.NewFakeOrchestrationPlane(core.TransportAPI)
+	h := newRouterWithOrch(t, op)
+	body := bytes.NewBufferString(`{
+		"kind": "manual",
+		"agent_type": "claude",
+		"repository_id": "gemba",
+		"prompt": "x",
+		"bead_id": "gm-1"
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", body)
+	req.Header.Set(ConfirmHeader, "nonce-manual-4")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400; got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !contains(rec.Body.String(), "unexpected_field") {
+		t.Errorf("envelope should call out unexpected_field: %s", rec.Body.String())
+	}
+}
+
+func TestStartSession_UnknownKind_400(t *testing.T) {
+	op := testadaptors.NewFakeOrchestrationPlane(core.TransportAPI)
+	h := newRouterWithOrch(t, op)
+	body := bytes.NewBufferString(`{"kind":"hybrid","agent_type":"claude"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/sessions", body)
+	req.Header.Set(ConfirmHeader, "nonce-manual-5")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400; got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !contains(rec.Body.String(), "invalid_kind") {
+		t.Errorf("envelope should call out invalid_kind: %s", rec.Body.String())
+	}
+}
+
+func TestNewManualAssignmentID_Unique(t *testing.T) {
+	// Same-tick collision guard: two ids minted back-to-back must
+	// differ even when UnixNano is identical.
+	a := newManualAssignmentID()
+	b := newManualAssignmentID()
+	if a == b {
+		t.Errorf("two ids collided: %q", a)
+	}
+	if !strings.HasPrefix(a, "manual-") || !strings.HasPrefix(b, "manual-") {
+		t.Errorf("ids missing manual- prefix: %q %q", a, b)
+	}
 }
