@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docs docs-dev docs-install
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -189,7 +189,22 @@ image-build-only: dist-sentinel ## smoke-test ko config (single-arch, local, no 
 	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
 	$(KO_ENV) ko build --bare --tags=$(COMMIT) --push=false --platform=linux/amd64 ./cmd/gemba
 
+## --- Docs site (gm-e14.4) ---
+##
+## The operator-facing docs site (Astro Starlight) lives under
+## `docs-site/`. Source markdown stays in `docs/` — the docs-site
+## sync step mirrors it into the build at `pnpm build` time.
+
+docs-install: ## install docs-site dependencies
+	cd docs-site && pnpm install
+
+docs-dev: docs-install ## run the docs site locally (http://localhost:4321/gemba/)
+	cd docs-site && pnpm dev
+
+docs: docs-install ## build the docs site to docs-site/dist
+	cd docs-site && pnpm build
+
 ## --- Housekeeping ---
 
 clean: ## remove build artifacts
-	rm -rf bin/ dist/ web/dist/* web/node_modules
+	rm -rf bin/ dist/ web/dist/* web/node_modules docs-site/dist docs-site/node_modules docs-site/.astro docs-site/src/content/docs

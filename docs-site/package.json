@@ -1,0 +1,21 @@
+{
+  "name": "gemba-docs-site",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Operator-facing docs site for gemba (Astro Starlight). Source markdown stays in ../docs.",
+  "scripts": {
+    "sync": "node scripts/sync-docs.mjs",
+    "dev": "pnpm run sync && astro dev",
+    "start": "pnpm run sync && astro dev",
+    "build": "pnpm run sync && astro build",
+    "preview": "astro preview",
+    "astro": "astro",
+    "clean": "rm -rf dist .astro src/content/docs/*"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.30.6",
+    "astro": "^5.1.5",
+    "sharp": "^0.33.5"
+  }
+}
