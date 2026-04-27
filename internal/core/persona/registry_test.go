@@ -315,7 +315,7 @@ func TestLoadRegistry_SeedFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadRegistry: %v", err)
 	}
-	want := []string{"documentarian", "project-manager"}
+	want := []string{"deployment-engineer", "documentarian", "project-manager"}
 	for _, id := range want {
 		p, ok := r.Get(id)
 		if !ok {
@@ -565,6 +565,106 @@ blocking_authority = "veto"
 				t.Errorf("error = %v, want substring %q", err, tc.wantSub)
 			}
 		})
+	}
+}
+
+// gm-lq1: a persona TOML with a full [output] table parses correctly
+// and round-trips every sub-field.
+func TestOutput_FullTableParses(t *testing.T) {
+	dir := t.TempDir()
+	body := minimalTOML + `
+[output]
+validation = "jsonl_schema"
+schema_ref = "/api/v1/skills/epic_order/output_schema.json"
+sharing = "audit_only"
+retention_days = 90
+redact_before_sharing = ["api_keys", "internal_urls"]
+`
+	path := writeFile(t, dir, "tester.toml", body)
+	p, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if p.Output.Validation != OutputValidationJSONLSchema {
+		t.Errorf("Output.Validation = %q, want jsonl_schema", p.Output.Validation)
+	}
+	if p.Output.SchemaRef != "/api/v1/skills/epic_order/output_schema.json" {
+		t.Errorf("Output.SchemaRef = %q, want schema path", p.Output.SchemaRef)
+	}
+	if p.Output.Sharing != OutputSharingAuditOnly {
+		t.Errorf("Output.Sharing = %q, want audit_only", p.Output.Sharing)
+	}
+	if p.Output.RetentionDays != 90 {
+		t.Errorf("Output.RetentionDays = %d, want 90", p.Output.RetentionDays)
+	}
+	if got := p.Output.RedactBeforeSharing; len(got) != 2 || got[0] != "api_keys" || got[1] != "internal_urls" {
+		t.Errorf("Output.RedactBeforeSharing = %v, want [api_keys internal_urls]", got)
+	}
+}
+
+// gm-lq1: a persona TOML with no [output] table loads with the zero
+// value. Existing personas (project-manager, documentarian) MUST keep
+// loading without modification.
+func TestOutput_OmittedTableYieldsZero(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "tester.toml", minimalTOML)
+	p, err := LoadFile(path)
+	if err != nil {
+		t.Fatalf("LoadFile: %v", err)
+	}
+	if !p.Output.IsZero() {
+		t.Errorf("Output = %+v, want zero", p.Output)
+	}
+}
+
+// gm-lq1: unknown output.validation enum value is rejected at load.
+func TestOutput_UnknownValidationRejected(t *testing.T) {
+	dir := t.TempDir()
+	body := minimalTOML + `
+[output]
+validation = "bogus_shape"
+`
+	path := writeFile(t, dir, "tester.toml", body)
+	_, err := LoadFile(path)
+	if err == nil {
+		t.Fatal("expected error: unknown output.validation")
+	}
+	if !strings.Contains(err.Error(), "output.validation") {
+		t.Errorf("error = %v, want mention of output.validation", err)
+	}
+}
+
+// gm-lq1: unknown output.sharing enum value is rejected at load.
+func TestOutput_UnknownSharingRejected(t *testing.T) {
+	dir := t.TempDir()
+	body := minimalTOML + `
+[output]
+sharing = "everyone"
+`
+	path := writeFile(t, dir, "tester.toml", body)
+	_, err := LoadFile(path)
+	if err == nil {
+		t.Fatal("expected error: unknown output.sharing")
+	}
+	if !strings.Contains(err.Error(), "output.sharing") {
+		t.Errorf("error = %v, want mention of output.sharing", err)
+	}
+}
+
+// gm-lq1: negative output.retention_days is rejected at load.
+func TestOutput_NegativeRetentionDaysRejected(t *testing.T) {
+	dir := t.TempDir()
+	body := minimalTOML + `
+[output]
+retention_days = -7
+`
+	path := writeFile(t, dir, "tester.toml", body)
+	_, err := LoadFile(path)
+	if err == nil {
+		t.Fatal("expected error: negative retention_days")
+	}
+	if !strings.Contains(err.Error(), "retention_days") {
+		t.Errorf("error = %v, want mention of retention_days", err)
 	}
 }
 

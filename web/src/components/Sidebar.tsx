@@ -10,6 +10,8 @@ import {
   Mail,
   Terminal,
   CircuitBoard,
+  Settings,
+  GitCompare,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,7 +29,9 @@ const items: Item[] = [
   { to: '/insights', label: 'Insights', Icon: Sparkles },
   { to: '/escalations', label: 'Escalations', Icon: AlertTriangle },
   { to: '/capabilities', label: 'Capability Browser', Icon: Boxes },
+  { to: '/drift', label: 'Drift', Icon: GitCompare },
   { to: '/mail', label: 'Mail', Icon: Mail, gated: true },
+  { to: '/settings', label: 'Settings', Icon: Settings },
 ];
 
 export function Sidebar() {

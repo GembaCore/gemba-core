@@ -270,6 +270,17 @@ type Persona struct {
 	// substitutes at consult time (workspace_name, role, etc.).
 	SystemPrompt string `toml:"system_prompt" json:"system_prompt"`
 
+	// Output declares how the persona's response is shaped and who can
+	// see past invocations. Conflating this with SystemPrompt makes
+	// persona config noisy and unsafe — the prompt is about *what to
+	// think*, validation is about *how the response is shaped*, and
+	// sharing is about *who can see past invocations* (gm-lq1).
+	//
+	// Optional: the zero value means "use system defaults". Runtime
+	// consumers (PromptEnvelope wiring, PersonaConsultRecord recording,
+	// /insights/personas gating) land in follow-up beads.
+	Output OutputPolicy `toml:"output" json:"output,omitzero"`
+
 	// sourcePath is the filesystem path the persona was loaded from,
 	// or "" when constructed programmatically (tests). Unexported so
 	// it never leaks into the wire format; surfaced via [Registry.SourcePath].
@@ -478,6 +489,121 @@ type BudgetPolicy struct {
 	MaxPerDayDollars        float64 `toml:"max_per_day_dollars" json:"max_per_day_dollars,omitempty"`
 }
 
+// OutputValidation names how a persona's response is structurally
+// validated before it is recorded or surfaced (gm-lq1). Empty means
+// "use system default" — the loader treats zero as valid.
+type OutputValidation string
+
+const (
+	// OutputValidationJSONLSchema — each line is a JSON object
+	// validated against the Skill's schema_ref.
+	OutputValidationJSONLSchema OutputValidation = "jsonl_schema"
+	// OutputValidationMarkdownStructural — markdown with a structural
+	// shape (headings, lists) the consumer parses.
+	OutputValidationMarkdownStructural OutputValidation = "markdown_structural"
+	// OutputValidationJSONObject — a single JSON object validated
+	// against the Skill's schema_ref.
+	OutputValidationJSONObject OutputValidation = "json_object"
+	// OutputValidationFreeForm — opaque string; no structural
+	// validation applied.
+	OutputValidationFreeForm OutputValidation = "free_form"
+)
+
+// Validate checks v is one of the known validations or empty (which
+// means "use system default").
+func (v OutputValidation) Validate() error {
+	switch v {
+	case "", OutputValidationJSONLSchema, OutputValidationMarkdownStructural,
+		OutputValidationJSONObject, OutputValidationFreeForm:
+		return nil
+	default:
+		return fmt.Errorf("persona: unknown output.validation %q (want jsonl_schema | markdown_structural | json_object | free_form)", v)
+	}
+}
+
+// OutputSharing names who can see past invocations of this persona
+// via the /insights/personas surface (gm-lq1). Empty means "use
+// system default" — the loader treats zero as valid.
+type OutputSharing string
+
+const (
+	// OutputSharingAuditOnly — visible only to the audit log; not
+	// surfaced in /insights/personas.
+	OutputSharingAuditOnly OutputSharing = "audit_only"
+	// OutputSharingPublic — visible to anyone with workspace access.
+	OutputSharingPublic OutputSharing = "public"
+	// OutputSharingTeam — visible to members of the persona's team.
+	OutputSharingTeam OutputSharing = "team"
+	// OutputSharingPrivate — visible only to the invoking operator.
+	OutputSharingPrivate OutputSharing = "private"
+)
+
+// Validate checks s is one of the known sharing modes or empty.
+func (s OutputSharing) Validate() error {
+	switch s {
+	case "", OutputSharingAuditOnly, OutputSharingPublic,
+		OutputSharingTeam, OutputSharingPrivate:
+		return nil
+	default:
+		return fmt.Errorf("persona: unknown output.sharing %q (want audit_only | public | team | private)", s)
+	}
+}
+
+// OutputPolicy is the per-persona output validation + sharing config
+// (gm-lq1). All fields are optional; the zero value means "use system
+// defaults" for every dimension. Runtime consumers (PromptEnvelope,
+// PersonaConsultRecord, /insights/personas) land in follow-up beads.
+type OutputPolicy struct {
+	// Validation declares the structural shape the response must take.
+	// Empty defers to the system default for the persona's skills.
+	Validation OutputValidation `toml:"validation" json:"validation,omitempty"`
+
+	// SchemaRef points at the JSON Schema (or schema-like asset) the
+	// validator consults. Free-form path/URL — the validator
+	// dereferences at consult time.
+	SchemaRef string `toml:"schema_ref" json:"schema_ref,omitempty"`
+
+	// Sharing declares who can see past invocations of this persona.
+	// Empty defers to the system default.
+	Sharing OutputSharing `toml:"sharing" json:"sharing,omitempty"`
+
+	// RetentionDays is the number of days past consults are retained
+	// before purging. Zero means "use system default"; must be >= 0.
+	RetentionDays int `toml:"retention_days" json:"retention_days,omitempty"`
+
+	// RedactBeforeSharing names redactor categories applied to the
+	// response before it surfaces beyond the audit log (e.g.
+	// "api_keys", "internal_urls"). Opaque to the loader; the
+	// /insights/personas layer dereferences these.
+	RedactBeforeSharing []string `toml:"redact_before_sharing" json:"redact_before_sharing,omitempty"`
+}
+
+// IsZero reports whether the policy is empty. Used by `omitzero` JSON
+// tags to keep round-tripped persona files clean.
+func (o OutputPolicy) IsZero() bool {
+	return o.Validation == "" &&
+		o.SchemaRef == "" &&
+		o.Sharing == "" &&
+		o.RetentionDays == 0 &&
+		len(o.RedactBeforeSharing) == 0
+}
+
+// Validate checks the output policy is well-formed. Empty enum values
+// and zero RetentionDays are accepted — they mean "use system
+// default". Negative RetentionDays is rejected.
+func (o OutputPolicy) Validate() error {
+	if err := o.Validation.Validate(); err != nil {
+		return err
+	}
+	if err := o.Sharing.Validate(); err != nil {
+		return err
+	}
+	if o.RetentionDays < 0 {
+		return fmt.Errorf("persona: output.retention_days must be >= 0, got %d", o.RetentionDays)
+	}
+	return nil
+}
+
 // ContextProvidersConfig links a persona to the promptctx providers
 // it uses. Maintains is the set the persona refreshes (Manager-only);
 // Reads is the set whose Result is spliced into the prompt's context
@@ -578,6 +704,9 @@ func (p Persona) Validate() error {
 				return fmt.Errorf("persona %q: purview.active_phases[%d]: %w", p.ID, i, err)
 			}
 		}
+	}
+	if err := p.Output.Validate(); err != nil {
+		return fmt.Errorf("persona %q: %w", p.ID, err)
 	}
 	return nil
 }
