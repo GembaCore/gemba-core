@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/MikeBengtson/gemba/internal/core"
+	"github.com/MikeBengtson/gemba/internal/core/phase"
 )
 
 // Variety classifies the persona's authority over workspace state.
@@ -377,11 +378,13 @@ func (p Perspective) IsZero() bool {
 }
 
 // Phase names a project-level mode that determines which Purviews are
-// active (gm-9rv §3). The Phase primitive proper lands with gm-jt9 —
-// this bead defines the type so [Purview.ActivePhases] has a typed
-// slot but does NOT enumerate or validate phase values. Treat the
-// type as opaque-string until gm-jt9 ratifies the canonical enum.
-type Phase string
+// active (gm-9rv §3). gm-jt9 lifted this from an opaque string into
+// a typed enum owned by [phase.Phase]; this alias keeps the persona
+// package's existing Purview.ActivePhases shape stable for callers.
+// Per-persona [Purview.ActivePhases] declarations are validated for
+// enum membership when [Purview.Validate] runs (or skipped when the
+// Purview block is fully zero-value).
+type Phase = phase.Phase
 
 // PurviewAuthority is the gate strength a Purview carries while its
 // phase is active (gm-9rv §3).
@@ -563,6 +566,17 @@ func (p Persona) Validate() error {
 	if !p.Purview.IsZero() {
 		if err := p.Purview.BlockingAuthority.Validate(); err != nil {
 			return fmt.Errorf("persona %q: purview: %w", p.ID, err)
+		}
+		// gm-jt9: Phase is now typed. Reject ActivePhases entries that
+		// aren't in the canonical enum so a typo in a TOML file
+		// surfaces at load time rather than silently making the
+		// purview unreachable. Empty ActivePhases is allowed (the
+		// purview is "always-on" then; security's auto-activation is
+		// the canonical example).
+		for i, ph := range p.Purview.ActivePhases {
+			if err := ph.Validate(); err != nil {
+				return fmt.Errorf("persona %q: purview.active_phases[%d]: %w", p.ID, i, err)
+			}
 		}
 	}
 	return nil
