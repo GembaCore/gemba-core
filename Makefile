@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -74,6 +74,27 @@ fmt: ## format Go + frontend
 
 gen: ## regenerate code (TS types from Go core)
 	go run ./cmd/gen-core-types
+
+# gm-e4.2: copy the canonical OpenAPI spec from the embed location
+# (internal/server/openapi/openapi.json) to the published copy
+# (docs/api/openapi.json), then regenerate the typed SPA client at
+# web/src/api/gen/types.ts. The Go test in internal/server pins these
+# two copies in lockstep — running this target after editing the spec
+# is the only step required to keep the contract aligned.
+codegen: ## regenerate OpenAPI client (web/src/api/gen) + Go core TS types
+	cp internal/server/openapi/openapi.json docs/api/openapi.json
+	cd web && pnpm gen:openapi
+	go run ./cmd/gen-core-types
+
+# gm-e4.2: lint the OpenAPI spec with Spectral. Requires `pnpm exec
+# spectral` to be installable (Stoplight's @stoplight/spectral-cli).
+# Not part of the default codegen flow because it pulls a heavy
+# devDependency only useful at PR time; run it manually before merging
+# spec changes. The .spectral.yaml ruleset at repo root pins the rules
+# the spec is expected to pass.
+lint-openapi: ## run Spectral against docs/api/openapi.json
+	@command -v pnpx >/dev/null 2>&1 || { echo "install pnpm: https://pnpm.io"; exit 1; }
+	pnpx --package=@stoplight/spectral-cli spectral lint docs/api/openapi.json --ruleset .spectral.yaml
 
 ## --- Release ---
 

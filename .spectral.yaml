@@ -1,0 +1,40 @@
+# Spectral lint config for the gemba OpenAPI spec (gm-e4.2).
+#
+# Inherits the canonical OpenAPI ruleset and tightens the rules the
+# project cares about. Run via `make lint-openapi` (one-shot install of
+# @stoplight/spectral-cli; not part of `make codegen` to keep that
+# loop fast).
+#
+# Why these tweaks:
+#   - oas3-api-servers     — we serve same-origin only, the `/` server
+#                            entry is intentional; the rule's "must list
+#                            production server" hint doesn't apply.
+#   - operation-tag-defined — every operation IS tagged in the spec,
+#                            but Spectral's hint-level severity is fine.
+#   - operation-description — we lean on `summary` for terseness; full
+#                            descriptions land per-endpoint as schemas
+#                            grow.
+#   - info-contact          — supplied; default rule already passes.
+
+extends: spectral:oas
+
+rules:
+  # Each path operation must carry a tag so the published spec groups
+  # by surface (system / work / agents / ops / stub).
+  operation-tag-defined: error
+
+  # The MVP slice is allowed to ship summary-only stubs while
+  # follow-up beads land detailed descriptions.
+  operation-description: hint
+
+  # Successful responses must always describe their content.
+  oas3-valid-media-example: error
+  oas3-valid-schema-example: error
+
+  # Encourage stable operationIds — drives the codegen client's
+  # function names.
+  operation-operationId: error
+  operation-operationId-unique: error
+
+  # Don't require server descriptions beyond the same-origin entry.
+  oas3-api-servers: hint

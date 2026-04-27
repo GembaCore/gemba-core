@@ -1,0 +1,684 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Gemba HTTP API",
+    "version": "0.1.0",
+    "description": "Wire schema for the gemba server's `/api/*` surface (gm-e4.2). The SPA at `web/` consumes a typed client generated from this document; the source of truth lives in `docs/api/openapi.json` and is served at runtime under `/api/openapi.json`.\n\nThis MVP covers the read endpoints the SPA depends on day-to-day: health, version, config, repositories, work items, sprints, agents, sessions, escalations, capabilities. The remaining `/api/*` surface (consults, walks, planner, bootstrap, perspectives) is acknowledged in `paths` with summary-only stubs and will gain full request/response schemas in follow-up beads.",
+    "contact": {
+      "name": "MikeBengtson/gemba",
+      "url": "https://github.com/MikeBengtson/gemba"
+    }
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same-origin (the gemba server is the SPA host)."
+    }
+  ],
+  "tags": [
+    { "name": "system", "description": "Liveness, version, runtime configuration." },
+    { "name": "work", "description": "WorkItems, sprints, repositories." },
+    { "name": "agents", "description": "Agents, agent groups, sessions." },
+    { "name": "ops", "description": "Escalations, capabilities, adaptors." },
+    { "name": "stub", "description": "Routes documented at the URL level only; full request/response schemas land in follow-up beads." }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Liveness probe.",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "Server is up.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/version": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Build / component metadata.",
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "description": "Component metadata.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/VersionResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Runtime configuration snapshot. Includes the beads source identity (gm-77u) the Topbar renders.",
+        "operationId": "getConfig",
+        "responses": {
+          "200": {
+            "description": "Runtime configuration.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ConfigResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/repositories": {
+      "get": {
+        "tags": ["work"],
+        "summary": "List repositories declared in the workspace's RepositoryRegistry.",
+        "operationId": "listRepositories",
+        "responses": {
+          "200": {
+            "description": "Repository list. The list may be empty with a `notice` field when the registry directory is missing or malformed.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListRepositoriesEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work-items": {
+      "get": {
+        "tags": ["work"],
+        "summary": "List work items via the bound WorkPlane adaptor.",
+        "operationId": "listWorkItems",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Filter by WorkItem kind (e.g. `epic`, `task`).",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "state_category",
+            "in": "query",
+            "description": "Filter by normalized state category.",
+            "schema": { "$ref": "#/components/schemas/StateCategory" }
+          },
+          {
+            "name": "label",
+            "in": "query",
+            "description": "Filter by label (repeatable).",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "WorkItem list envelope.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListWorkItemsEnvelope" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/work-items/{id}": {
+      "get": {
+        "tags": ["work"],
+        "summary": "Fetch one WorkItem by id.",
+        "operationId": "getWorkItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Workspace-prefixed bead id (e.g. `gemba/gm-e4.2`).",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The work item.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WorkItem" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/sprints": {
+      "get": {
+        "tags": ["work"],
+        "summary": "List active sprints (when the WorkPlane reports sprint_native=true).",
+        "operationId": "listSprints",
+        "responses": {
+          "200": {
+            "description": "Sprint list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListSprintsEnvelope" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/agents": {
+      "get": {
+        "tags": ["agents"],
+        "summary": "List registered agents.",
+        "operationId": "listAgents",
+        "responses": {
+          "200": {
+            "description": "Agent list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListAgentsEnvelope" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/agent-groups": {
+      "get": {
+        "tags": ["agents"],
+        "summary": "List agent groups.",
+        "operationId": "listAgentGroups",
+        "responses": {
+          "200": {
+            "description": "Agent-group list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListAgentGroupsEnvelope" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/sessions": {
+      "get": {
+        "tags": ["agents"],
+        "summary": "List sessions known to the bound OrchestrationPlane.",
+        "operationId": "listSessions",
+        "responses": {
+          "200": {
+            "description": "Session list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SessionListEnvelope" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/escalations": {
+      "get": {
+        "tags": ["ops"],
+        "summary": "List open escalations.",
+        "operationId": "listEscalations",
+        "responses": {
+          "200": {
+            "description": "Escalation list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/EscalationListEnvelope" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/capabilities": {
+      "get": {
+        "tags": ["ops"],
+        "summary": "Capability manifests for every bound adaptor.",
+        "operationId": "getCapabilities",
+        "responses": {
+          "200": {
+            "description": "Per-plane capability manifest list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CapabilitiesResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/adaptors": {
+      "get": {
+        "tags": ["ops"],
+        "summary": "Snapshot of adaptor health status.",
+        "operationId": "getAdaptorsHealth",
+        "responses": {
+          "200": {
+            "description": "Adaptor health snapshot.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/AdaptorsHealthResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/openapi.json": {
+      "get": {
+        "tags": ["system"],
+        "summary": "Self-describing schema (this document).",
+        "operationId": "getOpenAPISpec",
+        "responses": {
+          "200": {
+            "description": "OpenAPI 3.1 spec.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/consults": {
+      "get": {
+        "tags": ["stub"],
+        "summary": "TODO follow-up: persona consult activity list (gm-twp2).",
+        "operationId": "listConsults",
+        "responses": {
+          "200": { "description": "Consult list (schema in follow-up bead)." }
+        }
+      }
+    },
+    "/api/skills": {
+      "get": {
+        "tags": ["stub"],
+        "summary": "TODO follow-up: registered persona skills (gm-twp2).",
+        "operationId": "listSkills",
+        "responses": {
+          "200": { "description": "Skill list (schema in follow-up bead)." }
+        }
+      }
+    },
+    "/api/v1/walks:start": {
+      "post": {
+        "tags": ["stub"],
+        "summary": "TODO follow-up: start a Gemba walk (gm-wgv).",
+        "operationId": "startWalk",
+        "responses": {
+          "201": { "description": "Walk created (schema in follow-up bead)." }
+        }
+      }
+    },
+    "/api/v1/walks:recent": {
+      "get": {
+        "tags": ["stub"],
+        "summary": "TODO follow-up: recent walks list (gm-wgv).",
+        "operationId": "listRecentWalks",
+        "responses": {
+          "200": { "description": "Walk list (schema in follow-up bead)." }
+        }
+      }
+    },
+    "/api/planner/coach": {
+      "get": {
+        "tags": ["stub"],
+        "summary": "TODO follow-up: planner-coach recommendation (gm-v5z2).",
+        "operationId": "getPlannerCoach",
+        "responses": {
+          "200": { "description": "Coach response (schema in follow-up bead)." }
+        }
+      }
+    },
+    "/api/bootstrap/plan": {
+      "get": {
+        "tags": ["stub"],
+        "summary": "TODO follow-up: bootstrap plan preview (gm-uipx.7).",
+        "operationId": "getBootstrapPlan",
+        "responses": {
+          "200": { "description": "Bootstrap plan (schema in follow-up bead)." }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "BadRequest": {
+        "description": "Malformed request — invalid query parameters or body.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource not found.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      },
+      "AdaptorUnavailable": {
+        "description": "Adaptor is not registered or is degraded; the SPA shows a banner and keeps cached data visible.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "description": "Shared error envelope (gm-faz). `error` is a stable token the SPA branches on; `message` is human-readable and may be surfaced verbatim.",
+        "required": ["error", "message"],
+        "properties": {
+          "error": { "type": "string", "examples": ["adaptor_degraded", "validation", "not_found"] },
+          "message": { "type": "string" }
+        }
+      },
+      "HealthResponse": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "examples": ["ok"] }
+        }
+      },
+      "VersionResponse": {
+        "type": "object",
+        "required": ["component", "status"],
+        "properties": {
+          "component": { "type": "string", "examples": ["gemba"] },
+          "status": { "type": "string", "examples": ["pre-alpha scaffold"] }
+        }
+      },
+      "BeadsSource": {
+        "type": "object",
+        "description": "Workspace identity — 1:1 with a beads database (gm-77u). Detail strips credentials when source is a dolt-url.",
+        "required": ["kind", "label"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["beads-dir", "dolt-url", "unconfigured"]
+          },
+          "label": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      },
+      "ConfigResponse": {
+        "type": "object",
+        "required": ["auth_mode", "yolo_available", "listen", "port", "city", "town", "beads_source"],
+        "properties": {
+          "auth_mode": { "type": "string", "enum": ["none", "token", "oidc"] },
+          "yolo_available": { "type": "boolean" },
+          "listen": { "type": "string" },
+          "port": { "type": "integer" },
+          "city": { "type": "string" },
+          "town": { "type": "string" },
+          "beads_source": { "$ref": "#/components/schemas/BeadsSource" }
+        }
+      },
+      "Repository": {
+        "type": "object",
+        "required": ["id", "path", "default_branch", "bead_prefix"],
+        "properties": {
+          "id": { "type": "string" },
+          "path": { "type": "string" },
+          "default_branch": { "type": "string" },
+          "url": { "type": "string" },
+          "worktrees_dir": { "type": "string" },
+          "bead_prefix": { "type": "string" }
+        }
+      },
+      "ListRepositoriesEnvelope": {
+        "type": "object",
+        "required": ["repositories"],
+        "properties": {
+          "repositories": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Repository" }
+          },
+          "notice": { "type": "string" }
+        }
+      },
+      "StateCategory": {
+        "type": "string",
+        "enum": ["backlog", "unstarted", "staged", "started", "completed", "canceled"]
+      },
+      "AgentRef": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      },
+      "WorkItem": {
+        "type": "object",
+        "description": "Subset of the WorkItem fields most commonly read by the SPA. The full shape (relationships, evidence, dod, derived signals, custom fields) is the source of truth in `core/types.go` and `web/src/types/core.gen.ts`; this schema documents the wire-stable subset for a typed client. `additionalProperties: true` keeps clients forward-compatible with fields landing in follow-up beads.",
+        "additionalProperties": true,
+        "required": ["id", "kind", "title", "status", "state_category", "created_at", "updated_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string", "examples": ["epic", "task", "feature", "decision"] },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": { "type": "string" },
+          "state_category": { "$ref": "#/components/schemas/StateCategory" },
+          "priority": { "type": ["integer", "null"], "minimum": 0, "maximum": 4 },
+          "owner": { "$ref": "#/components/schemas/AgentRef" },
+          "assignee": { "$ref": "#/components/schemas/AgentRef" },
+          "labels": { "type": "array", "items": { "type": "string" } },
+          "primary_repository_id": { "type": "string" },
+          "repository_ids": { "type": "array", "items": { "type": "string" } },
+          "sprint_id": { "type": ["string", "null"] },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ListWorkItemsEnvelope": {
+        "type": "object",
+        "required": ["items", "total"],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/WorkItem" }
+          },
+          "total": { "type": "integer" }
+        }
+      },
+      "Sprint": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "starts_at": { "type": "string", "format": "date-time" },
+          "ends_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ListSprintsEnvelope": {
+        "type": "object",
+        "required": ["sprints"],
+        "properties": {
+          "sprints": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Sprint" }
+          }
+        }
+      },
+      "Agent": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      },
+      "ListAgentsEnvelope": {
+        "type": "object",
+        "required": ["agents"],
+        "properties": {
+          "agents": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Agent" }
+          }
+        }
+      },
+      "AgentGroup": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "members": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "ListAgentGroupsEnvelope": {
+        "type": "object",
+        "required": ["agent_groups"],
+        "properties": {
+          "agent_groups": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AgentGroup" }
+          }
+        }
+      },
+      "Session": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "agent_id": { "type": "string" },
+          "status": { "type": "string" },
+          "started_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "SessionListEnvelope": {
+        "type": "object",
+        "required": ["sessions"],
+        "properties": {
+          "sessions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Session" }
+          }
+        }
+      },
+      "Escalation": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "kind"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "title": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "EscalationListEnvelope": {
+        "type": "object",
+        "required": ["escalations"],
+        "properties": {
+          "escalations": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Escalation" }
+          }
+        }
+      },
+      "Transport": {
+        "type": "string",
+        "enum": ["api", "jsonl", "mcp", "exec", "ipc"]
+      },
+      "CapabilityManifest": {
+        "type": "object",
+        "description": "Subset of the manifest fields the SPA actively gates UI on. Full manifest (state_map, edge_extensions, query_languages, etc.) is documented in `core/manifest.go`; this schema captures the wire-stable boolean / version surface.",
+        "additionalProperties": true,
+        "required": ["adaptor_name", "adaptor_version", "protocol_version", "transport"],
+        "properties": {
+          "adaptor_name": { "type": "string" },
+          "adaptor_version": { "type": "string" },
+          "protocol_version": { "type": "string" },
+          "transport": { "$ref": "#/components/schemas/Transport" },
+          "sprint_native": { "type": "boolean" },
+          "token_budget_enforced": { "type": "boolean" },
+          "evidence_synthesis_required": { "type": "boolean" },
+          "read_only": { "type": "boolean" },
+          "dependency_graph_native": { "type": "boolean" },
+          "ready_set_query": { "type": "boolean" }
+        }
+      },
+      "CapabilitiesResponse": {
+        "type": "object",
+        "description": "One entry per registered transport plane (`workplane`, `orchestration`).",
+        "properties": {
+          "workplane": { "$ref": "#/components/schemas/CapabilityManifest" },
+          "orchestration": { "$ref": "#/components/schemas/CapabilityManifest" }
+        }
+      },
+      "AdaptorStatus": {
+        "type": "object",
+        "required": ["adaptor_id", "plane", "ok"],
+        "properties": {
+          "adaptor_id": { "type": "string" },
+          "plane": { "type": "string", "enum": ["work", "orchestration"] },
+          "ok": { "type": "boolean" },
+          "message": { "type": "string" },
+          "checked_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "AdaptorsHealthResponse": {
+        "type": "object",
+        "required": ["adaptors"],
+        "properties": {
+          "adaptors": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/AdaptorStatus" }
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerToken": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Token auth (gm-e5.1). Required when the server boots with `--auth=token`."
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "gemba_session",
+        "description": "Signed session cookie issued by `POST /api/auth/login` after a bearer exchange."
+      }
+    }
+  },
+  "security": [
+    { "bearerToken": [] },
+    { "sessionCookie": [] },
+    {}
+  ]
+}

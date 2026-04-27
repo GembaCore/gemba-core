@@ -211,6 +211,13 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/version", r.version)
 		api.Get("/config", r.config)
 
+		// gm-e4.2: self-describing OpenAPI 3.1 schema. The SPA's
+		// generated client (web/src/api/gen/) is built against this
+		// document at codegen time; the runtime route lets `gemba
+		// doctor`, integration tests, and external tooling pull the
+		// same spec without depending on the working directory.
+		api.Get("/openapi.json", r.openapiSpecHandler)
+
 		// Per-adaptor runtime health. Drives the SPA's degraded-state
 		// banner (gm-b1 / gm-root.7). The SPA subscribes to the SSE
 		// stream; the JSON endpoint is the snapshot fallback used by
