@@ -103,7 +103,12 @@ func (r *Router) AttachWalkSummary(s *walk_summary.Skill) {
 
 // publishWalkEvent emits one walk.* GembaEvent through the hub. No-op
 // when the hub is nil (degraded mode / tests that don't subscribe).
-func (r *Router) publishWalkEvent(kind events.Kind, w walk.Walk, payload map[string]any) {
+//
+// gm-e3.6.1: ctx carries the request's W3C span context (the Trace
+// middleware attaches it on the way in). events.WithTraceID stamps the
+// trace_id onto the envelope at emission so a SPA mutation's
+// traceparent flows end-to-end into the resulting /events SSE frame.
+func (r *Router) publishWalkEvent(ctx context.Context, kind events.Kind, w walk.Walk, payload map[string]any) {
 	if r.eventsHub == nil {
 		return
 	}
@@ -112,14 +117,15 @@ func (r *Router) publishWalkEvent(kind events.Kind, w walk.Walk, payload map[str
 	}
 	payload["walk_id"] = string(w.ID)
 	payload["status"] = string(w.Status)
-	r.eventsHub.Publish(events.GembaEvent{
+	ev := events.GembaEvent{
 		ID:      newWalkEventID(),
 		Kind:    kind,
 		At:      time.Now().UTC(),
 		Source:  events.Source{Plane: walkPlane, AdaptorID: walkAdaptorID},
 		AgentID: string(w.InitiatedBy),
 		Payload: payload,
-	})
+	}
+	r.eventsHub.Publish(events.WithTraceID(ctx, ev))
 }
 
 // newWalkEventID returns a unique event id. Reuses the same crypto/
@@ -207,7 +213,7 @@ func (r *Router) startWalk(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	r.publishWalkEvent(kindWalkStarted, wk, map[string]any{
+	r.publishWalkEvent(req.Context(), kindWalkStarted, wk, map[string]any{
 		"label":           wk.Label,
 		"agenda_size":     len(wk.Agenda),
 		"primary_persona": wk.PrimaryPersona,
@@ -299,7 +305,7 @@ func (r *Router) addWalkAgenda(w http.ResponseWriter, req *http.Request) {
 		writeWalkError(w, err)
 		return
 	}
-	r.publishWalkEvent(kindWalkAgendaAdded, wk, map[string]any{
+	r.publishWalkEvent(ctx, kindWalkAgendaAdded, wk, map[string]any{
 		"item_id":     itemID,
 		"topic":       item.Topic,
 		"source_kind": string(source.Kind),
@@ -388,7 +394,7 @@ func (r *Router) addWalkTurn(w http.ResponseWriter, req *http.Request) {
 		writeWalkError(w, err)
 		return
 	}
-	r.publishWalkEvent(kindWalkTurn, wk, map[string]any{
+	r.publishWalkEvent(ctx, kindWalkTurn, wk, map[string]any{
 		"speaker":        string(walk.SpeakerUser),
 		"agenda_item_id": body.AgendaItemID,
 	})
@@ -447,7 +453,7 @@ func (r *Router) decideWalkItem(w http.ResponseWriter, req *http.Request) {
 		writeWalkError(w, err)
 		return
 	}
-	r.publishWalkEvent(kindWalkDecided, wk, map[string]any{
+	r.publishWalkEvent(ctx, kindWalkDecided, wk, map[string]any{
 		"item_id": itemID,
 		"kind":    string(body.Kind),
 	})
@@ -488,7 +494,7 @@ func (r *Router) pauseWalk(w http.ResponseWriter, req *http.Request) {
 		writeWalkError(w, err)
 		return
 	}
-	r.publishWalkEvent(kindWalkPaused, wk, map[string]any{
+	r.publishWalkEvent(ctx, kindWalkPaused, wk, map[string]any{
 		"resume_context_size": len(summary),
 	})
 	writeJSON(w, http.StatusOK, wk)
@@ -510,7 +516,7 @@ func (r *Router) resumeWalk(w http.ResponseWriter, req *http.Request) {
 		writeWalkError(w, err)
 		return
 	}
-	r.publishWalkEvent(kindWalkResumed, wk, nil)
+	r.publishWalkEvent(ctx, kindWalkResumed, wk, nil)
 	writeJSON(w, http.StatusOK, wk)
 }
 
@@ -555,7 +561,7 @@ func (r *Router) endWalk(w http.ResponseWriter, req *http.Request) {
 	if summaryPath != "" {
 		payload["summary_path"] = summaryPath
 	}
-	r.publishWalkEvent(kindWalkEnded, wk, payload)
+	r.publishWalkEvent(ctx, kindWalkEnded, wk, payload)
 	writeJSON(w, http.StatusOK, wk)
 }
 

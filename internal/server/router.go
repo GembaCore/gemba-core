@@ -20,6 +20,7 @@ import (
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/persona"
+	tracemw "github.com/MikeBengtson/gemba/internal/server/middleware"
 	"github.com/MikeBengtson/gemba/internal/skills/walk_summary"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/MikeBengtson/gemba/internal/walk"
@@ -129,6 +130,13 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 	mux := chi.NewRouter()
 	mux.Use(middleware.RequestID)
 	mux.Use(middleware.RealIP)
+	// gm-e3.6.1: extract W3C trace-context off the request and attach a
+	// server-kind span to the request's context. Sits before Logger so
+	// log lines emitted by handlers can pick the trace id off the
+	// context if/when the slog handler is wired to do so. With no
+	// TracerProvider registered (default) this is effectively a no-op
+	// — spans are created but the no-op exporter drops them.
+	mux.Use(tracemw.Trace())
 	mux.Use(middleware.Logger)
 	mux.Use(middleware.Recoverer)
 	mux.Use(middleware.Timeout(30_000_000_000)) // 30s
