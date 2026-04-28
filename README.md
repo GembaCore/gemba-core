@@ -109,7 +109,7 @@ every dispatch loop and powers the `/coach` affinity grid. **epic_order**
 (the PM persona's skill) is an LLM-driven planning consult that ranks
 candidate epics for sprint composition; it lives at `/sprints` and
 produces narrative recommendations with confidence scores. See
-[`docs/concepts/dispatch-vs-planning.md`](docs/concepts/dispatch-vs-planning.md).
+[Dispatch vs Planning](https://mikebengtson.github.io/gemba/concepts/dispatch-vs-planning/).
 
 [⬆ back to top](#top)
 
@@ -124,8 +124,8 @@ Active work lives in the project's Beads rig (`bd list`). Top-level
 open epics include token spending management (`gm-root.14`), the
 UI/SPA build-out (`gm-e12`), and cross-cutting features (escalation
 surfacing, evidence v2, DoD v2 — `gm-e11`). Design docs live in
-[`docs/design/`](docs/design/); adaptor authoring references in
-[`docs/adaptors/`](docs/adaptors/).
+[Design docs](https://mikebengtson.github.io/gemba/design/); adaptor authoring references in
+[Adaptors](https://mikebengtson.github.io/gemba/adaptors/).
 
 ## ✨ What's New
 
@@ -135,7 +135,7 @@ surfacing, evidence v2, DoD v2 — `gm-e11`). Design docs live in
   `intra_parallel` + `max_parallel` in `.gemba/agents.toml`; a
   try-reuse-before-spawn dispatcher policy co-locates beads on capable
   panes; SPA shows per-pane pills + a global in-flight counter. See
-  [docs/getting-started/parallelism.md](docs/getting-started/parallelism.md).
+  the [Parallelism guide](https://mikebengtson.github.io/gemba/getting-started/parallelism/).
 - **TLS support** (`gm-e5.3`) — `--tls-self-signed` for instant HTTPS
   with a fingerprint banner, or `--tls-cert` / `--tls-key` for
   operator-supplied chains.
@@ -202,7 +202,7 @@ that's a supported mode, not an error.
 
 End-to-end setup (both `--beads-dir` CLI mode and `--dolt-url`
 direct-SQL mode), expected banner output, and troubleshooting:
-[`docs/getting-started/running-against-your-work-items.md`](docs/getting-started/running-against-your-work-items.md).
+[Running Gemba against your work items](https://mikebengtson.github.io/gemba/getting-started/running-against-your-work-items/).
 
 ### Native terminal orchestration
 
@@ -252,7 +252,7 @@ max_parallel   = 3
 The dispatcher tries to reuse an existing capable session before
 spawning a new pane; the SPA renders an `n/max` pill per pane plus a
 global in-flight counter. Full detail:
-[`docs/getting-started/parallelism.md`](docs/getting-started/parallelism.md).
+the [Parallelism guide](https://mikebengtson.github.io/gemba/getting-started/parallelism/).
 
 ### TLS
 
@@ -378,11 +378,15 @@ Tooling expected on `PATH`:
 
 | Where | What |
 |---|---|
-| [`docs/getting-started/`](docs/getting-started/) | Operator-facing guides — running against your work items, parallelism configuration |
-| [`docs/adaptors/`](docs/adaptors/) | Per-adaptor authoring docs + conformance reports — how to write a new WorkPlane / OrchestrationPlane |
-| [`docs/design/`](docs/design/) | Durable architectural decisions — parallelism boundary, milestone convention, Gemba walk (review of work in progress), persona PPPP |
-| [`docs/agents/`](docs/agents/) | Per-role agent operating docs |
-| [`docs/ui-spec.md`](docs/ui-spec.md) | The SPA spec — every surface, every affordance, every test-id |
+The full docsite is published at **<https://mikebengtson.github.io/gemba/>**.
+
+| Where | What |
+|---|---|
+| [Getting Started](https://mikebengtson.github.io/gemba/getting-started/) | Operator-facing guides — running against your work items, parallelism configuration |
+| [Adaptors](https://mikebengtson.github.io/gemba/adaptors/) | Per-adaptor authoring docs + conformance reports — how to write a new WorkPlane / OrchestrationPlane |
+| [Design](https://mikebengtson.github.io/gemba/design/) | Durable architectural decisions — parallelism boundary, milestone convention, Gemba walk (review of work in progress), persona PPPP |
+| [Agents](https://mikebengtson.github.io/gemba/agents/) | Per-role agent operating docs |
+| [UI spec](https://mikebengtson.github.io/gemba/ui-spec/) | The SPA spec — every surface, every affordance, every test-id |
 
 > [!NOTE]
 > Architecture decisions live in beads (`bd list type:decision`) and
@@ -408,8 +412,8 @@ Where we got it wrong, your feedback is the fastest path to fixing it.
 - 🔧 [Pull requests](https://github.com/MikeBengtson/gemba/pulls) — start with a draft if the change is non-trivial; we'd rather review the design before the code
 
 If you're writing a new adaptor, the conformance harness is the
-shortest path to "does it work": see [`docs/adaptors/workplane.md`](docs/adaptors/workplane.md)
-or [`docs/adaptors/orchestration.md`](docs/adaptors/orchestration.md).
+shortest path to "does it work": see the [WorkPlane authoring guide](https://mikebengtson.github.io/gemba/adaptors/workplane/)
+or the [OrchestrationPlane authoring guide](https://mikebengtson.github.io/gemba/adaptors/orchestration/).
 
 [⬆ back to top](#top)
 
