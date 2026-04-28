@@ -16,6 +16,7 @@ the angle your audience already feels.
 | 08 | Capability flags | `social/social-08-capability-flags.png` | `banner/banner-08-capability-flags.png` | Capability-aware UI |
 | 09 | Persona constellation | `social/social-09-persona-constellation.png` | `banner/banner-09-persona-constellation.png` | Typed persona system |
 | 10 | Three-pane app | `social/social-10-three-pane.png` | `banner/banner-10-three-pane.png` | Backlog · dispatch · sessions |
+| ★ | Architecture diagram (theme 5 palette) | `social/social-arch-gradient.png` | `banner/banner-arch-gradient.png` | SPA → core → WorkPlane / OrchestrationPlane |
 
 ## Usage
 

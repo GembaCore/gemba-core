@@ -502,8 +502,183 @@ def banner_05_gradient_dispatch():
 
 
 # =====================================================================
-# Theme 06 — Blueprint schematic
+# Theme 05b — Architecture diagram (uses theme 05 gradient palette)
 # =====================================================================
+def _gradient_tile(img, x, y, w, h, stripe_color, header, sub_lines):
+    """Theme-5 tile: semi-transparent white card on gradient + colored
+    left stripe. Drawn on a separate RGBA layer + alpha-composited so
+    transparency actually blends over the gradient."""
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    od = ImageDraw.Draw(overlay)
+    od.rounded_rectangle((x, y, x + w, y + h), radius=12,
+                         fill=(255, 255, 255, 38),
+                         outline=(255, 255, 255, 120), width=1)
+    od.rectangle((x, y, x + 6, y + h), fill=(*stripe_color, 255))
+    img.alpha_composite(overlay)
+    d = ImageDraw.Draw(img)
+    d.text((x + 22, y + 14), header,
+           font=font(MENLO, 18, index=1), fill=(255, 255, 255, 255))
+    for i, line in enumerate(sub_lines):
+        d.text((x + 22, y + 44 + i * 24), line,
+               font=font(MENLO, 15, index=0), fill=(255, 255, 255, 220))
+
+
+def _arrow_v(d, x, y0, y1, color, width=2, head_at_top=True, head_at_bot=True):
+    d.line([(x, y0), (x, y1)], fill=color, width=width)
+    if head_at_top:
+        d.polygon([(x - 6, y0 + 8), (x + 6, y0 + 8), (x, y0)], fill=color)
+    if head_at_bot:
+        d.polygon([(x - 6, y1 - 8), (x + 6, y1 - 8), (x, y1)], fill=color)
+
+
+def social_arch_gradient():
+    """Architecture diagram in theme-5 gradient style: SPA → core →
+    WorkPlane / OrchestrationPlane adaptors. Captures the four-tier
+    surface gemba actually has, ASCII original from the README brief."""
+    img = Image.new("RGBA", (W, H_SOCIAL), (0, 0, 0, 0))
+    _vertical_gradient(img, (15, 18, 48), (76, 36, 136), (200, 60, 110))
+    d = ImageDraw.Draw(img)
+
+    line_color = (255, 255, 255, 220)
+    cx = W // 2
+    inner_w = W - 144  # 72 gutter each side
+
+    # ── Tier 1: SPA ───────────────────────────────────────────────────
+    _gradient_tile(img, 72, 36, inner_w, 80, PRI["sky"],
+                   "Gemba SPA  ·  React / TypeScript",
+                   ["no role names  ·  no pack vocabulary  ·  capability-driven"])
+
+    # Arrow + label between SPA and core.
+    _arrow_v(d, cx, 124, 188, line_color, width=2)
+    label = "HTTP  ·  SSE  —  capability-negotiated"
+    lf = font(MENLO, 14, index=0)
+    lw, _ = text_size(d, label, lf)
+    d.text((cx - lw - 24, 148), label, font=lf, fill=(255, 255, 255, 220))
+
+    # ── Tier 2: Core ──────────────────────────────────────────────────
+    _gradient_tile(img, 72, 196, inner_w, 102, PRI["emerald"],
+                   "Gemba core  ·  Go binary",
+                   ["types:  WorkItem · AgentRef · Relationship · Evidence · DoD",
+                    "        Sprint · TokenBudget · CostMeter · EscalationRequest"])
+
+    # Branching connector from core down to the two adaptor stacks.
+    bus_top = 308
+    bus_y = 348
+    bus_bot = 408
+    left_x = 72 + 270
+    right_x = W - 72 - 270
+    d.line([(cx, bus_top), (cx, bus_y)], fill=line_color, width=2)
+    d.line([(left_x, bus_y), (right_x, bus_y)], fill=line_color, width=2)
+    d.line([(left_x, bus_y), (left_x, bus_bot)], fill=line_color, width=2)
+    d.line([(right_x, bus_y), (right_x, bus_bot)], fill=line_color, width=2)
+    d.polygon([(left_x - 6, bus_bot - 8),
+               (left_x + 6, bus_bot - 8),
+               (left_x, bus_bot)], fill=line_color)
+    d.polygon([(right_x - 6, bus_bot - 8),
+               (right_x + 6, bus_bot - 8),
+               (right_x, bus_bot)], fill=line_color)
+
+    # Adaptor labels above each branch.
+    sf_b = font(MENLO, 13, index=1)
+    sf_r = font(MENLO, 12, index=0)
+    d.text((left_x - 220, bus_y + 10), "WorkPlaneAdaptor",
+           font=sf_b, fill=(*PRI["p0"], 255))
+    d.text((left_x - 220, bus_y + 28), "REQUIRED",
+           font=font(MENLO, 11, index=1), fill=(255, 255, 255, 220))
+    d.text((left_x - 220, bus_y + 44), "transport:  api · jsonl · mcp",
+           font=sf_r, fill=(255, 255, 255, 200))
+
+    d.text((right_x + 14, bus_y + 10), "OrchestrationPlaneAdaptor",
+           font=sf_b, fill=(*PRI["amber"], 255))
+    d.text((right_x + 14, bus_y + 28), "OPTIONAL",
+           font=font(MENLO, 11, index=1), fill=(255, 255, 255, 220))
+    d.text((right_x + 14, bus_y + 44), "transport:  api · jsonl · mcp",
+           font=sf_r, fill=(255, 255, 255, 200))
+
+    # ── Tier 3: adaptor tiles ─────────────────────────────────────────
+    tile_y = 416
+    tile_h = 168
+    gap = 48
+    tile_w = (inner_w - gap) // 2
+    _gradient_tile(img, 72, tile_y, tile_w, tile_h, PRI["p0"],
+                   "WorkPlane adaptors",
+                   ["out-of-the-box:   Beads",
+                    "forcing function:  Jira",
+                    "future:  Linear · GitHub Projects · …"])
+    _gradient_tile(img, 72 + tile_w + gap, tile_y, tile_w, tile_h, PRI["amber"],
+                   "OrchestrationPlane adaptors",
+                   ["out-of-the-box:  Native",
+                    "optional:  Gas Town · LangGraph · Gas City",
+                    "           OpenHands · CrewAI · …"])
+
+    # Footer.
+    d.text((72, H_SOCIAL - 28), "github.com/MikeBengtson/gemba",
+           font=font(MENLO, 14, index=0), fill=(255, 255, 255, 200))
+    return img
+
+
+def banner_arch_gradient():
+    """Compressed three-tier architecture diagram for README banners."""
+    img = Image.new("RGBA", (W, H_BANNER), (0, 0, 0, 0))
+    _vertical_gradient(img, (15, 18, 48), (90, 42, 150), (200, 60, 110))
+    d = ImageDraw.Draw(img)
+
+    line_color = (255, 255, 255, 220)
+    cx = W // 2
+    inner_w = W - 96  # 48 gutter each side
+
+    # Tier 1: SPA — single-line tile.
+    _gradient_tile(img, 48, 16, inner_w, 50, PRI["sky"],
+                   "Gemba SPA  ·  React / TypeScript", [])
+    # Squeeze the sub-line into the same tile space (drawn over the
+    # alpha-composited card, since _gradient_tile only emits a header
+    # for an empty sub list).
+    d.text((48 + 22, 16 + 30), "capability-driven · no role names",
+           font=font(MENLO, 12, index=0), fill=(255, 255, 255, 215))
+
+    # Arrow + label.
+    _arrow_v(d, cx, 76, 100, line_color, width=2)
+    d.text((cx + 14, 78), "HTTP · SSE",
+           font=font(MENLO, 11, index=0), fill=(255, 255, 255, 200))
+
+    # Tier 2: Core — single line.
+    _gradient_tile(img, 48, 108, inner_w, 50, PRI["emerald"],
+                   "Gemba core  ·  Go binary", [])
+    d.text((48 + 22, 108 + 30),
+           "types: WorkItem · AgentRef · Sprint · CostMeter · EscalationRequest",
+           font=font(MENLO, 11, index=0), fill=(255, 255, 255, 215))
+
+    # Branching down.
+    left_x = 48 + 200
+    right_x = W - 48 - 200
+    bus_y_top = 168
+    bus_y = 184
+    bus_bot = 208
+    d.line([(cx, bus_y_top), (cx, bus_y)], fill=line_color, width=2)
+    d.line([(left_x, bus_y), (right_x, bus_y)], fill=line_color, width=2)
+    d.line([(left_x, bus_y), (left_x, bus_bot)], fill=line_color, width=2)
+    d.line([(right_x, bus_y), (right_x, bus_bot)], fill=line_color, width=2)
+    d.polygon([(left_x - 5, bus_bot - 6),
+               (left_x + 5, bus_bot - 6),
+               (left_x, bus_bot)], fill=line_color)
+    d.polygon([(right_x - 5, bus_bot - 6),
+               (right_x + 5, bus_bot - 6),
+               (right_x, bus_bot)], fill=line_color)
+
+    # Tier 3: two adaptor tiles side by side.
+    tile_y = 216
+    tile_h = 90
+    gap = 24
+    tile_w = (inner_w - gap) // 2
+    _gradient_tile(img, 48, tile_y, tile_w, tile_h, PRI["p0"],
+                   "WorkPlane  ·  REQUIRED",
+                   ["Beads · Jira",
+                    "(Linear · GH Projects)"])
+    _gradient_tile(img, 48 + tile_w + gap, tile_y, tile_w, tile_h, PRI["amber"],
+                   "OrchestrationPlane  ·  OPTIONAL",
+                   ["Native · Gas Town",
+                    "LangGraph · OpenHands · CrewAI"])
+    return img
 def _draw_blueprint_grid(d, w, h, color):
     # Major lines every 80, minor every 20.
     for x in range(0, w, 20):
@@ -1020,6 +1195,7 @@ THEMES = [
     ("08-capability-flags",     social_08_capability_flags,     banner_08_capability_flags),
     ("09-persona-constellation", social_09_persona_constellation, banner_09_persona_constellation),
     ("10-three-pane",           social_10_three_pane,           banner_10_three_pane),
+    ("arch-gradient",           social_arch_gradient,           banner_arch_gradient),
 ]
 
 
