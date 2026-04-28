@@ -48,6 +48,25 @@ describe('quickActionsForPath', () => {
       expect(typeof a.prompt).toBe('string');
     }
   });
+
+  // gm-szz0.1: recommend-order is now a navigation action, not a
+  // prompt-seeding one. The PM panel routes operators to /sprints
+  // where the epic_order drawer lives, instead of dropping a
+  // prompt into the input on whatever page they were on.
+  it('recommend-order navigates to /sprints', () => {
+    const action = quickActionsForPath('/board').find((a) => a.id === 'recommend-order');
+    expect(action).toBeDefined();
+    expect(action?.routeTo).toBe('/sprints');
+  });
+
+  it('non-navigation actions leave routeTo undefined', () => {
+    const others = quickActionsForPath('/board').filter((a) => a.id !== 'recommend-order');
+    for (const a of others) {
+      expect(a.routeTo).toBeUndefined();
+    }
+    expect(quickActionsForPath('/escalations')[0].routeTo).toBeUndefined();
+    expect(quickActionsForPath('/')[0].routeTo).toBeUndefined();
+  });
 });
 
 describe('labelPrefixForVariety', () => {

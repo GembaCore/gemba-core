@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { PmPanel } from '../PmPanel';
 import { PmPanelProvider, usePmPanel } from '../PmPanelContext';
 import type { Turn } from '../types';
@@ -317,13 +317,46 @@ describe('PmPanel', () => {
     expect(btn.textContent).toMatch(/Consult Manager/);
   });
 
-  it('clicking a quick action seeds the input draft and focuses', () => {
+  it('clicking a prompt-seeding quick action seeds the input draft and focuses', () => {
+    // gm-szz0.1: 'recommend-order' became a navigation action, so
+    // exercise the seed-and-focus path with 'what-remains' (which
+    // still seeds the prompt input).
     render(wrap(<PmPanel />, { initialOpen: true }, '/board'));
+    act(() => {
+      screen.getByTestId('pm-panel-quick-what-remains').click();
+    });
+    const input = screen.getByTestId('pm-panel-input') as HTMLTextAreaElement;
+    expect(input.value).toMatch(/What work remains/);
+  });
+
+  // gm-szz0.1: recommend-order navigates to /sprints (the
+  // sprint-planning surface where the PM epic_order drawer lives)
+  // instead of seeding a prompt on whatever page the operator is on.
+  it('clicking recommend-order navigates to /sprints', () => {
+    function PathProbe(): JSX.Element {
+      const loc = useLocation();
+      return <span data-testid="route-path">{loc.pathname}</span>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/board']}>
+        <HotkeysProvider>
+          <PmPanelProvider initialOpen>
+            <Routes>
+              <Route path="*" element={<><PmPanel /><PathProbe /></>} />
+            </Routes>
+          </PmPanelProvider>
+        </HotkeysProvider>
+      </MemoryRouter>
+    );
+    expect(screen.getByTestId('route-path').textContent).toBe('/board');
     act(() => {
       screen.getByTestId('pm-panel-quick-recommend-order').click();
     });
+    expect(screen.getByTestId('route-path').textContent).toBe('/sprints');
+    // The panel input is NOT seeded — navigation actions skip the
+    // openAndFocus prompt-seed path.
     const input = screen.getByTestId('pm-panel-input') as HTMLTextAreaElement;
-    expect(input.value).toMatch(/Recommend an order/);
+    expect(input.value).toBe('');
   });
 
   it('Cmd+Shift+K opens the panel and focuses input', () => {

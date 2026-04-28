@@ -6,10 +6,16 @@
 // server-side composition keeps math out of the SPA. Hovering a
 // bead highlights its conflict-adjacent siblings (including
 // workspace-conflict edges against active sessions in the strip).
+//
+// gm-szz0.1: dispatch-vs-planning surface split. The Recommend-
+// order drawer (PM persona's epic_order skill) used to mount here;
+// it now lives on /sprints. /coach keeps a single one-line link
+// pointing operators to the planning surface.
 
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Boxes } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowRight, Boxes } from 'lucide-react';
 import {
   getCoach,
   type PlannerAffinityRow,
@@ -21,7 +27,6 @@ import {
 } from '@/api/planner';
 import { AgentContextStrip } from '@/components/agents/AgentContextStrip';
 import { SessionHealthPanel } from '@/components/health/SessionHealthPanel';
-import { RecommendOrderDrawer } from '@/components/persona/RecommendOrderDrawer';
 import { cn } from '@/lib/utils';
 
 const POLL_MS = 30_000;
@@ -34,7 +39,6 @@ export function CoachPage() {
     staleTime: POLL_MS / 2,
   });
   const [hoverBead, setHoverBead] = useState<string | null>(null);
-  const [recommendOpen, setRecommendOpen] = useState(false);
 
   if (error) {
     return (
@@ -48,17 +52,8 @@ export function CoachPage() {
   }
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="coach-page">
-      <Header
-        notices={data.notices ?? []}
-        batchCount={data.batches.length}
-        onRecommendOrder={() => setRecommendOpen(true)}
-      />
-      <RecommendOrderDrawer
-        open={recommendOpen}
-        onClose={() => setRecommendOpen(false)}
-        workspace={data.ready_beads[0]?.repository ?? 'default'}
-        readyBeads={data.ready_beads}
-      />
+      <PlanningLink />
+      <Header notices={data.notices ?? []} batchCount={data.batches.length} />
       <div className="px-8 py-3">
         <SessionHealthPanel sessions={data.sessions} sortBySeverity testid="coach-health-panel" />
       </div>
@@ -76,6 +71,29 @@ export function CoachPage() {
         hoverBead={hoverBead}
         setHoverBead={setHoverBead}
       />
+    </div>
+  );
+}
+
+// PlanningLink (gm-szz0.1) — one-line pointer to the planning
+// surface. /coach is a dispatch surface ("what should I work on
+// next?"); the PM persona's epic_order drawer composes a sprint
+// ("how should the next sprint be composed?") and lives on
+// /sprints. Keeping a visible link here so operators who used to
+// summon the drawer from the coach header still find it.
+function PlanningLink() {
+  return (
+    <div
+      data-testid="coach-planning-link"
+      className="border-b border-neutral-200 bg-sky-50/40 px-8 py-2 text-xs dark:border-neutral-800 dark:bg-sky-950/20"
+    >
+      <Link
+        to="/sprints"
+        className="inline-flex items-center gap-1.5 text-sky-700 hover:underline dark:text-sky-300"
+      >
+        Planning sprints? Open the planner
+        <ArrowRight className="h-3 w-3" aria-hidden />
+      </Link>
     </div>
   );
 }
@@ -130,11 +148,9 @@ function CoachSessionStrip({
 function Header({
   notices,
   batchCount,
-  onRecommendOrder,
 }: {
   notices: string[];
   batchCount: number;
-  onRecommendOrder: () => void;
 }) {
   return (
     <header className="border-b border-neutral-200 px-8 py-4 dark:border-neutral-800">
@@ -149,16 +165,6 @@ function Header({
             conflict siblings; the strip shows what each session is primed for.
           </p>
         </div>
-        {/* gm-twp2: PM persona consult entrypoint. Spawns a Claude
-            Code session that ranks the current ready beads. */}
-        <button
-          type="button"
-          onClick={onRecommendOrder}
-          data-testid="coach-recommend-order"
-          className="inline-flex items-center gap-1.5 rounded-md border border-sky-600 bg-white px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-50 dark:bg-neutral-950 dark:text-sky-400 dark:hover:bg-sky-950/30"
-        >
-          Recommend order
-        </button>
       </div>
       <div className="mt-2 flex items-center gap-3 text-xs text-neutral-500">
         <span data-testid="coach-batch-count">
