@@ -22,7 +22,7 @@
 [![Share on Hacker News](https://img.shields.io/badge/share-FF6600?logo=ycombinator&logoColor=white)](https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba&t=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
 [![Share on Mastodon](https://img.shields.io/badge/share-6364FF?logo=mastodon&logoColor=white)](https://mastodonshare.com/?text=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator&url=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba)
 
-Kanban planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Import your existing project or bootstrap a new one - see [Getting Started](#-getting-started) for a quick start. 
+Kanban planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Start a new project with a guided conversation or import your existing work — see [Getting Started](#-getting-started) for a quick start. 
 
 ## Table of Contents
 
@@ -187,13 +187,40 @@ surfacing, evidence v2, DoD v2 — `gm-e11`). Design docs live in
 
 ## 🏁 Getting Started
 
-### Read-only mode — WorkPlane only
+### New project (starting from scratch)
 
-The fastest path to a running UI. One binary, one flag, one browser
-tab:
+The primary path for operators starting a new project. Install Gemba,
+run the server, and open a browser — Gemba redirects to `/new`
+automatically when no projects exist:
 
 ```bash
 make build                                               # or: brew install MikeBengtson/tap/gemba (once taps ship)
+./bin/gemba serve
+# -> http://127.0.0.1:7666  (redirects to /new on first run)
+```
+
+The `/new` surface opens a conversational **New project** flow. Gemba
+walks you through naming the project, describing its shape, and
+building out a Milestone → Epic → Bead plan in real time. When you're
+happy with the plan, click **Ratify** — Gemba creates the workspace,
+initializes the beads database, and drops you into a Gemba walk to
+start executing.
+
+You can start a new project at any time — even from an existing
+workspace — using the **+** button next to the project picker in the
+top bar.
+
+### Advanced: importing existing work
+
+If you have an existing Jira project, Beads workspace, or source-code
+repo you want to bring into Gemba, use the **Import from advanced
+source** path accessible from Setup (`/setup#import`).
+
+For the common case of pointing Gemba at an existing Beads rig and
+rendering it immediately:
+
+```bash
+make build
 ./bin/gemba serve --beads-dir <path-to-your-beads-rig>
 # -> http://127.0.0.1:7666
 ```

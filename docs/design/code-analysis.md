@@ -4,7 +4,7 @@
 **Author:** mike (captured by polecat jasper)
 **Date:** 2026-04-22 (ratification pending)
 **Parents:** `gm-root` (Gemba EPIC), `gm-eiw` (Context providers)
-**Related:** `gm-371` (bootstrap), `gm-57b` (Personas)
+**Related:** `gm-371` (source-code import path, previously the bootstrap wizard), `gm-57b` (Personas)
 **Resolves DD:** DD-33
 
 ## Summary
@@ -39,7 +39,7 @@ Every Manager and every Coach benefits from structural code knowledge:
   APIs lack docs.
 - **Security** — auth-surface audits need reachability analysis from entry
   points to sensitive primitives.
-- **Bootstrap** (`gm-371`) — analyzing a source-code repo to derive candidate
+- **Import from advanced source** (`gm-371`, source-code-import path) — analyzing a source-code repo to derive candidate
   epic decomposition requires more than README + dir-listing; knowledge-graph
   richness produces better first-draft plans.
 
@@ -178,7 +178,7 @@ toggleable per persona:
 - `document_scan` consumes `UndocumentedAPIs` from `health_report`.
 - `update_summary` uses `module_inventory` to keep the project summary honest.
 
-### Bootstrap (`gm-371`)
+### Import from advanced source — source-code-import path (`gm-371`)
 
 - Source-code-import calls `ModuleInventory` + `EntryPoints` +
   `HealthIndicators` to produce a rich first-draft epic decomposition.
@@ -242,7 +242,7 @@ the graph — polecat work benefits from graph access too.
 - This document committed.
 - Follow-up beads filed (see above).
 - `gm-eiw` amended to include the four new context provider IDs.
-- `gm-371` (bootstrap) pointer to this design exists.
+- `gm-371` (source-code import path) pointer to this design exists.
 
 ## Not in scope
 
