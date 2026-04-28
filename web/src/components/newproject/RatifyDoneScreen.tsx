@@ -15,9 +15,10 @@
 //   Skip (secondary) — switches the active workspace to the new project
 //     + navigates to /gemba (the dashboard).
 //
-// Active-workspace switch (gm-102l): the switch API does not yet exist —
-// the project picker (gm-root.18) is in flight. When the endpoint lands,
-// call it here BEFORE navigate(). The follow-up bead is gm-102l.
+// Active-workspace switch (gm-102l): calls useProjectPicker().switchProject()
+// from ProjectPickerContext (gm-root.18) before navigating. This keeps the
+// top-bar picker label and activeProject state in sync with the newly-created
+// project so the operator immediately sees the correct workspace selected.
 //
 // Gemba walk route (/walk) exists (gm-i65, shipped). The seed-agenda query
 // parameter (e.g. ?seed=ratify&session=<id>) is a future gm-3nk concern —
@@ -27,6 +28,7 @@
 import { useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Map, SkipForward } from 'lucide-react';
+import { useProjectPicker } from '@/components/projectpicker/ProjectPickerContext';
 
 export interface RatifyDoneScreenProps {
   // Human-readable project name for the confirmation headline.
@@ -46,16 +48,21 @@ export function RatifyDoneScreen({
   epicCount,
 }: RatifyDoneScreenProps): JSX.Element {
   const navigate = useNavigate();
+  const { switchProject } = useProjectPicker();
 
-  // Both CTAs must switch the active workspace first (gm-102l). Until
-  // that API exists this is a no-op stub — the comment below is the
-  // seam for the follow-up bead.
+  // Both CTAs switch the active workspace first (gm-102l) via
+  // ProjectPickerContext.switchProject(). This keeps the top-bar picker
+  // label and SPA activeProject state in sync with the new project so
+  // the operator sees the correct workspace selected immediately after
+  // navigating. Errors are swallowed so a failed switch doesn't block
+  // navigation — the operator can switch manually from the picker.
   const switchWorkspace = useCallback(async () => {
-    // TODO(gm-102l): POST /api/v1/workspaces/active with the new
-    // project path once the workspace-switch endpoint lands
-    // (gm-root.18). Currently a no-op stub.
-    return Promise.resolve();
-  }, []);
+    try {
+      await switchProject(projectName);
+    } catch {
+      // Non-fatal: switch failure must not block navigation.
+    }
+  }, [switchProject, projectName]);
 
   const onStartPlanning = useCallback(async () => {
     await switchWorkspace();

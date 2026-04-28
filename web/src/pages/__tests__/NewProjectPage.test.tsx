@@ -17,6 +17,20 @@ vi.mock('@/api/newproject', async () => {
   };
 });
 
+// RatifyDoneScreen now calls useProjectPicker() (gm-102l). Mock the
+// provider so NewProjectPage tests render cleanly without a real
+// ProjectPickerProvider in the tree.
+vi.mock('@/components/projectpicker/ProjectPickerContext', () => ({
+  useProjectPicker: () => ({
+    projects: [],
+    activeProject: null,
+    isLoading: false,
+    error: null,
+    switchProject: vi.fn().mockResolvedValue(undefined),
+    reload: vi.fn(),
+  }),
+}));
+
 // Stub lucide-react icons used by RatifyDoneScreen so jsdom doesn't
 // choke on SVG rendering during unit tests.
 vi.mock('lucide-react', async () => {

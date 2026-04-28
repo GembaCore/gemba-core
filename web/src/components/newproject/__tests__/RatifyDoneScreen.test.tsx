@@ -1,15 +1,29 @@
-// RatifyDoneScreen component tests (gm-root.17.7).
+// RatifyDoneScreen component tests (gm-root.17.7 + gm-102l).
 //
 // Covers:
 //   - renders the project name, path, and seeded counts
-//   - Start planning CTA navigates to /walk
-//   - Skip CTA navigates to /gemba
+//   - Start planning CTA calls switchProject(projectName) BEFORE navigating to /walk
+//   - Skip CTA calls switchProject(projectName) BEFORE navigating to /gemba
 //   - zero-count edge cases render without error
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { RatifyDoneScreen } from '../RatifyDoneScreen';
+
+// Mock useProjectPicker so the component can render without a real
+// ProjectPickerProvider in the test tree.
+const mockSwitchProject = vi.fn().mockResolvedValue(undefined);
+vi.mock('@/components/projectpicker/ProjectPickerContext', () => ({
+  useProjectPicker: () => ({
+    projects: [],
+    activeProject: null,
+    isLoading: false,
+    error: null,
+    switchProject: mockSwitchProject,
+    reload: vi.fn(),
+  }),
+}));
 
 // Stub lucide-react icons so jsdom doesn't choke on SVG rendering.
 vi.mock('lucide-react', async () => {
@@ -69,6 +83,11 @@ function wrap({
 }
 
 describe('RatifyDoneScreen', () => {
+  beforeEach(() => {
+    mockSwitchProject.mockClear();
+    mockSwitchProject.mockResolvedValue(undefined);
+  });
+
   it('renders the project name in the headline', () => {
     render(wrap({ projectName: 'my-crm' }));
     expect(screen.getByTestId('ratify-done-project-name').textContent).toContain('my-crm');
@@ -115,7 +134,61 @@ describe('RatifyDoneScreen', () => {
     expect(screen.getByTestId('ratify-done-skip')).toBeTruthy();
   });
 
-  it('Start planning navigates to /walk', async () => {
+  it('Start planning calls switchProject with the project name before navigating to /walk', async () => {
+    const navigatedAt: number[] = [];
+    const switchedAt: number[] = [];
+    // Track call order via side-effects on the mock.
+    mockSwitchProject.mockImplementation(() => {
+      switchedAt.push(Date.now());
+      return Promise.resolve();
+    });
+
+    render(wrap({ projectName: 'my-project' }));
+    fireEvent.click(screen.getByTestId('ratify-done-start-planning'));
+
+    await waitFor(() => {
+      const probe = screen.getByTestId('probe-pathname').textContent;
+      if (probe === '/walk') {
+        navigatedAt.push(Date.now());
+      }
+      expect(probe).toBe('/walk');
+    });
+
+    // switchProject must have been called with the project name.
+    expect(mockSwitchProject).toHaveBeenCalledWith('my-project');
+    // And it must have been called before the navigation completed.
+    expect(switchedAt.length).toBeGreaterThan(0);
+    expect(navigatedAt.length).toBeGreaterThan(0);
+    expect(switchedAt[0]).toBeLessThanOrEqual(navigatedAt[0]);
+  });
+
+  it('Skip calls switchProject with the project name before navigating to /gemba', async () => {
+    const navigatedAt: number[] = [];
+    const switchedAt: number[] = [];
+    mockSwitchProject.mockImplementation(() => {
+      switchedAt.push(Date.now());
+      return Promise.resolve();
+    });
+
+    render(wrap({ projectName: 'my-project' }));
+    fireEvent.click(screen.getByTestId('ratify-done-skip'));
+
+    await waitFor(() => {
+      const probe = screen.getByTestId('probe-pathname').textContent;
+      if (probe === '/gemba') {
+        navigatedAt.push(Date.now());
+      }
+      expect(probe).toBe('/gemba');
+    });
+
+    expect(mockSwitchProject).toHaveBeenCalledWith('my-project');
+    expect(switchedAt.length).toBeGreaterThan(0);
+    expect(navigatedAt.length).toBeGreaterThan(0);
+    expect(switchedAt[0]).toBeLessThanOrEqual(navigatedAt[0]);
+  });
+
+  it('Start planning navigates to /walk even when switchProject rejects', async () => {
+    mockSwitchProject.mockRejectedValue(new Error('switch failed'));
     render(wrap());
     fireEvent.click(screen.getByTestId('ratify-done-start-planning'));
     await waitFor(() =>
@@ -123,7 +196,8 @@ describe('RatifyDoneScreen', () => {
     );
   });
 
-  it('Skip navigates to /gemba', async () => {
+  it('Skip navigates to /gemba even when switchProject rejects', async () => {
+    mockSwitchProject.mockRejectedValue(new Error('switch failed'));
     render(wrap());
     fireEvent.click(screen.getByTestId('ratify-done-skip'));
     await waitFor(() =>
