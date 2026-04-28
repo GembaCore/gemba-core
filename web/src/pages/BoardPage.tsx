@@ -633,6 +633,28 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 }
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
+  const navigate = useNavigate();
+  // gm-root.17.13: gate the "Plan with the Onboarder" CTA on whether
+  // an LLM client is configured. The probe is fire-and-forget — the
+  // CTA simply doesn't render until/unless the probe says yes, so a
+  // missing or slow probe never blocks the manual-create path.
+  const [planAvailable, setPlanAvailable] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void import('@/api/newproject').then(({ probeOnboarder }) => {
+      probeOnboarder()
+        .then((p) => {
+          if (!cancelled) setPlanAvailable(Boolean(p.available));
+        })
+        .catch(() => {
+          /* swallow — the CTA stays hidden on probe failure */
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <div
       data-testid="board-empty"
@@ -642,14 +664,26 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       <p className="max-w-md text-xs text-neutral-500 dark:text-neutral-400">
         Create one below, or use <code className="font-mono">bd create</code> from your terminal.
       </p>
-      <button
-        type="button"
-        onClick={onCreate}
-        className="mt-1 inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
-      >
-        <Plus className="h-3.5 w-3.5" />
-        New work item
-      </button>
+      <div className="mt-1 flex flex-wrap items-center justify-center gap-2">
+        <button
+          type="button"
+          onClick={onCreate}
+          className="inline-flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1.5 text-sm text-white hover:bg-neutral-800 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-200"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          New work item
+        </button>
+        {planAvailable ? (
+          <button
+            type="button"
+            data-testid="board-empty-plan"
+            onClick={() => navigate('/onboard')}
+            className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-950/70"
+          >
+            Plan with the Onboarder →
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

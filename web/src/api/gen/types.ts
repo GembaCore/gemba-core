@@ -378,6 +378,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/newproject/create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lightweight project creation. Scaffolds a project (dir + git init + .gemba/workspace.toml + beads DB + initial commit) without spawning the Onboarder or calling an LLM. Same atomic ratify transaction as the conversational flow, but with an empty Milestones[] tree. */
+        post: operations["createProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarder/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reports whether the Onboarder persona host can resolve an LLM client. The SPA reads this on board empty-state to decide whether to render the optional 'Plan with the Onboarder' CTA. */
+        get: operations["probeOnboarder"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -695,6 +729,20 @@ export interface components {
             message: string;
             /** @description 1-based transaction step that failed (1..10; step 8a dep-resolution is encoded as 8). */
             step: number;
+        };
+        /** @description Body for `POST /api/v1/newproject/create` — the lightweight project-creation path. No session, no Onboarder, no LLM. The server runs the same atomic ratify transaction the conversational flow uses, but with an empty Milestones[] tree (gm-root.17.13). */
+        CreateProjectRequest: {
+            /** @description Project name. Used as the directory name under default_dir. */
+            project_name: string;
+            /** @description Optional one-or-two-line description. Mirrored into .gemba/workspace.toml and the synthesised docs/project.md. */
+            description?: string;
+        };
+        /** @description Body for `GET /api/v1/onboarder/probe`. Always 200; `available` is the operative signal. When `available` is false, `reason` carries the operator-facing diagnostic the SPA can surface verbatim. */
+        OnboarderProbeResponse: {
+            /** @description True when the Onboarder persona host can resolve an LLM client (i.e. the conversational flow at /onboard would not 503). */
+            available: boolean;
+            /** @description Operator-facing diagnostic explaining why the Onboarder is unavailable. Empty / omitted when available is true. */
+            reason?: string;
         };
     };
     responses: {
@@ -1236,6 +1284,78 @@ export interface operations {
                 };
             };
             503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    createProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Project scaffolded successfully. `milestone_count` and `epic_count` are both 0 on this path. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatifyResponse"];
+                };
+            };
+            /** @description Validation failure — missing or empty `project_name`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Target directory already exists (`error` = `dir_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatifyError"];
+                };
+            };
+            /** @description Transaction step failed (git_init_failed, beads_init_failed, mkdir_failed, project_md_failed, commit_failed). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatifyError"];
+                };
+            };
+            503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    probeOnboarder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Probe result. Always 200 — `available` is the operative signal; when false, `reason` carries the operator-facing diagnostic. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboarderProbeResponse"];
+                };
+            };
         };
     };
 }

@@ -1,6 +1,6 @@
 // specs/newproject/newproject.spec.ts — gm-root.17.3
 //
-// /new full-page conversational project creation surface (see
+// /onboard full-page conversational project creation surface (see
 // docs/design/newproject.md). Two panes (conversation + plan
 // preview), persistent Ratify button, nonce-confirmed commit modal,
 // one-shot session.
@@ -13,10 +13,10 @@
 
 import { test, expect } from '../../fixtures/server';
 
-test.describe('/new (newproject — gm-root.17.3) @route', () => {
+test.describe('/onboard (newproject — gm-root.17.3) @route', () => {
   test('renders both panes and the persistent Ratify button', async ({ page }) => {
-    await page.goto('/new');
-    await expect(page.getByTestId('newproject-page')).toBeVisible();
+    await page.goto('/onboard');
+    await expect(page.getByTestId("onboard-page")).toBeVisible();
     await expect(page.getByTestId('newproject-conversation-pane')).toBeVisible();
     await expect(page.getByTestId('newproject-plan-pane')).toBeVisible();
     await expect(page.getByTestId('newproject-ratify')).toBeVisible();
@@ -27,7 +27,7 @@ test.describe('/new (newproject — gm-root.17.3) @route', () => {
   });
 
   test('greeting from the skill lands in the transcript on first paint', async ({ page }) => {
-    await page.goto('/new');
+    await page.goto('/onboard');
     await expect(page.getByTestId('newproject-message-greeting')).toBeVisible();
     await expect(page.getByTestId('newproject-message-greeting')).toContainText(
       'Onboarder'
@@ -35,7 +35,7 @@ test.describe('/new (newproject — gm-root.17.3) @route', () => {
   });
 
   test('submitting a turn populates the plan tree and enables Ratify', async ({ page }) => {
-    await page.goto('/new');
+    await page.goto('/onboard');
     await expect(page.getByTestId('newproject-input')).toBeVisible();
     await page.getByTestId('newproject-input').fill('build a CRM for small teams');
     await page.getByTestId('newproject-send').click();
@@ -48,7 +48,7 @@ test.describe('/new (newproject — gm-root.17.3) @route', () => {
   });
 
   test('mid-conversation in-place edits update the plan preview', async ({ page }) => {
-    await page.goto('/new');
+    await page.goto('/onboard');
     await page.getByTestId('newproject-input').fill('build a CRM');
     await page.getByTestId('newproject-send').click();
     await expect(page.getByTestId('newproject-milestone-0')).toBeVisible();
@@ -59,20 +59,29 @@ test.describe('/new (newproject — gm-root.17.3) @route', () => {
     await expect(titleInput).toHaveValue('M1 — OSS-ready');
   });
 
-  test('Ratify modal nonce-confirms commit and navigates to next_url', async ({ page }) => {
+  test('Ratify modal nonce-confirms commit and renders the handoff screen', async ({ page }) => {
     // Capture the ratify POST so we can assert the nonce header is
     // present (X-GEMBA-Confirm — server-side nonce gate per
-    // workItems.ts CONFIRM_HEADER).
+    // workItems.ts CONFIRM_HEADER). Post-ratify, the SPA renders the
+    // RatifyDoneScreen (gm-root.17.7) — navigation is owned by that
+    // screen's CTAs (Start planning → /walk; Skip → /gemba). The
+    // server response shape is {project_path, project_name,
+    // milestone_count, epic_count} per gm-root.17.11.
     let confirmHeader: string | undefined;
     await page.route('**/api/v1/newproject/*/ratify', async (route) => {
       const headers = route.request().headers();
       confirmHeader = headers['x-gemba-confirm'];
       await route.fulfill({
-        json: { project_path: '/tmp/p', next_url: '/board' },
+        json: {
+          project_path: '/tmp/p',
+          project_name: 'p',
+          milestone_count: 1,
+          epic_count: 0,
+        },
       });
     });
 
-    await page.goto('/new');
+    await page.goto('/onboard');
     await page.getByTestId('newproject-input').fill('build a CRM');
     await page.getByTestId('newproject-send').click();
     await expect(page.getByTestId('newproject-ratify')).toBeEnabled();
@@ -83,7 +92,9 @@ test.describe('/new (newproject — gm-root.17.3) @route', () => {
     await expect(page.getByTestId('newproject-ratify-count-milestones')).toContainText('1');
 
     await page.getByTestId('newproject-ratify-confirm').click();
-    await expect.poll(() => page.url(), { timeout: 5_000 }).toContain('/board');
+    // Phase transitions to "done" once the ratify resolves; the host
+    // page swaps the conversational layout for RatifyDoneScreen.
+    await expect(page.getByTestId('onboard-page')).toHaveAttribute('data-phase', 'done');
     expect(confirmHeader, 'ratify POST must carry X-GEMBA-Confirm nonce').toBeTruthy();
     expect(confirmHeader!.length).toBeGreaterThan(0);
   });
@@ -93,11 +104,16 @@ test.describe('/new (newproject — gm-root.17.3) @route', () => {
     await page.route('**/api/v1/newproject/*/ratify', async (route) => {
       ratifyCalls += 1;
       await route.fulfill({
-        json: { project_path: '/tmp/p', next_url: '/board' },
+        json: {
+          project_path: '/tmp/p',
+          project_name: 'p',
+          milestone_count: 1,
+          epic_count: 0,
+        },
       });
     });
 
-    await page.goto('/new');
+    await page.goto('/onboard');
     await page.getByTestId('newproject-input').fill('build a CRM');
     await page.getByTestId('newproject-send').click();
     await expect(page.getByTestId('newproject-ratify')).toBeEnabled();
@@ -109,7 +125,7 @@ test.describe('/new (newproject — gm-root.17.3) @route', () => {
   });
 
   test('refresh discards the session (one-shot persistence)', async ({ page }) => {
-    await page.goto('/new');
+    await page.goto('/onboard');
     await page.getByTestId('newproject-input').fill('build a CRM');
     await page.getByTestId('newproject-send').click();
     await expect(page.getByTestId('newproject-milestone-0')).toBeVisible();

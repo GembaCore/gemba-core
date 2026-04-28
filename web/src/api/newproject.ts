@@ -198,9 +198,32 @@ export interface RatifyResponse {
   project_name: string;
   // Milestone and epic counts — seeded by the ratification transaction
   // so the handoff screen can show "seeded N milestones and M epics"
-  // without re-querying the new workspace's beads database.
+  // without re-querying the new workspace's beads database. Both 0
+  // for the lightweight create path that bypasses the conversational
+  // flow (gm-root.17.13).
   milestone_count: number;
   epic_count: number;
+}
+
+// gm-root.17.13 — lightweight project creation. The body is two
+// fields: a project name and an optional description. The server
+// scaffolds the dir + git + .gemba + beads DB with no plan tree
+// (empty Milestones[]). No Onboarder, no LLM. The same
+// X-GEMBA-Confirm nonce gate the conversational /ratify uses
+// applies; the response shape is the same RatifyResponse so the
+// handoff screen treats both paths uniformly.
+export interface CreateProjectRequest {
+  project_name: string;
+  description: string;
+}
+
+// gm-root.17.13 — Onboarder availability probe. The board's empty
+// state reads this to decide whether to render "Plan with the
+// Onboarder →". 200 in both available + unavailable cases; the
+// `available` flag is the operative signal.
+export interface OnboarderProbeResponse {
+  available: boolean;
+  reason?: string;
 }
 
 // ── Client functions ────────────────────────────────────────────────
@@ -258,4 +281,32 @@ export function freshNonce(): string {
     return crypto.randomUUID();
   }
   return `nonce-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// createProject — POST /api/v1/newproject/create. Lightweight path
+// that scaffolds a project (dir + git init + .gemba + beads DB +
+// initial commit) with no plan tree, no Onboarder, no LLM.
+// gm-root.17.13.
+export async function createProject(
+  body: CreateProjectRequest,
+  opts: { nonce?: string } = {}
+): Promise<RatifyResponse> {
+  return apiFetch<RatifyResponse>('/v1/newproject/create', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+    },
+  });
+}
+
+// probeOnboarder — GET /api/v1/onboarder/probe. Reports whether the
+// Onboarder persona host can resolve an LLM client. The SPA reads
+// this on board empty-state to decide whether to render the
+// "Plan with the Onboarder →" CTA. gm-root.17.13.
+export async function probeOnboarder(): Promise<OnboarderProbeResponse> {
+  return apiFetch<OnboarderProbeResponse>('/v1/onboarder/probe', {
+    method: 'GET',
+  });
 }

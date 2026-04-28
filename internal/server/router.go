@@ -494,6 +494,20 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Post("/v1/newproject/{id}/turn", r.newProjectTurn)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/newproject/{id}/ratify", r.newProjectRatify)
+
+		// gm-root.17.13: lightweight project-creation path. Bypasses
+		// the Onboarder + skill: the SPA's /new form posts a name +
+		// description and the server runs the same atomic ratify
+		// against an empty Milestones[] tree. Nonce-gated for the
+		// same reason as /ratify (disk write + initial commit).
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/newproject/create", r.newProjectCreate)
+
+		// gm-root.17.13: onboarder availability probe. The board's
+		// empty-state CTA reads this to decide whether to render
+		// "Plan with the Onboarder →". Always 200; the body's
+		// `available` flag is the operative signal.
+		api.Get("/v1/onboarder/probe", r.onboarderProbe)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

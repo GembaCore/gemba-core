@@ -15,6 +15,7 @@ import { BootstrapPage } from '@/pages/BootstrapPage';
 // ship in follow-up beads — the route is wired to typed STUB endpoints
 // today and the e2e fake-mode dispatcher exercises the full flow.
 import { NewProjectPage } from '@/pages/NewProjectPage';
+import { OnboardPage } from '@/pages/OnboardPage';
 import { InsightsPersonasPage } from '@/pages/InsightsPersonasPage';
 import { DriftPage } from '@/pages/DriftPage';
 // gm-e12.15: provider-aware agent detail view (Workspace.kind switch).
@@ -90,11 +91,18 @@ export default function App() {
             on a specific step. Bare /bootstrap redirects to Step 1. */}
         <Route path="/bootstrap" element={<Navigate to="/bootstrap/source" replace />} />
         <Route path="/bootstrap/:step" element={<BootstrapPage />} />
-        {/* gm-root.17.3: /new — full-page conversational project
-            creation. Two-pane (conversation + plan preview) layout
-            with a persistent Ratify button. One-shot session — refresh
-            discards. See docs/design/newproject.md. */}
+        {/* gm-root.17.13: /new is now the lightweight project-
+            creation form (name + description → atomic ratify with
+            empty plan tree, no LLM required). The conversational
+            flow that used to live here moved to /onboard. */}
         <Route path="/new" element={<NewProjectPage />} />
+        {/* gm-root.17.13: /onboard — the conversational planner the
+            old /new hosted (gm-root.17.3). Reachable from the board's
+            empty-state CTA when an LLM client is configured, or by
+            direct navigation. Two-pane (conversation + plan preview)
+            layout with a persistent Ratify button. One-shot session —
+            refresh discards. See docs/design/newproject.md. */}
+        <Route path="/onboard" element={<OnboardPage />} />
         {features.mail && <Route path="/mail" element={<MailPage />} />}
         <Route path="/health" element={<HealthPage />} />
         <Route path="*" element={<NotFoundPage />} />

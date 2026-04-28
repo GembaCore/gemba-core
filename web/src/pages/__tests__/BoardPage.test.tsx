@@ -401,6 +401,12 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-error')).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    // Count only /api/work-items calls; the empty-state also fires a
+    // /api/v1/onboarder/probe per gm-root.17.13 which is unrelated.
+    const workItemCalls = fetchSpy.mock.calls.filter((args) => {
+      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
+      return url.includes('/api/work-items');
+    });
+    expect(workItemCalls).toHaveLength(2);
   });
 });

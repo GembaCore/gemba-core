@@ -631,3 +631,159 @@ default_dir = "~/work/projects"
 		t.Errorf("default dir: want %q, got %q", want, got)
 	}
 }
+
+// ─── gm-root.17.13: lightweight /create + /onboarder/probe ──────────
+
+// TestNewProject_Create_Light_HappyPath: POST /api/v1/newproject/create
+// with just a name + description scaffolds a project with empty plan
+// tree (no LLM, no Onboarder). Ratify response carries milestone_count
+// = 0 / epic_count = 0 so the SPA's handoff knows the project is bare.
+func TestNewProject_Create_Light_HappyPath(t *testing.T) {
+	tmp := t.TempDir()
+	stub := newStubRunner()
+	r, _ := newNewProjectRouter(t, NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	}))
+
+	body := createRequest{
+		ProjectName: "lightproj",
+		Description: "manually managed",
+	}
+	req := newProjectReq(t, http.MethodPost, "/api/v1/newproject/create", body)
+	req.Header.Set(ConfirmHeader, "test-nonce-light-1")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/create: want 200, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	var resp RatifyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.ProjectName != "lightproj" {
+		t.Errorf("project_name: got %q", resp.ProjectName)
+	}
+	if resp.MilestoneCount != 0 || resp.EpicCount != 0 {
+		t.Errorf("counts: want 0/0, got %d/%d", resp.MilestoneCount, resp.EpicCount)
+	}
+	wantPath := filepath.Join(tmp, "lightproj")
+	if resp.ProjectPath != wantPath {
+		t.Errorf("project_path: want %q, got %q", wantPath, resp.ProjectPath)
+	}
+	// Project dir + .gemba/workspace.toml + docs/project.md all exist.
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("project dir missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(wantPath, ".gemba", "workspace.toml")); err != nil {
+		t.Fatalf("workspace.toml missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(wantPath, "docs", "project.md")); err != nil {
+		t.Fatalf("project.md missing: %v", err)
+	}
+	// No bd-create calls should have fired (empty Milestones[]). Only
+	// `bd init` is expected.
+	bdCreates := 0
+	for _, c := range stub.calls {
+		if c.Bin == "bd" && len(c.Args) >= 1 && c.Args[0] == "create" {
+			bdCreates++
+		}
+	}
+	if bdCreates != 0 {
+		t.Errorf("expected 0 bd-create calls for empty plan, got %d (calls=%+v)",
+			bdCreates, stub.calls)
+	}
+}
+
+// TestNewProject_Create_RequiresName: empty / whitespace project_name
+// returns 400.
+func TestNewProject_Create_RequiresName(t *testing.T) {
+	r, _ := newNewProjectRouter(t, NewRatifier(RatifierConfig{
+		DefaultDirOverride: t.TempDir(),
+		Runner:             newStubRunner().run,
+	}))
+	for _, name := range []string{"", "   "} {
+		body := createRequest{ProjectName: name}
+		req := newProjectReq(t, http.MethodPost, "/api/v1/newproject/create", body)
+		req.Header.Set(ConfirmHeader, "test-nonce-create-noname-"+name)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("name=%q: want 400, got %d body=%q",
+				name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// TestNewProject_Create_RequiresNonce: /create writes to disk, so the
+// confirm-nonce gate must be enforced.
+func TestNewProject_Create_RequiresNonce(t *testing.T) {
+	r, _ := newNewProjectRouter(t, NewRatifier(RatifierConfig{
+		DefaultDirOverride: t.TempDir(),
+		Runner:             newStubRunner().run,
+	}))
+	body := createRequest{ProjectName: "noNonce"}
+	req := newProjectReq(t, http.MethodPost, "/api/v1/newproject/create", body)
+	// Intentionally no ConfirmHeader.
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Errorf("expected non-200 without confirm nonce, got 200 body=%q", rec.Body.String())
+	}
+}
+
+// TestOnboarderProbe_Available: stub turner returns nil from Probe →
+// {available: true}.
+func TestOnboarderProbe_Available(t *testing.T) {
+	r, _ := newNewProjectRouter(t, nil)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/onboarder/probe", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var resp onboarderProbeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !resp.Available {
+		t.Errorf("expected available=true, got %+v", resp)
+	}
+}
+
+// fakeUnavailableTurner returns a probe error so the test can assert
+// the unavailable branch.
+type fakeUnavailableTurner struct{}
+
+func (fakeUnavailableTurner) Greeting() string { return "" }
+func (fakeUnavailableTurner) Turn(_ context.Context, in NewProjectState, _ string, _ map[string]interface{}) (NewProjectState, string, error) {
+	return in, "", nil
+}
+func (fakeUnavailableTurner) Probe(_ context.Context) error {
+	return errors.New("No LLM client configured. Export ANTHROPIC_API_KEY in your environment, or set [llm] in ~/.gemba/config.toml, before starting a New project conversation.")
+}
+
+// TestOnboarderProbe_Unavailable: turner Probe returns an error →
+// {available: false, reason: <message>}, still HTTP 200.
+func TestOnboarderProbe_Unavailable(t *testing.T) {
+	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	t.Cleanup(r.Close)
+	r.AttachNewProject(NewMemoryNewProjectStore(), fakeUnavailableTurner{}, nil)
+
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/onboarder/probe", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var resp onboarderProbeResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Available {
+		t.Errorf("expected available=false, got %+v", resp)
+	}
+	if !strings.Contains(resp.Reason, "No LLM client configured") {
+		t.Errorf("expected reason to carry diagnostic, got %q", resp.Reason)
+	}
+}

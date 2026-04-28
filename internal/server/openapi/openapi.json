@@ -472,6 +472,73 @@
           "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
         }
       }
+    },
+    "/api/v1/newproject/create": {
+      "post": {
+        "tags": ["newproject"],
+        "summary": "Lightweight project creation. Scaffolds a project (dir + git init + .gemba/workspace.toml + beads DB + initial commit) without spawning the Onboarder or calling an LLM. Same atomic ratify transaction as the conversational flow, but with an empty Milestones[] tree.",
+        "operationId": "createProject",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateProjectRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project scaffolded successfully. `milestone_count` and `epic_count` are both 0 on this path.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RatifyResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failure — missing or empty `project_name`.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "409": {
+            "description": "Target directory already exists (`error` = `dir_exists`).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RatifyError" }
+              }
+            }
+          },
+          "500": {
+            "description": "Transaction step failed (git_init_failed, beads_init_failed, mkdir_failed, project_md_failed, commit_failed).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RatifyError" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/v1/onboarder/probe": {
+      "get": {
+        "tags": ["newproject"],
+        "summary": "Reports whether the Onboarder persona host can resolve an LLM client. The SPA reads this on board empty-state to decide whether to render the optional 'Plan with the Onboarder' CTA.",
+        "operationId": "probeOnboarder",
+        "responses": {
+          "200": {
+            "description": "Probe result. Always 200 — `available` is the operative signal; when false, `reason` carries the operator-facing diagnostic.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OnboarderProbeResponse" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -990,6 +1057,37 @@
             "type": "integer",
             "minimum": 1,
             "description": "1-based transaction step that failed (1..10; step 8a dep-resolution is encoded as 8)."
+          }
+        }
+      },
+      "CreateProjectRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/v1/newproject/create` — the lightweight project-creation path. No session, no Onboarder, no LLM. The server runs the same atomic ratify transaction the conversational flow uses, but with an empty Milestones[] tree (gm-root.17.13).",
+        "required": ["project_name"],
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Project name. Used as the directory name under default_dir."
+          },
+          "description": {
+            "type": "string",
+            "description": "Optional one-or-two-line description. Mirrored into .gemba/workspace.toml and the synthesised docs/project.md."
+          }
+        }
+      },
+      "OnboarderProbeResponse": {
+        "type": "object",
+        "description": "Body for `GET /api/v1/onboarder/probe`. Always 200; `available` is the operative signal. When `available` is false, `reason` carries the operator-facing diagnostic the SPA can surface verbatim.",
+        "required": ["available"],
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "description": "True when the Onboarder persona host can resolve an LLM client (i.e. the conversational flow at /onboard would not 503)."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Operator-facing diagnostic explaining why the Onboarder is unavailable. Empty / omitted when available is true."
           }
         }
       }

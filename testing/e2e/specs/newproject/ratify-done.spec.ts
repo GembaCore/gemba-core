@@ -31,7 +31,7 @@ async function ratifyProject(
     { name: 'fake-new-project', path: '/tmp/fake-projects/fake-new-project' },
   ]);
 
-  await page.goto('/new');
+  await page.goto('/onboard');
   // Wait for the greeting from the fake skill.
   await expect(page.getByTestId('newproject-message-greeting')).toBeVisible();
   // Submit a turn to populate the plan tree + enable the Ratify button.
@@ -136,6 +136,6 @@ test.describe('Ratify done handoff screen (gm-root.17.7 + gm-102l) @route', () =
     await ratifyProject(page, projectsStore);
     await expect(page.getByTestId('ratify-done-screen')).toBeVisible();
     // The page wrapper carries data-phase="done" (set in NewProjectPage).
-    await expect(page.getByTestId('newproject-page')).toHaveAttribute('data-phase', 'done');
+    await expect(page.getByTestId("onboard-page")).toHaveAttribute('data-phase', 'done');
   });
 });

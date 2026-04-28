@@ -1,340 +1,145 @@
-// /new — full-page conversational project creation (gm-root.17.3).
+// /new — lightweight project-creation form (gm-root.17.13).
 //
-// Two-pane layout per docs/design/newproject.md "Surfaces" section:
-//
-//   ┌──────────────────────┬───────────────────────┐
-//   │  Conversation pane   │  Plan preview pane    │
-//   │  (skill transcript)  │  (Milestones → Epics  │
-//   │                      │   → Beads + draft md) │
-//   │                      │                       │
-//   └──────────────────────┴───────────────────────┘
-//                                       [ Ratify ]
-//
-// After successful ratification the page transitions into the "Start
-// planning" handoff screen (gm-root.17.7) — a full-page replacement
-// of the two-pane layout with two CTAs:
-//
-//   Start planning → /walk (Gemba walk surface, gm-3nk)
-//   Skip           → /gemba (dashboard)
-//
-// One-shot persistence — refresh / disconnect / restart loses the
-// session. The route does NOT autosave or attempt to resume; the
-// design doc is explicit.
-//
-// Backend wiring: the `newproject` skill (gm-root.17.5), the
-// Onboarder persona (gm-root.17.10), and the atomic-ratify backend
-// (gm-root.17.6) do NOT exist yet. The route POSTs to:
-//
-//   POST /api/v1/newproject/start
-//   POST /api/v1/newproject/:id/turn
-//   POST /api/v1/newproject/:id/ratify
-//
-// The fake-mode dispatcher in testing/e2e/fixtures/server.ts mocks
-// these endpoints so the route renders + transitions + commits
-// end-to-end. When the backend lands, no SPA changes are required.
+// Replaces the conversational /new from gm-root.17.3 (now at /onboard).
+// Posts {project_name, description} to POST /api/v1/newproject/create
+// which runs the same atomic ratify transaction the conversational
+// flow uses, but with an empty Milestones[] tree — so the operator
+// gets a project dir + git init + .gemba/workspace.toml + beads DB
+// without spawning the Onboarder or touching an LLM. After ratify the
+// active workspace switches to the new project and the operator lands
+// on /board, which renders an empty-state CTA inviting them into the
+// conversational planner if they want one.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Sparkles } from 'lucide-react';
-import {
-  EMPTY_STATE,
-  ratifyNewProject,
-  startNewProject,
-  submitTurn,
-  type ConversationMessage,
-  type NewProjectState,
-  type RatifyResponse,
-} from '@/api/newproject';
-import { ConversationPane } from '@/components/newproject/ConversationPane';
-import { PlanPreviewPane } from '@/components/newproject/PlanPreviewPane';
-import { RatifyModal } from '@/components/newproject/RatifyModal';
-import { RatifyDoneScreen } from '@/components/newproject/RatifyDoneScreen';
-import type { SessionState } from '@/components/newproject/types';
+import { useCallback, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { createProject } from '@/api/newproject';
+import { useProjectPicker } from '@/components/projectpicker/ProjectPickerContext';
 
-const INITIAL: SessionState = {
-  phase: 'idle',
-  sessionId: null,
-  transcript: [],
-  state: EMPTY_STATE,
-  error: null,
-  pendingTurn: false,
-};
+type Phase = 'idle' | 'submitting' | 'error';
 
 export function NewProjectPage(): JSX.Element {
-  const [session, setSession] = useState<SessionState>(INITIAL);
-  // Track in-place plan edits the operator has made since the last
-  // /turn so the next message carries them as `edits`. Cleared after
-  // every successful turn.
-  const pendingEditsRef = useRef<NewProjectState | null>(null);
-  // Bumped after every successful turn so the input clears.
-  const [resetToken, setResetToken] = useState(0);
-  // Sticky nonce per ratify attempt — pinned by the modal but the
-  // host owns the network call so we hold onto it.
-  const ratifyNonceRef = useRef<string | null>(null);
-  // Set to the ratify response once the commit succeeds. When set,
-  // the page renders the RatifyDoneScreen in place of the two-pane
-  // layout (gm-root.17.7).
-  const [ratifyResult, setRatifyResult] = useState<RatifyResponse | null>(null);
+  const navigate = useNavigate();
+  const { switchProject } = useProjectPicker();
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [error, setError] = useState<string | null>(null);
 
-  // Start a fresh session on mount. One-shot — refresh starts a new
-  // session because the server's in-memory state went away with the
-  // old request lifecycle.
-  useEffect(() => {
-    let cancelled = false;
-    setSession((s) => ({ ...s, phase: 'starting', error: null }));
-    startNewProject()
-      .then((res) => {
-        if (cancelled) return;
-        const transcript: ConversationMessage[] = res.greeting
-          ? [
-              {
-                id: 'greeting',
-                role: 'assistant',
-                content: res.greeting,
-                at: new Date().toISOString(),
-              },
-            ]
-          : [];
-        setSession({
-          phase: 'active',
-          sessionId: res.session_id,
-          transcript,
-          state: res.state ?? EMPTY_STATE,
-          error: null,
-          pendingTurn: false,
+  const trimmedName = name.trim();
+  const canSubmit = trimmedName.length > 0 && phase !== 'submitting';
+
+  const onSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!canSubmit) return;
+      setPhase('submitting');
+      setError(null);
+      try {
+        const resp = await createProject({
+          project_name: trimmedName,
+          description: description.trim(),
         });
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setSession((s) => ({
-          ...s,
-          phase: 'error',
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const onPlanEdit = useCallback((next: NewProjectState) => {
-    setSession((s) => ({ ...s, state: next }));
-    pendingEditsRef.current = next;
-  }, []);
-
-  const onSend = useCallback(
-    async (message: string) => {
-      if (!session.sessionId || session.pendingTurn) return;
-      const userMsg: ConversationMessage = {
-        id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        role: 'user',
-        content: message,
-        at: new Date().toISOString(),
-      };
-      // Optimistic transcript update + lock the input.
-      setSession((s) => ({
-        ...s,
-        transcript: [...s.transcript, userMsg],
-        pendingTurn: true,
-        error: null,
-      }));
-      const edits = pendingEditsRef.current
-        ? { state: pendingEditsRef.current }
-        : undefined;
-      try {
-        const res = await submitTurn(session.sessionId, { message, edits });
-        const assistantMsg: ConversationMessage = {
-          id: res.reply_id || `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: res.reply,
-          at: res.reply_at || new Date().toISOString(),
-        };
-        setSession((s) => ({
-          ...s,
-          transcript: [...s.transcript, assistantMsg],
-          state: res.state ?? s.state,
-          pendingTurn: false,
-        }));
-        pendingEditsRef.current = null;
-        setResetToken((n) => n + 1);
+        // Switch the active workspace to the newly-created project so
+        // the picker label updates immediately and subsequent surfaces
+        // render against the right beads DB. Failures are non-fatal —
+        // the project exists; the user can switch manually.
+        try {
+          await switchProject(resp.project_name);
+        } catch {
+          /* swallow — non-fatal */
+        }
+        navigate('/board');
       } catch (err) {
-        setSession((s) => ({
-          ...s,
-          pendingTurn: false,
-          error: err instanceof Error ? err.message : String(err),
-        }));
+        setPhase('error');
+        setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [session.sessionId, session.pendingTurn]
+    [canSubmit, trimmedName, description, switchProject, navigate]
   );
-
-  const openRatify = useCallback(() => {
-    setSession((s) => ({ ...s, phase: 'ratifying', error: null }));
-  }, []);
-
-  const closeRatify = useCallback(() => {
-    setSession((s) => (s.phase === 'committing' ? s : { ...s, phase: 'active' }));
-  }, []);
-
-  const onConfirmRatify = useCallback(
-    async (nonce: string) => {
-      if (!session.sessionId) return;
-      ratifyNonceRef.current = nonce;
-      setSession((s) => ({ ...s, phase: 'committing', error: null }));
-      try {
-        const res = await ratifyNewProject(
-          session.sessionId,
-          { state: session.state },
-          { nonce }
-        );
-        setSession((s) => ({ ...s, phase: 'done' }));
-        // Per design doc (gm-root.17.7): show the "Start planning"
-        // handoff screen. The ratify response carries the fields needed
-        // to render it (project_name, project_path, milestone_count,
-        // epic_count). The handoff screen owns navigation from here.
-        setRatifyResult(res);
-      } catch (err) {
-        setSession((s) => ({
-          ...s,
-          phase: 'ratifying',
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      }
-    },
-    [session.sessionId, session.state]
-  );
-
-  const inputDisabled =
-    session.phase !== 'active' || session.pendingTurn || !session.sessionId;
-  const ratifyDisabled =
-    session.phase !== 'active' ||
-    session.pendingTurn ||
-    !session.sessionId ||
-    session.state.Milestones.length === 0;
-
-  // After successful ratification, replace the two-pane layout with
-  // the "Start planning" handoff screen (gm-root.17.7). The screen
-  // owns navigation from here — no further state needed from the
-  // conversation session.
-  if (ratifyResult) {
-    // Count epics across all milestones for the summary line.
-    const totalEpics =
-      ratifyResult.epic_count ??
-      session.state.Milestones.reduce((acc, m) => acc + m.Epics.length, 0);
-    return (
-      <div
-        data-testid="newproject-page"
-        data-phase="done"
-        className="flex h-full min-h-0 flex-col"
-      >
-        <RatifyDoneScreen
-          projectName={ratifyResult.project_name || session.state.ProjectName}
-          projectPath={ratifyResult.project_path}
-          milestoneCount={ratifyResult.milestone_count ?? session.state.Milestones.length}
-          epicCount={totalEpics}
-        />
-      </div>
-    );
-  }
-
-  // Starting / error states render a centered banner so the operator
-  // sees what happened before the panes paint.
-  if (session.phase === 'starting') {
-    return (
-      <div
-        data-testid="newproject-page"
-        data-phase="starting"
-        className="flex h-full items-center justify-center"
-      >
-        <p
-          data-testid="newproject-starting"
-          className="text-sm italic text-neutral-500 dark:text-neutral-400"
-        >
-          Starting a new conversation with the Onboarder…
-        </p>
-      </div>
-    );
-  }
-
-  if (session.phase === 'error' && !session.sessionId) {
-    return (
-      <div
-        data-testid="newproject-page"
-        data-phase="error"
-        className="flex h-full items-center justify-center"
-      >
-        <div className="max-w-md rounded border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
-          <p data-testid="newproject-start-error" className="font-semibold">
-            Couldn't start a new project conversation.
-          </p>
-          <p className="mt-1 text-xs">{session.error}</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
       data-testid="newproject-page"
-      data-phase={session.phase}
-      className="flex h-full min-h-0 flex-col"
+      data-phase={phase}
+      className="flex h-full items-start justify-center overflow-auto px-6 py-12"
     >
-      <header className="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-sky-600 dark:text-sky-400" />
-          <div>
-            <h1 className="text-sm font-semibold">New project</h1>
-            <p className="text-[10px] text-neutral-500 dark:text-neutral-400">
-              One-shot conversation · refresh discards the session.
-            </p>
-          </div>
-        </div>
-      </header>
-
-      {session.error && session.sessionId ? (
-        <div
-          data-testid="newproject-turn-error"
-          className="border-b border-rose-300 bg-rose-50 px-4 py-1 text-xs text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200"
-        >
-          {session.error}
-        </div>
-      ) : null}
-
-      <div className="flex min-h-0 flex-1">
-        <ConversationPane
-          transcript={session.transcript}
-          onSend={onSend}
-          disabled={inputDisabled}
-          resetToken={resetToken}
-        />
-        <PlanPreviewPane
-          state={session.state}
-          onEdit={onPlanEdit}
-          disabled={
-            session.phase === 'committing' ||
-            session.phase === 'done' ||
-            !session.sessionId
-          }
-        />
-      </div>
-
-      <button
-        type="button"
-        data-testid="newproject-ratify"
-        onClick={openRatify}
-        disabled={ratifyDisabled}
-        className="fixed bottom-6 right-6 z-30 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-lg hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm dark:border-neutral-800 dark:bg-neutral-950"
       >
-        Ratify
-      </button>
+        <header className="mb-4 flex items-center gap-2">
+          <Plus className="h-5 w-5 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          <h1 className="text-lg font-semibold">New project</h1>
+        </header>
+        <p className="mb-6 text-sm text-neutral-600 dark:text-neutral-400">
+          Create a project — a directory with a git repo, a workspace config, and a fresh
+          beads database. You can plan and add work items afterward, on your own or with the
+          Onboarder.
+        </p>
 
-      <RatifyModal
-        open={session.phase === 'ratifying' || session.phase === 'committing'}
-        state={session.state}
-        onConfirm={onConfirmRatify}
-        onCancel={closeRatify}
-        committing={session.phase === 'committing'}
-        error={session.error}
-      />
+        <label htmlFor="np-name" className="block text-xs font-medium uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
+          Project name
+        </label>
+        <input
+          id="np-name"
+          data-testid="newproject-name"
+          type="text"
+          required
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="my-project"
+          autoComplete="off"
+          className="mt-1 block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-neutral-700 dark:bg-neutral-900"
+        />
+        <p className="mt-1 text-[11px] text-neutral-500 dark:text-neutral-400">
+          Used as the directory name under <code>~/gemba/projects/</code> (or the configured
+          default).
+        </p>
+
+        <label htmlFor="np-description" className="mt-5 block text-xs font-medium uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
+          Description <span className="font-normal lowercase text-neutral-500">(optional)</span>
+        </label>
+        <textarea
+          id="np-description"
+          data-testid="newproject-description"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="One or two lines about what this project is for. You can edit it later."
+          rows={3}
+          className="mt-1 block w-full resize-y rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-neutral-700 dark:bg-neutral-900"
+        />
+
+        {error ? (
+          <div
+            data-testid="newproject-error"
+            className="mt-4 rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200"
+          >
+            <p className="font-semibold">Couldn't create the project.</p>
+            <p className="mt-1">{error}</p>
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            disabled={phase === 'submitting'}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            data-testid="newproject-create"
+            disabled={!canSubmit}
+            className="rounded-md bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {phase === 'submitting' ? 'Creating…' : 'Create project'}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

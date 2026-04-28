@@ -101,6 +101,27 @@ type ratifyRequest struct {
 	State NewProjectState `json:"state"`
 }
 
+// createRequest is the body for POST /api/v1/newproject/create — the
+// lightweight project-creation path that does NOT spawn the Onboarder
+// persona or call an LLM. The handler builds a minimal NewProjectState
+// (empty Milestones[]) and runs the same atomic ratify transaction
+// the conversational flow uses, so the operator gets a project dir,
+// git init, .gemba/workspace.toml, and an empty beads DB without ever
+// touching a chat client (gm-root.17.13).
+type createRequest struct {
+	ProjectName string `json:"project_name"`
+	Description string `json:"description"`
+}
+
+// onboarderProbeResponse is the body of GET /api/v1/onboarder/probe.
+// The SPA reads this on board empty-state to decide whether to render
+// the "Plan with the Onboarder" CTA. When unavailable, the reason
+// carries the canonical operator-facing diagnostic.
+type onboarderProbeResponse struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+}
+
 // RatifyResponse is the success envelope POST /ratify returns. The
 // SPA owns post-ratify navigation (gm-root.17.7); the server returns
 // the new project's filesystem root, its display name, and the seeded
@@ -489,4 +510,62 @@ func writeNewProjectError(w http.ResponseWriter, err error) {
 	default:
 		httperr.WriteError(w, err)
 	}
+}
+
+// newProjectCreate is the lightweight project-creation handler. It
+// runs the same atomic ratify transaction the conversational flow
+// uses, but with an empty Milestones[] and ProjectName/Description
+// straight from the request — no session, no Onboarder, no LLM
+// (gm-root.17.13). Operators who want to scaffold a project and
+// manage beads manually never touch a chat client.
+func (r *Router) newProjectCreate(w http.ResponseWriter, req *http.Request) {
+	if r.newProjectRatifier == nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"adaptor_not_configured",
+			"newproject ratifier not registered")
+		return
+	}
+	var body createRequest
+	if err := decodeJSONBody(req, &body); err != nil {
+		httperr.Write(w, http.StatusBadRequest, "bad_request",
+			"invalid JSON body: "+err.Error())
+		return
+	}
+	name := strings.TrimSpace(body.ProjectName)
+	if name == "" {
+		httperr.Write(w, http.StatusBadRequest, "bad_request",
+			"project_name is required")
+		return
+	}
+	state := emptyNewProjectState()
+	state.ProjectName = name
+	state.Description = strings.TrimSpace(body.Description)
+	resp, err := r.newProjectRatifier.Ratify(req.Context(), state)
+	if err != nil {
+		writeRatifyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// onboarderProbe reports whether the Onboarder persona host can
+// resolve an LLM client. Returns 200 in both available + unavailable
+// cases — the body's `available` flag is the operative signal. The
+// SPA uses this to gate the optional "Plan with the Onboarder" CTA
+// on the board's empty-state without invoking the (heavier)
+// /api/v1/newproject/start probe (gm-root.17.13).
+func (r *Router) onboarderProbe(w http.ResponseWriter, req *http.Request) {
+	turner := r.newProjectTurner
+	if turner == nil {
+		writeJSON(w, http.StatusOK, onboarderProbeResponse{Available: true})
+		return
+	}
+	if err := turner.Probe(req.Context()); err != nil {
+		writeJSON(w, http.StatusOK, onboarderProbeResponse{
+			Available: false,
+			Reason:    err.Error(),
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, onboarderProbeResponse{Available: true})
 }
