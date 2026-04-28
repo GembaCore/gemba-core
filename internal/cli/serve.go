@@ -489,6 +489,40 @@ type workPlaneReg struct {
 
 func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*workPlaneReg, error) {
 	host := api.New()
+	// gm-ygwe: cold-start gate — when the resolved Beads URL came from
+	// the built-in default fallback AND no project marker exists under
+	// the configured [projects].default_dir, refuse to instantiate the
+	// WorkPlane. Otherwise a stray local Dolt "gemba" database would
+	// silently surface stale work to a fresh operator. Project-data
+	// routes (/api/work-items, /api/sprints, /api/escalations, ...)
+	// already 503 with adaptor_not_configured when the WorkPlane is
+	// nil — see internal/server/work_items.go and friends. The SPA's
+	// cold-start /new redirect (gm-root.17.4) plus the project picker
+	// empty-state (gm-root.18) carry the operator from here.
+	skip, skipErr := coldStartShouldSkipBind(cfg)
+	if skipErr != nil {
+		// Non-fatal: a permissions or config error must NOT block
+		// startup — the worse failure mode is "server can't boot at
+		// all," which is harder to diagnose than "no projects, here
+		// is the picker." Log loudly and keep going.
+		slog.Warn("cold-start gate probe failed; proceeding to bind WorkPlane",
+			"err", skipErr)
+	}
+	if skip {
+		slog.Info("cold-start: no projects found and Beads URL is built-in default; "+
+			"WorkPlane will NOT be bound — every project-data route returns 503 "+
+			"adaptor_not_configured until the operator creates a project at /new "+
+			"or restarts with an explicit --dolt-url / --beads-dir",
+			"beads_url_source", cfg.BeadsURLSource,
+			"hint", "open / in the SPA; you will be redirected to /new")
+		return &workPlaneReg{
+			Host:       host,
+			Manifest:   core.CapabilityManifest{},
+			Mode:       "cold-start",
+			SourceKind: "none",
+			Source:     "no projects found; WorkPlane unbound",
+		}, nil
+	}
 	sh, err := buildShader(cfg)
 	if err != nil {
 		return nil, err
@@ -760,6 +794,15 @@ func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *w
 	}
 	fmt.Fprintf(w, "▶ gemba %s  listen=%s:%d  auth=%s\n",
 		version, cfg.Listen, cfg.Port, cfg.EffectiveAuthMode())
+	// gm-ygwe: cold-start mode binds no WorkPlane; the manifest is a
+	// zero value. Render a clear single-line banner for that case so the
+	// operator sees "no project bound" instead of a confused "▶
+	// workplane:  (mode=cold-start ...)" with empty adaptor identity.
+	if reg.Mode == "cold-start" {
+		fmt.Fprintf(w, "▶ workplane: <unbound> (mode=cold-start; %s)\n", reg.Source)
+		fmt.Fprintln(w, "▶ manifest: <none> — open / in the SPA to create or attach a project")
+		return
+	}
 	fmt.Fprintf(w, "▶ workplane: %s %s (mode=%s %s=%s)\n",
 		reg.Manifest.AdaptorName, reg.Manifest.AdaptorVersion,
 		reg.Mode, reg.SourceKind, reg.Source)

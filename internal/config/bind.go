@@ -50,6 +50,22 @@ type ServeConfig struct {
 	// exclusive with BeadsDir.
 	DoltURL string
 
+	// BeadsURLSource records where the resolved DoltURL came from after
+	// applyBeadsURLDefault runs (gm-ygwe). Values:
+	//
+	//	"cli"     — the operator passed --dolt-url (or --beads-dir) explicitly
+	//	"config"  — populated from ~/.gemba/config.toml's [beads].url
+	//	"default" — populated from the built-in DefaultBeadsURL fallback
+	//	""        — applyBeadsURLDefault has not been called yet
+	//
+	// The "default" branch is the cold-start danger zone: a stray local
+	// Dolt database named "gemba" would otherwise silently bind, surfacing
+	// stale work to a fresh operator with no projects on this machine. The
+	// cold-start gate (registerWorkPlane / coldStartShouldSkipBind) refuses
+	// to bind a WorkPlane when the source is "default" and no project
+	// marker exists under the configured default_dir.
+	BeadsURLSource string
+
 	// Noop, when true, binds the in-memory noop reference adaptors for
 	// both the WorkPlane and OrchestrationPlane (gm-e3.7). Intended for
 	// SPA development, demos, and conformance smoke-testing. Mutually

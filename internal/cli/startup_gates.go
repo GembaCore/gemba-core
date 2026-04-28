@@ -122,8 +122,17 @@ func coldStartRedirect(cfg config.ServeConfig) (bool, error) {
 // If the config file is present but malformed, the error is returned so
 // the operator sees it before any port binding happens.
 func applyBeadsURLDefault(cfg *config.ServeConfig) error {
-	// Cases 1–3: an explicit flag was given; nothing to do.
-	if cfg.DoltURL != "" || cfg.BeadsDir != "" || cfg.Noop {
+	// Cases 1–3: an explicit flag was given; nothing to do beyond
+	// recording that the source is "cli". --noop has no Beads URL at
+	// all — leave BeadsURLSource empty so the cold-start gate treats
+	// it as a non-default-bound run.
+	if cfg.DoltURL != "" || cfg.BeadsDir != "" {
+		cfg.BeadsURLSource = "cli"
+		return nil
+	}
+	if cfg.Noop {
+		// Noop has no Beads URL; the cold-start gate keys off
+		// BeadsURLSource=="default" so leaving this empty is correct.
 		return nil
 	}
 
@@ -136,11 +145,50 @@ func applyBeadsURLDefault(cfg *config.ServeConfig) error {
 	cfg.DoltURL = resolved
 
 	source := "built-in default"
+	cfg.BeadsURLSource = "default"
 	if ucfg.Beads.URL != "" {
 		source = "~/.gemba/config.toml [beads].url"
+		cfg.BeadsURLSource = "config"
 	}
 	slog.Info("beads URL resolved from "+source,
 		"url", config.RedactBeadsURL(resolved),
 		"hint", "pass --dolt-url or set [beads].url in ~/.gemba/config.toml to override")
 	return nil
+}
+
+// coldStartShouldSkipBind decides whether the WorkPlane registration
+// must be skipped to protect a fresh operator from silently binding a
+// stray local Dolt "gemba" database (gm-ygwe). The answer is yes when
+// BOTH:
+//
+//  1. the resolved Beads URL came from the built-in default (i.e.
+//     applyBeadsURLDefault recorded BeadsURLSource=="default"), AND
+//  2. no project marker (.gemba/workspace.toml) exists under the
+//     configured [projects].default_dir.
+//
+// An explicit --dolt-url, an explicit --beads-dir, an explicit --noop,
+// or a [beads].url operator override in ~/.gemba/config.toml all bypass
+// this gate — the operator has stated their intent and we honor it.
+//
+// Errors loading the config or scanning the projects dir are returned
+// so the caller can log them; on error this returns (false, err) — i.e.
+// "do NOT skip the bind" — which preserves prior behaviour when a
+// bad config file would otherwise block startup.
+func coldStartShouldSkipBind(cfg config.ServeConfig) (bool, error) {
+	if cfg.BeadsURLSource != "default" {
+		return false, nil
+	}
+	ucfg, err := config.LoadUserConfig(cfg.ConfigPath)
+	if err != nil {
+		return false, fmt.Errorf("load user config: %w", err)
+	}
+	defaultDir, err := config.ResolveDefaultDir(ucfg)
+	if err != nil {
+		return false, fmt.Errorf("resolve default_dir: %w", err)
+	}
+	projects, err := config.ListProjectsUnder(defaultDir)
+	if err != nil {
+		return false, fmt.Errorf("scan default_dir %q: %w", defaultDir, err)
+	}
+	return len(projects) == 0, nil
 }
