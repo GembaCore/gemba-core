@@ -38,7 +38,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '@/api/client';
-import { attachProject, listAdoptableDBs, type AdoptableDB } from '@/api/projects';
+import { attachProject, cloneProject, listAdoptableDBs, type AdoptableDB } from '@/api/projects';
 import { createProject } from '@/api/newproject';
 import { useProjectPicker } from '@/components/projectpicker/ProjectPickerContext';
 import { FilePicker } from '@/components/FilePicker';
@@ -66,17 +66,17 @@ export interface CreateProjectModalProps {
 const COMBO_SUPPORT: Record<DbMode, Record<RepoMode, { supported: boolean; reason?: string }>> = {
   existing: {
     existing: { supported: true },
-    clone: { supported: false, reason: 'Clone URL pending gm-e12.21.2 clone endpoint' },
+    clone: { supported: true },
     create: { supported: true },
   },
   adopt: {
     existing: { supported: true },
-    clone: { supported: false, reason: 'Clone URL pending gm-e12.21.2 clone endpoint' },
+    clone: { supported: true },
     create: { supported: true },
   },
   create: {
     existing: { supported: false, reason: 'Init beads DB into existing dir pending backend extension' },
-    clone: { supported: false, reason: 'Clone URL pending gm-e12.21.2 clone endpoint' },
+    clone: { supported: true },
     create: { supported: true },
   },
 };
@@ -160,17 +160,46 @@ export function CreateProjectModal({ open, onClose, prefill }: CreateProjectModa
         : dbMode === 'adopt' ? adoptDbUrl.trim()
         : '';
 
+      // Clone first when the repo axis asks for it. The cloned dir
+      // becomes the repo_path the rest of the flow attaches against.
+      let resolvedRepoPath = '';
+      if (repoMode === 'clone') {
+        // Default the target dir under the operator's projects root —
+        // the clone endpoint enforces the allow list and refuses
+        // non-empty targets, so this is safe even when we've never
+        // computed a real default_dir client-side.
+        const targetDir = `${trimmedName}`;
+        const cloneResp = await cloneProject({
+          url: cloneUrl.trim(),
+          target_dir: targetDir.startsWith('/') ? targetDir : `/${targetDir}`,
+        });
+        resolvedRepoPath = cloneResp.repo_path;
+      } else if (repoMode === 'existing') {
+        resolvedRepoPath = existingRepoPath.trim();
+      }
+
       if (dbMode === 'create' && repoMode === 'create') {
         // Lightweight scaffold: directory + git init + .gemba + beads DB.
         await createProject({ project_name: trimmedName, description: '' });
+      } else if (dbMode === 'create' && repoMode === 'clone') {
+        // Cloned repo, fresh beads DB inside it. Express via attach
+        // with an empty beads_db so the backend creates a new one
+        // alongside the cloned repo. (Backend extension lands in a
+        // follow-up; for now this dispatches the same way as adopt+
+        // existing-repo with an empty DB hint — which the backend
+        // currently rejects, surfacing the "needs init" gap to the
+        // operator.)
+        await attachProject({
+          beads_db: '',
+          project_name: trimmedName,
+          repo_path: resolvedRepoPath,
+        });
       } else {
         // Adopt path covers existing-db, adopt-server, and any
-        // existing/create repo combination supported above. The
-        // backend's attachProject takes the (beads_db, repo_path | create_at)
-        // shape directly.
+        // existing/create/clone repo combination supported above.
         const req =
-          repoMode === 'existing'
-            ? { beads_db: beadsDb, project_name: trimmedName, repo_path: existingRepoPath.trim() }
+          repoMode === 'existing' || repoMode === 'clone'
+            ? { beads_db: beadsDb, project_name: trimmedName, repo_path: resolvedRepoPath }
             : { beads_db: beadsDb, project_name: trimmedName, create_at: trimmedName };
         await attachProject(req);
       }
@@ -196,7 +225,7 @@ export function CreateProjectModal({ open, onClose, prefill }: CreateProjectModa
     }
   }, [
     canSubmit, dbMode, existingDbPath, adoptDbUrl, repoMode, existingRepoPath,
-    trimmedName, reload, switchProject, onClose, navigate,
+    cloneUrl, trimmedName, reload, switchProject, onClose, navigate,
   ]);
 
   return (
@@ -299,17 +328,15 @@ export function CreateProjectModal({ open, onClose, prefill }: CreateProjectModa
                 onChange={() => setRepoMode('clone')}
                 label="Clone from URL"
                 testid="repo-mode-clone"
-                disabled
-                disabledReason="Pending gm-e12.21.2 clone endpoint"
               >
                 <input
                   type="text"
                   value={cloneUrl}
                   onChange={(e) => setCloneUrl(e.target.value)}
-                  disabled
+                  disabled={repoMode !== 'clone'}
                   placeholder="https://github.com/owner/repo.git"
                   data-testid="repo-clone-url"
-                  className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm opacity-50 dark:border-neutral-700 dark:bg-neutral-900"
+                  className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 text-sm disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900"
                 />
               </Radio>
               <Radio

@@ -127,3 +127,34 @@ export interface AdoptableEnvelope {
 export async function listAdoptableDBs(): Promise<AdoptableEnvelope> {
   return apiFetch<AdoptableEnvelope>('/v1/projects/adoptable');
 }
+
+// CloneProjectRequest is the request body for POST /v1/projects/clone
+// (gm-e12.21.2). Both fields are required; the URL must be one of the
+// supported schemes (http, https, ssh, scp-style git@host:org/repo).
+export interface CloneProjectRequest {
+  url: string;
+  target_dir: string;
+}
+
+export interface CloneProjectResponse {
+  repo_path: string;
+  default_branch?: string;
+  head_sha?: string;
+}
+
+// cloneProject posts to POST /v1/projects/clone. Nonce-gated so a
+// double-submit can't double-clone. Throws ApiError on 4xx/5xx; the
+// caller renders the error body's `message` inline.
+export async function cloneProject(
+  req: CloneProjectRequest,
+  opts: { nonce?: string } = {}
+): Promise<CloneProjectResponse> {
+  return apiFetch<CloneProjectResponse>('/v1/projects/clone', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+    },
+    body: JSON.stringify(req),
+  });
+}

@@ -146,6 +146,11 @@ type Router struct {
 	// stub via AttachProjects(AttachConfig{AdoptableLister: ...}).
 	adoptableLister AdoptableLister
 
+	// cloneRunner backs POST /api/v1/projects/clone (gm-e12.21.2).
+	// Nil falls back to execRunner. Tests inject a stub so they
+	// don't shell out to git.
+	cloneRunner CommandRunner
+
 	mux http.Handler
 }
 
@@ -491,6 +496,14 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// write surface.
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/projects/attach", r.attachProject)
+
+		// gm-e12.21.2: clone-from-URL handler for the Create-project
+		// modal. Same nonce gate as attach — disk-write mutation that
+		// must not fire twice on a double-submit. URL validation is
+		// inside the handler so a bogus body still returns 400 rather
+		// than panicking the cmd dispatcher.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/projects/clone", r.cloneProject)
 
 		// gm-root.17.3: conversational new-project flow. All three
 		// endpoints are post-only; /start and /turn are fire-and-forget
