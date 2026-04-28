@@ -13,6 +13,8 @@
 // list via this module to decide whether /new is needed.
 
 import { apiFetch } from './client';
+import { CONFIRM_HEADER } from './workItems';
+import { freshNonce } from './newproject';
 
 // ProjectEntry mirrors the server-side projectEntry shape from
 // internal/server/projects.go. Name is the directory basename; Path
@@ -61,6 +63,39 @@ export async function switchProject(req: SwitchProjectRequest): Promise<SwitchPr
   return apiFetch<SwitchProjectResponse>('/v1/projects/switch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  });
+}
+
+// AttachProjectRequest is the request body for POST /api/v1/projects/attach
+// (gm-xwa8). Used by the configure-project modal to "adopt" an existing
+// beads DB into a project on this machine. Exactly one of repo_path
+// (existing git worktree) or create_at (new directory; gemba creates +
+// `git init`s) must be set.
+export interface AttachProjectRequest {
+  beads_db: string;
+  project_name: string;
+  repo_path?: string;
+  create_at?: string;
+}
+
+// AttachProjectResponse mirrors the server's projectEntry shape so the
+// picker can re-render with the new entry without an extra round-trip.
+export type AttachProjectResponse = ProjectEntry;
+
+// attachProject posts to POST /api/v1/projects/attach. Nonce-gated so
+// a double-submit can't double-write the workspace marker. Returns the
+// newly-attached project entry on success.
+export async function attachProject(
+  req: AttachProjectRequest,
+  opts: { nonce?: string } = {}
+): Promise<AttachProjectResponse> {
+  return apiFetch<AttachProjectResponse>('/v1/projects/attach', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+    },
     body: JSON.stringify(req),
   });
 }

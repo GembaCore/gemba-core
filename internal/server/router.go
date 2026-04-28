@@ -130,6 +130,16 @@ type Router struct {
 	newProjectTurner   SkillTurner
 	newProjectRatifier NewProjectRatifier
 
+	// attachPinger / attachGitRunner / attachNow back the
+	// /api/v1/projects/attach handler (gm-xwa8). All three are zero-
+	// value safe — nil falls back to the production defaults
+	// (defaultBeadsPinger, execRunner, time.Now). Tests inject stubs
+	// via AttachProjects so they don't need a real Dolt server or git
+	// binary.
+	attachPinger    BeadsPinger
+	attachGitRunner CommandRunner
+	attachNow       func() time.Time
+
 	mux http.Handler
 }
 
@@ -454,6 +464,16 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// the selection durably.
 		api.Get("/v1/projects", r.listProjects)
 		api.Post("/v1/projects/switch", r.switchProject)
+
+		// gm-xwa8: configure-and-attach modal target. Adopts an existing
+		// beads DB into a project on this machine — writes
+		// .gemba/workspace.toml, optionally `git init`s a fresh repo,
+		// and pings the DB. NO milestones/epics/beads are seeded
+		// (adoption is non-destructive). Nonce-gated so the SPA's
+		// double-submit guard covers this mutation like every other
+		// write surface.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/projects/attach", r.attachProject)
 
 		// gm-root.17.3: conversational new-project flow. All three
 		// endpoints are post-only; /start and /turn are fire-and-forget

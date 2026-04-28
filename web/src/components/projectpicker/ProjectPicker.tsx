@@ -14,15 +14,22 @@
 // the server-config BeadsSource is now a secondary tooltip (detail).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, FolderOpen } from 'lucide-react';
+import { ChevronDown, FolderOpen, Plus } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useProjectPicker } from './ProjectPickerContext';
+import { ConfigureProjectModal } from '@/components/projects/ConfigureProjectModal';
 
 export function ProjectPicker() {
   const { projects, activeProject, isLoading, error, switchProject } = useProjectPicker();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  // gm-xwa8: configure-project modal for adopting an existing beads DB
+  // that has no .gemba/workspace.toml on this disk. Opened from the
+  // "+ Adopt existing beads DB…" affordance at the bottom of the
+  // dropdown. Detection path documented inline: see the bead for the
+  // alternative server-side enumeration we punted on.
+  const [adoptOpen, setAdoptOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click or Escape.
@@ -157,8 +164,39 @@ export function ProjectPicker() {
               ))}
             </ul>
           )}
+          {/* gm-xwa8: "+ Adopt existing beads DB…" affordance. Opens the
+              ConfigureProjectModal so an operator can attach a beads DB
+              (legacy / imported / cross-machine) that has no
+              .gemba/workspace.toml on this disk. Sits below the project
+              list (or empty state) so it doesn't visually compete with
+              the existing picker entries. */}
+          <div className="border-t border-neutral-200 dark:border-neutral-700">
+            <button
+              type="button"
+              data-testid="project-picker-adopt"
+              onClick={() => {
+                setOpen(false);
+                setAdoptOpen(true);
+              }}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
+            >
+              <Plus className="h-3.5 w-3.5 shrink-0" />
+              <span>Adopt existing beads DB…</span>
+            </button>
+          </div>
         </div>
       )}
+
+      <ConfigureProjectModal
+        open={adoptOpen}
+        onClose={() => setAdoptOpen(false)}
+        onAttached={(name) => {
+          // Switch to the newly-attached project so the picker label
+          // and route reflect the new workspace immediately. The modal
+          // already invalidated the list via context.reload().
+          void switchProject(name).then(() => navigate('/board')).catch(() => {});
+        }}
+      />
     </div>
   );
 }
