@@ -56,15 +56,19 @@ func (e *WorkPlaneEmitter) Subscribe(ctx context.Context, f WorkPlaneSubscribeFi
 // send. Callers MUST call Publish after the underlying mutation has
 // successfully landed — never before, so a failed mutation cannot leak
 // a ghost event.
+//
+// Holds e.mu for the entire fan-out. The earlier "snapshot then send
+// without the lock" shape raced remove(): Publish could capture a sub
+// pointer, remove() could close its channel before Publish's send
+// reached it, and the send would either panic on a closed channel or
+// trip the race detector. Sends are non-blocking (select+default), so
+// holding the lock is short — never longer than a buffered channel
+// write per subscriber.
 func (e *WorkPlaneEmitter) Publish(ev WorkPlaneEvent) {
 	e.mu.Lock()
-	snapshot := make([]*wpSub, 0, len(e.subs))
-	for s := range e.subs {
-		snapshot = append(snapshot, s)
-	}
-	e.mu.Unlock()
+	defer e.mu.Unlock()
 	var slow []*wpSub
-	for _, s := range snapshot {
+	for s := range e.subs {
 		if !matchWorkPlaneFilter(s.filter, ev) {
 			continue
 		}
@@ -75,7 +79,9 @@ func (e *WorkPlaneEmitter) Publish(ev WorkPlaneEvent) {
 		}
 	}
 	for _, s := range slow {
-		e.remove(s)
+		delete(e.subs, s)
+		closeWpSub(s)
+		s.cancel()
 	}
 }
 
