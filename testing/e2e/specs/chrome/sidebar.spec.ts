@@ -20,11 +20,11 @@ import { test, expect } from '../../fixtures/server';
 
 const NAV_LINKS = [
   { label: 'Plan', path: '/board' },
-  { label: 'Agent Sessions', path: '/sessions' },
   // Review is rendered but click-nav-excluded — see comment above.
   { label: 'Review', path: '/walk', clickNav: false },
   { label: 'Escalations', path: '/escalations' },
   { label: 'Insights', path: '/insights' },
+  { label: 'Agent Sessions', path: '/sessions' },
   { label: 'Settings', path: '/settings' },
 ] as const;
 
@@ -95,10 +95,10 @@ test.describe('Sidebar cold-start @chrome', () => {
 
     const workspaceScoped = [
       'Plan',
-      'Agent Sessions',
       'Review',
       'Escalations',
       'Insights',
+      'Agent Sessions',
     ];
     for (const label of workspaceScoped) {
       const item = sidebar.getByText(label, { exact: true });
