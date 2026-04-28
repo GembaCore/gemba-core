@@ -27,6 +27,7 @@ const DefaultProjectsDir = "gemba/projects"
 // file may contain additional keys that are silently ignored.
 type UserConfig struct {
 	Projects ProjectsConfig `toml:"projects"`
+	LLM      LLMConfig      `toml:"llm"`
 }
 
 // ProjectsConfig holds the [projects] table from config.toml.
@@ -37,6 +38,31 @@ type ProjectsConfig struct {
 	// directory. Empty string means "use the built-in default"
 	// (~/gemba/projects/).
 	DefaultDir string `toml:"default_dir"`
+}
+
+// LLMConfig holds the [llm] table from config.toml — the shared
+// "default chat client" credentials referenced by docs/design/
+// newproject.md §"Credential resolution". Today consumed only by the
+// Onboarder persona (gm-root.17.10); future agents that want an
+// in-process LLM client read the same table.
+type LLMConfig struct {
+	// Provider names the chat backend. Today the only recognized
+	// value is "anthropic"; an empty string means "no LLM client
+	// configured" and consumers fail closed with a clear diagnostic.
+	// Open string on purpose so a future provider doesn't break the
+	// loader on machines that haven't upgraded.
+	Provider string `toml:"provider"`
+	// APIKey is the credential. When empty, consumers MAY fall back
+	// to a provider-specific environment variable (e.g.
+	// ANTHROPIC_API_KEY) — that fallback is the consumer's choice,
+	// not the loader's.
+	APIKey string `toml:"api_key"`
+	// Model selects the model identifier (e.g. claude-3-5-sonnet-...).
+	// Empty means "let the consumer pick a default".
+	Model string `toml:"model"`
+	// Endpoint optionally overrides the provider's default API URL.
+	// Empty means "use the provider's default endpoint".
+	Endpoint string `toml:"endpoint"`
 }
 
 // LoadUserConfig reads ~/.gemba/config.toml (or the path pointed to by

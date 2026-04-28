@@ -232,6 +232,13 @@ type SkillTurner interface {
 	// Greeting returns the assistant's opening line on /start. Empty
 	// is a valid greeting (the SPA renders nothing).
 	Greeting() string
+	// Probe is invoked on /start before allocating a session and
+	// reports whether the turner can serve the request. Real-mode
+	// implementations return an error wrapping the operator-facing
+	// diagnostic (e.g. "no LLM client configured") so the handler
+	// can return 503 with the diagnostic in the body. Stub turners
+	// return nil. May be called concurrently.
+	Probe(ctx context.Context) error
 }
 
 // stubSkillTurner is a deterministic placeholder used until the
@@ -244,6 +251,8 @@ type stubSkillTurner struct{}
 // builds use the real Onboarder when AttachNewProject(... real-turner)
 // is wired (gm-root.17.10).
 func NewStubSkillTurner() SkillTurner { return stubSkillTurner{} }
+
+func (stubSkillTurner) Probe(_ context.Context) error { return nil }
 
 func (stubSkillTurner) Greeting() string {
 	return "Hi — what are we building? Tell me the rough shape (web app, library, ops tool, …) and I'll propose milestones, epics, and beads."
@@ -349,6 +358,16 @@ func (r *Router) newProjectStart(w http.ResponseWriter, req *http.Request) {
 	turner := r.newProjectTurner
 	if turner == nil {
 		turner = NewStubSkillTurner()
+	}
+	// Spawn-failure path (gm-root.17.10): real-mode turners (the
+	// Onboarder persona) return an error here when they can't
+	// resolve a chat client. Surface as 503 with the operator-facing
+	// diagnostic so the SPA's /new route can render it verbatim
+	// without parsing a 500 stack trace.
+	if err := turner.Probe(req.Context()); err != nil {
+		httperr.Write(w, http.StatusServiceUnavailable,
+			"no_llm_client", err.Error())
+		return
 	}
 	rec, err := r.newProjectStore.Start(req.Context())
 	if err != nil {
@@ -466,4 +485,3 @@ func writeNewProjectError(w http.ResponseWriter, err error) {
 		httperr.WriteError(w, err)
 	}
 }
-

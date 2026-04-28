@@ -275,6 +275,72 @@ the SPA surfaces a clear diagnostic at the top of `/new`: *"No LLM
 client configured. Set up agent credentials in `~/.gemba/config.toml`
 before starting a New project conversation."*
 
+### Persona-skill binding contract
+
+The persona-skill binding is fixed at compile time — the Onboarder
+runs the `newproject` skill and nothing else. There is no general
+persona that selectively dispatches `newproject` among other skills;
+trying to bind `newproject` to another persona is a programmer
+error.
+
+The contract lives in `internal/personas/onboarder/`:
+
+| Surface | Type / Function | Purpose |
+| --- | --- | --- |
+| `onboarder.Persona` | type | One transient instance, one conversation |
+| `onboarder.Spawn(ctx, Resolver) (*Persona, error)` | func | Resolve a chat client and return a fresh Persona |
+| `onboarder.SpawnWithClient(LLMClient) (*Persona, error)` | func | Bypass resolver — used by tests + terminal mode |
+| `Persona.Greeting() string` | method | Opening line on /start |
+| `Persona.Turn(ctx, prior, message) (TurnResult, error)` | method | One conversational turn; wraps newproject.Run with validation-retry-once |
+| `Persona.Discard()` | method | Idempotent release; today a no-op |
+| `onboarder.SkillTurner` | type | Adapter implementing `internal/server.SkillTurner` so `AttachNewProject` can plug it in |
+| `onboarder.NewSkillTurner(Resolver) *SkillTurner` | func | Lazy-spawning, single-Persona, server-bound adapter |
+| `onboarder.DefaultResolver(configPath string) Resolver` | func | Reads `~/.gemba/config.toml` `[llm]` table; ErrNoLLMClient when unset |
+| `onboarder.ErrNoLLMClient` | sentinel | The diagnostic surfaced as the SPA's no-client message |
+| `onboarder.IsNoClient(err) bool` | func | Classify spawn-failure vs. infra failure |
+
+Lifecycle invariants:
+
+- Spawn does not perform a network call — only credential
+  resolution. The first model round-trip happens in `Turn`.
+- Discard is idempotent. Calling it twice is safe.
+- One `SkillTurner` serves the whole serve process — the Persona
+  is stateless modulo its `LLMClient`, so HTTP sessions share it.
+  The "spawn-on-demand → run conversation → discard" language in
+  the design above describes the conversation, not the underlying
+  shared chat client.
+- Validation-retry-once: a single `*newproject.ValidationError`
+  triggers one retry with the validator's complaint embedded as a
+  `[onboarder retry]` banner in the user message. A second
+  validation failure surfaces the wrapped error to the caller. The
+  system prompt is NOT mutated by the retry — the prompt-validator
+  contract is locked at the skill package boundary.
+
+Server wiring:
+
+```go
+handler.AttachNewProject(
+    server.NewMemoryNewProjectStore(),
+    onboarder.NewSkillTurner(onboarder.DefaultResolver(cfg.ConfigPath)),
+    server.NewRatifier(server.RatifierConfig{}),
+)
+```
+
+The `internal/server.SkillTurner` interface gained a `Probe(ctx)
+error` method when the Onboarder landed (gm-root.17.10): `/start`
+calls `Probe` before allocating a session and returns
+`503 no_llm_client` carrying the diagnostic when probe fails.
+
+`config.toml` `[llm]` table:
+
+```toml
+[llm]
+provider = "anthropic"               # only "anthropic" today
+api_key  = "sk-..."                  # or leave blank to fall back to ANTHROPIC_API_KEY
+model    = "claude-3-5-sonnet-latest" # optional
+endpoint = ""                         # optional override
+```
+
 ## Atomic ratification
 
 When the operator clicks **Ratify**:
