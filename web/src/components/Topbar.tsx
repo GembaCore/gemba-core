@@ -9,6 +9,7 @@ import { usePmPanel } from '@/components/pm/PmPanelContext';
 import { GlobalInFlightCounter } from '@/components/sessions/GlobalInFlightCounter';
 import { cn } from '@/lib/utils';
 import { ProjectPicker } from '@/components/projectpicker/ProjectPicker';
+import { NewProjectAffordance } from '@/components/projectpicker/NewProjectAffordance';
 
 export function Topbar() {
   const { theme, toggle } = useTheme();
@@ -22,11 +23,9 @@ export function Topbar() {
       : theme;
   return (
     <header className="flex h-12 items-center gap-3 border-b border-neutral-200 bg-white px-4 dark:border-neutral-800 dark:bg-neutral-950">
-      {/* gm-root.17.2 (the "+" New project affordance) will be placed
-          immediately to the LEFT of the picker as a sibling chrome
-          element. That bead is blocked by this one. Leave the slot
-          clean — add no elements between the header edge and the picker
-          trigger. */}
+      {/* gm-root.17.2: "+" New project affordance — sibling chrome element
+          immediately to the LEFT of the picker. Navigates to /new. */}
+      <NewProjectAffordance />
       <ProjectPicker />
 
       <button
