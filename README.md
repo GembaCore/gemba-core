@@ -22,7 +22,7 @@
 [![Share on Hacker News](https://img.shields.io/badge/share-FF6600?logo=ycombinator&logoColor=white)](https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba&t=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
 [![Share on Mastodon](https://img.shields.io/badge/share-6364FF?logo=mastodon&logoColor=white)](https://mastodonshare.com/?text=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator&url=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba)
 
-Kanban planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Start a new project with a guided conversation or import your existing work — see [Getting Started](#-getting-started) for a quick start. 
+Kanban like planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Start a new project with a guided conversation or import your existing work — see [Getting Started](#-getting-started) for a quick start. 
 
 ## Table of Contents
 
@@ -38,17 +38,19 @@ Kanban planning, execution, and management of complex vibe coding projects in a 
 - [📜 License](#-license)
 
 ## 🚀 About
-Gemba was born out of frustration for the current state of vibe coding. 
+Gemba was born out of frustration with the current state of vibe coding. 
 Massively parallel, "headless" agentic software development was technically
-possible but it was cumbersome. A single app to manage the process using 
-concepts and terms familiar to developers did not exist, concepts like 
-milestones, epics, and Kanban planning.  Systems like Beads made it possible 
+possible but it was cumbersome. Before Gemba, a single app to manage the process using 
+concepts and terms familiar to developers did not exist - concepts like 
+milestones, epics, and Kanban planning to tie them together.  Systems like Beads made it possible 
 for agentic pipelines to discover, claim and report work progress but UI's 
 did not integrate this with execution - ordering, dispatching, and monitoring 
 the work. 
 
-Gemba creates a "side of the desk" experience for running vibe coding projects, 
-one that puts the developer in the driver's seat for what remains critical - 
+Gemba creates a "side of the desk" experience for running vibe coding projects,
+meaning complex multi-milestone projects spanning weeks can be tackled while
+minimizing the cognitive load and freeing you up to keep the creative flow
+going. It keeps you in the driver's seat for what remains critical - 
 high level planning, review, and course correction - while allowing fully 
 automated agentic software development to take care of the execution.
 
@@ -61,10 +63,9 @@ no orchestrator, no scheduling infrastructure required.
 agent sessions don't need to install anything extra: `gemba serve
 --orchestration=native` drives tmux / iTerm2 / Terminal.app sessions
 directly, surfaces permission prompts and HITL requests in the SPA,
-and correlates `bd` mutations back to the session that made them. The
-existing Gas Town / Gas City / LangGraph / CrewAI / OpenHands / Devin
-/ Factory adaptor slots stay available as optional alternatives; pick
-one with `--orchestration=<name>` when you need their specific
+and correlates `bd` mutations back to the session that made them. Gemba
+also supports existing orchestration solutions like Gas Town, which can
+picked at launch using `--orchestration=<name>` when you need its specific
 scheduling or isolation semantics.
 
 ## 🧱 Architecture
@@ -174,11 +175,20 @@ surfacing, evidence v2, DoD v2 — `gm-e11`). Design docs live in
 │       ├── pages/                # Board, Sessions, Sprints, AgentGroups, AgentDetail, ...
 │       ├── components/           # WorkItemDrawer, Palette, AgentGroupBoard, ...
 │       └── extensions/           # adaptor-namespaced widgets (gated by capability manifest)
+├── testing/                      # public conformance harness (importable as github.com/MikeBengtson/gemba/testing)
+│   ├── fixtures/                 # JSON fixtures used by the harness + scripts/
+│   └── e2e/                      # Playwright specs + page objects
 ├── docs/
 │   ├── adaptors/                 # per-adaptor authoring docs + conformance reports
 │   ├── design/                   # durable conventions (parallelism-boundary, milestone-convention, ...)
-│   └── getting-started/          # operator-facing guides
+│   ├── getting-started/          # operator-facing guides
+│   ├── api/                      # OpenAPI 3.1 spec served at /api/openapi.json
+│   └── img/                      # diagrams referenced from docs + README
+├── docs-site/                    # Astro Starlight build of docs/, deployed to GitHub Pages
+├── branding/                     # banner + social-preview PNGs + Pillow generator
+├── scripts/                      # dev/CI shell helpers (run.sh, shader-interop.sh, ...)
 ├── .github/workflows/            # CI, e2e, docs, release
+├── embed.go                      # //go:embed of web/dist (must live above web/, can't be moved deeper)
 ├── Makefile
 └── go.mod
 ```
