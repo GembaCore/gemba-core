@@ -44,6 +44,10 @@ Full TOML lives in the workspace; this doc captures intent. When the persona fil
 
 Rank a set of candidate Epics for staging. Takes pre-computed signals (deps, file-space, budget cost) and returns a JSONL stream of ranked recommendations with rationales, plus warnings + deferrals.
 
+`epic_order` is the **planning** half of gemba's two-tier ranking surface — sprint composition over an operator-curated candidate set, with confidence scores, narrative rationale, warnings, and deferred items per `RecommendationLine`. It is not the same system as the dispatch-time per-bead `Selection` ranker that powers the `/coach` affinity grid; the two answer different questions at different time horizons. See [Dispatch vs Planning](../concepts/dispatch-vs-planning.md) for the full split.
+
+The skill surfaces in the SPA at `/sprints` (post-`gm-szz0.1`) and as the PM panel's "Recommend order" quick action; mid-walk the dispatcher may also invoke it as a sub-skill when an agenda item calls for sprint composition. Every emitted `recommendation` line carries a `suggested_action` and an Apply button — the persona never auto-applies. The operator clicks Apply on the rows they want; until `gm-twp2.1` lands, the operator (or their tooling) executes the recorded `verb`+`path`+`body` themselves. Coach variety means consent at every step.
+
 ### Input shape — `EpicOrderInput`
 
 Authoritative source: `internal/skills/epic_order/types.go`. Wire shape:
