@@ -22,10 +22,7 @@
 [![Share on Hacker News](https://img.shields.io/badge/share-FF6600?logo=ycombinator&logoColor=white)](https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba&t=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
 [![Share on Mastodon](https://img.shields.io/badge/share-6364FF?logo=mastodon&logoColor=white)](https://mastodonshare.com/?text=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator&url=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba)
 
-A single-binary Go service with an embedded React SPA that reads a
-**WorkPlane adaptor** (work tracker — the data plane) and, optionally,
-an **OrchestrationPlane adaptor** (agent runtime) and renders whatever
-the two declare.
+Kanban planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Import your existing project or bootstrap a new one - see [Getting Started](#-getting-started) for a quick start. 
 
 ## Table of Contents
 
@@ -41,15 +38,23 @@ the two declare.
 - [📜 License](#-license)
 
 ## 🚀 About
+Gemba was born out of frustration for the current state of vibe coding. 
+Massively parallel, "headless" agentic software development was technically
+possible but it was cumbersome. A single app to manage the process using 
+concepts and terms familiar to developers did not exist, concepts like 
+milestones, epics, and Kanban planning.  Systems like Beads made it possible 
+for agentic pipelines to discover, claim and report work progress but UI's 
+did not integrate this with execution - ordering, dispatching, and monitoring 
+the work. 
 
-The only hard requirement is a data plane. **Beads fulfills that out
-of the box**, so the minimum working deployment is `gemba serve
---beads-dir <rig>` and a browser pointed at it — no orchestrator, no
-second daemon, no scheduling infrastructure. Other work trackers
-(Jira, Linear, GitHub Projects, Azure DevOps, Shortcut, Plane, …) will
-arrive via the conformance harness ([`docs/adaptors/workplane.md`](docs/adaptors/workplane.md))
-as their adaptors ship.
+Gemba creates a "side of the desk" experience for running vibe coding projects, 
+one that puts the developer in the driver's seat for what remains critical - 
+high level planning, review, and course correction - while allowing fully 
+automated agentic software development to take care of the execution.
 
+The only hard requirement is a **data plane**. [![Beads](https://github.com/gastownhall/beads) fullfills that out
+of the box, so the minimum working deployment is `gemba serve` and a browser pointed at it — 
+no orchestrator, no scheduling infrastructure required. 
 **Native terminal orchestration is bundled** so operators who want
 agent sessions don't need to install anything extra: `gemba serve
 --orchestration=native` drives tmux / iTerm2 / Terminal.app sessions
@@ -59,11 +64,6 @@ existing Gas Town / Gas City / LangGraph / CrewAI / OpenHands / Devin
 / Factory adaptor slots stay available as optional alternatives; pick
 one with `--orchestration=<name>` when you need their specific
 scheduling or isolation semantics.
-
-> [!NOTE]
-> Gemba has no role names or pack vocabulary in the SPA outside
-> `web/src/extensions/<adaptor-id>/`. Capability gating is the contract;
-> the UI renders whatever the manifest declares.
 
 ## 🧱 Architecture
 
@@ -97,7 +97,7 @@ produces narrative recommendations with confidence scores. See
 
 ## 🚦 Status
 
-**M3 — Native orchestration shipped (April 2026).** Gemba runs
+**Milestone 3 — Native orchestration shipped (April 2026).** Gemba runs
 end-to-end against a Beads rig with native terminal orchestration
 out of the box; work items, escalations, and session state all
 round-trip through the SPA. The Gas Town adaptor is optional.
