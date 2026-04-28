@@ -18,9 +18,9 @@
 //   - Reindex     → `gitnexus analyze [--embeddings] [--full]`
 //   - Modules     → `gitnexus cypher` over Module / Cluster nodes
 //   - Health      → `gitnexus cypher` over the graph + .gitnexus
-//                   meta.json freshness
+//     meta.json freshness
 //   - Impact      → `gitnexus cypher` walking incoming/outgoing
-//                   edges from the named symbol
+//     edges from the named symbol
 //
 // The package's init() calls codeanalysis.Replace("gitnexus", ...)
 // so a blank import (`_ "…/internal/adapter/gitnexus/codeanalysis"`)

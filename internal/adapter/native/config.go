@@ -1,10 +1,10 @@
 package native
 
 import (
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/bridge"
-	"github.com/MikeBengtson/gemba/core"
 )
 
 // Config holds the dependencies the native OrchestrationPlane needs

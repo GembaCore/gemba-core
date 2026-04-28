@@ -1,0 +1,56 @@
+[Unit]
+# Build-from-source systemd unit for the `make install` path (gm-e14.7).
+# This is parallel to deploy/systemd/gemba.service which is shipped by the
+# goreleaser .deb/.rpm packages — it carries slightly tighter hardening
+# defaults for an operator-managed install. Either unit is fine; pick one.
+Description=Gemba — WorkPlane + OrchestrationPlane UI (build-from-source)
+Documentation=https://github.com/MikeBengtson/gemba
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The install playbook (docs/install.md) creates this system user. Override
+# by editing this unit if you want gemba to run as a different account.
+User=gemba
+Group=gemba
+WorkingDirectory=/var/lib/gemba
+
+# Pull tunables (auth token path, GEMBA_* env, listen overrides) from a
+# single env file. The companion gemba.env.example shows every knob the
+# operator is likely to need.
+EnvironmentFile=-/etc/gemba/gemba.env
+
+# Default to loopback-only on 7666; expose by editing this line (or
+# overriding via a drop-in) and turning auth on at the same time. See
+# docs/install.md for the recommended public-bind recipe.
+ExecStart=/usr/local/bin/gemba serve --listen 127.0.0.1 --port 7666
+
+Restart=on-failure
+RestartSec=5s
+
+# --- Hardening ---------------------------------------------------------
+# These match the goreleaser unit's posture but tighten ProtectHome to
+# read-only (the binary never needs to read $HOME under a system user)
+# and add RestrictNamespaces / SystemCallArchitectures.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+# /var/lib/gemba — workspace state; /etc/gemba — auth token + env file.
+ReadWritePaths=/var/lib/gemba /etc/gemba
+
+[Install]
+WantedBy=multi-user.target

@@ -50,6 +50,47 @@ func TestAdaptorTest_NoopOrchestrationIsGreen(t *testing.T) {
 	}
 }
 
+// gm-e6.7: the bd adaptor must report green via skip-counted-not-failed
+// semantics. Groups A/B/D/E/F + Group C structural probe + Group I
+// in-client concurrency probe pass against live bd; the remaining
+// substrate-heavy probes (G/H/J/K + cross-writer / seeded-edge round
+// trips) skip cleanly until follow-up beads under gm-e6 wire the
+// fixtures.
+//
+// Skipped when `bd` is not on PATH or when GEMBA_BEADS_CONFORMANCE_DIR
+// is unset so CI without a beads workspace doesn't fail the build —
+// the conformance run shells to a real bd binary and needs a writable
+// beads workspace to drive Group B's CRUD probes.
+func TestAdaptorTest_BeadsIsGreen(t *testing.T) {
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd CLI not on PATH; gm-e6.7 conformance requires Beads installed")
+	}
+	beadsDir := os.Getenv("GEMBA_BEADS_CONFORMANCE_DIR")
+	if beadsDir == "" {
+		t.Skip("GEMBA_BEADS_CONFORMANCE_DIR not set; gm-e6.7 conformance requires a writable beads workspace")
+	}
+	out, err := runTest(t,
+		"--transport", "api",
+		"--target", "builtin:bd-work",
+		"--beads-dir", beadsDir,
+	)
+	if err != nil {
+		t.Fatalf("adaptor test: unexpected error: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Summary: GREEN") {
+		t.Errorf("bd adaptor must report green:\n%s", out)
+	}
+	// At least Group A's manifest probes must PASS — they don't depend
+	// on any fixture and they're the canonical proof the manifest is
+	// well-formed.
+	if !strings.Contains(out, "[PASS] A_describe_returns_valid_manifest") {
+		t.Errorf("expected describe probe to pass:\n%s", out)
+	}
+	if !strings.Contains(out, "[PASS] A_manifest_round_trips_json") {
+		t.Errorf("expected manifest round-trip probe to pass:\n%s", out)
+	}
+}
+
 // gm-e7.7: the gt adaptor must report green via skip-counted-not-failed
 // semantics. Group A passes today (manifest is well-formed); B/D-fixture/F
 // skip cleanly until the lifecycle methods land in the rest of gm-e7.x.

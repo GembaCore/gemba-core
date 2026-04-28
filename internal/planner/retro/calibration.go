@@ -34,10 +34,10 @@ import (
 // Constructed via [PickCalibrationFromDecision] so the derivation
 // rule (top-of-ready-set by AffinityCombined) lives in one place.
 type PickCalibrationRow struct {
-	BeadID            core.WorkItemID `json:"bead_id"`            // picked
-	RecommendedTopBead core.WorkItemID `json:"recommended_top_bead"`
-	PickedAffinity    float64         `json:"picked_affinity"`
-	RecommendedAffinity float64       `json:"recommended_affinity"`
+	BeadID              core.WorkItemID `json:"bead_id"` // picked
+	RecommendedTopBead  core.WorkItemID `json:"recommended_top_bead"`
+	PickedAffinity      float64         `json:"picked_affinity"`
+	RecommendedAffinity float64         `json:"recommended_affinity"`
 	// ScoreDelta = recommended.AffinityCombined - picked.AffinityCombined.
 	// > 0 means the operator picked something the planner thought
 	// was lower-scoring (an override); 0 means the operator agreed
@@ -228,11 +228,11 @@ const (
 // renders Reason verbatim; the metadata fields surface in the
 // detail view so the operator can drill in.
 type Suggestion struct {
-	Kind       SuggestionKind  `json:"kind"`
-	Reason     string          `json:"reason"`
-	SampleSize int             `json:"sample_size"`
-	Metric     float64         `json:"metric"`
-	Threshold  float64         `json:"threshold"`
+	Kind       SuggestionKind `json:"kind"`
+	Reason     string         `json:"reason"`
+	SampleSize int            `json:"sample_size"`
+	Metric     float64        `json:"metric"`
+	Threshold  float64        `json:"threshold"`
 	// SampleBeads is up to ten bead ids that contributed to the
 	// signal — gives the operator a starting point for the drill-in
 	// without scanning the full window.
@@ -453,9 +453,9 @@ func (o CalibrationOptions) resolved() CalibrationOptions {
 // close) tuple. The retro pipeline derives one row per closed
 // bead; the aggregator folds them into per-bucket boundary deltas.
 type SizeCalibrationRow struct {
-	BeadID         core.WorkItemID    `json:"bead_id"`
+	BeadID          core.WorkItemID    `json:"bead_id"`
 	PredictedBucket core.EstimatedSize `json:"predicted_bucket"`
-	ActualDuration time.Duration      `json:"actual_duration"`
+	ActualDuration  time.Duration      `json:"actual_duration"`
 	// Repository / AuthorID are the per-rig + per-author breakdown
 	// the spec calls for. Empty when the bead doesn't carry the
 	// signal — those rows roll up to the workspace bucket.

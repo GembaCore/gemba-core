@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/claudemd"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/claudemd"
 )
 
 // SpawnFunc is the post-Begin hook the dispatcher fires after a

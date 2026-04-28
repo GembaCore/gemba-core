@@ -214,16 +214,20 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
     category: 'walk',
     scope: 'walk',
   },
-  // walk-defer is the one R/M/X/D verb that lives under 'walk-active'
-  // rather than the page-only 'walk' scope (gm-0tl). Operators need to
-  // defer the current item from anywhere — e.g. while the PM panel is
-  // open on /board — without first navigating back to /walk.
+  // walk-defer matches the R/M/X/D toolbar verbs at scope 'walk'.
+  // gm-0tl initially moved this to 'walk-active' to enable defer-
+  // from-anywhere; that change broke the page-level binding's
+  // mount-vs-effect timing in tests (the AppWalkBindings scope push
+  // is async-relative-to-mount, while WalkPage's scope push is
+  // synchronous). Reverted here for parity with R/M/X. A separate
+  // chord like 'walk-defer-global' can land in scope 'walk-active'
+  // when the defer-from-anywhere use case has its own bead.
   {
     id: 'walk-defer',
     keys: ['d'],
     description: 'Walk: Defer active item',
     category: 'walk',
-    scope: 'walk-active',
+    scope: 'walk',
   },
 
   // Help

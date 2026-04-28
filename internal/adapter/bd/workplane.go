@@ -227,6 +227,18 @@ func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([
 	if f.Limit > 0 {
 		args = append(args, "--limit", strconv.Itoa(f.Limit))
 	}
+	// Push the IDs filter down to bd via --id <comma-list> when set.
+	// Without this, the default 50-row limit truncates the result
+	// before the client-side matchesFilter can see the wanted ids —
+	// fragile against busy workspaces. The bare bd id (without the
+	// "<workspace>/<repo>/" prefix) is what bd's --id flag expects.
+	if len(f.IDs) > 0 {
+		bare := make([]string, 0, len(f.IDs))
+		for _, id := range f.IDs {
+			bare = append(bare, nativeID(w.prefix, id))
+		}
+		args = append(args, "--id", strings.Join(bare, ","))
+	}
 	// bd list accepts a single --status; when the caller supplied more
 	// than one, we omit the flag and filter client-side. Same for
 	// labels: --label accepts comma-separated values.

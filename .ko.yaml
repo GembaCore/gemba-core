@@ -1,0 +1,43 @@
+# ko config for the gemba server container image.
+#
+# ko (https://ko.build) builds OCI images directly from Go source — no
+# Dockerfile required, no docker daemon needed at build time, multi-arch
+# native. We use it to publish ghcr.io/mikebengtson/gemba-server alongside
+# the binary tarballs goreleaser already produces (.goreleaser.yml).
+#
+# The SPA is embedded in the binary via //go:embed (see embed.go and
+# cmd/gemba/main.go), so the image needs nothing other than the binary
+# itself plus a CA bundle for outbound TLS — which the chosen distroless
+# base already provides.
+#
+# Notes / divergences from the original gm-e14.8 design:
+# - Port is 7666 (the binary's actual default) not 9001.
+# - We use distroless/static for minimal CVE surface. The image does NOT
+#   include a docker CLI, so dispatching agent containers from inside this
+#   image (the original gm-root.15 docker-in-docker idea) is out of scope
+#   here. That work needs a follower bead with a docker-cli base; this
+#   bead ships the plain-server image only.
+# - ko sets the container ENTRYPOINT to the gemba binary and does not
+#   bake a default CMD into the manifest (the ko config schema doesn't
+#   expose CMD as of ko 0.16). Operators pass the `serve ...` args on
+#   `docker run`. See docs/install.md for the canonical invocation.
+
+defaultBaseImage: gcr.io/distroless/static-debian12:nonroot
+
+defaultPlatforms:
+  - linux/amd64
+  - linux/arm64
+
+builds:
+  - id: gemba
+    main: ./cmd/gemba
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s
+      - -w
+      - -X main.version={{.Env.VERSION}}
+      - -X main.commit={{.Env.COMMIT}}
+      - -X main.date={{.Env.DATE}}

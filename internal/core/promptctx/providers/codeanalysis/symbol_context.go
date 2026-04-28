@@ -81,14 +81,14 @@ func (p *SymbolContextProvider) Refresh(ctx context.Context, opts map[string]any
 	}
 
 	payload := map[string]any{
-		"repo":           p.repo,
-		"symbol":         symbol,
-		"direction":      string(codeanalysis.ImpactBoth),
+		"repo":            p.repo,
+		"symbol":          symbol,
+		"direction":       string(codeanalysis.ImpactBoth),
 		"requested_depth": depth,
-		"affected":       report.Affected,
-		"affected_count": len(report.Affected),
-		"risk":           string(report.Risk),
-		"notes":          report.Notes,
+		"affected":        report.Affected,
+		"affected_count":  len(report.Affected),
+		"risk":            string(report.Risk),
+		"notes":           report.Notes,
 	}
 	return &promptctx.Result{
 		ProviderID: promptctx.ProviderSymbolContext,

@@ -60,9 +60,6 @@ func withRepo(r string) func(*Candidate) {
 func withEpic(e string) func(*Candidate) {
 	return func(c *Candidate) { c.EpicID = core.WorkItemID(e) }
 }
-func withLabels(l ...string) func(*Candidate) {
-	return func(c *Candidate) { c.Labels = l }
-}
 func withAge(d time.Duration) func(*Candidate) {
 	return func(c *Candidate) { c.Age = d }
 }

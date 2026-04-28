@@ -58,11 +58,11 @@ func (r *Router) PhaseStore() phase.Store { return r.phaseStore }
 // phases list and the legal transitions from the current phase so the
 // SPA can render the picker without a second roundtrip.
 type phaseStateView struct {
-	Phase             phase.Phase        `json:"phase"`
-	Since             time.Time          `json:"since"`
-	History           []phase.Transition `json:"history"`
-	AllPhases         []phase.Phase      `json:"all_phases"`
-	LegalTransitions  []phase.Phase      `json:"legal_transitions"`
+	Phase            phase.Phase        `json:"phase"`
+	Since            time.Time          `json:"since"`
+	History          []phase.Transition `json:"history"`
+	AllPhases        []phase.Phase      `json:"all_phases"`
+	LegalTransitions []phase.Phase      `json:"legal_transitions"`
 }
 
 // advanceRequest is the POST /api/v1/phase/advance body. Both fields

@@ -17,8 +17,8 @@ import (
 	"net/http"
 	"sort"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/core"
+	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 )
 
 // personaSummary is the row shape for /api/v1/personas. Keep the
@@ -27,14 +27,14 @@ import (
 // budget policy) are NOT surfaced here; a separate detail endpoint
 // can land later if a UI needs them.
 type personaSummary struct {
-	ID          string                       `json:"id"`
-	Name        string                       `json:"name"`
-	Role        string                       `json:"role"`
-	Variety     corepersona.Variety          `json:"variety"`
-	Scope       personaScopeView             `json:"scope"`
-	Description string                       `json:"description,omitempty"`
-	Icon        string                       `json:"icon,omitempty"`
-	Skills      []string                     `json:"skills,omitempty"`
+	ID          string              `json:"id"`
+	Name        string              `json:"name"`
+	Role        string              `json:"role"`
+	Variety     corepersona.Variety `json:"variety"`
+	Scope       personaScopeView    `json:"scope"`
+	Description string              `json:"description,omitempty"`
+	Icon        string              `json:"icon,omitempty"`
+	Skills      []string            `json:"skills,omitempty"`
 
 	// gm-9rv axes. Each block is omitted when the persona TOML
 	// declared the zero value, so the SPA can render presence as a
@@ -67,9 +67,9 @@ type perspectiveView struct {
 // projected as a string slice — gm-jt9 may strengthen the type later
 // without breaking the wire shape.
 type purviewView struct {
-	Domain            string                        `json:"domain,omitempty"`
-	ActivePhases      []corepersona.Phase           `json:"active_phases,omitempty"`
-	BlockingAuthority corepersona.PurviewAuthority  `json:"blocking_authority,omitempty"`
+	Domain            string                       `json:"domain,omitempty"`
+	ActivePhases      []corepersona.Phase          `json:"active_phases,omitempty"`
+	BlockingAuthority corepersona.PurviewAuthority `json:"blocking_authority,omitempty"`
 }
 
 // listPersonasV1 handles GET /api/v1/personas. Returns 503 when no

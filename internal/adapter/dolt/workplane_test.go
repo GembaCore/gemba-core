@@ -9,8 +9,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
 )
 
 // issueColumns mirrors the listColumns order in workplane.go. Tests

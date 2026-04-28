@@ -102,9 +102,9 @@ func TestOrchestrationPlaneEscalationLister_NilSafe(t *testing.T) {
 // bridge tests. It exposes a controllable channel callers can
 // drive.
 type fakeSubscriber struct {
-	ch          chan core.OrchestrationEvent
+	ch           chan core.OrchestrationEvent
 	subscribeErr error
-	adaptorID   string
+	adaptorID    string
 }
 
 func newFakeSubscriber(adaptorID string) *fakeSubscriber {

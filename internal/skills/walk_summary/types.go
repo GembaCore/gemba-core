@@ -53,9 +53,9 @@ func (d decisionCounts) total() int {
 // matches walk.AgendaSourceKind exactly so a future kind addition
 // shows up as an unmapped bucket here and prompts an update.
 type agendaCounts struct {
-	Total           int
-	Resolved        int
-	CarriedForward  int // queued or deferred
-	Dismissed       int
-	BySource        map[walk.AgendaSourceKind]int
+	Total          int
+	Resolved       int
+	CarriedForward int // queued or deferred
+	Dismissed      int
+	BySource       map[walk.AgendaSourceKind]int
 }

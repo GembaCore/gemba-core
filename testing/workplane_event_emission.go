@@ -183,4 +183,3 @@ func subscribeOrSkip(t probeT, impl core.WorkPlane, body func(t probeT, ch <-cha
 	}
 	body(t, ch)
 }
-

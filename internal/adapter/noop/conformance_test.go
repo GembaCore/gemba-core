@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/noop"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/noop"
 	gembatesting "github.com/MikeBengtson/gemba/testing"
 )
 

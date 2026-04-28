@@ -187,19 +187,19 @@ const (
 // loop (gm-v5z2.8) can grade individual components against the
 // retrospective without re-running Selection.
 type Components struct {
-	Affinity      float64                `json:"affinity"`
-	AffinityFull  planner.AffinityScores `json:"affinity_full"`
-	Leverage      float64                `json:"leverage"`
-	LeverageWeight int                   `json:"leverage_weight"`
-	EpicAffinity  float64                `json:"epic_affinity"`
+	Affinity       float64                `json:"affinity"`
+	AffinityFull   planner.AffinityScores `json:"affinity_full"`
+	Leverage       float64                `json:"leverage"`
+	LeverageWeight int                    `json:"leverage_weight"`
+	EpicAffinity   float64                `json:"epic_affinity"`
 	// PreGateScore is the weighted sum of the three components
 	// before runway/intent/fairness gates fire. Helpful when the
 	// retrospective wants to ask "did the gates demote a bead the
 	// raw score correctly identified?"
-	PreGateScore   float64 `json:"pre_gate_score"`
-	RunwayDemoted  bool    `json:"runway_demoted,omitempty"`
-	IntentDemoted  bool    `json:"intent_demoted,omitempty"`
-	FairnessBoost  float64 `json:"fairness_boost,omitempty"`
+	PreGateScore  float64 `json:"pre_gate_score"`
+	RunwayDemoted bool    `json:"runway_demoted,omitempty"`
+	IntentDemoted bool    `json:"intent_demoted,omitempty"`
+	FairnessBoost float64 `json:"fairness_boost,omitempty"`
 }
 
 // Select runs the gate sequence + score composition. Returns one

@@ -44,11 +44,17 @@ func probeWorkItemCreateGet(t probeT, impl core.WorkPlane) {
 
 // probeWorkItemUpdate exercises Group B's patch round-trip: a Title
 // patch must land on the returned record.
+//
+// Drives the patch off created.ID rather than the caller-supplied id —
+// adaptors like bd assign their own ids from a backend prefix pool and
+// ignore the caller's value, matching Jira / GitHub / Linear semantics.
+// The Group A probe already asserts the create response carries an id,
+// so this is a safe handoff.
 func probeWorkItemUpdate(t probeT, impl core.WorkPlane) {
 	t.Helper()
 	ctx := context.Background()
 	id := conformanceWorkItemID("update")
-	_, err := impl.CreateWorkItem(ctx, core.WorkItem{
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
 		ID:            id,
 		Title:         "before",
 		Status:        "open",
@@ -58,8 +64,11 @@ func probeWorkItemUpdate(t probeT, impl core.WorkPlane) {
 	if err != nil {
 		t.Fatalf("CreateWorkItem: %v", err)
 	}
+	if created.ID == "" {
+		t.Fatal("CreateWorkItem: returned record has empty ID; cannot drive Update probe")
+	}
 	newTitle := "after"
-	patched, err := impl.UpdateWorkItem(ctx, id, core.WorkItemPatch{Title: &newTitle})
+	patched, err := impl.UpdateWorkItem(ctx, created.ID, core.WorkItemPatch{Title: &newTitle})
 	if err != nil {
 		t.Fatalf("UpdateWorkItem: %v", err)
 	}
@@ -70,13 +79,17 @@ func probeWorkItemUpdate(t probeT, impl core.WorkPlane) {
 }
 
 // probeWorkItemList asserts a created item appears in ListWorkItems
-// output. Filter is left zero: adaptors that need a narrower filter to
-// find the item MAY supply a richer probe in their own suite.
+// output. Drives the discovery query through the IDs filter so the
+// probe stays robust against backends that paginate or apply a default
+// limit (bd's `bd list` defaults to 50 rows; on a populated workspace
+// a "list with zero filter" would naturally truncate the just-created
+// item out of the result). The IDs-narrowed query is the canonical
+// "find this specific record" path.
 func probeWorkItemList(t probeT, impl core.WorkPlane) {
 	t.Helper()
 	ctx := context.Background()
 	id := conformanceWorkItemID("list")
-	_, err := impl.CreateWorkItem(ctx, core.WorkItem{
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
 		ID:            id,
 		Title:         "conformance: list discovery",
 		Status:        "open",
@@ -86,16 +99,21 @@ func probeWorkItemList(t probeT, impl core.WorkPlane) {
 	if err != nil {
 		t.Fatalf("CreateWorkItem: %v", err)
 	}
-	items, err := impl.ListWorkItems(ctx, core.WorkItemFilter{})
+	if created.ID == "" {
+		t.Fatal("CreateWorkItem: returned record has empty ID; cannot drive List probe")
+	}
+	items, err := impl.ListWorkItems(ctx, core.WorkItemFilter{
+		IDs: []core.WorkItemID{created.ID},
+	})
 	if err != nil {
 		t.Fatalf("ListWorkItems: %v", err)
 	}
 	for _, it := range items {
-		if it.ID == id {
+		if it.ID == created.ID {
 			return
 		}
 	}
-	t.Errorf("ListWorkItems did not return the just-created item %q (got %d items)", id, len(items))
+	t.Errorf("ListWorkItems did not return the just-created item %q (got %d items)", created.ID, len(items))
 }
 
 // conformanceWorkItemID mints a unique id for each probe run so

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
 )
 
 func TestParallelChangedEventShape(t *testing.T) {

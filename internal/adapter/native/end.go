@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
 	"github.com/MikeBengtson/gemba/internal/adapter/native/preamble"
-	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/persona"
 )
 

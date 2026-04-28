@@ -1,8 +1,20 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docs docs-dev docs-install
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# `make install` installs the binary under $(PREFIX)/bin. Defaults to
+# /usr/local — override for a userland install:
+#   make install PREFIX=$$HOME/.local
+# Toolchain prerequisites (matches what `make deps` bootstraps):
+#   - Go     >= 1.25  (see go.mod)
+#   - Node   >= 20
+#   - pnpm   >= 9     (corepack enable; pnpm@9)
+#   - git, make, a POSIX shell
+PREFIX     ?= /usr/local
+BINDIR     ?= $(PREFIX)/bin
+SYSTEMDDIR ?= /etc/systemd/system
 
 LDFLAGS := -s -w \
   -X main.version=$(VERSION) \
@@ -75,6 +87,61 @@ fmt: ## format Go + frontend
 gen: ## regenerate code (TS types from Go core)
 	go run ./cmd/gen-core-types
 
+# gm-e4.2: copy the canonical OpenAPI spec from the embed location
+# (internal/server/openapi/openapi.json) to the published copy
+# (docs/api/openapi.json), then regenerate the typed SPA client at
+# web/src/api/gen/types.ts. The Go test in internal/server pins these
+# two copies in lockstep — running this target after editing the spec
+# is the only step required to keep the contract aligned.
+codegen: ## regenerate OpenAPI client (web/src/api/gen) + Go core TS types
+	cp internal/server/openapi/openapi.json docs/api/openapi.json
+	cd web && pnpm gen:openapi
+	go run ./cmd/gen-core-types
+
+# gm-e4.2: lint the OpenAPI spec with Spectral. Requires `pnpm exec
+# spectral` to be installable (Stoplight's @stoplight/spectral-cli).
+# Not part of the default codegen flow because it pulls a heavy
+# devDependency only useful at PR time; run it manually before merging
+# spec changes. The .spectral.yaml ruleset at repo root pins the rules
+# the spec is expected to pass.
+lint-openapi: ## run Spectral against docs/api/openapi.json
+	@command -v pnpx >/dev/null 2>&1 || { echo "install pnpm: https://pnpm.io"; exit 1; }
+	pnpx --package=@stoplight/spectral-cli spectral lint docs/api/openapi.json --ruleset .spectral.yaml
+
+## --- Install (build-from-source path; gm-e14.7) ---
+
+deps: ## bootstrap toolchain (Go modules + frontend pnpm install)
+	@command -v go   >/dev/null 2>&1 || { echo "install Go >= 1.25: https://go.dev/dl/"; exit 1; }
+	@command -v pnpm >/dev/null 2>&1 || { echo "install pnpm: corepack enable && corepack prepare pnpm@latest --activate"; exit 1; }
+	go mod download
+	cd web && pnpm install --frozen-lockfile
+
+install: build ## install the gemba binary to $(BINDIR) (default /usr/local/bin); override with PREFIX=...
+	@install -d "$(DESTDIR)$(BINDIR)"
+	install -m 0755 bin/gemba "$(DESTDIR)$(BINDIR)/gemba"
+	@echo "installed $(DESTDIR)$(BINDIR)/gemba"
+	@echo
+	@echo "next steps:"
+	@echo "  - copy systemd unit:    sudo cp packaging/systemd/gemba.service $(SYSTEMDDIR)/"
+	@echo "  - copy env example:     sudo install -d /etc/gemba && sudo cp packaging/systemd/gemba.env.example /etc/gemba/gemba.env"
+	@echo "  - enable + start:       sudo systemctl daemon-reload && sudo systemctl enable --now gemba"
+	@echo "  - rotate auth token:    sudo -u gemba $(BINDIR)/gemba auth token rotate"
+	@echo "  - verify:               curl -fsS http://127.0.0.1:7666/api/v1/capabilities"
+
+uninstall: ## remove the installed binary and (if present) the systemd unit
+	rm -f "$(DESTDIR)$(BINDIR)/gemba"
+	rm -f "$(DESTDIR)$(SYSTEMDDIR)/gemba.service"
+	@echo "removed $(DESTDIR)$(BINDIR)/gemba and $(DESTDIR)$(SYSTEMDDIR)/gemba.service (if they existed)"
+	@echo "note: /etc/gemba and /var/lib/gemba (if any) are left in place — remove manually if desired"
+
+smoke: build-go-only ## build-only smoke: assert the binary exists and `gemba --help` exits 0
+	@test -x bin/gemba || { echo "smoke: bin/gemba is missing or not executable"; exit 1; }
+	@./bin/gemba --help >/dev/null 2>&1 || { echo "smoke: bin/gemba --help did not exit 0"; exit 1; }
+	@./bin/gemba version >/dev/null 2>&1 || { echo "smoke: bin/gemba version did not exit 0"; exit 1; }
+	@test -f packaging/systemd/gemba.service || { echo "smoke: packaging/systemd/gemba.service missing"; exit 1; }
+	@grep -q '^ExecStart=' packaging/systemd/gemba.service || { echo "smoke: systemd unit missing ExecStart"; exit 1; }
+	@echo "smoke: ok ($$( ./bin/gemba version 2>/dev/null | head -1 ))"
+
 ## --- Release ---
 
 release: ## build a local snapshot release via goreleaser
@@ -83,7 +150,61 @@ release: ## build a local snapshot release via goreleaser
 
 release-dry: release ## alias for `make release` (snapshot, no publish)
 
+## --- Container image (gm-e14.8) ---
+##
+## ko (https://ko.build) builds OCI images straight from Go source. The
+## SPA is embedded in the binary, so ko packages exactly what `make build`
+## produces — no Dockerfile needed. See .ko.yaml for the base image,
+## platforms, and ldflags injection. The frontend must be pre-built so
+## the //go:embed all:web/dist directive picks up real assets.
+##
+## Set KO_DOCKER_REPO to choose the registry, e.g.:
+##   KO_DOCKER_REPO=ghcr.io/mikebengtson/gemba-server make image-push
+##
+## Image tags default to the git rev; the workflow (.github/workflows/
+## release-image.yml) overrides this with the release tag on tag push.
+
+KO_DOCKER_REPO ?= ghcr.io/mikebengtson/gemba-server
+KO_TAGS        ?= $(COMMIT),latest
+
+# Inject the same ldflags ko consumes via templating in .ko.yaml.
+KO_ENV := VERSION=$(VERSION) COMMIT=$(COMMIT) DATE=$(DATE) KO_DOCKER_REPO=$(KO_DOCKER_REPO)
+
+image: frontend-build ## build container image (local OCI tarball, no push)
+	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
+	$(KO_ENV) ko build --bare --tags=$(KO_TAGS) --platform=linux/amd64,linux/arm64 --push=false ./cmd/gemba
+
+image-load: frontend-build ## build + load image into the active Docker daemon (single-arch, current host)
+	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
+	$(KO_ENV) ko build --bare --tags=$(KO_TAGS) --local ./cmd/gemba
+
+image-push: frontend-build ## build + push multi-arch image to KO_DOCKER_REPO
+	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
+	$(KO_ENV) ko build --bare --tags=$(KO_TAGS) --platform=linux/amd64,linux/arm64 ./cmd/gemba
+
+# Smoke-test target: builds the image config without pushing or requiring
+# a registry login. Used in CI to verify .ko.yaml stays consumable on
+# every PR, without burning the bandwidth of a full multi-arch publish.
+image-build-only: dist-sentinel ## smoke-test ko config (single-arch, local, no push)
+	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
+	$(KO_ENV) ko build --bare --tags=$(COMMIT) --push=false --platform=linux/amd64 ./cmd/gemba
+
+## --- Docs site (gm-e14.4) ---
+##
+## The operator-facing docs site (Astro Starlight) lives under
+## `docs-site/`. Source markdown stays in `docs/` — the docs-site
+## sync step mirrors it into the build at `pnpm build` time.
+
+docs-install: ## install docs-site dependencies
+	cd docs-site && pnpm install
+
+docs-dev: docs-install ## run the docs site locally (http://localhost:4321/gemba/)
+	cd docs-site && pnpm dev
+
+docs: docs-install ## build the docs site to docs-site/dist
+	cd docs-site && pnpm build
+
 ## --- Housekeeping ---
 
 clean: ## remove build artifacts
-	rm -rf bin/ dist/ web/dist/* web/node_modules
+	rm -rf bin/ dist/ web/dist/* web/node_modules docs-site/dist docs-site/node_modules docs-site/.astro docs-site/src/content/docs

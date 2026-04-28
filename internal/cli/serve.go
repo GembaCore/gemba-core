@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	gemba "github.com/MikeBengtson/gemba"
+	"github.com/MikeBengtson/gemba/core"
 	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
 	"github.com/MikeBengtson/gemba/internal/adapter/native"
@@ -27,7 +28,6 @@ import (
 	"github.com/MikeBengtson/gemba/internal/adapter/noop"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/core"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
 	"github.com/MikeBengtson/gemba/internal/persona"
 	"github.com/MikeBengtson/gemba/internal/server"

@@ -10,8 +10,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/walk"
 )
 
@@ -86,8 +86,7 @@ func TestLiveSources_BuildsNonEmptyAgenda(t *testing.T) {
 	bus := &fakeHealthBus{snap: []registry.AdaptorStatus{
 		{Name: "bd", Plane: registry.WorkPlane, Healthy: false, Reason: "dolt down"},
 	}}
-	src := walk.Sources{}
-	src = LiveSources(LiveSourcesConfig{
+	src := LiveSources(LiveSourcesConfig{
 		HealthBus: bus,
 		Witness: WitnessFindingSourceFunc(func(_ context.Context, _ string) ([]WitnessFinding, error) {
 			return []WitnessFinding{{ID: "wf-1", Title: "fishy"}}, nil

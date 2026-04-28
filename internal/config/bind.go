@@ -98,6 +98,15 @@ type ServeConfig struct {
 	WorktreesDir string
 
 	DangerouslySkipPermissions bool
+
+	// CORSAllowedOrigins enables CORS on /api/* and /events when
+	// non-empty. CORS is OFF BY DEFAULT (gm-e4.1) — same-origin SPA
+	// requests don't need it, and a public CORS surface is a footgun
+	// (operators serve gemba on loopback by default). Wildcard "*"
+	// allowed for trusted dev setups; production should list explicit
+	// origins. Methods + headers are derived from the Gemba HTTP
+	// surface (GET / POST / PATCH / DELETE; X-GEMBA-Confirm).
+	CORSAllowedOrigins []string
 }
 
 // NormalizeListen splits c.Listen if it is in host:port form (e.g.

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	gembatesting "github.com/MikeBengtson/gemba/testing"
 )
 
@@ -37,10 +37,13 @@ func TestBeadsConformanceR1R8Audit(t *testing.T) {
 	// drift if a probe fails that ISN'T on this list, or if a probe
 	// on this list unexpectedly starts passing (meaning the gap
 	// closed and the ledger should be updated).
-	knownGaps := map[string]string{
-		"B_update_patch_applies": "bd CreateWorkItem ignores caller-supplied ID; UpdateWorkItem against that id is not-found (gap filed under gm-e6)",
-		"B_list_returns_created": "bd CreateWorkItem ignores caller-supplied ID; ListWorkItems can't match it (gap filed under gm-e6)",
-	}
+	//
+	// gm-e6.7: the Group B id-handoff gaps closed when the conformance
+	// probes started using created.ID rather than the caller-supplied
+	// id (matching the contract that backend-assigned ids are the
+	// canonical handle). The audit ledger now tracks no open Group B
+	// gaps; future regressions surface as plain failures.
+	knownGaps := map[string]string{}
 
 	byName := map[string]gembatesting.GroupResult{}
 	for _, g := range report.Groups {

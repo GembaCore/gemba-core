@@ -13,12 +13,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 
 	"github.com/MikeBengtson/gemba/internal/adapter/registry"
 	"github.com/MikeBengtson/gemba/internal/auth"
 	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/core/phase"
 	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/MikeBengtson/gemba/internal/core/phase"
 	"github.com/MikeBengtson/gemba/internal/events"
 	"github.com/MikeBengtson/gemba/internal/persona"
 	tracemw "github.com/MikeBengtson/gemba/internal/server/middleware"
@@ -154,6 +155,23 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 	mux.Use(middleware.Recoverer)
 	mux.Use(middleware.Timeout(30_000_000_000)) // 30s
 
+	// gm-e4.1: CORS off by default. When ServeConfig.CORSAllowedOrigins
+	// is non-empty the middleware mounts with those origins + the
+	// canonical Gemba HTTP surface (GET/POST/PATCH/DELETE,
+	// X-GEMBA-Confirm). Loopback / same-origin SPA paths don't need
+	// CORS; the operator opts in for cross-origin SPAs or local dev
+	// proxies.
+	if origins := cfg.CORSAllowedOrigins; len(origins) > 0 {
+		mux.Use(cors.Handler(cors.Options{
+			AllowedOrigins:   origins,
+			AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
+			AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-GEMBA-Confirm", "traceparent"},
+			ExposedHeaders:   []string{"X-Gemba-Instance"},
+			AllowCredentials: true,
+			MaxAge:           300,
+		}))
+	}
+
 	// Auth middleware is mounted on the API/events surface only, regardless
 	// of bind interface. Token auth must enforce on loopback too (gm-b3 /
 	// gm-99g): any /api/* or /events request must reject before route
@@ -192,6 +210,13 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/health", r.health)
 		api.Get("/version", r.version)
 		api.Get("/config", r.config)
+
+		// gm-e4.2: self-describing OpenAPI 3.1 schema. The SPA's
+		// generated client (web/src/api/gen/) is built against this
+		// document at codegen time; the runtime route lets `gemba
+		// doctor`, integration tests, and external tooling pull the
+		// same spec without depending on the working directory.
+		api.Get("/openapi.json", r.openapiSpecHandler)
 
 		// Per-adaptor runtime health. Drives the SPA's degraded-state
 		// banner (gm-b1 / gm-root.7). The SPA subscribes to the SSE
@@ -381,6 +406,34 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/bootstrap/plan", r.bootstrapPlan)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/bootstrap/commit", r.bootstrapCommit)
+
+		// gm-e4.1: canonical /api/v1/* alias surface. The bead's spec
+		// names eight resource roots — workitems, agents, groups,
+		// workspaces, sessions, escalations, sprints, capabilities —
+		// mounted under a stable /api/v1/ prefix. The legacy unversioned
+		// routes above stay registered for SPA backward-compat; new
+		// callers MUST hit /api/v1/*. Mutating routes carry the same
+		// requireConfirmNonce gate as their unversioned twins.
+		api.Get("/v1/capabilities", r.capabilities)
+		api.Get("/v1/agents", r.listAgents)
+		api.Get("/v1/groups", r.listAgentGroups)
+		api.Get("/v1/sessions", r.listSessions)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/sessions", r.startSession)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/v1/sessions/{id}", r.endSession)
+		api.Get("/v1/sessions/{id}/peek", r.peekSession)
+		api.Get("/v1/escalations", r.listEscalations)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/escalations/{id}/respond", r.respondEscalation)
+		api.Get("/v1/sprints", r.listSprints)
+		api.Get("/v1/workitems", r.listWorkItems)
+		api.Get("/v1/workitems/{id}", r.getWorkItem)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workitems", r.createWorkItem)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Patch("/v1/workitems/{id}", r.patchWorkItem)
+		api.Get("/v1/workspaces", r.listWorkspaces)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/MikeBengtson/gemba/core"
+	"github.com/MikeBengtson/gemba/internal/adapter/bd"
 	"github.com/MikeBengtson/gemba/internal/adapter/gt"
 	"github.com/MikeBengtson/gemba/internal/adapter/noop"
 	gembatesting "github.com/MikeBengtson/gemba/testing"
@@ -25,6 +26,7 @@ type testFlags struct {
 	target    string
 	plane     string
 	junit     string
+	beadsDir  string
 	jsonOut   bool
 }
 
@@ -54,6 +56,9 @@ probe fails.
 
   builtin:noop-work    in-process noop WorkPlane reference adaptor
   builtin:noop-orch    in-process noop OrchestrationPlane reference adaptor
+  builtin:bd-work      Beads (bd) WorkPlane against a real local bd CLI.
+                       Requires --beads-dir pointing at the workspace root
+                       (the directory containing .beads/). gm-e6.7.
   builtin:gastown      in-process Gas Town OrchestrationPlane (gm-e7.x).
                        Requires the 'gt' CLI on PATH. Group B / F probes
                        skip cleanly when the adaptor's lifecycle methods
@@ -90,6 +95,8 @@ probe fails.
 		"plane to test: work | orchestration (defaults to the plane implied by --target for builtins)")
 	cmd.Flags().StringVar(&f.junit, "junit", "",
 		"write a JUnit XML report to this path (optional)")
+	cmd.Flags().StringVar(&f.beadsDir, "beads-dir", "",
+		"path to the Beads workspace root (required for --target=builtin:bd-work)")
 	cmd.Flags().BoolVar(&f.jsonOut, "json", false,
 		"emit the report as JSON on stdout (default: human text)")
 
@@ -137,15 +144,53 @@ func runBuiltinOrRemote(_ context.Context, f testFlags, transport core.Transport
 		return runBuiltinNoopWork(transport, f)
 	case "builtin:noop-orch":
 		return runBuiltinNoopOrchestration(transport, f)
+	case "builtin:bd-work":
+		return runBuiltinBdWork(transport, f)
 	case "builtin:gastown":
 		return runBuiltinGastown(transport, f)
 	default:
 		return nil, fmt.Errorf(
 			"remote --target %q over --transport %s: not-yet-implemented "+
-				"(transport wire clients land incrementally; use builtin:noop-work "+
-				"or builtin:noop-orch today)",
+				"(transport wire clients land incrementally; use builtin:noop-work, "+
+				"builtin:noop-orch, builtin:bd-work, or builtin:gastown today)",
 			f.target, transport)
 	}
+}
+
+// runBuiltinBdWork wires the bd WorkPlane against a real local bd CLI
+// pointed at --beads-dir. The conformance suite runs the same probe
+// set the test harness drives in TestBeadsWorkPlaneConformance, but
+// shells to the actual bd binary so the report reflects the live
+// adaptor — not the in-process fake. gm-e6.7.
+func runBuiltinBdWork(transport core.Transport, f testFlags) (*gembatesting.Report, error) {
+	if f.plane != "" && f.plane != "work" {
+		return nil, fmt.Errorf(
+			"--plane=%q is incompatible with --target=builtin:bd-work (implicit plane is work)",
+			f.plane)
+	}
+	if f.beadsDir == "" {
+		return nil, fmt.Errorf(
+			"--target=builtin:bd-work requires --beads-dir pointing at a workspace " +
+				"root (a directory containing .beads/)")
+	}
+	impl, err := bd.NewWorkPlane(bd.Config{BeadsDir: f.beadsDir})
+	if err != nil {
+		return nil, fmt.Errorf("init bd WorkPlane: %w", err)
+	}
+	defer func() { _ = impl.Close() }()
+	m, err := impl.Describe(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("describe: %w", err)
+	}
+	if m.Transport != transport {
+		return nil, fmt.Errorf(
+			"transport mismatch: --transport=%s but adaptor declares %s (gm-root DD-12)",
+			transport, m.Transport)
+	}
+	fixture := &gembatesting.WorkPlaneFixture{
+		KnownMissingID: core.WorkItemID("gemba/gemba/gm-does-not-exist"),
+	}
+	return gembatesting.RunWorkPlaneProbes(impl, fixture), nil
 }
 
 func runBuiltinNoopWork(transport core.Transport, f testFlags) (*gembatesting.Report, error) {

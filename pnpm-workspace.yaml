@@ -1,3 +1,4 @@
 packages:
   - 'web'
   - 'testing/e2e'
+  - 'docs-site'

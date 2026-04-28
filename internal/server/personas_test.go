@@ -19,14 +19,14 @@ import (
 // rather than reaching into private types.
 type personasResponse struct {
 	Personas []struct {
-		ID          string                 `json:"id"`
-		Name        string                 `json:"name"`
-		Role        string                 `json:"role"`
-		Variety     string                 `json:"variety"`
-		Scope       map[string]any         `json:"scope"`
-		Personality map[string]any         `json:"personality,omitempty"`
-		Perspective map[string]any         `json:"perspective,omitempty"`
-		Purview     map[string]any         `json:"purview,omitempty"`
+		ID          string         `json:"id"`
+		Name        string         `json:"name"`
+		Role        string         `json:"role"`
+		Variety     string         `json:"variety"`
+		Scope       map[string]any `json:"scope"`
+		Personality map[string]any `json:"personality,omitempty"`
+		Perspective map[string]any `json:"perspective,omitempty"`
+		Purview     map[string]any `json:"purview,omitempty"`
 	} `json:"personas"`
 	Total int `json:"total"`
 }

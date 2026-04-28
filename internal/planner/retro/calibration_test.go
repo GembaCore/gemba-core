@@ -225,14 +225,14 @@ func TestAggregateBeadSizeCalibration_PerRepositoryGrouping(t *testing.T) {
 	rows := []SizeCalibrationRow{}
 	for i := 0; i < 5; i++ {
 		rows = append(rows, SizeCalibrationRow{
-			BeadID: core.WorkItemID("a-" + string(rune('a'+i))),
+			BeadID:     core.WorkItemID("a-" + string(rune('a'+i))),
 			Repository: "repo-a", PredictedBucket: core.SizeSmall,
 			ActualDuration: 4 * time.Hour,
 		})
 	}
 	for i := 0; i < 5; i++ {
 		rows = append(rows, SizeCalibrationRow{
-			BeadID: core.WorkItemID("b-" + string(rune('a'+i))),
+			BeadID:     core.WorkItemID("b-" + string(rune('a'+i))),
 			Repository: "repo-b", PredictedBucket: core.SizeSmall,
 			ActualDuration: 5 * time.Minute, // shrink signal
 		})

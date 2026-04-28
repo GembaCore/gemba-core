@@ -16,12 +16,12 @@ import (
 // with the zero value" so individual tests only set the bits
 // they care about.
 type stubBackend struct {
-	manifest    func() (codeanalysis.Manifest, error)
-	listRepos   func() ([]codeanalysis.RepoRef, error)
-	reindex     func(repo codeanalysis.RepoRef, flags codeanalysis.ReindexFlags) error
-	modules     func(repo codeanalysis.RepoRef) ([]codeanalysis.Module, error)
-	health      func(repo codeanalysis.RepoRef) (codeanalysis.HealthReport, error)
-	impact      func(repo codeanalysis.RepoRef, target string, dir codeanalysis.ImpactDirection) (codeanalysis.ImpactReport, error)
+	manifest  func() (codeanalysis.Manifest, error)
+	listRepos func() ([]codeanalysis.RepoRef, error)
+	reindex   func(repo codeanalysis.RepoRef, flags codeanalysis.ReindexFlags) error
+	modules   func(repo codeanalysis.RepoRef) ([]codeanalysis.Module, error)
+	health    func(repo codeanalysis.RepoRef) (codeanalysis.HealthReport, error)
+	impact    func(repo codeanalysis.RepoRef, target string, dir codeanalysis.ImpactDirection) (codeanalysis.ImpactReport, error)
 }
 
 func (s *stubBackend) Manifest(_ context.Context) (codeanalysis.Manifest, error) {
