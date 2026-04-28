@@ -1,5 +1,7 @@
 <a name="top"></a>
 
+[![gemba](branding/social/social-5-gradient-dispatch.png)](https://github.com/MikeBengtson/gemba)
+
 # gemba
 
 [![CI](https://github.com/MikeBengtson/gemba/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MikeBengtson/gemba/actions/workflows/ci.yml)
