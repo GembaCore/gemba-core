@@ -3,7 +3,7 @@
   "info": {
     "title": "Gemba HTTP API",
     "version": "0.1.0",
-    "description": "Wire schema for the gemba server's `/api/*` surface (gm-e4.2). The SPA at `web/` consumes a typed client generated from this document; the source of truth lives in `docs/api/openapi.json` and is served at runtime under `/api/openapi.json`.\n\nThis MVP covers the read endpoints the SPA depends on day-to-day: health, version, config, repositories, work items, sprints, agents, sessions, escalations, capabilities. The remaining `/api/*` surface (consults, walks, planner, bootstrap, perspectives) is acknowledged in `paths` with summary-only stubs and will gain full request/response schemas in follow-up beads.",
+    "description": "Wire schema for the gemba server's `/api/*` surface (gm-e4.2). The SPA at `web/` consumes a typed client generated from this document; the source of truth lives in `docs/api/openapi.json` and is served at runtime under `/api/openapi.json`.\n\nThis MVP covers the read endpoints the SPA depends on day-to-day: health, version, config, repositories, work items, sprints, agents, sessions, escalations, capabilities, and the new-project conversational flow. The remaining `/api/*` surface (consults, walks, planner, perspectives) is acknowledged in `paths` with summary-only stubs and will gain full request/response schemas in follow-up beads.",
     "contact": {
       "name": "MikeBengtson/gemba",
       "url": "https://github.com/MikeBengtson/gemba"
@@ -20,6 +20,7 @@
     { "name": "work", "description": "WorkItems, sprints, repositories." },
     { "name": "agents", "description": "Agents, agent groups, sessions." },
     { "name": "ops", "description": "Escalations, capabilities, adaptors." },
+    { "name": "newproject", "description": "Conversational project-creation flow (gm-root.17)." },
     { "name": "stub", "description": "Routes documented at the URL level only; full request/response schemas land in follow-up beads." }
   ],
   "paths": {
@@ -349,13 +350,126 @@
         }
       }
     },
-    "/api/bootstrap/plan": {
-      "get": {
-        "tags": ["stub"],
-        "summary": "TODO follow-up: bootstrap plan preview (gm-uipx.7).",
-        "operationId": "getBootstrapPlan",
+    "/api/v1/newproject/start": {
+      "post": {
+        "tags": ["newproject"],
+        "summary": "Open a new-project conversation session. Spawns an Onboarder persona and returns a session id.",
+        "operationId": "startNewProject",
         "responses": {
-          "200": { "description": "Bootstrap plan (schema in follow-up bead)." }
+          "201": {
+            "description": "Session created. Returns the session id, empty initial state, and an optional greeting from the Onboarder.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/StartNewProjectResponse" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/v1/newproject/{id}/turn": {
+      "post": {
+        "tags": ["newproject"],
+        "summary": "Submit an operator message. Returns the updated plan-tree state and the Onboarder skill reply.",
+        "operationId": "submitNewProjectTurn",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Session id returned by `startNewProject`.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TurnRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated state and skill reply.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TurnResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/v1/newproject/{id}/ratify": {
+      "post": {
+        "tags": ["newproject"],
+        "summary": "Nonce-confirmed atomic commit. Executes the 10-step ratification transaction and creates the project on disk.",
+        "operationId": "ratifyNewProject",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Session id returned by `startNewProject`.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RatifyRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project committed successfully.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RatifyResponse" }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failure (e.g. empty ProjectName). `error` = `validation_failed`.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RatifyError" }
+              }
+            }
+          },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "409": {
+            "description": "Conflict — either the session state has changed since the modal opened (`error` = `stale_state`) or the target directory already exists (`error` = `dir_exists`).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RatifyError" }
+              }
+            }
+          },
+          "422": {
+            "description": "Dependency cycle detected in the plan tree (`error` = `cycle_detected`).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RatifyError" }
+              }
+            }
+          },
+          "500": {
+            "description": "Transaction step failed (git_init_failed, beads_init_failed, milestone_create_failed, epic_create_failed, bead_create_failed, dep_resolve_failed, stat_failed, mkdir_failed, project_md_failed, commit_failed).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RatifyError" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
         }
       }
     }
@@ -658,6 +772,214 @@
           "adaptors": {
             "type": "array",
             "items": { "$ref": "#/components/schemas/AdaptorStatus" }
+          }
+        }
+      },
+      "ChangeRef": {
+        "type": "object",
+        "description": "Points into the plan tree for the most-recent skill edit. The SPA tone-codes the diff badge by `kind`. Path is slash-joined (e.g. `milestone:1/epic:0/bead:2`); empty means the change spans the whole tree.",
+        "required": ["path", "kind", "summary"],
+        "properties": {
+          "path": { "type": "string", "examples": ["milestone:1/epic:0/bead:2"] },
+          "kind": {
+            "type": "string",
+            "enum": ["added", "removed", "renamed", "edited", ""],
+            "description": "Labels what changed. Empty string means the skill did not categorise the change."
+          },
+          "summary": { "type": "string", "description": "Human-readable one-liner. Empty when the skill did not synthesise one." }
+        }
+      },
+      "DraftBead": {
+        "type": "object",
+        "description": "Leaf of the plan tree. All fields are required; empty strings and zero integers are valid empty states (no missing-key surprises at ratification).",
+        "required": ["Title", "Description", "Type", "Acceptance", "Labels", "Priority", "Estimate", "Skills", "DesignNotes", "Notes", "DependsOnRefs", "BlocksRefs"],
+        "properties": {
+          "Title": { "type": "string" },
+          "Description": { "type": "string" },
+          "Type": {
+            "type": "string",
+            "description": "One of `task` | `bug` | `feature` | `chore` today. Open string so future bead kinds do not break the SPA.",
+            "examples": ["task", "bug", "feature", "chore"]
+          },
+          "Acceptance": { "type": "string" },
+          "Labels": { "type": "array", "items": { "type": "string" } },
+          "Priority": { "type": "integer", "minimum": 0 },
+          "Estimate": { "type": "integer", "minimum": 0 },
+          "Skills": { "type": "array", "items": { "type": "string" } },
+          "DesignNotes": { "type": "string" },
+          "Notes": { "type": "string" },
+          "DependsOnRefs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Intra-tree refs (e.g. `milestone:0/epic:1/bead:2`). Ratification resolves these to real bd-… ids in step 8a."
+          },
+          "BlocksRefs": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Intra-tree refs for beads this bead blocks."
+          }
+        }
+      },
+      "DraftEpic": {
+        "type": "object",
+        "description": "Groups beads under a milestone in the plan tree.",
+        "required": ["Title", "Description", "Acceptance", "Labels", "Priority", "Estimate", "Skills", "DesignNotes", "Notes", "Beads"],
+        "properties": {
+          "Title": { "type": "string" },
+          "Description": { "type": "string" },
+          "Acceptance": { "type": "string" },
+          "Labels": { "type": "array", "items": { "type": "string" } },
+          "Priority": { "type": "integer", "minimum": 0 },
+          "Estimate": { "type": "integer", "minimum": 0 },
+          "Skills": { "type": "array", "items": { "type": "string" } },
+          "DesignNotes": { "type": "string" },
+          "Notes": { "type": "string" },
+          "Beads": { "type": "array", "items": { "$ref": "#/components/schemas/DraftBead" } }
+        }
+      },
+      "DraftMilestone": {
+        "type": "object",
+        "description": "Top-level node of the plan tree. The `type:milestone` label is added by ratification, not by the skill.",
+        "required": ["Title", "Description", "Acceptance", "Labels", "Priority", "Estimate", "Skills", "DesignNotes", "Notes", "Epics"],
+        "properties": {
+          "Title": { "type": "string" },
+          "Description": { "type": "string" },
+          "Acceptance": { "type": "string" },
+          "Labels": { "type": "array", "items": { "type": "string" } },
+          "Priority": { "type": "integer", "minimum": 0 },
+          "Estimate": { "type": "integer", "minimum": 0 },
+          "Skills": { "type": "array", "items": { "type": "string" } },
+          "DesignNotes": { "type": "string" },
+          "Notes": { "type": "string" },
+          "Epics": { "type": "array", "items": { "$ref": "#/components/schemas/DraftEpic" } }
+        }
+      },
+      "NewProjectState": {
+        "type": "object",
+        "description": "Authoritative server-side state for one new-project session. Each turn returns a fresh copy; the client replaces its local copy wholesale rather than merging diffs.",
+        "required": ["ProjectName", "Description", "TechStack", "Architecture", "Milestones", "DraftProjectMD", "Turn", "LastChange"],
+        "properties": {
+          "ProjectName": { "type": "string" },
+          "Description": { "type": "string" },
+          "TechStack": { "type": "array", "items": { "type": "string" } },
+          "Architecture": { "type": "string", "description": "Free-form architecture notes captured from the operator." },
+          "Milestones": { "type": "array", "items": { "$ref": "#/components/schemas/DraftMilestone" } },
+          "DraftProjectMD": {
+            "type": "string",
+            "description": "Running narrative the skill keeps current each turn. Ratification persists this verbatim as `docs/project.md`."
+          },
+          "Turn": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Monotonic turn counter. Starts at 0; incremented on every successful turn. The ratify endpoint uses this as a stale-modal guard."
+          },
+          "LastChange": { "$ref": "#/components/schemas/ChangeRef" }
+        }
+      },
+      "StartNewProjectResponse": {
+        "type": "object",
+        "description": "Returned by `POST /api/v1/newproject/start`.",
+        "required": ["session_id", "state", "greeting"],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Opaque session id used to scope subsequent /turn and /ratify calls. Lives only in server memory.",
+            "examples": ["newproj-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"]
+          },
+          "state": { "$ref": "#/components/schemas/NewProjectState" },
+          "greeting": {
+            "type": "string",
+            "description": "Optional opening line from the Onboarder. Empty string when the skill did not emit one."
+          }
+        }
+      },
+      "TurnRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/v1/newproject/:id/turn`.",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "description": "Operator message. Free text — the skill parses intent." },
+          "edits": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Optional in-place edits the operator made to the plan preview pane since the last turn. Open shape — the skill interprets the path-keyed diff."
+          }
+        }
+      },
+      "TurnResponse": {
+        "type": "object",
+        "description": "Returned by `POST /api/v1/newproject/:id/turn`.",
+        "required": ["state", "reply", "reply_id", "reply_at"],
+        "properties": {
+          "state": { "$ref": "#/components/schemas/NewProjectState" },
+          "reply": {
+            "type": "string",
+            "description": "Skill reply for the conversation pane. Empty when the skill updates the plan silently."
+          },
+          "reply_id": {
+            "type": "string",
+            "description": "Server-assigned message id for the reply (stable across re-renders)."
+          },
+          "reply_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Server-supplied timestamp for the reply (RFC3339Nano)."
+          }
+        }
+      },
+      "RatifyRequest": {
+        "type": "object",
+        "description": "Request body for `POST /api/v1/newproject/:id/ratify`. The server compares the submitted `state.Turn` against the live session and rejects mismatches (stale-modal guard).",
+        "required": ["state"],
+        "properties": {
+          "state": { "$ref": "#/components/schemas/NewProjectState" }
+        }
+      },
+      "RatifyResponse": {
+        "type": "object",
+        "description": "Success envelope returned by `POST /api/v1/newproject/:id/ratify` after the 10-step transaction completes.",
+        "required": ["project_path", "next_url"],
+        "properties": {
+          "project_path": {
+            "type": "string",
+            "description": "Filesystem path of the new project root (default_dir/<project-name>/)."
+          },
+          "next_url": {
+            "type": "string",
+            "description": "Post-ratify navigation destination for the SPA (e.g. `/board`)."
+          }
+        }
+      },
+      "RatifyError": {
+        "type": "object",
+        "description": "Structured error returned by `POST /api/v1/newproject/:id/ratify` when any transaction step fails. `error` is a stable machine-readable code; `step` is the 1-based transaction step that failed.",
+        "required": ["error", "message", "step"],
+        "properties": {
+          "error": {
+            "type": "string",
+            "enum": [
+              "validation_failed",
+              "dir_exists",
+              "mkdir_failed",
+              "stat_failed",
+              "git_init_failed",
+              "beads_init_failed",
+              "milestone_create_failed",
+              "epic_create_failed",
+              "bead_create_failed",
+              "dep_resolve_failed",
+              "cycle_detected",
+              "project_md_failed",
+              "commit_failed",
+              "stale_state"
+            ],
+            "description": "Stable machine-readable error token."
+          },
+          "message": { "type": "string", "description": "Human-readable diagnostic surfaced in the toast." },
+          "step": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "1-based transaction step that failed (1..10; step 8a dep-resolution is encoded as 8)."
           }
         }
       }

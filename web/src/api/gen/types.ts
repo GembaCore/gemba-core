@@ -327,17 +327,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/bootstrap/plan": {
+    "/api/v1/newproject/start": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** TODO follow-up: bootstrap plan preview (gm-uipx.7). */
-        get: operations["getBootstrapPlan"];
+        get?: never;
         put?: never;
-        post?: never;
+        /** Open a new-project conversation session. Spawns an Onboarder persona and returns a session id. */
+        post: operations["startNewProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/newproject/{id}/turn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit an operator message. Returns the updated plan-tree state and the Onboarder skill reply. */
+        post: operations["submitNewProjectTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/newproject/{id}/ratify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Nonce-confirmed atomic commit. Executes the 10-step ratification transaction and creates the project on disk. */
+        post: operations["ratifyNewProject"];
         delete?: never;
         options?: never;
         head?: never;
@@ -525,6 +559,138 @@ export interface components {
         };
         AdaptorsHealthResponse: {
             adaptors: components["schemas"]["AdaptorStatus"][];
+        };
+        /** @description Points into the plan tree for the most-recent skill edit. The SPA tone-codes the diff badge by `kind`. Path is slash-joined (e.g. `milestone:1/epic:0/bead:2`); empty means the change spans the whole tree. */
+        ChangeRef: {
+            /** @example milestone:1/epic:0/bead:2 */
+            path: string;
+            /**
+             * @description Labels what changed. Empty string means the skill did not categorise the change.
+             * @enum {string}
+             */
+            kind: "added" | "removed" | "renamed" | "edited" | "";
+            /** @description Human-readable one-liner. Empty when the skill did not synthesise one. */
+            summary: string;
+        };
+        /** @description Leaf of the plan tree. All fields are required; empty strings and zero integers are valid empty states (no missing-key surprises at ratification). */
+        DraftBead: {
+            Title: string;
+            Description: string;
+            /**
+             * @description One of `task` | `bug` | `feature` | `chore` today. Open string so future bead kinds do not break the SPA.
+             * @example task
+             * @example bug
+             * @example feature
+             * @example chore
+             */
+            Type: string;
+            Acceptance: string;
+            Labels: string[];
+            Priority: number;
+            Estimate: number;
+            Skills: string[];
+            DesignNotes: string;
+            Notes: string;
+            /** @description Intra-tree refs (e.g. `milestone:0/epic:1/bead:2`). Ratification resolves these to real bd-… ids in step 8a. */
+            DependsOnRefs: string[];
+            /** @description Intra-tree refs for beads this bead blocks. */
+            BlocksRefs: string[];
+        };
+        /** @description Groups beads under a milestone in the plan tree. */
+        DraftEpic: {
+            Title: string;
+            Description: string;
+            Acceptance: string;
+            Labels: string[];
+            Priority: number;
+            Estimate: number;
+            Skills: string[];
+            DesignNotes: string;
+            Notes: string;
+            Beads: components["schemas"]["DraftBead"][];
+        };
+        /** @description Top-level node of the plan tree. The `type:milestone` label is added by ratification, not by the skill. */
+        DraftMilestone: {
+            Title: string;
+            Description: string;
+            Acceptance: string;
+            Labels: string[];
+            Priority: number;
+            Estimate: number;
+            Skills: string[];
+            DesignNotes: string;
+            Notes: string;
+            Epics: components["schemas"]["DraftEpic"][];
+        };
+        /** @description Authoritative server-side state for one new-project session. Each turn returns a fresh copy; the client replaces its local copy wholesale rather than merging diffs. */
+        NewProjectState: {
+            ProjectName: string;
+            Description: string;
+            TechStack: string[];
+            /** @description Free-form architecture notes captured from the operator. */
+            Architecture: string;
+            Milestones: components["schemas"]["DraftMilestone"][];
+            /** @description Running narrative the skill keeps current each turn. Ratification persists this verbatim as `docs/project.md`. */
+            DraftProjectMD: string;
+            /** @description Monotonic turn counter. Starts at 0; incremented on every successful turn. The ratify endpoint uses this as a stale-modal guard. */
+            Turn: number;
+            LastChange: components["schemas"]["ChangeRef"];
+        };
+        /** @description Returned by `POST /api/v1/newproject/start`. */
+        StartNewProjectResponse: {
+            /**
+             * @description Opaque session id used to scope subsequent /turn and /ratify calls. Lives only in server memory.
+             * @example newproj-a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+             */
+            session_id: string;
+            state: components["schemas"]["NewProjectState"];
+            /** @description Optional opening line from the Onboarder. Empty string when the skill did not emit one. */
+            greeting: string;
+        };
+        /** @description Request body for `POST /api/v1/newproject/:id/turn`. */
+        TurnRequest: {
+            /** @description Operator message. Free text — the skill parses intent. */
+            message: string;
+            /** @description Optional in-place edits the operator made to the plan preview pane since the last turn. Open shape — the skill interprets the path-keyed diff. */
+            edits?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description Returned by `POST /api/v1/newproject/:id/turn`. */
+        TurnResponse: {
+            state: components["schemas"]["NewProjectState"];
+            /** @description Skill reply for the conversation pane. Empty when the skill updates the plan silently. */
+            reply: string;
+            /** @description Server-assigned message id for the reply (stable across re-renders). */
+            reply_id: string;
+            /**
+             * Format: date-time
+             * @description Server-supplied timestamp for the reply (RFC3339Nano).
+             */
+            reply_at: string;
+        };
+        /** @description Request body for `POST /api/v1/newproject/:id/ratify`. The server compares the submitted `state.Turn` against the live session and rejects mismatches (stale-modal guard). */
+        RatifyRequest: {
+            state: components["schemas"]["NewProjectState"];
+        };
+        /** @description Success envelope returned by `POST /api/v1/newproject/:id/ratify` after the 10-step transaction completes. */
+        RatifyResponse: {
+            /** @description Filesystem path of the new project root (default_dir/<project-name>/). */
+            project_path: string;
+            /** @description Post-ratify navigation destination for the SPA (e.g. `/board`). */
+            next_url: string;
+        };
+        /** @description Structured error returned by `POST /api/v1/newproject/:id/ratify` when any transaction step fails. `error` is a stable machine-readable code; `step` is the 1-based transaction step that failed. */
+        RatifyError: {
+            /**
+             * @description Stable machine-readable error token.
+             * @enum {string}
+             */
+            error: "validation_failed" | "dir_exists" | "mkdir_failed" | "stat_failed" | "git_init_failed" | "beads_init_failed" | "milestone_create_failed" | "epic_create_failed" | "bead_create_failed" | "dep_resolve_failed" | "cycle_detected" | "project_md_failed" | "commit_failed" | "stale_state";
+            /** @description Human-readable diagnostic surfaced in the toast. */
+            message: string;
+            /** @description 1-based transaction step that failed (1..10; step 8a dep-resolution is encoded as 8). */
+            step: number;
         };
     };
     responses: {
@@ -952,7 +1118,7 @@ export interface operations {
             };
         };
     };
-    getBootstrapPlan: {
+    startNewProject: {
         parameters: {
             query?: never;
             header?: never;
@@ -961,13 +1127,111 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Bootstrap plan (schema in follow-up bead). */
+            /** @description Session created. Returns the session id, empty initial state, and an optional greeting from the Onboarder. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartNewProjectResponse"];
+                };
+            };
+            503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    submitNewProjectTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session id returned by `startNewProject`. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated state and skill reply. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TurnResponse"];
+                };
             };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    ratifyNewProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session id returned by `startNewProject`. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RatifyRequest"];
+            };
+        };
+        responses: {
+            /** @description Project committed successfully. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatifyResponse"];
+                };
+            };
+            /** @description Validation failure (e.g. empty ProjectName). `error` = `validation_failed`. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatifyError"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Conflict — either the session state has changed since the modal opened (`error` = `stale_state`) or the target directory already exists (`error` = `dir_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatifyError"];
+                };
+            };
+            /** @description Dependency cycle detected in the plan tree (`error` = `cycle_detected`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatifyError"];
+                };
+            };
+            /** @description Transaction step failed (git_init_failed, beads_init_failed, milestone_create_failed, epic_create_failed, bead_create_failed, dep_resolve_failed, stat_failed, mkdir_failed, project_md_failed, commit_failed). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RatifyError"];
+                };
+            };
+            503: components["responses"]["AdaptorUnavailable"];
         };
     };
 }
