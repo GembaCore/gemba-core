@@ -24,7 +24,7 @@
 
 Kanban like planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Start a new project with a guided conversation or import your existing work — see [Getting Started](#-getting-started) for a quick start. 
 
-In lean manufacturing, gemba (/ˈɡem.bə/ 現場) is "the actual place" — the factory floor, where real work happens. A gemba walk is when leadership observes the work directly, not through reports, and leaves actionable feedback as they go. Gemba the product is built around that metaphor. 
+In lean manufacturing, gemba (/ˈɡem.bə/ 現場) is "the actual place" — the factory floor, where real work happens. A gemba walk is when leadership observes the work directly, not through reports, and leaves actionable feedback as they go. Gemba is built around that metaphor. 
 
 ## Table of Contents
 
@@ -155,99 +155,6 @@ surfacing, evidence v2, DoD v2 — `gm-e11`). Design docs live in
 
 > See the [GitHub commit log](https://github.com/MikeBengtson/gemba/commits/main)
 > for the full history.
-
-[⬆ back to top](#top)
-
-## 📸 Screenshots
-
-The following dark-mode screenshots are generated from the
-[**My Project**](examples/my-project/) sample rig — a fictional
-two-or-three tier app dev project (frontend / backend / data + auth /
-deploy / billing) with three milestones, six epics, and ~30 work
-items. Run `examples/my-project/load.sh && scripts/generate-readme-screenshots.sh`
-to regenerate them.
-
-### Board
-
-The Kanban surface — work items grouped by `state_category` (Backlog,
-Next up, Staged, In Progress, Done). Toggle Item ↔ Epic at the
-view switcher; swimlanes group by milestone, parent epic, agent, etc.
-
-![Gemba Board view — work items in dark mode](docs/img/screenshot-board.png)
-
-### Graph
-
-Dependency graph across every work item. Three core edge kinds
-(`blocks` / `parent_child` / `relates_to`) plus adaptor-declared
-extension edges. Toggles for Cycles, Critical path, and Items ↔ Epics
-granularity in the header.
-
-![Gemba Graph view — dependency graph in dark mode](docs/img/screenshot-graph.png)
-
-### Review (Gemba walk)
-
-A bounded review session: agenda lanes (Queued / Active / Decided /
-Deferred) on the left, decision conversation in the centre, open
-escalations + budget + perspectives on the right. The walk surfaces
-ready beads, escalations, and drift signals into one place where the
-operator (or the PM persona) can ratify, modify, reject, or defer
-each item in sequence.
-
-![Gemba Walk (Review) view — bounded review session in dark mode](docs/img/screenshot-walk.png)
-
-[⬆ back to top](#top)
-
-## 📦 Project Layout
-
-```
-.
-├── cmd/
-│   ├── gemba/                    # Cobra root (serve, doctor, version, adaptor test, ...)
-│   ├── gemba-bridge/             # hook-shim subprocess Claude Code (+ friends) invoke per lifecycle event
-│   ├── gemba-state/              # session-status sentinel CLI (ready / working / prompting / stalled)
-│   ├── gemba-ask/                # Coach/Manager question/blocker sentinel CLI
-│   └── gemba-mcp/                # MCP-tool server variant of gemba-ask + gemba-state
-├── core/                         # adaptor-agnostic types: WorkItem, AgentRef, Relationship, ...
-├── internal/
-│   ├── server/                   # chi router, handlers, OpenAPI spec
-│   ├── events/                   # SSE hub, GembaEvent schema, OTEL propagation
-│   ├── auth/                     # bind policy, token, TLS, OIDC interface
-│   ├── transport/                # api / jsonl / mcp adaptor hosts
-│   ├── evidence/                 # shared evidence-synthesis library (git log, gh PR, CI)
-│   └── adapter/
-│       ├── noop/                 # in-memory reference (both planes)
-│       ├── bd/                   # WorkPlane: Beads (CLI + direct Dolt SQL modes)
-│       ├── native/               # OrchestrationPlane: native tmux / iTerm2 / Terminal.app (default)
-│       ├── gt/                   # OrchestrationPlane: Gas Town (optional)
-│       ├── jira/                 # WorkPlane: Jira (forcing-function)
-│       ├── langgraph/            # OrchestrationPlane: LangGraph (forcing-function)
-│       └── gascity/              # OrchestrationPlane: Gas City (stub)
-├── web/                          # Vite + React + TypeScript + Tailwind + shadcn/ui SPA
-│   └── src/
-│       ├── api/                  # codegenned client + types
-│       ├── capabilities/         # capability-manifest readers + JSX gates
-│       ├── pages/                # Board, Sessions, Sprints, AgentGroups, AgentDetail, ...
-│       ├── components/           # WorkItemDrawer, Palette, AgentGroupBoard, ...
-│       └── extensions/           # adaptor-namespaced widgets (gated by capability manifest)
-├── testing/                      # public conformance harness (importable as github.com/MikeBengtson/gemba/testing)
-│   ├── fixtures/                 # JSON fixtures used by the harness + scripts/
-│   └── e2e/                      # Playwright specs + page objects
-├── docs/
-│   ├── adaptors/                 # per-adaptor authoring docs + conformance reports
-│   ├── design/                   # durable conventions (parallelism-boundary, milestone-convention, ...)
-│   ├── getting-started/          # operator-facing guides
-│   ├── api/                      # OpenAPI 3.1 spec served at /api/openapi.json
-│   └── img/                      # diagrams referenced from docs + README
-├── docs-site/                    # Astro Starlight build of docs/, deployed to GitHub Pages
-├── branding/                     # banner + social-preview PNGs + Pillow generator
-├── scripts/                      # dev/CI shell helpers (run.sh, shader-interop.sh, ...)
-├── .github/workflows/            # CI, e2e, docs, release
-├── embed.go                      # //go:embed of web/dist (must live above web/, can't be moved deeper)
-├── Makefile
-└── go.mod
-```
-
-[⬆ back to top](#top)
 
 ## 🏁 Getting Started
 
@@ -385,8 +292,59 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 
 [⬆ back to top](#top)
 
-## 🛠️ Development
 
+## 📦 Project Layout
+```
+.
+├── cmd/
+│   ├── gemba/                    # Cobra root (serve, doctor, version, adaptor test, ...)
+│   ├── gemba-bridge/             # hook-shim subprocess Claude Code (+ friends) invoke per lifecycle event
+│   ├── gemba-state/              # session-status sentinel CLI (ready / working / prompting / stalled)
+│   ├── gemba-ask/                # Coach/Manager question/blocker sentinel CLI
+│   └── gemba-mcp/                # MCP-tool server variant of gemba-ask + gemba-state
+├── core/                         # adaptor-agnostic types: WorkItem, AgentRef, Relationship, ...
+├── internal/
+│   ├── server/                   # chi router, handlers, OpenAPI spec
+│   ├── events/                   # SSE hub, GembaEvent schema, OTEL propagation
+│   ├── auth/                     # bind policy, token, TLS, OIDC interface
+│   ├── transport/                # api / jsonl / mcp adaptor hosts
+│   ├── evidence/                 # shared evidence-synthesis library (git log, gh PR, CI)
+│   └── adapter/
+│       ├── noop/                 # in-memory reference (both planes)
+│       ├── bd/                   # WorkPlane: Beads (CLI + direct Dolt SQL modes)
+│       ├── native/               # OrchestrationPlane: native tmux / iTerm2 / Terminal.app (default)
+│       ├── gt/                   # OrchestrationPlane: Gas Town (optional)
+│       ├── jira/                 # WorkPlane: Jira (forcing-function)
+│       ├── langgraph/            # OrchestrationPlane: LangGraph (forcing-function)
+│       └── gascity/              # OrchestrationPlane: Gas City (stub)
+├── web/                          # Vite + React + TypeScript + Tailwind + shadcn/ui SPA
+│   └── src/
+│       ├── api/                  # codegenned client + types
+│       ├── capabilities/         # capability-manifest readers + JSX gates
+│       ├── pages/                # Board, Sessions, Sprints, AgentGroups, AgentDetail, ...
+│       ├── components/           # WorkItemDrawer, Palette, AgentGroupBoard, ...
+│       └── extensions/           # adaptor-namespaced widgets (gated by capability manifest)
+├── testing/                      # public conformance harness (importable as github.com/MikeBengtson/gemba/testing)
+│   ├── fixtures/                 # JSON fixtures used by the harness + scripts/
+│   └── e2e/                      # Playwright specs + page objects
+├── docs/
+│   ├── adaptors/                 # per-adaptor authoring docs + conformance reports
+│   ├── design/                   # durable conventions (parallelism-boundary, milestone-convention, ...)
+│   ├── getting-started/          # operator-facing guides
+│   ├── api/                      # OpenAPI 3.1 spec served at /api/openapi.json
+│   └── img/                      # diagrams referenced from docs + README
+├── docs-site/                    # Astro Starlight build of docs/, deployed to GitHub Pages
+├── branding/                     # banner + social-preview PNGs + Pillow generator
+├── scripts/                      # dev/CI shell helpers (run.sh, shader-interop.sh, ...)
+├── .github/workflows/            # CI, e2e, docs, release
+├── embed.go                      # //go:embed of web/dist (must live above web/, can't be moved deeper)
+├── Makefile
+└── go.mod
+```
+
+[⬆ back to top](#top)
+
+## 🛠️ Development
 The repo ships a single `Makefile` covering the full dev/build/release loop. From a fresh clone:
 
 ```bash
