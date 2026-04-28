@@ -48,6 +48,16 @@ const NAV_LINKS = [
 ] as const;
 
 test.describe('Sidebar @chrome', () => {
+  // gm-root.17.12: workspace-scoped sidebar items mute on cold-start
+  // (no active project). Seed an active project so existing nav-loop
+  // tests assert the operational path. Cold-start muting is asserted
+  // in its own describe block below.
+  test.beforeEach(({ projectsStore }) => {
+    projectsStore.seed([
+      { name: 'demo', path: '/tmp/projects/demo', active: true },
+    ]);
+  });
+
   test('renders the Gemba brand and every nav link', async ({ page }) => {
     await page.goto('/board');
 
@@ -85,5 +95,57 @@ test.describe('Sidebar @chrome', () => {
     // background isn't the hover transparent. Use aria-current as the
     // semantic check — react-router sets it on the active NavLink.
     await expect(sessions).toHaveAttribute('aria-current', 'page');
+  });
+});
+
+// gm-root.17.12: cold-start happy path — workspace-scoped nav items
+// mute when no project is active. Capability Browser and Settings
+// remain interactive (they're operational without a workspace).
+test.describe('Sidebar cold-start @chrome', () => {
+  test.beforeEach(({ projectsStore }) => {
+    projectsStore.seed([]); // no projects → no active workspace
+  });
+
+  test('workspace-scoped items render disabled', async ({ page }) => {
+    await page.goto('/new');
+    const sidebar = page.locator('aside').first();
+    await expect(sidebar).toBeVisible();
+
+    const workspaceScoped = [
+      'Board',
+      'Backlog',
+      'Sprints',
+      'Sessions',
+      'Agent groups',
+      'Coach',
+      'Review',
+      'Graph',
+      'Insights',
+      'Escalations',
+      'Drift',
+    ];
+    for (const label of workspaceScoped) {
+      const item = sidebar.getByText(label, { exact: true });
+      await expect(item).toBeVisible();
+      // role="link" with aria-disabled="true" is rendered instead of a
+      // real <a>: clicking does not navigate.
+      const wrap = sidebar.locator('[aria-disabled="true"]', { hasText: label });
+      await expect(wrap).toBeVisible();
+    }
+  });
+
+  test('Settings and Capability Browser stay interactive on cold-start', async ({ page }) => {
+    await page.goto('/new');
+    const sidebar = page.locator('aside').first();
+    await expect(sidebar.getByRole('link', { name: 'Settings' })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Capability Browser' })).toBeVisible();
+  });
+
+  test('clicking a muted item does not navigate', async ({ page }) => {
+    await page.goto('/new');
+    const sidebar = page.locator('aside').first();
+    const muted = sidebar.locator('[aria-disabled="true"]', { hasText: 'Board' });
+    await muted.click({ force: true }); // bypass cursor: not-allowed for the test
+    await expect(page).toHaveURL(/\/new$/);
   });
 });
