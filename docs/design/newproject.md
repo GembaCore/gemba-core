@@ -1,6 +1,6 @@
 # New project — conversational creation flow
 
-**Status:** design · tracked in `gm-root.17.1`
+**Status:** accepted (gm-root.17.1, ratified 2026-04-28 by mike)
 **Parent epic:** [gm-root.17](../../.beads/) — Conversational New project creation flow
 **Author:** mike (captured by polecat)
 **Date:** 2026-04-28
@@ -47,16 +47,23 @@ secondary "Import from advanced source…" surface accessible from Setup.
 
 ## Surfaces
 
-### Top-bar "New project" button
+### Project picker "+" affordance
 
-Always-visible affordance in the SPA's global chrome. Visible regardless
-of:
+A "+" button rendered immediately to the **left** of the top-bar
+project picker (`gm-root.18`). The picker is the visual anchor; the
+"+" sits adjacent to it as a sibling chrome element. Hover text:
+*"Create new project"*. Click → navigate to `/new`.
+
+The "+" is visible whenever the project picker is — which is always.
+The picker chrome renders even when no projects exist, so on a fresh
+install the "+" is the first affordance the operator sees in the top
+bar.
+
+Visible regardless of:
 
 - the current route,
 - whether a workspace is active,
 - how many projects exist on this machine.
-
-Click → navigate to `/new`.
 
 ### `/new` SPA route
 
