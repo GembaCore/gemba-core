@@ -83,23 +83,73 @@ async function copyAsset(rel) {
   await fs.copyFile(src, dst);
 }
 
+async function copyTreeToPublic(srcDir, publicSubdir) {
+  // Mirror a directory under repoRoot into docs-site/public/<publicSubdir>/
+  // so files end up served at /gemba/<publicSubdir>/... after the base
+  // prefix. Used for branding/banner/ (referenced from the README) so
+  // the same image markdown resolves both on github.com and on the
+  // deployed docs site.
+  let entries;
+  try {
+    entries = await fs.readdir(srcDir, { withFileTypes: true });
+  } catch (err) {
+    if (err.code === 'ENOENT') return 0;
+    throw err;
+  }
+  let n = 0;
+  for (const e of entries) {
+    if (!e.isFile()) continue;
+    const dst = path.join(publicDir, publicSubdir, e.name);
+    await fs.mkdir(path.dirname(dst), { recursive: true });
+    await fs.copyFile(path.join(srcDir, e.name), dst);
+    n += 1;
+  }
+  return n;
+}
+
+// remapReadmeAsset returns the docs-site URL for a recognized
+// repo-relative asset path, or null when the path doesn't match a
+// shape we publish (badge SVGs, external URLs that we want to keep
+// as-is, anything else we'd rather strip than 404 the build).
+function remapReadmeAsset(p) {
+  // Already absolute (https://..., or already prefixed with BASE) —
+  // leave it alone. Remote badges fall here and shouldn't be touched.
+  if (/^https?:\/\//.test(p)) return p;
+  if (p.startsWith(BASE)) return p;
+  let m;
+  if ((m = p.match(/^branding\/banner\/(.+\.(?:png|jpg|svg|gif))$/i))) {
+    return withBase('/banner/' + m[1]);
+  }
+  if ((m = p.match(/^docs\/img\/(.+\.(?:png|jpg|svg|gif))$/i))) {
+    return withBase('/img/' + m[1]);
+  }
+  return null;
+}
+
+function rewriteReadmeAssetPaths(body) {
+  // Single-pass remap. Linked image `[![alt](path)](url)` is
+  // rewritten to its remapped form when path is recognized, dropped
+  // (kept as the bare alt + URL combo wouldn't make sense) when it's
+  // not. Bare `![alt](path)` follows the same rule. Done in a single
+  // regex pass so an already-rewritten path can't be re-stripped by
+  // a later catch-all (the bug in the previous two-pass version).
+  body = body.replace(
+    /\[!\[([^\]]*)\]\(([^)]+)\)\]\(([^)]+)\)/g,
+    (_, alt, p, url) => {
+      const remap = remapReadmeAsset(p);
+      return remap ? `[![${alt}](${remap})](${url})` : '';
+    },
+  );
+  body = body.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, p) => {
+    const remap = remapReadmeAsset(p);
+    return remap ? `![${alt}](${remap})` : '';
+  });
+  return body;
+}
+
 async function writeLandingPage() {
   const readme = await fs.readFile(path.join(repoRoot, 'README.md'), 'utf8');
-  // Use the first ~60 lines of the README as the landing-page body.
-  // Strip embedded images + the badge link-blob: README hosts them at
-  // repo-root paths (branding/banner/...), but Astro's vite resolver
-  // looks relative to the docs-site content directory and 404s the
-  // build. Drop them rather than copy the assets — the Starlight
-  // hero block above already provides the visual identity.
-  // Patterns:
-  //   ![alt](path)              raw image
-  //   [![alt](path)](url)       linked image (banner / badges)
-  const body = readme
-    .split('\n')
-    .slice(0, 80)
-    .join('\n')
-    .replace(/\[!\[[^\]]*\]\([^)]+\)\]\([^)]+\)/g, '')
-    .replace(/!\[[^\]]*\]\([^)]+\)/g, '');
+  const body = rewriteReadmeAssetPaths(readme.split('\n').slice(0, 80).join('\n'));
   const out = `---
 title: gemba
 description: Single-binary work-tracker + agent orchestration UI.
@@ -174,10 +224,22 @@ async function main() {
     }
   }
 
+  // Mirror the branding banner directory into public/banner/ so the
+  // README's repo-rooted [![…](branding/banner/X.png)] references
+  // resolve under the docs-site base path after rewriteReadmeAssetPaths
+  // adjusts them.
+  const bannerCount = await copyTreeToPublic(
+    path.join(repoRoot, 'branding', 'banner'),
+    'banner',
+  );
+
   await writeLandingPage();
   await writeApiOverview();
   // eslint-disable-next-line no-console
-  console.log(`[sync-docs] mirrored ${all.length} files from ${srcDocs}`);
+  console.log(
+    `[sync-docs] mirrored ${all.length} files from ${srcDocs} ` +
+      `(+${bannerCount} banner assets)`,
+  );
 }
 
 main().catch((err) => {
