@@ -614,6 +614,54 @@ function dispatch(route: Route, stores: FakeStores): unknown {
     return json({ project_path: '.gemba/project.toml', board_url: '/board' });
   }
 
+  // /api/v1/newproject/* (gm-root.17.3 — see docs/design/newproject.md).
+  // The /new SPA route runs a conversational project-creation flow
+  // against the `newproject` skill. The skill (gm-root.17.5) and the
+  // Onboarder persona host (gm-root.17.10) DO NOT exist yet — this
+  // dispatcher returns canned responses so the SPA renders +
+  // transitions + commits end-to-end. Real-mode coverage lands when
+  // the backend beads do.
+  if (path === '/api/v1/newproject/start' && method === 'POST') {
+    return json({
+      session_id: 'fake-newproject-1',
+      state: emptyNewProjectState(),
+      greeting:
+        "Hi — what are we building? Tell me the rough shape (web app, library, ops tool, …) and I'll propose milestones, epics, and beads.",
+    });
+  }
+  const npTurn = path.match(/^\/api\/v1\/newproject\/([^/]+)\/turn$/);
+  if (npTurn && method === 'POST') {
+    const body = parseBody(route.request().postData());
+    const userMsg =
+      typeof body.message === 'string' ? body.message : '';
+    // Synthesize a deterministic plan tree on the first turn so the
+    // route's empty-states transition into populated panes. Subsequent
+    // turns mutate fields so e2e specs can exercise the diff badge.
+    const next = nextFakeState(userMsg);
+    const milestones = next.Milestones;
+    const epicCount = milestones.reduce((a, m) => a + m.Epics.length, 0);
+    return json({
+      state: next,
+      reply:
+        milestones.length === 0
+          ? "Okay — tell me a bit more about the project's shape and I'll start drafting milestones."
+          : `Drafted ${milestones.length} milestone(s) and ${epicCount} epic(s). Edit anything in the preview pane and I'll fold your changes into the next turn.`,
+      reply_id: `fake-reply-${Date.now()}`,
+      reply_at: new Date().toISOString(),
+    });
+  }
+  const npRatify = path.match(/^\/api\/v1\/newproject\/([^/]+)\/ratify$/);
+  if (npRatify && method === 'POST') {
+    return json({
+      project_path: '/tmp/fake-projects/new-project',
+      // Per design: the post-ratify destination is the "Start
+      // planning" handoff (gm-root.17.7). That bead doesn't exist yet —
+      // /board is the today-fallback and the real handoff replaces
+      // this when it lands.
+      next_url: '/board',
+    });
+  }
+
   if (isPath(path, '/api/capabilities')) return json(capabilitiesPlane.get());
   if (isPath(path, '/api/adaptors')) return json({ adaptors: adaptorsState.get() });
   if (isPath(path, '/api/health')) return json({ status: 'ok' });
@@ -632,6 +680,138 @@ function isPath(path: string, prefix: string): boolean {
 // dispatcher with arbitrary JSON; non-JSON or empty bodies fall back
 // to an empty object so the dispatcher can keep its shape-agnostic
 // switch tidy.
+// FakeBead / FakeEpic / FakeMilestone / FakeNewProjectState mirror
+// the wire shapes in web/src/api/newproject.ts. Duplicated here so
+// the fixture stays free of a cross-package import on the SPA's
+// types.
+interface FakeBead {
+  Title: string;
+  Description: string;
+  Type: string;
+  Acceptance: string;
+  Labels: string[];
+  Priority: number;
+  Estimate: number;
+  Skills: string[];
+  DesignNotes: string;
+  Notes: string;
+  DependsOnRefs: string[];
+  BlocksRefs: string[];
+}
+interface FakeEpic {
+  Title: string;
+  Description: string;
+  Acceptance: string;
+  Labels: string[];
+  Priority: number;
+  Estimate: number;
+  Skills: string[];
+  DesignNotes: string;
+  Notes: string;
+  Beads: FakeBead[];
+}
+interface FakeMilestone {
+  Title: string;
+  Description: string;
+  Acceptance: string;
+  Labels: string[];
+  Priority: number;
+  Estimate: number;
+  Skills: string[];
+  DesignNotes: string;
+  Notes: string;
+  Epics: FakeEpic[];
+}
+interface FakeNewProjectState {
+  ProjectName: string;
+  Description: string;
+  TechStack: string[];
+  Architecture: string;
+  Milestones: FakeMilestone[];
+  DraftProjectMD: string;
+  Turn: number;
+  LastChange: { path: string; kind: string; summary: string };
+}
+
+// emptyNewProjectState mirrors EMPTY_STATE in web/src/api/newproject.ts.
+// Kept as a function (not a const) so each /start call hands back a
+// fresh object rather than a shared reference.
+function emptyNewProjectState(): FakeNewProjectState {
+  return {
+    ProjectName: '',
+    Description: '',
+    TechStack: [],
+    Architecture: '',
+    Milestones: [],
+    DraftProjectMD: '',
+    Turn: 0,
+    LastChange: { path: '', kind: '', summary: '' },
+  };
+}
+
+// nextFakeState seeds a deterministic plan tree on first contact so
+// the /new route's empty-states transition into populated panes
+// without the backend wired. Subsequent turns mutate the description
+// so the diff badge has something to surface.
+function nextFakeState(userMsg: string): FakeNewProjectState {
+  const desc = userMsg || 'A new project.';
+  return {
+    ProjectName: 'fake-new-project',
+    Description: desc,
+    TechStack: ['typescript', 'go'],
+    Architecture: 'Single-binary backend + SPA.',
+    DraftProjectMD: `# fake-new-project\n\n${desc}\n`,
+    Turn: 1,
+    LastChange: {
+      path: '',
+      kind: 'edited',
+      summary: 'Drafted initial milestones from the conversation.',
+    },
+    Milestones: [
+      {
+        Title: 'M1 — bootstrap',
+        Description: 'Stand up the workspace skeleton.',
+        Acceptance: 'Workspace renders and has a Board.',
+        Labels: [],
+        Priority: 1,
+        Estimate: 0,
+        Skills: [],
+        DesignNotes: '',
+        Notes: '',
+        Epics: [
+          {
+            Title: 'Set up repo',
+            Description: 'git init + .gemba/',
+            Acceptance: '',
+            Labels: [],
+            Priority: 1,
+            Estimate: 0,
+            Skills: [],
+            DesignNotes: '',
+            Notes: '',
+            Beads: [
+              {
+                Title: 'Create initial commit',
+                Description: '',
+                Type: 'task',
+                Acceptance: '',
+                Labels: [],
+                Priority: 2,
+                Estimate: 0,
+                Skills: [],
+                DesignNotes: '',
+                Notes: '',
+                DependsOnRefs: [],
+                BlocksRefs: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
 function parseBody(raw: string | null): Record<string, unknown> {
   if (!raw) return {};
   try {

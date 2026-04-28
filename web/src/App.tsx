@@ -10,6 +10,11 @@ import { WalkPage } from '@/pages/WalkPage';
 import { WalkDetailPage } from '@/pages/WalkDetailPage';
 import { ProjectConfigPage } from '@/pages/ProjectConfigPage';
 import { BootstrapPage } from '@/pages/BootstrapPage';
+// gm-root.17.3: full-page conversational New project surface. The
+// `newproject` skill (gm-root.17.5) and Onboarder persona (gm-root.17.10)
+// ship in follow-up beads — the route is wired to typed STUB endpoints
+// today and the e2e fake-mode dispatcher exercises the full flow.
+import { NewProjectPage } from '@/pages/NewProjectPage';
 import { InsightsPersonasPage } from '@/pages/InsightsPersonasPage';
 import { DriftPage } from '@/pages/DriftPage';
 // gm-e12.15: provider-aware agent detail view (Workspace.kind switch).
@@ -85,6 +90,11 @@ export default function App() {
             on a specific step. Bare /bootstrap redirects to Step 1. */}
         <Route path="/bootstrap" element={<Navigate to="/bootstrap/source" replace />} />
         <Route path="/bootstrap/:step" element={<BootstrapPage />} />
+        {/* gm-root.17.3: /new — full-page conversational project
+            creation. Two-pane (conversation + plan preview) layout
+            with a persistent Ratify button. One-shot session — refresh
+            discards. See docs/design/newproject.md. */}
+        <Route path="/new" element={<NewProjectPage />} />
         {features.mail && <Route path="/mail" element={<MailPage />} />}
         <Route path="/health" element={<HealthPage />} />
         <Route path="*" element={<NotFoundPage />} />

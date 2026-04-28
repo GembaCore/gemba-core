@@ -80,6 +80,8 @@ const projects: Project[] = [
       'setup/**/*.spec.ts',
       // gm-uipx.7 — /bootstrap 4-step wizard.
       'bootstrap/**/*.spec.ts',
+      // gm-root.17.3 — /new full-page conversational project creation.
+      'newproject/**/*.spec.ts',
     ],
     use: {
       ...devices['Desktop Chrome'],
