@@ -373,6 +373,12 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	walkSources := walksources.LiveSources(walksources.LiveSourcesConfig{
 		Plane:     host.OrchestrationPlane(),
 		HealthBus: handler.HealthBus(),
+		// Wire the bound WorkPlane as the WorkItems lister so the
+		// walk's bead_filed / bead_closed sources surface recently
+		// touched beads in the agenda. Without this, a WorkPlane-
+		// only deployment (no OrchestrationPlane) gets an empty
+		// walk even when there are 24h-recent beads worth reviewing.
+		WorkItems: host.WorkPlane(),
 		// Witness + Refinery left nil; the no-op default contributes
 		// zero items until an upstream source is wired.
 	})
