@@ -14,14 +14,29 @@ import (
 	"github.com/MikeBengtson/gemba/internal/config"
 )
 
-// TestClientFromLLMConfig_NoProvider: empty provider → no-client
-// diagnostic. This is the primary "operator hasn't configured
-// credentials" path.
-func TestClientFromLLMConfig_NoProvider(t *testing.T) {
-	t.Parallel()
+// TestClientFromLLMConfig_NoProvider_NoEnv: empty provider AND no
+// ANTHROPIC_API_KEY env var → no-client diagnostic. This is the
+// primary "operator hasn't configured credentials" path.
+func TestClientFromLLMConfig_NoProvider_NoEnv(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
 	_, err := clientFromLLMConfig(config.LLMConfig{})
 	if !IsNoClient(err) {
-		t.Errorf("expected ErrNoLLMClient on empty provider; got %v", err)
+		t.Errorf("expected ErrNoLLMClient on empty provider + empty env; got %v", err)
+	}
+}
+
+// TestClientFromLLMConfig_NoProvider_EnvImplicitAnthropic: empty
+// provider but ANTHROPIC_API_KEY is exported → implicit anthropic
+// client. Lets `gemba serve` work with zero config.toml when the
+// operator already has the env var set.
+func TestClientFromLLMConfig_NoProvider_EnvImplicitAnthropic(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-implicit")
+	c, err := clientFromLLMConfig(config.LLMConfig{})
+	if err != nil {
+		t.Fatalf("expected implicit-anthropic client; got %v", err)
+	}
+	if c == nil {
+		t.Fatal("nil client")
 	}
 }
 

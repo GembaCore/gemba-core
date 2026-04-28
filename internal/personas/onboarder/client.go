@@ -21,7 +21,7 @@ import (
 // client is configured. The wording is locked by the design doc; do
 // not edit without amending docs/design/newproject.md §"Credential
 // resolution".
-const MissingClientDiagnostic = "No LLM client configured. Set up agent credentials in ~/.gemba/config.toml before starting a New project conversation."
+const MissingClientDiagnostic = "No LLM client configured. Export ANTHROPIC_API_KEY in your environment, or set [llm] in ~/.gemba/config.toml, before starting a New project conversation."
 
 // ErrNoLLMClient is the sentinel returned by [Spawn] (and the
 // underlying [Resolve]) when no chat client is configured. The HTTP
@@ -61,19 +61,38 @@ func DefaultResolver(configPath string) Resolver {
 
 // clientFromLLMConfig is the bare resolution logic, separated so
 // tests can drive it without touching disk.
+//
+// Resolution order:
+//
+//  1. config.toml [llm].provider explicitly set → use that branch.
+//  2. config.toml [llm].provider empty AND ANTHROPIC_API_KEY env var
+//     set → implicit anthropic provider with the env-var key. This
+//     lets an operator who already has ANTHROPIC_API_KEY exported
+//     run `gemba serve` with no config.toml at all and still hit the
+//     happy path. Credentials never touch disk.
+//  3. Both empty → ErrNoLLMClient with the canonical diagnostic.
 func clientFromLLMConfig(c config.LLMConfig) (newproject.LLMClient, error) {
 	provider := strings.TrimSpace(strings.ToLower(c.Provider))
 	switch provider {
 	case "":
+		// Implicit-anthropic via env var: the operator hasn't set up
+		// config.toml [llm] but has exported ANTHROPIC_API_KEY in
+		// their shell. Treat that as an opt-in to the anthropic
+		// provider with sensible defaults — model and endpoint use
+		// AnthropicClient's built-in defaults.
+		if key := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")); key != "" {
+			return NewAnthropicClient(AnthropicClientConfig{APIKey: key}), nil
+		}
 		return nil, ErrNoLLMClient
 	case "anthropic":
 		key := strings.TrimSpace(c.APIKey)
 		if key == "" {
 			// Soft fallback to the well-known env var the operator
 			// almost certainly already has set if they're running a
-			// Claude Code agent on the same machine. This is the only
-			// place env vars participate; everywhere else the config
-			// table is the source of truth.
+			// Claude Code agent on the same machine. The empty-
+			// provider branch above also reads this var so the
+			// fallback covers both "explicit anthropic without
+			// api_key" and "no provider at all" with the same env.
 			key = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
 		}
 		if key == "" {

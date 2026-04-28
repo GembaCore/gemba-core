@@ -263,17 +263,34 @@ to the operator rather than poisoning the plan tree.
 
 ### Credential resolution
 
-The Onboarder resolves an LLM client by reading the same configuration
-the OrchestrationPlane reads for its agents — the agent-config layer
-provides "the default chat client" and the persona uses it. This
-avoids a separate first-run credential prompt: if the operator has
-already configured Gemba to run agents, they have a working LLM
-endpoint by definition.
+The Onboarder resolves an LLM client in this order:
 
-If no agent client is configured, the Onboarder fails to spawn and
-the SPA surfaces a clear diagnostic at the top of `/new`: *"No LLM
-client configured. Set up agent credentials in `~/.gemba/config.toml`
-before starting a New project conversation."*
+1. **`~/.gemba/config.toml` `[llm]` table** — explicit `provider` +
+   `api_key` (and optional `model`, `endpoint`). This is the same
+   config the OrchestrationPlane reads for its agents.
+2. **`ANTHROPIC_API_KEY` environment variable** — implicit anthropic
+   provider. If `[llm].provider` is unset (or absent entirely) and
+   `ANTHROPIC_API_KEY` is exported in the process environment, the
+   Onboarder constructs an anthropic client with that key and
+   built-in defaults for model/endpoint. This lets an operator who
+   already has `ANTHROPIC_API_KEY` exported run `gemba serve` with
+   zero config.toml and still hit the happy path. Credentials never
+   touch disk.
+3. **`[llm].provider = "anthropic"` with empty `api_key`** also
+   falls back to `ANTHROPIC_API_KEY`, so the same env var covers
+   both the explicit-anthropic-without-key and no-config-at-all
+   paths.
+
+If neither path resolves, the Onboarder fails to spawn and the SPA
+surfaces a clear diagnostic at the top of `/new`: *"No LLM client
+configured. Export `ANTHROPIC_API_KEY` in your environment, or set
+`[llm]` in `~/.gemba/config.toml`, before starting a New project
+conversation."*
+
+Credentials are NEVER written to disk by Gemba. Operators export the
+env var in their shell profile or pass it inline; the env-var path
+explicitly avoids materializing the key in any file Gemba could
+later commit to git.
 
 ### Persona-skill binding contract
 
