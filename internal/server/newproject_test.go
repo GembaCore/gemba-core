@@ -1,0 +1,622 @@
+// Tests for /api/v1/newproject/* (gm-root.17). Covers:
+//   - HTTP-level wiring for /start, /turn, /ratify (happy paths + 503).
+//   - Atomic ratify transaction with a stub command runner so tests
+//     don't depend on the host's bd / git binaries — every step's
+//     failure path drives a rollback assertion.
+
+package server
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/MikeBengtson/gemba/internal/config"
+)
+
+// ─── HTTP wiring ────────────────────────────────────────────────────
+
+// newNewProjectRouter wires a Router with an in-memory store + stub
+// turner + a fake ratifier so tests can exercise the SPA contract
+// without spawning subprocesses. Returns the router + the store +
+// the ratifier so individual cases can probe state.
+func newNewProjectRouter(t *testing.T, ratifier NewProjectRatifier) (*Router, NewProjectStore) {
+	t.Helper()
+	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	t.Cleanup(r.Close)
+	store := NewMemoryNewProjectStore()
+	r.AttachNewProject(store, NewStubSkillTurner(), ratifier)
+	return r, store
+}
+
+func newProjectReq(t *testing.T, method, path string, body any) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			t.Fatalf("encode body: %v", err)
+		}
+	}
+	req := httptest.NewRequest(method, path, &buf)
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
+func TestNewProject_NotConfigured_503(t *testing.T) {
+	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	t.Cleanup(r.Close)
+	// Intentionally NOT calling AttachNewProject.
+
+	cases := []struct {
+		method, path string
+		needsNonce   bool
+	}{
+		{http.MethodPost, "/api/v1/newproject/start", false},
+		{http.MethodPost, "/api/v1/newproject/foo/turn", false},
+		{http.MethodPost, "/api/v1/newproject/foo/ratify", true},
+	}
+	for _, c := range cases {
+		req := newProjectReq(t, c.method, c.path, map[string]any{"message": "x"})
+		if c.needsNonce {
+			req.Header.Set(ConfirmHeader, "test-nonce-503")
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Errorf("%s %s: want 503, got %d body=%q",
+				c.method, c.path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestNewProject_StartTurn_HappyPath(t *testing.T) {
+	r, _ := newNewProjectRouter(t, nil)
+
+	// /start
+	req := newProjectReq(t, http.MethodPost, "/api/v1/newproject/start", map[string]any{})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("/start: want 201, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	var startResp startNewProjectResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &startResp); err != nil {
+		t.Fatalf("decode /start: %v", err)
+	}
+	if !strings.HasPrefix(startResp.SessionID, "newproj-") {
+		t.Errorf("session id should be prefixed: %q", startResp.SessionID)
+	}
+	if startResp.Greeting == "" {
+		t.Errorf("expected non-empty greeting")
+	}
+	if startResp.State.Turn != 0 {
+		t.Errorf("initial turn should be 0; got %d", startResp.State.Turn)
+	}
+
+	// /turn
+	turnReq := newProjectReq(t, http.MethodPost,
+		"/api/v1/newproject/"+startResp.SessionID+"/turn",
+		map[string]any{"message": "build a TODO web app"})
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, turnReq)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/turn: want 200, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	var turnResp turnResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &turnResp); err != nil {
+		t.Fatalf("decode /turn: %v", err)
+	}
+	if turnResp.State.Turn != 1 {
+		t.Errorf("turn should be 1 after first /turn; got %d", turnResp.State.Turn)
+	}
+	if len(turnResp.State.Milestones) != 1 {
+		t.Errorf("expected 1 stub milestone; got %d", len(turnResp.State.Milestones))
+	}
+}
+
+// ─── Ratify happy path with a stub runner ──────────────────────────
+
+// stubRunner records every (binary, args) pair the ratifier issues.
+// Each binary's response is keyed off the FIRST arg (the subcommand)
+// so cases can stub `bd create` to return a deterministic id without
+// stubbing every other call. Unrecognised calls fail loudly so a
+// missing fixture surfaces as a test failure, not a silent
+// transaction failure.
+type stubRunner struct {
+	mu    sync.Mutex
+	calls []stubCall
+	// idSeq counts bd-create calls so each new bead gets a unique id.
+	idSeq    int
+	failOn   func(call stubCall) error
+	bdInitOK bool
+}
+
+type stubCall struct {
+	Dir  string
+	Bin  string
+	Args []string
+}
+
+func newStubRunner() *stubRunner {
+	return &stubRunner{bdInitOK: true}
+}
+
+func (s *stubRunner) run(_ context.Context, dir, name string, args ...string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	call := stubCall{Dir: dir, Bin: name, Args: append([]string(nil), args...)}
+	s.calls = append(s.calls, call)
+	if s.failOn != nil {
+		if err := s.failOn(call); err != nil {
+			return nil, err
+		}
+	}
+	switch name {
+	case "git":
+		return nil, nil
+	case "bd":
+		if len(args) == 0 {
+			return nil, errors.New("stub bd: no args")
+		}
+		switch args[0] {
+		case "init":
+			if !s.bdInitOK {
+				return nil, errors.New("stub bd init configured to fail")
+			}
+			return []byte(""), nil
+		case "create":
+			s.idSeq++
+			id := fmt.Sprintf("bd-%03d", s.idSeq)
+			out := fmt.Sprintf(`{"id":%q,"title":"stub"}`, id)
+			return []byte(out), nil
+		case "dep":
+			return nil, nil
+		}
+	}
+	return nil, fmt.Errorf("stub runner: unknown call %s %v", name, args)
+}
+
+func sampleState() NewProjectState {
+	return NewProjectState{
+		ProjectName: "demo",
+		Description: "a sample project",
+		TechStack:   []string{"go", "react"},
+		Milestones: []DraftMilestone{
+			{
+				Title:       "M1",
+				Description: "first milestone",
+				Labels:      []string{"area:onboard"},
+				Epics: []DraftEpic{
+					{
+						Title: "E1",
+						Beads: []DraftBead{
+							{Title: "B1", Type: "task"},
+							{Title: "B2", Type: "task"},
+						},
+					},
+				},
+			},
+		},
+		DraftProjectMD: "# demo\n\nA sample project.\n",
+	}
+}
+
+func TestRatify_HappyPath(t *testing.T) {
+	tmp := t.TempDir()
+	stub := newStubRunner()
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	})
+
+	resp, err := rfr.Ratify(context.Background(), sampleState())
+	if err != nil {
+		t.Fatalf("Ratify: %v", err)
+	}
+	wantPath := filepath.Join(tmp, "demo")
+	if resp.ProjectPath != wantPath {
+		t.Errorf("project_path: want %q, got %q", wantPath, resp.ProjectPath)
+	}
+	if resp.NextURL == "" {
+		t.Errorf("next_url: want non-empty")
+	}
+
+	// Project dir must exist.
+	if _, err := os.Stat(wantPath); err != nil {
+		t.Fatalf("project dir missing: %v", err)
+	}
+	// .gemba/workspace.toml must exist + carry the project name.
+	ws, err := os.ReadFile(filepath.Join(wantPath, ".gemba", "workspace.toml"))
+	if err != nil {
+		t.Fatalf("read workspace.toml: %v", err)
+	}
+	if !bytes.Contains(ws, []byte(`name = "demo"`)) {
+		t.Errorf("workspace.toml missing project name; body=%q", ws)
+	}
+	// docs/project.md must exist.
+	if _, err := os.Stat(filepath.Join(wantPath, "docs", "project.md")); err != nil {
+		t.Fatalf("project.md missing: %v", err)
+	}
+
+	// Calls expected: git init, bd init, 1×bd create (milestone),
+	// 1×bd create (epic), 2×bd create (beads), git add, git commit.
+	wantBinaries := map[string]int{"git": 0, "bd": 0}
+	for _, c := range stub.calls {
+		wantBinaries[c.Bin]++
+	}
+	if wantBinaries["bd"] < 4 {
+		t.Errorf("expected ≥4 bd calls (init + 4 creates), got %d (calls=%+v)", wantBinaries["bd"], stub.calls)
+	}
+	// Find the git-commit call and verify its message.
+	foundCommit := false
+	for _, c := range stub.calls {
+		if c.Bin != "git" {
+			continue
+		}
+		// commit args: [-c user.name=… -c user.email=… commit -m "feat: …"]
+		joined := strings.Join(c.Args, " ")
+		if strings.Contains(joined, "commit") && strings.Contains(joined, "feat: initial project bootstrap") {
+			foundCommit = true
+			break
+		}
+	}
+	if !foundCommit {
+		t.Errorf("expected `git commit -m 'feat: initial project bootstrap'`; calls=%+v", stub.calls)
+	}
+}
+
+// ─── Failure-path rollback tests ────────────────────────────────────
+
+func TestRatify_DirAlreadyExists_NeverDeletes(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "demo")
+	// Pre-create the dir with a sentinel file so we can detect any
+	// rollback that would (incorrectly) wipe it.
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	sentinel := filepath.Join(target, "DO-NOT-TOUCH")
+	if err := os.WriteFile(sentinel, []byte("preexisting"), 0o644); err != nil {
+		t.Fatalf("sentinel: %v", err)
+	}
+
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             newStubRunner().run,
+	})
+	_, err := rfr.Ratify(context.Background(), sampleState())
+	if err == nil {
+		t.Fatalf("Ratify: want error for pre-existing dir")
+	}
+	re, ok := err.(*RatifyError)
+	if !ok {
+		t.Fatalf("Ratify: want *RatifyError, got %T: %v", err, err)
+	}
+	if re.Code != "dir_exists" {
+		t.Errorf("code: want dir_exists, got %q", re.Code)
+	}
+	if re.Step != 2 {
+		t.Errorf("step: want 2, got %d", re.Step)
+	}
+	// Crucially, the sentinel must still be intact — the transaction
+	// must NEVER touch a pre-existing dir.
+	if data, err := os.ReadFile(sentinel); err != nil {
+		t.Fatalf("sentinel must survive: %v", err)
+	} else if string(data) != "preexisting" {
+		t.Errorf("sentinel mutated: %q", data)
+	}
+}
+
+func TestRatify_BeadsInitFails_RollsBackDir(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "demo")
+	stub := newStubRunner()
+	stub.bdInitOK = false
+
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	})
+	_, err := rfr.Ratify(context.Background(), sampleState())
+	if err == nil {
+		t.Fatalf("Ratify: want error for failed bd init")
+	}
+	re, ok := err.(*RatifyError)
+	if !ok {
+		t.Fatalf("Ratify: want *RatifyError, got %T", err)
+	}
+	if re.Step != 5 || re.Code != "beads_init_failed" {
+		t.Errorf("want step 5/beads_init_failed, got step %d/%s", re.Step, re.Code)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("project dir must be rolled back; stat=%v", err)
+	}
+}
+
+func TestRatify_MilestoneCreateFails_RollsBackDir(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "demo")
+	stub := newStubRunner()
+	stub.failOn = func(c stubCall) error {
+		if c.Bin == "bd" && len(c.Args) > 0 && c.Args[0] == "create" {
+			return errors.New("simulated milestone-create failure")
+		}
+		return nil
+	}
+
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	})
+	_, err := rfr.Ratify(context.Background(), sampleState())
+	if err == nil {
+		t.Fatalf("Ratify: want error for failed bd create")
+	}
+	re, ok := err.(*RatifyError)
+	if !ok {
+		t.Fatalf("want *RatifyError, got %T", err)
+	}
+	if re.Step != 6 || re.Code != "milestone_create_failed" {
+		t.Errorf("want step 6/milestone_create_failed, got step %d/%s", re.Step, re.Code)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("project dir must be rolled back; stat=%v", err)
+	}
+}
+
+func TestRatify_CycleDetected_AbortsAndRollsBack(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "demo")
+	stub := newStubRunner()
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	})
+
+	// Build a cyclic plan: bead 0 depends on bead 1; bead 1 depends
+	// on bead 0. Cycle detection at step 8a must abort.
+	state := sampleState()
+	state.Milestones[0].Epics[0].Beads = []DraftBead{
+		{Title: "B0", Type: "task", DependsOnRefs: []string{"milestone:0/epic:0/bead:1"}},
+		{Title: "B1", Type: "task", DependsOnRefs: []string{"milestone:0/epic:0/bead:0"}},
+	}
+
+	_, err := rfr.Ratify(context.Background(), state)
+	if err == nil {
+		t.Fatalf("Ratify: want cycle detection error")
+	}
+	re, ok := err.(*RatifyError)
+	if !ok {
+		t.Fatalf("want *RatifyError, got %T", err)
+	}
+	if re.Code != "cycle_detected" {
+		t.Errorf("want cycle_detected, got %q (msg=%q)", re.Code, re.Message)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("project dir must be rolled back; stat=%v", err)
+	}
+	// Crucially: NO `bd dep add` calls should have been issued — we
+	// detect the cycle in-process before applying any edges.
+	for _, c := range stub.calls {
+		if c.Bin == "bd" && len(c.Args) > 0 && c.Args[0] == "dep" {
+			t.Errorf("bd dep add must NOT run when a cycle is detected; got %v", c.Args)
+		}
+	}
+}
+
+func TestRatify_UnknownDepRef_FailsWithoutEdges(t *testing.T) {
+	tmp := t.TempDir()
+	stub := newStubRunner()
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	})
+	state := sampleState()
+	state.Milestones[0].Epics[0].Beads[0].DependsOnRefs = []string{"milestone:9/epic:9/bead:9"}
+	_, err := rfr.Ratify(context.Background(), state)
+	if err == nil {
+		t.Fatalf("want error for unknown dep ref")
+	}
+	re, ok := err.(*RatifyError)
+	if !ok {
+		t.Fatalf("want *RatifyError, got %T", err)
+	}
+	if re.Code != "dep_resolve_failed" {
+		t.Errorf("want dep_resolve_failed, got %q", re.Code)
+	}
+}
+
+func TestRatify_InvalidProjectName_NoDirCreated(t *testing.T) {
+	tmp := t.TempDir()
+	stub := newStubRunner()
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	})
+
+	state := sampleState()
+	state.ProjectName = ""
+	_, err := rfr.Ratify(context.Background(), state)
+	if err == nil {
+		t.Fatalf("want validation error")
+	}
+	re, ok := err.(*RatifyError)
+	if !ok {
+		t.Fatalf("want *RatifyError, got %T", err)
+	}
+	if re.Code != "validation_failed" {
+		t.Errorf("want validation_failed, got %q", re.Code)
+	}
+	// Stub runner must not have been invoked.
+	if len(stub.calls) > 0 {
+		t.Errorf("expected zero subprocess calls on validation failure; got %+v", stub.calls)
+	}
+
+	state.ProjectName = "has spaces"
+	if _, err := rfr.Ratify(context.Background(), state); err == nil {
+		t.Fatalf("want validation error for spaces in name")
+	}
+}
+
+// ─── Cycle-detector unit tests ──────────────────────────────────────
+
+func TestDetectCycle_Acyclic(t *testing.T) {
+	edges := []depEdge{
+		{from: "A", to: "B"},
+		{from: "B", to: "C"},
+		{from: "A", to: "C"},
+	}
+	if got := detectCycle(edges); got != nil {
+		t.Errorf("acyclic graph reported cycle: %v", got)
+	}
+}
+
+func TestDetectCycle_SimpleTwoNode(t *testing.T) {
+	edges := []depEdge{
+		{from: "A", to: "B"},
+		{from: "B", to: "A"},
+	}
+	got := detectCycle(edges)
+	if got == nil {
+		t.Fatalf("expected cycle, got nil")
+	}
+	// Path should reference both A and B.
+	joined := strings.Join(got, "->")
+	if !(strings.Contains(joined, "A") && strings.Contains(joined, "B")) {
+		t.Errorf("cycle path missing nodes: %v", got)
+	}
+}
+
+func TestDetectCycle_ThreeNodeCycle(t *testing.T) {
+	edges := []depEdge{
+		{from: "A", to: "B"},
+		{from: "B", to: "C"},
+		{from: "C", to: "A"},
+	}
+	if got := detectCycle(edges); got == nil {
+		t.Fatalf("expected cycle, got nil")
+	}
+}
+
+// ─── Wire-shape sanity check ────────────────────────────────────────
+
+// TestRatify_HTTPRoute exercises the full HTTP path: /start → /turn →
+// /ratify with a stub ratifier so we verify the handler wires the
+// request through end-to-end (including the nonce gate).
+func TestRatify_HTTPRoute(t *testing.T) {
+	tmp := t.TempDir()
+	stub := newStubRunner()
+	r, _ := newNewProjectRouter(t, NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	}))
+
+	// /start
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, newProjectReq(t, http.MethodPost, "/api/v1/newproject/start", map[string]any{}))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("/start: %d body=%q", rec.Code, rec.Body.String())
+	}
+	var startResp startNewProjectResponse
+	_ = json.Unmarshal(rec.Body.Bytes(), &startResp)
+
+	// /ratify with a hand-crafted state matching the live session's
+	// turn count (currently 0 — the test skips /turn). The session's
+	// state has no project name; we can't ratify it as-is, so seed a
+	// state at turn 0 with a name.
+	state := sampleState()
+	state.Turn = 0
+	body := ratifyRequest{State: state}
+	req := newProjectReq(t, http.MethodPost,
+		"/api/v1/newproject/"+startResp.SessionID+"/ratify", body)
+	req.Header.Set(ConfirmHeader, "test-nonce-ratify-1")
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/ratify: want 200, got %d body=%q", rec.Code, rec.Body.String())
+	}
+	var ratifyResp RatifyResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &ratifyResp); err != nil {
+		t.Fatalf("decode /ratify: %v", err)
+	}
+	if !strings.HasSuffix(ratifyResp.ProjectPath, "/demo") {
+		t.Errorf("project_path: want suffix /demo, got %q", ratifyResp.ProjectPath)
+	}
+}
+
+func TestRatify_StaleStateConflict(t *testing.T) {
+	tmp := t.TempDir()
+	stub := newStubRunner()
+	r, store := newNewProjectRouter(t, NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	}))
+
+	sess, err := store.Start(context.Background())
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	// Mutate the session's live state so its Turn diverges from the
+	// snapshot the SPA POSTs.
+	mut := sess.State
+	mut.Turn = 5
+	if err := store.Update(context.Background(), sess.ID, mut); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	// SPA POSTs an older snapshot (turn=0) — should 409.
+	body := ratifyRequest{State: sampleState()} // sampleState has turn=0
+	req := newProjectReq(t, http.MethodPost,
+		"/api/v1/newproject/"+sess.ID+"/ratify", body)
+	req.Header.Set(ConfirmHeader, "test-stale-nonce")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("want 409 for stale state, got %d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+// ─── Default dir resolution ─────────────────────────────────────────
+
+func TestResolveDefaultDir_FallsBackToBuiltinDefault(t *testing.T) {
+	home := t.TempDir()
+	got, err := resolveDefaultDir(home)
+	if err != nil {
+		t.Fatalf("resolveDefaultDir: %v", err)
+	}
+	want := filepath.Join(home, "gemba", "projects")
+	if got != want {
+		t.Errorf("default dir: want %q, got %q", want, got)
+	}
+}
+
+func TestResolveDefaultDir_HonoursConfigToml(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".gemba"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	cfg := []byte(`# gemba config
+[projects]
+default_dir = "~/work/projects"
+`)
+	if err := os.WriteFile(filepath.Join(home, ".gemba", "config.toml"), cfg, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	got, err := resolveDefaultDir(home)
+	if err != nil {
+		t.Fatalf("resolveDefaultDir: %v", err)
+	}
+	want := filepath.Join(home, "work", "projects")
+	if got != want {
+		t.Errorf("default dir: want %q, got %q", want, got)
+	}
+}

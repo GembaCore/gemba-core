@@ -42,94 +42,39 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/MikeBengtson/gemba/internal/skills/newproject"
 )
 
-// ─── Wire types (mirror web/src/api/newproject.ts) ──────────────────
+// ─── Wire types (re-exported from internal/skills/newproject) ───────
+//
+// The skill package owns the canonical schema (see
+// internal/skills/newproject/types.go). This package re-exports the
+// types under the same name so server-package code and tests don't
+// have to reach across the import boundary every time, and so the
+// SPA's contract (web/src/api/newproject.ts) has a single Go-side
+// declaration to mirror.
 
-// DraftBead is one bead in the plan tree. JSON tags use the
-// design-doc PascalCase field names so the SPA's typed client and the
-// Go side share the same wire shape. Every field is populated — empty
-// strings, empty slices, and Estimate=0 are valid empty states. The
-// "no missing keys" contract makes ratification total.
-type DraftBead struct {
-	Title         string   `json:"Title"`
-	Description   string   `json:"Description"`
-	Type          string   `json:"Type"`
-	Acceptance    string   `json:"Acceptance"`
-	Labels        []string `json:"Labels"`
-	Priority      int      `json:"Priority"`
-	Estimate      int      `json:"Estimate"`
-	Skills        []string `json:"Skills"`
-	DesignNotes   string   `json:"DesignNotes"`
-	Notes         string   `json:"Notes"`
-	DependsOnRefs []string `json:"DependsOnRefs"`
-	BlocksRefs    []string `json:"BlocksRefs"`
-}
+// DraftBead is the leaf of the plan tree. See
+// internal/skills/newproject for the field-level documentation; the
+// JSON wire shape is canonical at that location.
+type DraftBead = newproject.DraftBead
 
-// DraftEpic is one epic in the plan tree. Children are DraftBeads in
-// declaration order; ratification preserves that order so the bd ids
-// allocated downstream match the operator's mental model.
-type DraftEpic struct {
-	Title       string      `json:"Title"`
-	Description string      `json:"Description"`
-	Acceptance  string      `json:"Acceptance"`
-	Labels      []string    `json:"Labels"`
-	Priority    int         `json:"Priority"`
-	Estimate    int         `json:"Estimate"`
-	Skills      []string    `json:"Skills"`
-	DesignNotes string      `json:"DesignNotes"`
-	Notes       string      `json:"Notes"`
-	Beads       []DraftBead `json:"Beads"`
-}
+// DraftEpic is one epic in the plan tree.
+type DraftEpic = newproject.DraftEpic
 
-// DraftMilestone is one milestone in the plan tree. Ratification
-// encodes these as `bd epic -l type:milestone` per
-// docs/design/milestone-convention.md.
-type DraftMilestone struct {
-	Title       string      `json:"Title"`
-	Description string      `json:"Description"`
-	Acceptance  string      `json:"Acceptance"`
-	Labels      []string    `json:"Labels"`
-	Priority    int         `json:"Priority"`
-	Estimate    int         `json:"Estimate"`
-	Skills      []string    `json:"Skills"`
-	DesignNotes string      `json:"DesignNotes"`
-	Notes       string      `json:"Notes"`
-	Epics       []DraftEpic `json:"Epics"`
-}
+// DraftMilestone is one milestone in the plan tree.
+type DraftMilestone = newproject.DraftMilestone
 
-// ChangeRef points at the most-recent skill edit so the SPA can
-// render a diff badge in the conversation pane. Empty path + empty
-// kind == no recent change (e.g. fresh draft).
-type ChangeRef struct {
-	Path    string `json:"path"`
-	Kind    string `json:"kind"`
-	Summary string `json:"summary"`
-}
+// ChangeRef points at the most-recent skill edit.
+type ChangeRef = newproject.ChangeRef
 
 // NewProjectState is the authoritative state for one /new session.
-// Each turn replaces the state in place; the Ratify button commits
-// whatever the state is at click time.
-type NewProjectState struct {
-	ProjectName    string           `json:"ProjectName"`
-	Description    string           `json:"Description"`
-	TechStack      []string         `json:"TechStack"`
-	Architecture   string           `json:"Architecture"`
-	Milestones     []DraftMilestone `json:"Milestones"`
-	DraftProjectMD string           `json:"DraftProjectMD"`
-	Turn           int              `json:"Turn"`
-	LastChange     ChangeRef        `json:"LastChange"`
-}
+type NewProjectState = newproject.NewProjectState
 
-// emptyNewProjectState mirrors EMPTY_STATE on the SPA side. Returned
-// by /start so the SPA's empty-state pane has a fully-populated
-// (every key present, every value empty) object to render.
+// emptyNewProjectState returns the skill's canonical EmptyState.
+// Keeps the existing call sites working without churn.
 func emptyNewProjectState() NewProjectState {
-	return NewProjectState{
-		TechStack:  []string{},
-		Milestones: []DraftMilestone{},
-		LastChange: ChangeRef{},
-	}
+	return newproject.EmptyState()
 }
 
 // ─── Wire envelopes ─────────────────────────────────────────────────
