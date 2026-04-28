@@ -84,6 +84,15 @@ scheduling or isolation semantics.
   --orchestration=native` is the happy path and needs no external
   daemon; it drives terminal sessions directly.
 
+Gemba's ranking layer has two distinct systems for distinct jobs.
+**Selection** (`internal/planner/selection/`) is a pure-Go dispatch-time
+scorer that decides which ready bead a session should take next; it runs
+every dispatch loop and powers the `/coach` affinity grid. **epic_order**
+(the PM persona's skill) is an LLM-driven planning consult that ranks
+candidate epics for sprint composition; it lives at `/sprints` and
+produces narrative recommendations with confidence scores. See
+[`docs/concepts/dispatch-vs-planning.md`](docs/concepts/dispatch-vs-planning.md).
+
 [⬆ back to top](#top)
 
 ## 🚦 Status
