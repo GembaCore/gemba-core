@@ -17,7 +17,13 @@ test.beforeEach(() => {
   resetSessionIds();
 });
 
-test.describe('AgentDetailDrawer body @route', () => {
+// gm-9a7v: AgentsPage / AgentDetailDrawer surface (data-testids
+// agents-grid, agents-empty, agent-drawer, agent-tile-*) was removed
+// when gm-e12.15 introduced /agents/:id. The page-object + every
+// assertion in this file targets a SPA surface that no longer
+// exists, so all 12 tests time out for 31s waiting on missing
+// locators. Skipped at the describe level until the rewrite lands.
+test.describe.skip('AgentDetailDrawer body @route — TODO gm-9a7v rewrite vs current SPA', () => {
   test('renders the metadata rows for a non-human agent', async ({
     page,
     agentPlane,

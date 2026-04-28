@@ -6,6 +6,12 @@
 // by the gm-e12.4 vitest suite (web/src/pages/__tests__/
 // AgentsPage.test.tsx) under a mocked QueryClient; here we exercise
 // the same property end-to-end through the fake fixture.
+//
+// gm-9a7v: every test below is .skip-ed because the AgentsPage grid
+// + AgentDetailDrawer surface (data-testids agents-grid, agents-empty,
+// agent-tile-*, agent-drawer) was deleted by gm-e12.15 in favour of
+// the per-agent /agents/:id detail page. Re-enable after the rewrite
+// described in gm-9a7v lands.
 
 import { expect, test } from '../../fixtures/server';
 import { AgentsPage } from '../../pages/AgentsPage';
@@ -17,14 +23,14 @@ test.beforeEach(() => {
   resetSessionIds();
 });
 
-test('empty roster renders the empty-state @sessions', async ({ page, agentPlane }) => {
+test.skip('empty roster renders the empty-state @sessions', async ({ page, agentPlane }) => {
   agentPlane.seed([]);
   const ap = new AgentsPage(page);
   await ap.goto();
   await expect(ap.empty).toBeVisible();
 });
 
-test('one tile per agent with kind-specific iconography @sessions', async ({
+test.skip('one tile per agent with kind-specific iconography @sessions', async ({
   page,
   agentPlane,
 }) => {
@@ -40,7 +46,7 @@ test('one tile per agent with kind-specific iconography @sessions', async ({
   await expect(page.getByTestId('agent-tile-h-1-icon-human')).toBeVisible();
 });
 
-test('agent with an observable session shows the status badge @sessions', async ({
+test.skip('agent with an observable session shows the status badge @sessions', async ({
   page,
   agentPlane,
   sessionPlane,
@@ -53,7 +59,7 @@ test('agent with an observable session shows the status badge @sessions', async 
   await expect(ap.tile('a-1')).toHaveAttribute('data-active', 'true');
 });
 
-test('agent with only terminal sessions renders idle @sessions', async ({
+test.skip('agent with only terminal sessions renders idle @sessions', async ({
   page,
   agentPlane,
   sessionPlane,
@@ -72,7 +78,7 @@ test('agent with only terminal sessions renders idle @sessions', async ({
   await expect(ap.idleMarker('a-1')).toBeVisible();
 });
 
-test('clicking a tile opens the agent detail drawer @sessions', async ({
+test.skip('clicking a tile opens the agent detail drawer @sessions', async ({
   page,
   agentPlane,
   sessionPlane,
