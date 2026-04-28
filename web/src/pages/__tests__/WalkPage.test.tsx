@@ -218,9 +218,12 @@ describe('WalkPage', () => {
 
   it('clicking a queued card promotes it to active', async () => {
     render(wrap(<WalkPage />));
-    await waitFor(() => expect(screen.getByTestId('walk-agenda-item-b')).toBeTruthy());
+    // findByTestId retries with the testing-library timeout; the
+    // sync getByTestId variant raced React's effect schedule on CI
+    // (passed locally, intermittent fail on slower runners).
+    const card = await screen.findByTestId('walk-agenda-item-b');
     await act(async () => {
-      screen.getByTestId('walk-agenda-item-b').click();
+      card.click();
     });
     await waitFor(() =>
       expect(screen.getByTestId('walk-agenda-item-b').dataset.lane).toBe('active')
