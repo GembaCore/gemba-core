@@ -12,23 +12,24 @@
 # via go:embed) and the Go binary into bin/gemba. Skip with
 # RUN_SKIP_BUILD=1 for a fast restart when only config changed.
 #
-# Extra args after `./run.sh` get forwarded to `gemba serve` so the
-# operator can add --port, --auth, --open, etc. without editing this
-# script.
+# Extra args after `./scripts/run.sh` get forwarded to `gemba serve`
+# so the operator can add --port, --auth, --open, etc. without editing
+# this script.
 #
 # Usage:
-#   ./run.sh                        # default port 7666, no auth
-#   ./run.sh --port 7667            # different port
-#   ./run.sh --open                 # also open the SPA in a browser
-#   RUN_SKIP_BUILD=1 ./run.sh       # skip the rebuild step
-#   GEMBA_DOLT_URL=mysql://...  ./run.sh   # override the beads URL
+#   ./scripts/run.sh                        # default port 7666, no auth
+#   ./scripts/run.sh --port 7667            # different port
+#   ./scripts/run.sh --open                 # also open the SPA in a browser
+#   RUN_SKIP_BUILD=1 ./scripts/run.sh       # skip the rebuild step
+#   GEMBA_DOLT_URL=mysql://...  ./scripts/run.sh   # override the beads URL
 
 set -euo pipefail
 
-# Resolve repo root from the script's location so `./run.sh` works
-# regardless of cwd.
+# Resolve repo root from the script's location so `./scripts/run.sh`
+# works regardless of cwd. The script lives in scripts/, so go up one.
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
+REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+cd "$REPO_ROOT"
 
 # Default beads URL: the local Dolt server's `gemba` database. Mirrors
 # the rig's `.beads/metadata.json` (dolt_server_host:dolt_server_port/
