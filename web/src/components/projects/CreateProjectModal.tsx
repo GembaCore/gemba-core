@@ -29,9 +29,10 @@
 //   - create_db      + existing_repo   → needs a "init beads DB into existing dir" endpoint
 //   - any            + clone_url       → needs gm-e12.21.2's clone endpoint
 //
-// File-picker buttons fall back to plain text inputs until
-// gm-e12.21.1's <FilePicker> component lands; the modal uses a small
-// PathInput shim so swapping it in later is a one-line change.
+// File-picker buttons use the shared <FilePicker> component
+// (gm-e12.21.1) — bounded to $HOME and the configured projects dir.
+// The DB axis sets requireBeadsDb=true to mark dirs that already
+// contain a .beads/ subdir; the Repository axis leaves it false.
 
 import * as Dialog from '@radix-ui/react-dialog';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -40,6 +41,7 @@ import { ApiError } from '@/api/client';
 import { attachProject, listAdoptableDBs, type AdoptableDB } from '@/api/projects';
 import { createProject } from '@/api/newproject';
 import { useProjectPicker } from '@/components/projectpicker/ProjectPickerContext';
+import { FilePicker } from '@/components/FilePicker';
 import { cn } from '@/lib/utils';
 
 type DbMode = 'existing' | 'adopt' | 'create';
@@ -235,11 +237,12 @@ export function CreateProjectModal({ open, onClose, prefill }: CreateProjectModa
                 label="Existing on disk"
                 testid="db-mode-existing"
               >
-                <PathInput
+                <FilePicker
                   value={existingDbPath}
                   onChange={setExistingDbPath}
                   disabled={dbMode !== 'existing'}
-                  placeholder="/path/to/project/.beads"
+                  requireBeadsDb
+                  placeholder="/path/to/project"
                   testid="db-existing-path"
                 />
               </Radio>
@@ -283,7 +286,7 @@ export function CreateProjectModal({ open, onClose, prefill }: CreateProjectModa
                 label="Existing on disk"
                 testid="repo-mode-existing"
               >
-                <PathInput
+                <FilePicker
                   value={existingRepoPath}
                   onChange={setExistingRepoPath}
                   disabled={repoMode !== 'existing'}
@@ -415,32 +418,3 @@ function Radio({
   );
 }
 
-// PathInput — text input shim for an OS path. Swapped for the
-// <FilePicker> component once gm-e12.21.1 lands; until then operators
-// type the path directly. Same prop surface as FilePicker so the
-// upgrade is a one-line import change at the call site.
-function PathInput({
-  value,
-  onChange,
-  disabled,
-  placeholder,
-  testid,
-}: {
-  value: string;
-  onChange: (next: string) => void;
-  disabled?: boolean;
-  placeholder?: string;
-  testid: string;
-}) {
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      disabled={disabled}
-      placeholder={placeholder}
-      data-testid={testid}
-      className="w-full rounded-md border border-neutral-300 bg-white px-2 py-1 font-mono text-xs disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900"
-    />
-  );
-}

@@ -470,6 +470,12 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// the selection durably.
 		api.Get("/v1/projects", r.listProjects)
 		api.Post("/v1/projects/switch", r.switchProject)
+
+		// gm-e12.21.1: directory-listing endpoint backing the SPA's
+		// <FilePicker>. Read-only metadata; allow-list bounded to
+		// $HOME and the configured projects dir.
+		api.Get("/v1/fs/list", r.listFs)
+		api.Get("/v1/fs/info", r.infoFs)
 		// gm-gmyl: enumerate beads-shaped DBs visible on the configured
 		// Dolt server that aren't already attached to a filesystem
 		// project. The picker renders these alongside configured
