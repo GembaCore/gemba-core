@@ -142,6 +142,16 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	if err := cfg.ValidateBindPolicy(); err != nil {
 		return err
 	}
+
+	// gm-root.19: resolve the Beads server URL from config / built-in
+	// default when the operator has not supplied explicit WorkPlane
+	// flags. We do this before ValidateWorkPlaneFlags so the resolution
+	// order (CLI > config.toml > built-in default) is applied once, in
+	// one place, before any validation that requires a flag to be set.
+	if err := applyBeadsURLDefault(&cfg); err != nil {
+		return err
+	}
+
 	// --beads-dir and --dolt-url are mutually exclusive; catch the
 	// conflict before any further startup work so the operator gets a
 	// clean message instead of silently seeing one ignored.

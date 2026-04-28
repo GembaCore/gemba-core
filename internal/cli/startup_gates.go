@@ -1,5 +1,5 @@
-// startup_gates.go holds the two early-startup probes that run before
-// any HTTP listener is bound (gm-root.17.4):
+// startup_gates.go holds the early-startup probes that run before
+// any HTTP listener is bound (gm-root.17.4, gm-root.19):
 //
 //  1. probeBd: verifies the bd CLI is installed. Missing → print install
 //     instructions to stderr and return a non-nil error so the caller can
@@ -9,12 +9,19 @@
 //  2. coldStartRedirect: determines whether the SPA root should redirect
 //     to /new. Returns true when bd is present but no project exists under
 //     the configured default_dir.
+//
+//  3. applyBeadsURLDefault: resolves the Beads server URL from config /
+//     built-in default when neither --dolt-url nor --beads-dir was set
+//     explicitly. Populates cfg.DoltURL so downstream validation and
+//     adaptor construction can proceed without special-casing the
+//     "no flags" scenario (gm-root.19).
 
 package cli
 
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"os/exec"
 
@@ -94,4 +101,46 @@ func coldStartRedirect(cfg config.ServeConfig) (bool, error) {
 		return false, fmt.Errorf("scan default_dir %q: %w", defaultDir, err)
 	}
 	return !hasProject, nil
+}
+
+// applyBeadsURLDefault resolves the Beads server URL when the operator
+// has not supplied explicit WorkPlane flags (gm-root.19). Resolution
+// order:
+//
+//  1. --dolt-url already set in cfg — no-op; CLI wins.
+//  2. --beads-dir already set in cfg — no-op; bd CLI path wins.
+//  3. --noop already set — no-op; in-memory plane wins.
+//  4. [beads].url in ~/.gemba/config.toml — populate cfg.DoltURL.
+//  5. Built-in default (config.DefaultBeadsURL) — populate cfg.DoltURL.
+//
+// When the URL comes from config or the built-in default (cases 4/5),
+// a diagnostic is logged so the operator knows which URL is being used
+// and can correct it if wrong. The actual reachability probe happens
+// downstream inside dolt.NewWorkPlane (which pings on connect); we do
+// not open a connection here.
+//
+// If the config file is present but malformed, the error is returned so
+// the operator sees it before any port binding happens.
+func applyBeadsURLDefault(cfg *config.ServeConfig) error {
+	// Cases 1–3: an explicit flag was given; nothing to do.
+	if cfg.DoltURL != "" || cfg.BeadsDir != "" || cfg.Noop {
+		return nil
+	}
+
+	ucfg, err := config.LoadUserConfig(cfg.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("load user config for beads URL resolution: %w", err)
+	}
+
+	resolved := config.ResolveBeadsURL("", ucfg)
+	cfg.DoltURL = resolved
+
+	source := "built-in default"
+	if ucfg.Beads.URL != "" {
+		source = "~/.gemba/config.toml [beads].url"
+	}
+	slog.Info("beads URL resolved from "+source,
+		"url", config.RedactBeadsURL(resolved),
+		"hint", "pass --dolt-url or set [beads].url in ~/.gemba/config.toml to override")
+	return nil
 }

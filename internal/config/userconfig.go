@@ -1,15 +1,16 @@
 // Package config: see doc.go for the overview.
 //
 // userconfig.go resolves the user-level ~/.gemba/config.toml used by
-// gemba serve's cold-start detection (gm-root.17.4). The config file is
-// optional; a missing file silently applies built-in defaults so an
-// operator who just installed gemba gets the right behaviour without
-// touching any TOML.
+// gemba serve's cold-start detection (gm-root.17.4) and Beads URL
+// resolution (gm-root.19). The config file is optional; a missing file
+// silently applies built-in defaults so an operator who just installed
+// gemba gets the right behaviour without touching any TOML.
 
 package config
 
 import (
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 
@@ -22,12 +23,31 @@ import (
 // on first project ratification.
 const DefaultProjectsDir = "gemba/projects"
 
+// DefaultBeadsURL is the built-in fallback Beads server URL when
+// neither --dolt-url nor [beads].url in config.toml is set. It
+// matches the default Dolt server address used by `bd` and Gas Town's
+// `gt dolt start` (port 3307, root user, gemba database).
+const DefaultBeadsURL = "mysql://root@127.0.0.1:3307/gemba"
+
 // UserConfig mirrors the shape of ~/.gemba/config.toml.
 // Only the fields relevant to startup-time decisions live here; the
 // file may contain additional keys that are silently ignored.
 type UserConfig struct {
 	Projects ProjectsConfig `toml:"projects"`
 	LLM      LLMConfig      `toml:"llm"`
+	Beads    BeadsConfig    `toml:"beads"`
+}
+
+// BeadsConfig holds the [beads] table from config.toml — the Beads
+// server connection settings used by gemba serve when --dolt-url is
+// not passed on the command line (gm-root.19).
+type BeadsConfig struct {
+	// URL is a mysql://user[:pass]@host:port/dbname connection string
+	// for the Dolt server hosting beads databases. When set it takes
+	// precedence over the built-in DefaultBeadsURL. Empty means "fall
+	// back to DefaultBeadsURL." The URL is consumed only when --dolt-url
+	// is absent from the CLI — an explicit flag always wins.
+	URL string `toml:"url"`
 }
 
 // ProjectsConfig holds the [projects] table from config.toml.
@@ -89,6 +109,41 @@ func LoadUserConfig(override string) (UserConfig, error) {
 		return UserConfig{}, err
 	}
 	return cfg, nil
+}
+
+// ResolveBeadsURL returns the Beads server URL to use, applying the
+// documented resolution order (gm-root.19):
+//
+//  1. cliFlag — the value of --dolt-url if the operator set it explicitly
+//  2. cfg.Beads.URL — the [beads].url entry from ~/.gemba/config.toml
+//  3. DefaultBeadsURL — the built-in fallback (mysql://root@127.0.0.1:3307/gemba)
+//
+// The returned string is always non-empty. Callers that need to
+// distinguish "came from CLI" from "came from config/default" should
+// compare the return value against cliFlag themselves.
+func ResolveBeadsURL(cliFlag string, cfg UserConfig) string {
+	if cliFlag != "" {
+		return cliFlag
+	}
+	if cfg.Beads.URL != "" {
+		return cfg.Beads.URL
+	}
+	return DefaultBeadsURL
+}
+
+// RedactBeadsURL strips the password component from a mysql:// URL
+// before it enters a log stream. If the URL has no password or cannot
+// be parsed, the original string is returned unchanged.
+func RedactBeadsURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.User == nil {
+		return raw
+	}
+	if _, ok := u.User.Password(); !ok {
+		return raw
+	}
+	u.User = url.User(u.User.Username())
+	return u.String()
 }
 
 // ResolveDefaultDir returns the absolute path of the projects default

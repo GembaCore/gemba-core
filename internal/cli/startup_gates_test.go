@@ -146,3 +146,91 @@ func makeProjectT(t *testing.T, defaultDir, name string) {
 		t.Fatal(err)
 	}
 }
+
+// applyBeadsURLDefault tests — gm-root.19 precedence:
+// CLI flag > config.toml [beads].url > built-in DefaultBeadsURL.
+
+// TestApplyBeadsURLDefault_CLIFlagWins ensures --dolt-url on the CLI
+// is never overwritten.
+func TestApplyBeadsURLDefault_CLIFlagWins(t *testing.T) {
+	cfg := config.ServeConfig{DoltURL: "mysql://root@127.0.0.1:3307/mydb"}
+	if err := applyBeadsURLDefault(&cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := cfg.DoltURL, "mysql://root@127.0.0.1:3307/mydb"; got != want {
+		t.Errorf("DoltURL = %q, want %q (CLI flag must win)", got, want)
+	}
+}
+
+// TestApplyBeadsURLDefault_BeadsDirWins ensures --beads-dir is not
+// overwritten — the bd-CLI path takes priority over the dolt path.
+func TestApplyBeadsURLDefault_BeadsDirWins(t *testing.T) {
+	cfg := config.ServeConfig{BeadsDir: "/tmp/myrig"}
+	if err := applyBeadsURLDefault(&cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DoltURL != "" {
+		t.Errorf("DoltURL must stay empty when BeadsDir is set; got %q", cfg.DoltURL)
+	}
+}
+
+// TestApplyBeadsURLDefault_NoopWins ensures --noop is not overridden.
+func TestApplyBeadsURLDefault_NoopWins(t *testing.T) {
+	cfg := config.ServeConfig{Noop: true}
+	if err := applyBeadsURLDefault(&cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DoltURL != "" {
+		t.Errorf("DoltURL must stay empty when Noop is set; got %q", cfg.DoltURL)
+	}
+}
+
+// TestApplyBeadsURLDefault_ConfigTOMLURL verifies that [beads].url in the
+// config file takes precedence over the built-in default.
+func TestApplyBeadsURLDefault_ConfigTOMLURL(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	content := `[beads]
+url = "mysql://user@10.0.0.1:3307/mydb"
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ServeConfig{ConfigPath: cfgPath}
+	if err := applyBeadsURLDefault(&cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := cfg.DoltURL, "mysql://user@10.0.0.1:3307/mydb"; got != want {
+		t.Errorf("DoltURL = %q, want %q (config.toml must win over built-in default)", got, want)
+	}
+}
+
+// TestApplyBeadsURLDefault_BuiltInFallback verifies that when neither CLI
+// flag nor config.toml provides a URL, the built-in DefaultBeadsURL is used.
+func TestApplyBeadsURLDefault_BuiltInFallback(t *testing.T) {
+	// Use a non-existent config path to force the built-in default.
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "missing.toml")}
+	if err := applyBeadsURLDefault(&cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := cfg.DoltURL, config.DefaultBeadsURL; got != want {
+		t.Errorf("DoltURL = %q, want %q (built-in default must apply when nothing else is set)", got, want)
+	}
+}
+
+// TestApplyBeadsURLDefault_MalformedConfigReturnsError ensures that a
+// malformed config.toml surfaces an error rather than silently falling
+// back to the default — protecting the operator from a misconfigured file
+// being silently ignored.
+func TestApplyBeadsURLDefault_MalformedConfigReturnsError(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(cfgPath, []byte("not valid [ toml"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ServeConfig{ConfigPath: cfgPath}
+	err := applyBeadsURLDefault(&cfg)
+	if err == nil {
+		t.Fatal("want error for malformed config.toml, got nil")
+	}
+}

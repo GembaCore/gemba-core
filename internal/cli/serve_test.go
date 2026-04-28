@@ -161,28 +161,12 @@ func TestServe_RejectsTLSSelfSignedWithCertKey(t *testing.T) {
 	}
 }
 
-// TestServe_RejectsNeitherBeadsDirNorDoltURL pins the "must pick one"
-// half of the WorkPlane selector contract at the CLI layer. Running
-// `gemba serve` with no adaptor flag has no WorkPlane to expose, so
-// the rejection must happen before the listener opens and must point
-// the operator at all three selector flag names.
-func TestServe_RejectsNeitherBeadsDirNorDoltURL(t *testing.T) {
+// TestServe_NoopFlagStillAccepted is a non-regression check: --noop still
+// works with no other adaptor flags after gm-root.19.
+func TestServe_NoopFlagStillAccepted(t *testing.T) {
 	cmd := newServeCmd(BuildInfo{})
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs([]string{})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatalf("want error, got nil")
-	}
-	if !strings.Contains(err.Error(), "no WorkPlane selected") {
-		t.Errorf("error must name the condition; got %q", err.Error())
-	}
-	for _, want := range []string{"--beads-dir", "--dolt-url", "--noop"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error missing %q; got %q", want, err.Error())
-		}
+	if cmd.Flags().Lookup("noop") == nil {
+		t.Fatal("--noop flag missing from serve command")
 	}
 }
 

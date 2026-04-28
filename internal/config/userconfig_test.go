@@ -3,11 +3,12 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // TestLoadUserConfig covers the resolution and parsing of
-// ~/.gemba/config.toml (gm-root.17.4).
+// ~/.gemba/config.toml (gm-root.17.4, gm-root.19).
 
 // TestLoadUserConfig_MissingFile returns a zero-value config when
 // ~/.gemba/config.toml does not exist — missing file is not an error.
@@ -319,5 +320,89 @@ func TestHasProjectUnder_DelegatesCorrectly(t *testing.T) {
 	ok, err = HasProjectUnder(dir)
 	if err != nil || !ok {
 		t.Fatalf("want true/nil after adding project; got ok=%v err=%v", ok, err)
+	}
+}
+
+// ResolveBeadsURL tests — gm-root.19 precedence:
+// CLI flag > config.toml [beads].url > built-in DefaultBeadsURL.
+
+func TestResolveBeadsURL_CLIFlagWins(t *testing.T) {
+	cfg := UserConfig{Beads: BeadsConfig{URL: "mysql://config@host:3307/db"}}
+	got := ResolveBeadsURL("mysql://cli@host:3307/db", cfg)
+	if want := "mysql://cli@host:3307/db"; got != want {
+		t.Errorf("got %q, want %q (CLI flag must win)", got, want)
+	}
+}
+
+func TestResolveBeadsURL_ConfigWinsOverDefault(t *testing.T) {
+	cfg := UserConfig{Beads: BeadsConfig{URL: "mysql://config@host:3307/db"}}
+	got := ResolveBeadsURL("", cfg)
+	if want := "mysql://config@host:3307/db"; got != want {
+		t.Errorf("got %q, want %q (config.toml must win over built-in default)", got, want)
+	}
+}
+
+func TestResolveBeadsURL_BuiltInDefault(t *testing.T) {
+	cfg := UserConfig{}
+	got := ResolveBeadsURL("", cfg)
+	if got != DefaultBeadsURL {
+		t.Errorf("got %q, want DefaultBeadsURL %q", got, DefaultBeadsURL)
+	}
+}
+
+func TestResolveBeadsURL_DefaultIsNonEmpty(t *testing.T) {
+	if DefaultBeadsURL == "" {
+		t.Fatal("DefaultBeadsURL must not be empty")
+	}
+}
+
+// TestLoadUserConfig_ParsesBeadsURL verifies that [beads].url is
+// populated from the TOML file (gm-root.19).
+func TestLoadUserConfig_ParsesBeadsURL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	content := `[beads]
+url = "mysql://myuser@10.0.0.1:3307/mydb"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadUserConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := cfg.Beads.URL, "mysql://myuser@10.0.0.1:3307/mydb"; got != want {
+		t.Errorf("Beads.URL = %q, want %q", got, want)
+	}
+}
+
+// RedactBeadsURL tests — credentials must never appear in logs.
+
+func TestRedactBeadsURL_PasswordStripped(t *testing.T) {
+	got := RedactBeadsURL("mysql://user:secret@host:3307/db")
+	if got == "" {
+		t.Fatal("got empty string")
+	}
+	if strings.Contains(got, "secret") {
+		t.Errorf("RedactBeadsURL leaked password: %q", got)
+	}
+	if !strings.Contains(got, "user") {
+		t.Errorf("RedactBeadsURL removed user: %q", got)
+	}
+}
+
+func TestRedactBeadsURL_NoPassword(t *testing.T) {
+	raw := "mysql://user@host:3307/db"
+	got := RedactBeadsURL(raw)
+	if got != raw {
+		t.Errorf("RedactBeadsURL modified URL with no password: got %q, want %q", got, raw)
+	}
+}
+
+func TestRedactBeadsURL_Unparseable(t *testing.T) {
+	raw := "not-a-url"
+	got := RedactBeadsURL(raw)
+	if got != raw {
+		t.Errorf("RedactBeadsURL modified unparseable URL: got %q, want %q", got, raw)
 	}
 }
