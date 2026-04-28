@@ -249,6 +249,26 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   if (opts.dangerouslySkipPermissions) {
     args.push('--dangerously-skip-permissions');
   }
+  // gemba serve defaults to --orchestration=native, which auto-detects
+  // its terminal backend from TMUX or TERM_PROGRAM. Linux CI runners
+  // set neither, so the server crashes before /api/health responds —
+  // that's what was tanking every [smoke-deep] spec. Force a tmux
+  // backend (preinstalled on the ubuntu runners gemba targets) when
+  // env-detect would fail; macOS dev keeps its iTerm/Terminal.app
+  // auto-detect because TERM_PROGRAM is set there.
+  //
+  // The chosen backend is just enough to satisfy the startup probe;
+  // the smoke specs that fail today don't actually exercise pane
+  // creation. Tests that DO drive native sessions can override by
+  // adding `--orchestration` / `--terminal` ahead of this point in a
+  // future opts field.
+  const hasTerminalEnv =
+    !!process.env.TMUX ||
+    (typeof process.env.TERM_PROGRAM === 'string' &&
+      process.env.TERM_PROGRAM.length > 0);
+  if (!hasTerminalEnv && !args.includes('--orchestration') && !args.includes('--terminal')) {
+    args.push('--terminal', 'tmux');
+  }
 
   const child = spawn(gembaBin, args, {
     cwd: baseDir,
