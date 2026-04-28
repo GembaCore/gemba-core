@@ -591,14 +591,15 @@ func (r *ratifier) Ratify(ctx context.Context, state NewProjectState) (RatifyRes
 
 	// All steps succeeded — commit the cleanup-deferred guard.
 	committed = true
+	epicCount := 0
+	for _, m := range state.Milestones {
+		epicCount += len(m.Epics)
+	}
 	return RatifyResponse{
-		ProjectPath: target,
-		// Per design: post-ratify destination is the "Start planning"
-		// handoff (gm-root.17.7). That bead does not exist yet — the
-		// SPA falls back to /board until 17.7 lands. This server
-		// hands /board so the SPA's existing fallback is satisfied;
-		// 17.7 will replace this with the real walk URL.
-		NextURL: "/board",
+		ProjectPath:    target,
+		ProjectName:    state.ProjectName,
+		MilestoneCount: len(state.Milestones),
+		EpicCount:      epicCount,
 	}, nil
 }
 

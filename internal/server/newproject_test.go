@@ -226,8 +226,19 @@ func TestRatify_HappyPath(t *testing.T) {
 	if resp.ProjectPath != wantPath {
 		t.Errorf("project_path: want %q, got %q", wantPath, resp.ProjectPath)
 	}
-	if resp.NextURL == "" {
-		t.Errorf("next_url: want non-empty")
+	if resp.ProjectName != "demo" {
+		t.Errorf("project_name: want %q, got %q", "demo", resp.ProjectName)
+	}
+	if resp.MilestoneCount != len(sampleState().Milestones) {
+		t.Errorf("milestone_count: want %d, got %d",
+			len(sampleState().Milestones), resp.MilestoneCount)
+	}
+	wantEpics := 0
+	for _, m := range sampleState().Milestones {
+		wantEpics += len(m.Epics)
+	}
+	if resp.EpicCount != wantEpics {
+		t.Errorf("epic_count: want %d, got %d", wantEpics, resp.EpicCount)
 	}
 
 	// Project dir must exist.

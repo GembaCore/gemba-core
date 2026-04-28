@@ -937,16 +937,26 @@
       },
       "RatifyResponse": {
         "type": "object",
-        "description": "Success envelope returned by `POST /api/v1/newproject/:id/ratify` after the 10-step transaction completes.",
-        "required": ["project_path", "next_url"],
+        "description": "Success envelope returned by `POST /api/v1/newproject/:id/ratify` after the 10-step transaction completes. The SPA owns post-ratify navigation (gm-root.17.7); the server returns the new project's filesystem root, its display name, and the seeded milestone / epic counts so the handoff screen can render 'seeded N milestones and M epics' without re-querying the new workspace's beads database.",
+        "required": ["project_path", "project_name", "milestone_count", "epic_count"],
         "properties": {
           "project_path": {
             "type": "string",
             "description": "Filesystem path of the new project root (default_dir/<project-name>/)."
           },
-          "next_url": {
+          "project_name": {
             "type": "string",
-            "description": "Post-ratify navigation destination for the SPA (e.g. `/board`)."
+            "description": "Human-readable project name echoed from the ratified state."
+          },
+          "milestone_count": {
+            "type": "integer",
+            "description": "Number of milestones created by the transaction.",
+            "minimum": 0
+          },
+          "epic_count": {
+            "type": "integer",
+            "description": "Number of epics created by the transaction (sum across all milestones).",
+            "minimum": 0
           }
         }
       },

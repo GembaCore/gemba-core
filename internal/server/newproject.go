@@ -102,11 +102,16 @@ type ratifyRequest struct {
 }
 
 // RatifyResponse is the success envelope POST /ratify returns. The
-// SPA navigates to next_url on receipt; project_path is rendered in
-// the success toast.
+// SPA owns post-ratify navigation (gm-root.17.7); the server returns
+// the new project's filesystem root, its display name, and the seeded
+// milestone / epic counts so the handoff screen can render
+// "seeded N milestones and M epics" without re-querying the new
+// workspace's beads database.
 type RatifyResponse struct {
-	ProjectPath string `json:"project_path"`
-	NextURL     string `json:"next_url"`
+	ProjectPath    string `json:"project_path"`
+	ProjectName    string `json:"project_name"`
+	MilestoneCount int    `json:"milestone_count"`
+	EpicCount      int    `json:"epic_count"`
 }
 
 // ─── Session store ──────────────────────────────────────────────────

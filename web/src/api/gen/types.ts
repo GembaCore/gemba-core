@@ -673,12 +673,16 @@ export interface components {
         RatifyRequest: {
             state: components["schemas"]["NewProjectState"];
         };
-        /** @description Success envelope returned by `POST /api/v1/newproject/:id/ratify` after the 10-step transaction completes. */
+        /** @description Success envelope returned by `POST /api/v1/newproject/:id/ratify` after the 10-step transaction completes. The SPA owns post-ratify navigation (gm-root.17.7); the server returns the new project's filesystem root, its display name, and the seeded milestone / epic counts so the handoff screen can render 'seeded N milestones and M epics' without re-querying the new workspace's beads database. */
         RatifyResponse: {
             /** @description Filesystem path of the new project root (default_dir/<project-name>/). */
             project_path: string;
-            /** @description Post-ratify navigation destination for the SPA (e.g. `/board`). */
-            next_url: string;
+            /** @description Human-readable project name echoed from the ratified state. */
+            project_name: string;
+            /** @description Number of milestones created by the transaction. */
+            milestone_count: number;
+            /** @description Number of epics created by the transaction (sum across all milestones). */
+            epic_count: number;
         };
         /** @description Structured error returned by `POST /api/v1/newproject/:id/ratify` when any transaction step fails. `error` is a stable machine-readable code; `step` is the 1-based transaction step that failed. */
         RatifyError: {

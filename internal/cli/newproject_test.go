@@ -133,7 +133,12 @@ func (f *fakeRatifier) Ratify(_ context.Context, _ server.NewProjectState) (serv
 	if p == "" {
 		p = "/tmp/gemba/projects/my-project"
 	}
-	return server.RatifyResponse{ProjectPath: p, NextURL: "/board"}, nil
+	return server.RatifyResponse{
+		ProjectPath:    p,
+		ProjectName:    "my-project",
+		MilestoneCount: 1,
+		EpicCount:      1,
+	}, nil
 }
 
 // ──────────────────────────────────────────────────────────────────────────
