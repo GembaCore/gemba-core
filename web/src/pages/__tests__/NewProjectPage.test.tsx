@@ -17,6 +17,24 @@ vi.mock('@/api/newproject', async () => {
   };
 });
 
+// Stub lucide-react icons used by RatifyDoneScreen so jsdom doesn't
+// choke on SVG rendering during unit tests.
+vi.mock('lucide-react', async () => {
+  const actual = await vi.importActual<typeof import('lucide-react')>('lucide-react');
+  return {
+    ...actual,
+    CheckCircle2: ({ className, ...rest }: Record<string, unknown>) => (
+      <span className={String(className ?? '')} {...rest} />
+    ),
+    Map: ({ className, ...rest }: Record<string, unknown>) => (
+      <span className={String(className ?? '')} {...rest} />
+    ),
+    SkipForward: ({ className, ...rest }: Record<string, unknown>) => (
+      <span className={String(className ?? '')} {...rest} />
+    ),
+  };
+});
+
 import {
   EMPTY_STATE,
   ratifyNewProject,
@@ -35,7 +53,8 @@ function wrap(): JSX.Element {
     <MemoryRouter initialEntries={['/new']}>
       <Routes>
         <Route path="/new" element={<NewProjectPage />} />
-        <Route path="/board" element={<div data-testid="board-page">Board</div>} />
+        <Route path="/walk" element={<div data-testid="walk-page">Walk</div>} />
+        <Route path="/gemba" element={<div data-testid="gemba-page">Gemba</div>} />
       </Routes>
       <LocationProbe />
     </MemoryRouter>
@@ -90,7 +109,9 @@ describe('NewProjectPage', () => {
     });
     (ratifyNewProject as ReturnType<typeof vi.fn>).mockResolvedValue({
       project_path: '/tmp/p',
-      next_url: '/board',
+      project_name: 'demo',
+      milestone_count: 1,
+      epic_count: 1,
     });
   });
 
@@ -133,7 +154,7 @@ describe('NewProjectPage', () => {
     expect(ratify.disabled).toBe(false);
   });
 
-  it('opens ratify modal, confirms, and navigates to next_url', async () => {
+  it('opens ratify modal, confirms, and shows the handoff screen', async () => {
     render(wrap());
     await waitFor(() => screen.getByTestId('newproject-input'));
     fireEvent.change(screen.getByTestId('newproject-input'), {
@@ -150,9 +171,15 @@ describe('NewProjectPage', () => {
     expect(screen.getByTestId('newproject-ratify-tree')).toBeTruthy();
     fireEvent.click(screen.getByTestId('newproject-ratify-confirm'));
     await waitFor(() => expect(ratifyNewProject).toHaveBeenCalledTimes(1));
+    // Handoff screen (gm-root.17.7) replaces the two-pane layout.
     await waitFor(() =>
-      expect(screen.getByTestId('probe-pathname').textContent).toBe('/board')
+      expect(screen.getByTestId('ratify-done-screen')).toBeTruthy()
     );
+    expect(screen.getByTestId('ratify-done-project-name')).toBeTruthy();
+    expect(screen.getByTestId('ratify-done-start-planning')).toBeTruthy();
+    expect(screen.getByTestId('ratify-done-skip')).toBeTruthy();
+    // The data-phase attribute on the page wrapper should be 'done'.
+    expect(screen.getByTestId('newproject-page').getAttribute('data-phase')).toBe('done');
   });
 
   it('cancel from the modal returns to active without committing', async () => {

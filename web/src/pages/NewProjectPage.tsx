@@ -10,6 +10,13 @@
 //   └──────────────────────┴───────────────────────┘
 //                                       [ Ratify ]
 //
+// After successful ratification the page transitions into the "Start
+// planning" handoff screen (gm-root.17.7) — a full-page replacement
+// of the two-pane layout with two CTAs:
+//
+//   Start planning → /walk (Gemba walk surface, gm-3nk)
+//   Skip           → /gemba (dashboard)
+//
 // One-shot persistence — refresh / disconnect / restart loses the
 // session. The route does NOT autosave or attempt to resume; the
 // design doc is explicit.
@@ -27,7 +34,6 @@
 // end-to-end. When the backend lands, no SPA changes are required.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Sparkles } from 'lucide-react';
 import {
   EMPTY_STATE,
@@ -36,10 +42,12 @@ import {
   submitTurn,
   type ConversationMessage,
   type NewProjectState,
+  type RatifyResponse,
 } from '@/api/newproject';
 import { ConversationPane } from '@/components/newproject/ConversationPane';
 import { PlanPreviewPane } from '@/components/newproject/PlanPreviewPane';
 import { RatifyModal } from '@/components/newproject/RatifyModal';
+import { RatifyDoneScreen } from '@/components/newproject/RatifyDoneScreen';
 import type { SessionState } from '@/components/newproject/types';
 
 const INITIAL: SessionState = {
@@ -52,7 +60,6 @@ const INITIAL: SessionState = {
 };
 
 export function NewProjectPage(): JSX.Element {
-  const navigate = useNavigate();
   const [session, setSession] = useState<SessionState>(INITIAL);
   // Track in-place plan edits the operator has made since the last
   // /turn so the next message carries them as `edits`. Cleared after
@@ -63,6 +70,10 @@ export function NewProjectPage(): JSX.Element {
   // Sticky nonce per ratify attempt — pinned by the modal but the
   // host owns the network call so we hold onto it.
   const ratifyNonceRef = useRef<string | null>(null);
+  // Set to the ratify response once the commit succeeds. When set,
+  // the page renders the RatifyDoneScreen in place of the two-pane
+  // layout (gm-root.17.7).
+  const [ratifyResult, setRatifyResult] = useState<RatifyResponse | null>(null);
 
   // Start a fresh session on mount. One-shot — refresh starts a new
   // session because the server's in-memory state went away with the
@@ -176,10 +187,11 @@ export function NewProjectPage(): JSX.Element {
           { nonce }
         );
         setSession((s) => ({ ...s, phase: 'done' }));
-        // Per design doc: the post-ratify destination is the "Start
-        // planning" handoff (gm-root.17.7). That bead does not exist
-        // yet — fall back to /board if the server didn't set one.
-        navigate(res.next_url || '/board');
+        // Per design doc (gm-root.17.7): show the "Start planning"
+        // handoff screen. The ratify response carries the fields needed
+        // to render it (project_name, project_path, milestone_count,
+        // epic_count). The handoff screen owns navigation from here.
+        setRatifyResult(res);
       } catch (err) {
         setSession((s) => ({
           ...s,
@@ -188,7 +200,7 @@ export function NewProjectPage(): JSX.Element {
         }));
       }
     },
-    [session.sessionId, session.state, navigate]
+    [session.sessionId, session.state]
   );
 
   const inputDisabled =
@@ -198,6 +210,31 @@ export function NewProjectPage(): JSX.Element {
     session.pendingTurn ||
     !session.sessionId ||
     session.state.Milestones.length === 0;
+
+  // After successful ratification, replace the two-pane layout with
+  // the "Start planning" handoff screen (gm-root.17.7). The screen
+  // owns navigation from here — no further state needed from the
+  // conversation session.
+  if (ratifyResult) {
+    // Count epics across all milestones for the summary line.
+    const totalEpics =
+      ratifyResult.epic_count ??
+      session.state.Milestones.reduce((acc, m) => acc + m.Epics.length, 0);
+    return (
+      <div
+        data-testid="newproject-page"
+        data-phase="done"
+        className="flex h-full min-h-0 flex-col"
+      >
+        <RatifyDoneScreen
+          projectName={ratifyResult.project_name || session.state.ProjectName}
+          projectPath={ratifyResult.project_path}
+          milestoneCount={ratifyResult.milestone_count ?? session.state.Milestones.length}
+          epicCount={totalEpics}
+        />
+      </div>
+    );
+  }
 
   // Starting / error states render a centered banner so the operator
   // sees what happened before the panes paint.

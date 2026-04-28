@@ -192,11 +192,15 @@ export interface RatifyResponse {
   // Filesystem path of the new project root
   // (default_dir/<project-name>/).
   project_path: string;
-  // Post-ratify destination URL — the SPA navigates here on success.
-  // Today the design specifies a "Start planning" handoff (gm-root.17.7);
-  // until that lands we accept whatever the server returns and fall
-  // back to /board.
-  next_url: string;
+  // Human-readable project name — echoed back by the server so the
+  // handoff screen can confirm which project was created without
+  // reading it from local state.
+  project_name: string;
+  // Milestone and epic counts — seeded by the ratification transaction
+  // so the handoff screen can show "seeded N milestones and M epics"
+  // without re-querying the new workspace's beads database.
+  milestone_count: number;
+  epic_count: number;
 }
 
 // ── Client functions ────────────────────────────────────────────────

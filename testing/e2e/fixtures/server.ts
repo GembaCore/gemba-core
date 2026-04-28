@@ -652,13 +652,29 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   }
   const npRatify = path.match(/^\/api\/v1\/newproject\/([^/]+)\/ratify$/);
   if (npRatify && method === 'POST') {
+    // Parse the committed state so we can echo back accurate counts.
+    // The body carries { state: FakeNewProjectState }; fall back to
+    // defaults if parsing fails so the ratify response is always
+    // well-formed.
+    const body = parseBody(route.request().postData());
+    const committedState =
+      body.state && typeof body.state === 'object'
+        ? (body.state as FakeNewProjectState)
+        : null;
+    const milestoneCount = committedState?.Milestones?.length ?? 1;
+    const epicCount = committedState?.Milestones?.reduce(
+      (a: number, m: FakeMilestone) => a + (m.Epics?.length ?? 0),
+      0
+    ) ?? 1;
+    const projectName = committedState?.ProjectName || 'fake-new-project';
     return json({
-      project_path: '/tmp/fake-projects/new-project',
-      // Per design: the post-ratify destination is the "Start
-      // planning" handoff (gm-root.17.7). That bead doesn't exist yet —
-      // /board is the today-fallback and the real handoff replaces
-      // this when it lands.
-      next_url: '/board',
+      project_path: `/tmp/fake-projects/${projectName.replace(/\s+/g, '-')}`,
+      // Per design (gm-root.17.7): the SPA no longer reads next_url
+      // — the RatifyDoneScreen owns navigation. The field is kept in
+      // the response for forward compatibility.
+      project_name: projectName,
+      milestone_count: milestoneCount,
+      epic_count: epicCount,
     });
   }
 
