@@ -131,6 +131,13 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 }
 
 func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bool, bannerOut io.Writer) error {
+	// gm-root.17.4: bd presence gate — must run before any other
+	// initialization so a missing bd produces an actionable message
+	// instead of a later cryptic adaptor error.
+	if err := probeBd(os.Stderr); err != nil {
+		return err
+	}
+
 	if err := cfg.ValidateBindPolicy(); err != nil {
 		return err
 	}
@@ -200,6 +207,21 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 
 	if !quiet {
 		printStartupBanner(bannerOut, b, cfg, reg)
+	}
+
+	// gm-root.17.4: cold-start redirect — if no project exists under
+	// the configured default_dir, tell the router to redirect the SPA
+	// root to /new. Non-fatal: a config I/O error is logged and serve
+	// continues without redirecting so a broken config.toml doesn't
+	// block the operator.
+	if redirect, err := coldStartRedirect(cfg); err != nil {
+		slog.Warn("cold-start redirect probe failed; serving normally",
+			"err", err)
+	} else {
+		cfg.ColdStartRedirect = redirect
+		if redirect {
+			slog.Info("cold-start: no projects found; SPA root will redirect to /new")
+		}
 	}
 
 	addr := fmt.Sprintf("%s:%d", cfg.Listen, cfg.Port)
@@ -348,6 +370,18 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// gm-ad1u: wire the /bootstrap wizard backend. In-memory store
 	// matches walk's pattern; SQL persistence is a follow-up bead.
 	handler.AttachBootstrap(server.NewMemoryBootstrapStore())
+
+	// gm-root.17: wire the /new conversational project-creation
+	// flow. Memory store + stub skill turner (the real Onboarder
+	// persona host lands in gm-root.17.10) + the production
+	// ratifier (gm-root.17.6 — atomic transaction). Defaults:
+	// HOME-based config resolution, exec-based shell-out for
+	// bd / git.
+	handler.AttachNewProject(
+		server.NewMemoryNewProjectStore(),
+		server.NewStubSkillTurner(),
+		server.NewRatifier(server.RatifierConfig{}),
+	)
 
 	srv := &http.Server{
 		Addr:              addr,

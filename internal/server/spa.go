@@ -19,11 +19,23 @@ import (
 // subrouters register their own NotFound, so this only runs for paths
 // outside those prefixes; the prefix check below is defense-in-depth
 // against future routing changes.
+//
+// gm-root.17.4: when ColdStartRedirect is set and the client is
+// requesting the SPA root ("/"), redirect to /new so a fresh install
+// with no projects lands on the conversational project-creation flow
+// instead of a broken empty dashboard.
 func (r *Router) serveSPA(w http.ResponseWriter, req *http.Request) {
 	path := strings.TrimPrefix(req.URL.Path, "/")
 
 	if strings.HasPrefix(path, "api/") || path == "events" || strings.HasPrefix(path, "events/") {
 		apiNotFound(w, req)
+		return
+	}
+
+	// Cold-start redirect: only applies to the SPA root so that direct
+	// navigation to /new (or any other route) passes through untouched.
+	if r.cfg.ColdStartRedirect && (req.URL.Path == "/" || req.URL.Path == "") {
+		http.Redirect(w, req, "/new", http.StatusFound)
 		return
 	}
 

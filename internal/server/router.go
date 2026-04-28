@@ -121,6 +121,15 @@ type Router struct {
 	// 503 from each route. Bind via Router.AttachBootstrap.
 	bootstrapStore BootstrapStore
 
+	// newProjectStore, newProjectTurner, and newProjectRatifier back
+	// the /api/v1/newproject/* surface (gm-root.17.3). All three are
+	// lazy-attached via AttachNewProject. A nil store returns 503 from
+	// every newproject handler; a nil turner falls back to the stub;
+	// a nil ratifier returns 503 from /ratify only.
+	newProjectStore    NewProjectStore
+	newProjectTurner   SkillTurner
+	newProjectRatifier NewProjectRatifier
+
 	mux http.Handler
 }
 
@@ -407,6 +416,17 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/bootstrap/commit", r.bootstrapCommit)
 
+		// gm-root.17: conversational New Project flow. Mounted under
+		// /api/v1/* per the design's §API table. start + turn are
+		// read-style mutations (mint/update in-memory session state);
+		// /ratify is the atomic project-creation transaction
+		// (gm-root.17.6) and is nonce-gated so a SPA double-click on
+		// the confirm modal cannot double-write the project on disk.
+		api.Post("/v1/newproject/start", r.newProjectStart)
+		api.Post("/v1/newproject/{id}/turn", r.newProjectTurn)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/newproject/{id}/ratify", r.newProjectRatify)
+
 		// gm-e4.1: canonical /api/v1/* alias surface. The bead's spec
 		// names eight resource roots — workitems, agents, groups,
 		// workspaces, sessions, escalations, sprints, capabilities —
@@ -434,6 +454,26 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Patch("/v1/workitems/{id}", r.patchWorkItem)
 		api.Get("/v1/workspaces", r.listWorkspaces)
+
+		// gm-root.18: project picker — enumerate projects on disk +
+		// switch the active workspace. Both endpoints are read-light and
+		// mutation-light (no content is written to disk); the switch
+		// endpoint records the selection in process memory only. The
+		// nonce gate is intentionally omitted on /switch: the operation
+		// is idempotent and low-blast-radius (in-process flag only;
+		// no disk writes). Add the gate if future iterations persist
+		// the selection durably.
+		api.Get("/v1/projects", r.listProjects)
+		api.Post("/v1/projects/switch", r.switchProject)
+
+		// gm-root.17.3: conversational new-project flow. All three
+		// endpoints are post-only; /start and /turn are fire-and-forget
+		// (low blast radius); /ratify is nonce-gated because it writes to
+		// disk and the operator must not accidentally trigger it twice.
+		api.Post("/v1/newproject/start", r.newProjectStart)
+		api.Post("/v1/newproject/{id}/turn", r.newProjectTurn)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/newproject/{id}/ratify", r.newProjectRatify)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

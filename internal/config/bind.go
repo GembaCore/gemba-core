@@ -99,6 +99,12 @@ type ServeConfig struct {
 
 	DangerouslySkipPermissions bool
 
+	// ColdStartRedirect, when true, tells the server to redirect the SPA
+	// root to /new because bd is present but no project was detected under
+	// the configured default_dir (gm-root.17.4). Set by runServe before
+	// NewRouter is called; not a CLI flag.
+	ColdStartRedirect bool
+
 	// CORSAllowedOrigins enables CORS on /api/* and /events when
 	// non-empty. CORS is OFF BY DEFAULT (gm-e4.1) — same-origin SPA
 	// requests don't need it, and a public CORS surface is a footgun

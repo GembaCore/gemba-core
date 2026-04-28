@@ -260,3 +260,59 @@ func TestUnbuiltSPAShowsHint(t *testing.T) {
 		t.Fatalf("expected build hint, got %q", rec.Body.String())
 	}
 }
+
+// gm-root.17.4: cold-start redirect tests.
+// When ColdStartRedirect=true the SPA root (/) must redirect to /new.
+// Direct navigation to /new or any other SPA route must pass through
+// without being redirected.
+
+func TestColdStartRedirect_RootRedirectsToNew(t *testing.T) {
+	cfg := config.ServeConfig{ColdStartRedirect: true}
+	h := NewRouter(cfg, fakeSPA(), nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Errorf("GET / with ColdStartRedirect: want 302, got %d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/new" {
+		t.Errorf("GET /: want Location=/new, got %q", loc)
+	}
+}
+
+func TestColdStartRedirect_NonRootPassesThrough(t *testing.T) {
+	cfg := config.ServeConfig{ColdStartRedirect: true}
+	h := NewRouter(cfg, fakeSPA(), nil)
+
+	// /new itself must serve the SPA (not redirect again).
+	req := httptest.NewRequest(http.MethodGet, "/new", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code == http.StatusFound {
+		t.Errorf("GET /new must not redirect; got 302")
+	}
+
+	// Any other deep link must also pass through.
+	req = httptest.NewRequest(http.MethodGet, "/gemba", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code == http.StatusFound {
+		t.Errorf("GET /gemba must not redirect; got 302")
+	}
+}
+
+func TestNoColdStartRedirect_RootServesSPA(t *testing.T) {
+	// ColdStartRedirect=false (default) must serve the SPA normally.
+	cfg := config.ServeConfig{ColdStartRedirect: false}
+	h := NewRouter(cfg, fakeSPA(), nil)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code == http.StatusFound {
+		t.Errorf("GET / with ColdStartRedirect=false must not redirect; got 302")
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("GET / with ColdStartRedirect=false: want 200, got %d", rec.Code)
+	}
+}
