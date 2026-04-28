@@ -136,31 +136,49 @@ intentional — bootstrap is a short-lived operation (minutes, not days),
 and skipping resume infrastructure removes a meaningful surface area.
 If the operator loses a session, they start over.
 
-## Skill contract — `newproject`
+## Onboarder persona + `newproject` skill
 
-### Special-casing
+### Transient Onboarder persona
 
-The `newproject` skill runs **before** any workspace exists. There is no
-persona registered, no OrchestrationPlane workspace, no `.gemba/` to
-read config from. It is bundled with the binary and invoked directly.
+The `newproject` skill runs inside a **transient Onboarder persona**.
+The persona is the LLM-execution context (prompt scaffolding,
+conversation state, model parameters); the skill is the structured
+operation that turns conversation turns into a typed plan tree. The
+Onboarder is not persisted to `~/.gemba/personas/` or any workspace —
+each invocation spins up a fresh instance, runs the conversation,
+emits its output, and is discarded. The Onboarder is bundled with the
+binary so it is always available.
 
-This makes it different from every other Gemba skill. Specifically:
+The Onboarder is invokable any time a New project conversation starts:
 
-- **No persona host.** It's not "the Onboarder persona running a skill".
-  The skill module itself is the runtime.
-- **No OrchestrationPlane.** It runs inline in the server process; no
-  agent dispatch.
-- **No workspace context provider.** Inputs are exactly what the
-  conversation produces — there is no codebase, beads database, or
-  decisions log to read from.
+- Cold start (`gemba serve` with no `.gemba/`) → spawn Onboarder, run
+  conversation.
+- Top-bar **New project** click from an existing workspace → spawn
+  Onboarder, run conversation. The active workspace is unaffected
+  during the conversation; only the post-ratify handoff switches it.
+- Terminal interactive mode → spawn Onboarder bound to stdin/stdout.
+
+What's distinct about this persona compared to a workspace persona:
+
+- **Pre-workspace lifetime.** The Onboarder may run before any
+  workspace exists, so it cannot rely on workspace-scoped context
+  providers.
+- **No persistence.** Conversation state lives in the server process
+  for the persona's lifetime; nothing survives the persona's exit.
+- **No OrchestrationPlane dispatch.** The persona runs inline in the
+  server process — no agent runtime is spun up. (Future iterations
+  may move it onto the OrchestrationPlane if there's a reason; v1
+  does not.)
+- **Single skill.** The Onboarder exists to run `newproject` and
+  nothing else. It is not a general-purpose persona.
 
 ### Bundled prompt scaffolding
 
-The skill ships with a prompt template covering:
+The Onboarder ships with a prompt template covering:
 
 - Role framing (a project planner who turns vague intent into a
   workable Milestone → Epic → Bead tree).
-- Output schema (typed `NewProjectState` — see below).
+- Output schema (typed plan tree — see below).
 - Few-shot examples spanning different project shapes (web app,
   library, ops tooling, research project).
 - Guardrails on output (no premature implementation detail, milestones
@@ -169,46 +187,86 @@ The skill ships with a prompt template covering:
 
 ### Output schema
 
-The skill emits structured output validated against:
+The skill emits a fully-populated plan tree, validated against the
+shape below. Every field maps to a `bd create` flag so ratification can
+persist the tree without lossy translation:
 
 ```go
 type DraftMilestone struct {
-    Title       string
-    Description string
-    Epics       []DraftEpic
+    Title              string
+    Description        string
+    Acceptance         string   // testable acceptance criteria for the milestone
+    Labels             []string // free-form labels (type:milestone is added by ratify)
+    Priority           int      // 0..4 (0 = highest)
+    Estimate           int      // minutes; 0 = unestimated
+    Skills             []string // required skills (e.g. "go", "infra", "design")
+    DesignNotes        string   // architectural / decision rationale
+    Notes              string   // additional context
+    Epics              []DraftEpic
 }
 
 type DraftEpic struct {
-    Title       string
-    Description string
-    Beads       []DraftBead
+    Title              string
+    Description        string
+    Acceptance         string
+    Labels             []string
+    Priority           int
+    Estimate           int
+    Skills             []string
+    DesignNotes        string
+    Notes              string
+    Beads              []DraftBead
 }
 
 type DraftBead struct {
-    Title       string
-    Description string
-    Type        string  // "task" | "bug" | "feature" | "chore"
-    Priority    int     // 0..4
+    Title              string
+    Description        string
+    Type               string   // "task" | "bug" | "feature" | "chore"
+    Acceptance         string
+    Labels             []string
+    Priority           int
+    Estimate           int
+    Skills             []string
+    DesignNotes        string
+    Notes              string
+    DependsOnRefs      []string // intra-tree references: e.g. "milestone:0/epic:1/bead:2"
+    BlocksRefs         []string // intra-tree references
 }
 ```
 
-Validation runs after every turn. Validation failures raise a structured
-error to the operator ("the skill returned a milestone with no epics —
-asking it to retry") rather than poisoning the plan tree.
+Notes on the schema:
+
+- **All fields are populated.** The skill MUST emit values for every
+  field; empty strings, empty slices, and `Estimate=0` are valid empty
+  states. The contract is "no missing keys" so ratification is total.
+- **Dependencies use intra-tree refs.** During the conversation the
+  beads have no IDs yet; the skill references them by tree position.
+  Ratification translates these to real `bd-…` IDs in step 6–8 below.
+- **Labels are inheritable.** `bd` inherits labels from parent unless
+  `--no-inherit-labels`; the skill should not duplicate inherited
+  labels on children.
+- **`type:milestone` is added by ratification, not by the skill.**
+  Milestones go through the canonical `bd epic -l type:milestone`
+  convention (see `docs/design/milestone-convention.md`); the skill
+  emits `DraftMilestone`s and lets ratify do the encoding.
+
+Validation runs after every turn. Validation failures raise a
+structured "the skill returned an invalid plan — asking it to retry"
+to the operator rather than poisoning the plan tree.
 
 ### Credential resolution
 
-The skill resolves an LLM client by reading the same configuration the
-OrchestrationPlane reads for its agents. Specifically: it asks the
-agent-config layer for "the default chat client" and uses that. This
-avoids a separate first-run credential prompt — if the operator has
+The Onboarder resolves an LLM client by reading the same configuration
+the OrchestrationPlane reads for its agents — the agent-config layer
+provides "the default chat client" and the persona uses it. This
+avoids a separate first-run credential prompt: if the operator has
 already configured Gemba to run agents, they have a working LLM
 endpoint by definition.
 
-If no agent client is configured, the skill surfaces a clear
-diagnostic at the start of `/new`: *"No LLM client configured. Set up
-agent credentials in `~/.gemba/config.toml` before starting a New
-project conversation."*
+If no agent client is configured, the Onboarder fails to spawn and
+the SPA surfaces a clear diagnostic at the top of `/new`: *"No LLM
+client configured. Set up agent credentials in `~/.gemba/config.toml`
+before starting a New project conversation."*
 
 ## Atomic ratification
 
@@ -226,19 +284,25 @@ In strict order:
 
 1. Resolve target dir: `<default_dir>/<project-name>/` where
    `default_dir` comes from `~/.gemba/config.toml` (`projects.default_dir`,
-   user-configurable, defaults to `~/projects/`).
+   user-configurable, defaults to `~/gemba/projects/`).
 2. Create the dir. Failure if it already exists — operator must pick a
    different name (the skill should warn about collisions during the
    conversation).
 3. `git init` in the new dir on `main`.
 4. Write `.gemba/workspace.toml` with project metadata.
 5. Initialize the beads database in the new workspace.
-6. For each milestone (in order): create as `bd epic -l type:milestone`;
-   capture the new ID for parenting children.
-7. For each epic under each milestone: create as `bd epic` with parent
-   = the milestone ID.
+6. For each milestone (in order): create as `bd epic -l type:milestone`
+   plus the milestone's labels, priority, estimate, skills, acceptance,
+   design, and notes; capture the new ID for parenting children.
+7. For each epic under each milestone: create as `bd epic` with
+   parent = the milestone ID; carry through labels, priority,
+   estimate, skills, acceptance, design, and notes.
 8. For each bead under each epic: create with parent = the epic ID,
-   type/priority from the draft.
+   type/priority/labels/estimate/skills/acceptance/design/notes from
+   the draft.
+8a. Resolve intra-tree dependency refs (`DependsOnRefs`,
+    `BlocksRefs`) to real `bd-…` IDs and apply with `bd dep`. Cycles
+    detected at this step abort the transaction (rollback).
 9. Write `docs/project.md` (the synthesized narrative from the skill).
 10. Stage all files; create initial commit on `main`
     (`feat: initial project bootstrap`).
@@ -305,7 +369,7 @@ active workspace after ratification.
 `default_dir` resolution order:
 
 1. `~/.gemba/config.toml` → `[projects].default_dir` if set.
-2. `~/projects/` (built-in default; created on first project if
+2. `~/gemba/projects/` (built-in default; created on first project if
    missing).
 
 A project name conflicts the moment the dir already exists. Conflict
