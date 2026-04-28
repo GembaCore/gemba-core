@@ -30,21 +30,19 @@ function renderSidebar() {
   );
 }
 
+// Six-item left rail (gm-e12.19, second amendment). Capability
+// Browser and Drift folded into Settings / Escalations panes; only
+// Settings remains workspace-agnostic (so a fresh install can reach
+// global config from a cold start).
 const WORKSPACE_SCOPED = [
-  'Board',
-  'Backlog',
-  'Sprints',
-  'Sessions',
-  'Agent groups',
-  'Coach',
+  'Plan',
   'Review',
-  'Graph',
-  'Insights',
   'Escalations',
-  'Drift',
+  'Insights',
+  'Agent Sessions',
 ];
 
-const ALWAYS_OPERATIONAL = ['Capability Browser', 'Settings'];
+const ALWAYS_OPERATIONAL = ['Settings'];
 
 describe('Sidebar', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
@@ -98,7 +96,7 @@ describe('Sidebar', () => {
     }
   });
 
-  it('cold-start: Capability Browser and Settings stay interactive', async () => {
+  it('cold-start: Settings stays interactive', async () => {
     fetchSpy.mockResolvedValue(jsonResponse({ projects: [], total: 0 }));
     renderSidebar();
 

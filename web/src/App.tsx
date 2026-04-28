@@ -10,11 +10,10 @@ import { WalkPage } from '@/pages/WalkPage';
 import { WalkDetailPage } from '@/pages/WalkDetailPage';
 import { ProjectConfigPage } from '@/pages/ProjectConfigPage';
 import { BootstrapPage } from '@/pages/BootstrapPage';
-// gm-root.17.3: full-page conversational New project surface. The
-// `newproject` skill (gm-root.17.5) and Onboarder persona (gm-root.17.10)
-// ship in follow-up beads — the route is wired to typed STUB endpoints
-// today and the e2e fake-mode dispatcher exercises the full flow.
-import { NewProjectPage } from '@/pages/NewProjectPage';
+// gm-e12.21.3: /new now redirects to /board and auto-opens the
+// unified Create-project modal (the standalone NewProjectPage form
+// folded into the modal alongside the adopt path).
+import { NewProjectRedirect } from '@/pages/NewProjectRedirect';
 import { OnboardPage } from '@/pages/OnboardPage';
 import { InsightsPersonasPage } from '@/pages/InsightsPersonasPage';
 import { DriftPage } from '@/pages/DriftPage';
@@ -91,11 +90,11 @@ export default function App() {
             on a specific step. Bare /bootstrap redirects to Step 1. */}
         <Route path="/bootstrap" element={<Navigate to="/bootstrap/source" replace />} />
         <Route path="/bootstrap/:step" element={<BootstrapPage />} />
-        {/* gm-root.17.13: /new is now the lightweight project-
-            creation form (name + description → atomic ratify with
-            empty plan tree, no LLM required). The conversational
-            flow that used to live here moved to /onboard. */}
-        <Route path="/new" element={<NewProjectPage />} />
+        {/* gm-e12.21.3: /new opens the unified Create-project modal
+            on top of /board. The standalone /new page folded into the
+            modal alongside the adopt path so there's one entry point
+            for every (DB, Repo) combination. */}
+        <Route path="/new" element={<NewProjectRedirect />} />
         {/* gm-root.17.13: /onboard — the conversational planner the
             old /new hosted (gm-root.17.3). Reachable from the board's
             empty-state CTA when an LLM client is configured, or by

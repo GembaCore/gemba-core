@@ -1,4 +1,4 @@
-// NewProjectAffordance tests (gm-root.17.2).
+// NewProjectAffordance tests (gm-root.17.2 / gm-e12.21.3).
 //
 // Coverage:
 //   - renders with the correct testid
@@ -6,14 +6,16 @@
 //   - carries aria-label="Create new project"
 //   - is reachable by role + accessible name
 //   - renders immediately before the ProjectPicker in DOM order (sibling)
-//   - clicking navigates to /new
+//   - clicking opens the unified Create-project modal (gm-e12.21.3
+//     replaced the navigate-to-/new behaviour)
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { NewProjectAffordance } from '../NewProjectAffordance';
 import { ProjectPicker } from '../ProjectPicker';
 import { ProjectPickerProvider } from '../ProjectPickerContext';
+import { CreateProjectModalProvider } from '@/components/projects/CreateProjectModalContext';
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -24,41 +26,42 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-// A minimal component that exposes the current route pathname for assertions.
-function LocationDisplay() {
-  const location = useLocation();
-  return <div data-testid="location-display">{location.pathname}</div>;
-}
-
 // Renders just the affordance (no picker needed for attribute tests).
+// Wraps in CreateProjectModalProvider so useCreateProjectModal() resolves.
 function renderAffordanceOnly() {
   render(
     <MemoryRouter initialEntries={['/board']}>
-      <Routes>
-        <Route path="*" element={<><NewProjectAffordance /><LocationDisplay /></>} />
-      </Routes>
+      <ProjectPickerProvider>
+        <CreateProjectModalProvider>
+          <Routes>
+            <Route path="*" element={<NewProjectAffordance />} />
+          </Routes>
+        </CreateProjectModalProvider>
+      </ProjectPickerProvider>
     </MemoryRouter>
   );
 }
 
 // Renders [NewProjectAffordance, ProjectPicker] as siblings — mirrors the
 // Topbar DOM order so DOM-position tests are meaningful.
-function renderAffordanceWithPicker(fetchSpy: ReturnType<typeof vi.fn>) {
-  fetchSpy.mockResolvedValue(jsonResponse({ projects: [], total: 0 }));
+function renderAffordanceWithPicker() {
   render(
     <MemoryRouter initialEntries={['/board']}>
-      <Routes>
-        <Route
-          path="*"
-          element={
-            <ProjectPickerProvider>
-              <NewProjectAffordance />
-              <ProjectPicker />
-              <LocationDisplay />
-            </ProjectPickerProvider>
-          }
-        />
-      </Routes>
+      <ProjectPickerProvider>
+        <CreateProjectModalProvider>
+          <Routes>
+            <Route
+              path="*"
+              element={
+                <>
+                  <NewProjectAffordance />
+                  <ProjectPicker />
+                </>
+              }
+            />
+          </Routes>
+        </CreateProjectModalProvider>
+      </ProjectPickerProvider>
     </MemoryRouter>
   );
 }
@@ -69,6 +72,7 @@ describe('NewProjectAffordance', () => {
   const fetchSpy = vi.fn();
 
   beforeEach(() => {
+    fetchSpy.mockResolvedValue(jsonResponse({ projects: [], total: 0 }));
     vi.stubGlobal('fetch', fetchSpy);
   });
 
@@ -99,16 +103,18 @@ describe('NewProjectAffordance', () => {
     expect(screen.getByRole('button', { name: 'Create new project' })).toBeTruthy();
   });
 
-  it('clicking navigates to /new', () => {
+  it('clicking opens the Create-project modal', () => {
     renderAffordanceOnly();
-    // Start at /board — verify then navigate.
-    expect(screen.getByTestId('location-display').textContent).toBe('/board');
+    // Modal isn't mounted yet — Radix's Dialog renders nothing until
+    // open=true. After click, the dialog content's testid should appear
+    // in a portal.
+    expect(screen.queryByTestId('create-project-modal')).toBeNull();
     fireEvent.click(screen.getByTestId('new-project-affordance'));
-    expect(screen.getByTestId('location-display').textContent).toBe('/new');
+    expect(screen.getByTestId('create-project-modal')).toBeTruthy();
   });
 
-  it('renders immediately before the ProjectPicker in DOM order', async () => {
-    renderAffordanceWithPicker(fetchSpy);
+  it('renders immediately before the ProjectPicker in DOM order', () => {
+    renderAffordanceWithPicker();
 
     const affordance = screen.getByTestId('new-project-affordance');
     const picker = screen.getByTestId('project-picker');

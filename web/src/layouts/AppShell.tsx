@@ -14,12 +14,17 @@ import { WalkProvider } from '@/components/walk/WalkContext';
 // active-workspace state to the Topbar picker and any future consumers
 // (e.g. gm-root.17.7 start-planning handoff).
 import { ProjectPickerProvider } from '@/components/projectpicker/ProjectPickerContext';
+// gm-e12.21.3: unified Create-project modal lives at the AppShell
+// level so the topbar '+' button, the picker dropdown, and the /new
+// redirect all open the same instance.
+import { CreateProjectModalProvider } from '@/components/projects/CreateProjectModalContext';
 
 export function AppShell() {
   return (
     <PaletteProvider>
       <PmPanelProvider>
         <ProjectPickerProvider>
+        <CreateProjectModalProvider>
         <WalkProvider>
           <div className="flex h-screen w-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
             <Sidebar />
@@ -37,6 +42,7 @@ export function AppShell() {
             <AppWalkBindings />
           </div>
         </WalkProvider>
+        </CreateProjectModalProvider>
         </ProjectPickerProvider>
       </PmPanelProvider>
     </PaletteProvider>

@@ -14,6 +14,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { ProjectPickerProvider } from '../ProjectPickerContext';
 import { ProjectPicker } from '../ProjectPicker';
+import { CreateProjectModalProvider } from '@/components/projects/CreateProjectModalContext';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -26,7 +27,9 @@ function renderPicker(): void {
   render(
     <MemoryRouter>
       <ProjectPickerProvider>
-        <ProjectPicker />
+        <CreateProjectModalProvider>
+          <ProjectPicker />
+        </CreateProjectModalProvider>
       </ProjectPickerProvider>
     </MemoryRouter>
   );
@@ -36,7 +39,9 @@ function renderPicker(): void {
 function PickerWrapper({ children }: { children: ReactNode }) {
   return (
     <MemoryRouter>
-      <ProjectPickerProvider>{children}</ProjectPickerProvider>
+      <ProjectPickerProvider>
+        <CreateProjectModalProvider>{children}</CreateProjectModalProvider>
+      </ProjectPickerProvider>
     </MemoryRouter>
   );
 }

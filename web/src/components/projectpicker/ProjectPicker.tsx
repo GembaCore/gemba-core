@@ -18,23 +18,14 @@ import { ChevronDown, FolderOpen, Plus, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useProjectPicker } from './ProjectPickerContext';
-import { ConfigureProjectModal } from '@/components/projects/ConfigureProjectModal';
+import { useCreateProjectModal } from '@/components/projects/CreateProjectModalContext';
 import { listAdoptableDBs, type AdoptableDB } from '@/api/projects';
 
 export function ProjectPicker() {
   const { projects, activeProject, isLoading, error, switchProject } = useProjectPicker();
   const navigate = useNavigate();
+  const { open: openCreateModal } = useCreateProjectModal();
   const [open, setOpen] = useState(false);
-  // gm-xwa8: configure-project modal for adopting an existing beads DB
-  // that has no .gemba/workspace.toml on this disk. Opened either from
-  // the "+ Adopt existing beads DB…" affordance (empty fields) or from
-  // a row in the gm-gmyl adoptable-DB section (pre-filled from the
-  // server's enumeration of marker-less DBs).
-  const [adoptOpen, setAdoptOpen] = useState(false);
-  const [adoptPrefill, setAdoptPrefill] = useState<{
-    beadsDB?: string;
-    name?: string;
-  }>({});
   // gm-gmyl: enumerate beads-shaped DBs visible on the configured Dolt
   // server that aren't already attached to a project. Fetched lazily
   // when the dropdown opens (avoids a Dolt round-trip on every page
@@ -223,8 +214,11 @@ export function ProjectPicker() {
                       data-testid={`project-picker-adoptable-${db.name}`}
                       onClick={() => {
                         setOpen(false);
-                        setAdoptPrefill({ beadsDB: db.url, name: db.name });
-                        setAdoptOpen(true);
+                        openCreateModal({
+                          name: db.name,
+                          db: { mode: 'adopt', value: db.url },
+                          repo: { mode: 'create', value: '' },
+                        });
                       }}
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
                     >
@@ -247,20 +241,18 @@ export function ProjectPicker() {
               {adoptableNotice}
             </div>
           )}
-          {/* gm-xwa8: "+ Adopt existing beads DB…" affordance. Opens the
-              ConfigureProjectModal so an operator can attach a beads DB
-              (legacy / imported / cross-machine) that has no
-              .gemba/workspace.toml on this disk. Sits below the project
-              list (or empty state) so it doesn't visually compete with
-              the existing picker entries. */}
+          {/* "+ Adopt existing beads DB…" affordance opens the unified
+              Create-project modal pre-set to the Adopt-from-server DB
+              axis. Sits below the project list (or empty state) so it
+              doesn't visually compete with existing picker entries.
+              gm-e12.21.3 superseded the standalone ConfigureProjectModal. */}
           <div className="border-t border-neutral-200 dark:border-neutral-700">
             <button
               type="button"
               data-testid="project-picker-adopt"
               onClick={() => {
                 setOpen(false);
-                setAdoptPrefill({});
-                setAdoptOpen(true);
+                openCreateModal({ db: { mode: 'adopt', value: '' } });
               }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
             >
@@ -270,19 +262,6 @@ export function ProjectPicker() {
           </div>
         </div>
       )}
-
-      <ConfigureProjectModal
-        open={adoptOpen}
-        beadsDB={adoptPrefill.beadsDB}
-        initialName={adoptPrefill.name}
-        onClose={() => setAdoptOpen(false)}
-        onAttached={(name) => {
-          // Switch to the newly-attached project so the picker label
-          // and route reflect the new workspace immediately. The modal
-          // already invalidated the list via context.reload().
-          void switchProject(name).then(() => navigate('/board')).catch(() => {});
-        }}
-      />
     </div>
   );
 }

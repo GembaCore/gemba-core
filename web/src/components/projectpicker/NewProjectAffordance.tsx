@@ -1,18 +1,16 @@
 // NewProjectAffordance — "+" button rendered immediately to the LEFT of
-// the ProjectPicker in the top-bar chrome (gm-root.17.2).
+// the ProjectPicker in the top-bar chrome (gm-root.17.2 / gm-e12.21.3).
 //
 // Hover title / aria-label: "Create new project".
-// Click: navigate to /new.
+// Click: opens the unified Create-project modal.
 //
 // Always visible alongside the picker — no route or workspace conditions.
-// This component contains no project-creation logic; it is a pure
-// navigation affordance.
 
-import { useNavigate } from 'react-router-dom';
+import { useCreateProjectModal } from '@/components/projects/CreateProjectModalContext';
 import { cn } from '@/lib/utils';
 
 export function NewProjectAffordance() {
-  const navigate = useNavigate();
+  const { open } = useCreateProjectModal();
 
   return (
     <button
@@ -20,7 +18,7 @@ export function NewProjectAffordance() {
       data-testid="new-project-affordance"
       title="Create new project"
       aria-label="Create new project"
-      onClick={() => navigate('/new')}
+      onClick={() => open()}
       className={cn(
         'inline-flex h-8 w-8 items-center justify-center rounded-md text-lg font-light',
         'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900',
