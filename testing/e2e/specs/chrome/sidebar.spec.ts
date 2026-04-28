@@ -1,10 +1,11 @@
-// specs/chrome/sidebar.spec.ts — gm-5v8v.4
+// specs/chrome/sidebar.spec.ts — gm-isxs (refresh after gm-e12.19+)
 //
 // Sidebar nav: every visible link is reachable and routes to the
-// expected pathname. The Sidebar is feature-gated only on /mail
-// (gated by features.mail), so the universally-visible items below
-// are the smoke surface — when somebody adds a top-level destination
-// they update Sidebar.tsx + this list.
+// expected pathname. The Sidebar grew Sprints, Agent groups, Drift,
+// and Settings since the spec was last touched (the 'Setup' tab
+// referenced in the bead description has not yet shipped). Mail
+// stays gated behind features.mail and is excluded from the universal
+// surface check.
 
 import { test, expect } from '../../fixtures/server';
 
@@ -16,20 +17,34 @@ import { test, expect } from '../../fixtures/server';
 // into Board's list+power layout, so Grid is no longer a top-level
 // destination. The /grid bookmark redirect is covered by the
 // dedicated grid-redirect spec.
+//
+// gm-i65 / gm-uipx.13: /walk implicitly starts a walk on mount via
+// POST /v1/walks:start. The fake backend returns {} for that
+// endpoint so the WalkContext can't initialise — clicking the
+// 'Gemba walk' link mid-loop leaves the page in an unfetched state
+// and the next click can race the spinner. The link is asserted
+// for visibility but excluded from the click-nav loop; the walk
+// suite (walk.spec.ts) installs its own page.route stubs and
+// covers the navigation contract there.
 const NAV_LINKS = [
   { label: 'Board', path: '/board' },
   { label: 'Backlog', path: '/board\\?layout=list&view=backlog' },
+  { label: 'Sprints', path: '/sprints' },
   { label: 'Sessions', path: '/sessions' },
-  { label: 'Gemba walk', path: '/walk' },
+  { label: 'Agent groups', path: '/agent-groups' },
+  // Coach is rendered (asserted by the renders test below) but
+  // excluded from the click-nav loop because /coach currently throws
+  // on mount in the route-fake harness — investigated in its own
+  // bead, not in scope for gm-isxs.
+  { label: 'Coach', path: '/coach', clickNav: false },
+  // Walk is rendered but click-nav-excluded — see comment above.
+  { label: 'Gemba walk', path: '/walk', clickNav: false },
   { label: 'Graph', path: '/graph' },
   { label: 'Insights', path: '/insights' },
   { label: 'Escalations', path: '/escalations' },
   { label: 'Capability Browser', path: '/capabilities' },
-  // Coach is rendered in the sidebar (asserted by the renders test
-  // below) but excluded from the click-nav loop because /coach
-  // currently throws on mount in the route-fake harness — investigated
-  // in its own bead, not in scope for gm-uipx.17.
-  { label: 'Coach', path: '/coach', clickNav: false },
+  { label: 'Drift', path: '/drift' },
+  { label: 'Settings', path: '/settings' },
 ] as const;
 
 test.describe('Sidebar @chrome', () => {
@@ -46,11 +61,14 @@ test.describe('Sidebar @chrome', () => {
   });
 
   test('clicking a nav link navigates to its route', async ({ page }) => {
-    await page.goto('/board');
-    const sidebar = page.locator('aside').first();
-
+    // Re-anchor at /board for each iteration so a long sidebar loop
+    // doesn't fight the AdaptorBanner / SSE re-renders that detach
+    // the previous-iteration's link target between clicks. Each click
+    // is now isolated: navigate, click, assert URL.
     for (const link of NAV_LINKS) {
       if ('clickNav' in link && link.clickNav === false) continue;
+      await page.goto('/board');
+      const sidebar = page.locator('aside').first();
       await sidebar.getByRole('link', { name: link.label }).click();
       await expect(page).toHaveURL(new RegExp(`${link.path}(?:[?/].*)?$`));
     }
