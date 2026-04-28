@@ -123,9 +123,13 @@ round-trip through the SPA. The Gas Town adaptor is optional.
 Active work lives in the project's Beads rig (`bd list`). Top-level
 open epics include token spending management (`gm-root.14`), the
 UI/SPA build-out (`gm-e12`), and cross-cutting features (escalation
-surfacing, evidence v2, DoD v2 — `gm-e11`). Design docs live in
-[Design docs](https://mikebengtson.github.io/gemba/design/); adaptor authoring references in
-[Adaptors](https://mikebengtson.github.io/gemba/adaptors/).
+surfacing, evidence v2, DoD v2 — `gm-e11`). The
+[parallelism-boundary design doc](https://mikebengtson.github.io/gemba/design/parallelism-boundary/)
+is a good starting point for the Design tree; adaptor authoring
+references begin with the
+[WorkPlane authoring guide](https://mikebengtson.github.io/gemba/adaptors/workplane/)
+and the
+[OrchestrationPlane authoring guide](https://mikebengtson.github.io/gemba/adaptors/orchestration/).
 
 ## ✨ What's New
 
@@ -376,17 +380,15 @@ Tooling expected on `PATH`:
 
 ## 📚 Documentation
 
-| Where | What |
-|---|---|
-The full docsite is published at **<https://mikebengtson.github.io/gemba/>**.
+The full docsite is published at **<https://mikebengtson.github.io/gemba/>** — use its sidebar to browse each section. The links below jump straight to a representative page in each:
 
-| Where | What |
-|---|---|
-| [Getting Started](https://mikebengtson.github.io/gemba/getting-started/) | Operator-facing guides — running against your work items, parallelism configuration |
-| [Adaptors](https://mikebengtson.github.io/gemba/adaptors/) | Per-adaptor authoring docs + conformance reports — how to write a new WorkPlane / OrchestrationPlane |
-| [Design](https://mikebengtson.github.io/gemba/design/) | Durable architectural decisions — parallelism boundary, milestone convention, Gemba walk (review of work in progress), persona PPPP |
-| [Agents](https://mikebengtson.github.io/gemba/agents/) | Per-role agent operating docs |
-| [UI spec](https://mikebengtson.github.io/gemba/ui-spec/) | The SPA spec — every surface, every affordance, every test-id |
+| Section | Start at | What's there |
+|---|---|---|
+| Getting Started | [Running Gemba against your work items](https://mikebengtson.github.io/gemba/getting-started/running-against-your-work-items/) · [Parallelism](https://mikebengtson.github.io/gemba/getting-started/parallelism/) | Operator-facing guides — initial wiring, parallelism configuration |
+| Adaptors | [WorkPlane authoring](https://mikebengtson.github.io/gemba/adaptors/workplane/) · [OrchestrationPlane authoring](https://mikebengtson.github.io/gemba/adaptors/orchestration/) · [Beads adaptor](https://mikebengtson.github.io/gemba/adaptors/beads/) · [Native adaptor](https://mikebengtson.github.io/gemba/adaptors/native/) | Per-adaptor authoring docs + conformance reports |
+| Design | [Parallelism boundary](https://mikebengtson.github.io/gemba/design/parallelism-boundary/) · [Gemba walk](https://mikebengtson.github.io/gemba/design/gemba-walk/) · [Milestone convention](https://mikebengtson.github.io/gemba/design/milestone-convention/) · [Persona PPPP](https://mikebengtson.github.io/gemba/design/persona-pppp/) | Durable architectural decisions |
+| Agents | [Refinery CI watch](https://mikebengtson.github.io/gemba/agents/refinery-ci-watch/) | Per-role agent operating docs |
+| UI spec | [UI spec](https://mikebengtson.github.io/gemba/ui-spec/) | The SPA spec — every surface, every affordance, every test-id |
 
 > [!NOTE]
 > Architecture decisions live in beads (`bd list type:decision`) and
