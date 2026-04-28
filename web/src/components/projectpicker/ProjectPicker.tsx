@@ -14,23 +14,61 @@
 // the server-config BeadsSource is now a secondary tooltip (detail).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown, FolderOpen, Plus } from 'lucide-react';
+import { ChevronDown, FolderOpen, Plus, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useProjectPicker } from './ProjectPickerContext';
 import { ConfigureProjectModal } from '@/components/projects/ConfigureProjectModal';
+import { listAdoptableDBs, type AdoptableDB } from '@/api/projects';
 
 export function ProjectPicker() {
   const { projects, activeProject, isLoading, error, switchProject } = useProjectPicker();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   // gm-xwa8: configure-project modal for adopting an existing beads DB
-  // that has no .gemba/workspace.toml on this disk. Opened from the
-  // "+ Adopt existing beads DB…" affordance at the bottom of the
-  // dropdown. Detection path documented inline: see the bead for the
-  // alternative server-side enumeration we punted on.
+  // that has no .gemba/workspace.toml on this disk. Opened either from
+  // the "+ Adopt existing beads DB…" affordance (empty fields) or from
+  // a row in the gm-gmyl adoptable-DB section (pre-filled from the
+  // server's enumeration of marker-less DBs).
   const [adoptOpen, setAdoptOpen] = useState(false);
+  const [adoptPrefill, setAdoptPrefill] = useState<{
+    beadsDB?: string;
+    name?: string;
+  }>({});
+  // gm-gmyl: enumerate beads-shaped DBs visible on the configured Dolt
+  // server that aren't already attached to a project. Fetched lazily
+  // when the dropdown opens (avoids a Dolt round-trip on every page
+  // load) and cached in state until the picker re-mounts. Empty list
+  // is the common case — most operators have a one-project rig.
+  const [adoptable, setAdoptable] = useState<AdoptableDB[]>([]);
+  const [adoptableNotice, setAdoptableNotice] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // gm-gmyl: refresh the adoptable list each time the dropdown opens.
+  // The Dolt server's databases can change between opens (new schema
+  // imported, project attached); the cache lasts only as long as the
+  // dropdown is mounted, then re-fetches on next open.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void listAdoptableDBs()
+      .then((env) => {
+        if (cancelled) return;
+        setAdoptable(env.dbs ?? []);
+        setAdoptableNotice(env.notice && env.notice.length > 0 ? env.notice : null);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Hard fetch failure (server 500, network drop) — just hide
+        // the section. The "+ Adopt existing beads DB…" affordance
+        // below stays usable as the manual fallback.
+        setAdoptable([]);
+        setAdoptableNotice(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // Close dropdown on outside click or Escape.
   useEffect(() => {
@@ -164,6 +202,51 @@ export function ProjectPicker() {
               ))}
             </ul>
           )}
+          {/* gm-gmyl: "Adoptable beads DBs" section — schemas the
+              configured Dolt server hosts that aren't yet attached to a
+              filesystem project. Click → opens ConfigureProjectModal
+              with the URL pre-filled. Only renders when the lister
+              returned at least one candidate. */}
+          {adoptable.length > 0 && (
+            <div
+              className="border-t border-neutral-200 dark:border-neutral-700"
+              data-testid="project-picker-adoptable-section"
+            >
+              <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+                Adoptable beads DBs
+              </div>
+              <ul className="pb-1" role="presentation">
+                {adoptable.map((db) => (
+                  <li key={db.name} role="presentation">
+                    <button
+                      type="button"
+                      data-testid={`project-picker-adoptable-${db.name}`}
+                      onClick={() => {
+                        setOpen(false);
+                        setAdoptPrefill({ beadsDB: db.url, name: db.name });
+                        setAdoptOpen(true);
+                      }}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                    >
+                      <Database className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <span className="truncate font-mono">{db.name}</span>
+                      <span className="ml-auto truncate text-[10px] text-neutral-500 dark:text-neutral-500">
+                        adopt
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {adoptableNotice && (
+            <div
+              className="border-t border-neutral-200 px-3 py-2 text-[11px] italic text-neutral-500 dark:border-neutral-700 dark:text-neutral-400"
+              data-testid="project-picker-adoptable-notice"
+            >
+              {adoptableNotice}
+            </div>
+          )}
           {/* gm-xwa8: "+ Adopt existing beads DB…" affordance. Opens the
               ConfigureProjectModal so an operator can attach a beads DB
               (legacy / imported / cross-machine) that has no
@@ -176,6 +259,7 @@ export function ProjectPicker() {
               data-testid="project-picker-adopt"
               onClick={() => {
                 setOpen(false);
+                setAdoptPrefill({});
                 setAdoptOpen(true);
               }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-neutral-600 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-800"
@@ -189,6 +273,8 @@ export function ProjectPicker() {
 
       <ConfigureProjectModal
         open={adoptOpen}
+        beadsDB={adoptPrefill.beadsDB}
+        initialName={adoptPrefill.name}
         onClose={() => setAdoptOpen(false)}
         onAttached={(name) => {
           // Switch to the newly-attached project so the picker label

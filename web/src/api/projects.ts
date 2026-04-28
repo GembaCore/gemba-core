@@ -99,3 +99,31 @@ export async function attachProject(
     body: JSON.stringify(req),
   });
 }
+
+// AdoptableDB is one row from GET /api/v1/projects/adoptable
+// (gm-gmyl): a beads-shaped database visible on the configured Dolt
+// server that does NOT correspond to any filesystem project. The
+// picker renders these as one-click adopt candidates that pre-fill
+// the configure-project modal.
+export interface AdoptableDB {
+  name: string;
+  url: string;
+}
+
+// AdoptableEnvelope is the response body of /v1/projects/adoptable.
+// `notice` is non-empty when the Dolt server is unreachable — the
+// picker should still render normally; just hide the "Adoptable"
+// section and surface the notice as a small inline hint.
+export interface AdoptableEnvelope {
+  dbs: AdoptableDB[];
+  total: number;
+  notice?: string;
+}
+
+// listAdoptableDBs fetches the adoptable list. Returns the envelope
+// as-is so the caller can read both `dbs` and `notice`. Doesn't
+// throw on Dolt-server-unreachable — that scenario surfaces as an
+// empty list + a notice string.
+export async function listAdoptableDBs(): Promise<AdoptableEnvelope> {
+  return apiFetch<AdoptableEnvelope>('/v1/projects/adoptable');
+}

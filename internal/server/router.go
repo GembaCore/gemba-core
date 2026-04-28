@@ -140,6 +140,12 @@ type Router struct {
 	attachGitRunner CommandRunner
 	attachNow       func() time.Time
 
+	// adoptableLister backs GET /api/v1/projects/adoptable (gm-gmyl).
+	// Nil falls back to defaultAdoptableLister which opens a mysql
+	// connection against the configured Dolt host. Tests inject a
+	// stub via AttachProjects(AttachConfig{AdoptableLister: ...}).
+	adoptableLister AdoptableLister
+
 	mux http.Handler
 }
 
@@ -464,6 +470,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// the selection durably.
 		api.Get("/v1/projects", r.listProjects)
 		api.Post("/v1/projects/switch", r.switchProject)
+		// gm-gmyl: enumerate beads-shaped DBs visible on the configured
+		// Dolt server that aren't already attached to a filesystem
+		// project. The picker renders these alongside configured
+		// projects so the operator can adopt one in a single click.
+		api.Get("/v1/projects/adoptable", r.listAdoptableProjects)
 
 		// gm-xwa8: configure-and-attach modal target. Adopts an existing
 		// beads DB into a project on this machine — writes

@@ -135,6 +135,11 @@ type AttachConfig struct {
 	Pinger        BeadsPinger
 	GitInitRunner CommandRunner
 	Now           func() time.Time
+	// AdoptableLister backs GET /api/v1/projects/adoptable (gm-gmyl).
+	// Nil falls back to the production lister that opens a mysql
+	// connection against the configured Dolt server. Tests inject a
+	// stub here.
+	AdoptableLister AdoptableLister
 }
 
 // attachProject handles POST /api/v1/projects/attach.
@@ -333,6 +338,9 @@ func (r *Router) AttachProjects(cfg AttachConfig) {
 	}
 	if cfg.Now != nil {
 		r.attachNow = cfg.Now
+	}
+	if cfg.AdoptableLister != nil {
+		r.adoptableLister = cfg.AdoptableLister
 	}
 }
 

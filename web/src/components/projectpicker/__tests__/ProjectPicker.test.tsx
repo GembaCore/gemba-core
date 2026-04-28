@@ -42,15 +42,30 @@ function PickerWrapper({ children }: { children: ReactNode }) {
 }
 
 describe('ProjectPicker', () => {
+  // Inner spy holds the per-test queued responses for /v1/projects
+  // and /v1/projects/switch. The outer `fetch` mock routes by URL:
+  // /v1/projects/adoptable always returns an empty list (gm-gmyl —
+  // tests in this file don't exercise the adoptable section, and we
+  // don't want the dropdown-open fetch to consume a queue slot meant
+  // for the switch call). All other URLs delegate to fetchSpy in
+  // FIFO order.
   const fetchSpy = vi.fn();
+  const routedFetch = vi.fn(async (url: string | Request, init?: RequestInit) => {
+    const u = typeof url === 'string' ? url : url.url;
+    if (u.includes('/v1/projects/adoptable')) {
+      return jsonResponse({ dbs: [], total: 0 });
+    }
+    return fetchSpy(url, init);
+  });
 
   beforeEach(() => {
-    vi.stubGlobal('fetch', fetchSpy);
+    vi.stubGlobal('fetch', routedFetch);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     fetchSpy.mockReset();
+    routedFetch.mockClear();
   });
 
   it('renders the trigger button with workspace-label testid', async () => {
@@ -258,5 +273,74 @@ describe('ProjectPicker', () => {
       </PickerWrapper>
     );
     await waitFor(() => screen.getByTestId('project-picker'));
+  });
+
+  // gm-gmyl: adoptable-DB section. Override routedFetch directly so
+  // /v1/projects/adoptable returns a non-empty list and assert the
+  // section + per-row testids appear when the dropdown opens.
+  it('renders the adoptable-DBs section when the lister returns candidates', async () => {
+    routedFetch.mockImplementation(async (url) => {
+      const u = typeof url === 'string' ? url : (url as Request).url;
+      if (u.includes('/v1/projects/adoptable')) {
+        return jsonResponse({
+          dbs: [
+            { name: 'legacy_db', url: 'mysql://root@127.0.0.1:3307/legacy_db' },
+            { name: 'imported', url: 'mysql://root@127.0.0.1:3307/imported' },
+          ],
+          total: 2,
+        });
+      }
+      return jsonResponse({ projects: [{ name: 'alpha', path: '/p/alpha' }], total: 1 });
+    });
+    renderPicker();
+    await waitFor(() => screen.getByTestId('workspace-label'));
+    fireEvent.click(screen.getByTestId('workspace-label'));
+    await waitFor(() =>
+      expect(screen.getByTestId('project-picker-adoptable-section')).toBeTruthy()
+    );
+    expect(screen.getByTestId('project-picker-adoptable-legacy_db')).toBeTruthy();
+    expect(screen.getByTestId('project-picker-adoptable-imported')).toBeTruthy();
+  });
+
+  // gm-gmyl: empty adoptable list → section is hidden (no testid).
+  it('hides the adoptable section when the lister returns empty', async () => {
+    routedFetch.mockImplementation(async (url) => {
+      const u = typeof url === 'string' ? url : (url as Request).url;
+      if (u.includes('/v1/projects/adoptable')) {
+        return jsonResponse({ dbs: [], total: 0 });
+      }
+      return jsonResponse({ projects: [{ name: 'alpha', path: '/p/alpha' }], total: 1 });
+    });
+    renderPicker();
+    await waitFor(() => screen.getByTestId('workspace-label'));
+    fireEvent.click(screen.getByTestId('workspace-label'));
+    await waitFor(() => screen.getByTestId('project-picker-dropdown'));
+    expect(screen.queryByTestId('project-picker-adoptable-section')).toBeNull();
+  });
+
+  // gm-gmyl: lister returns a notice (server unreachable) → notice
+  // renders as a small inline hint, no adoptable section.
+  it('surfaces the lister notice when the Dolt server is unreachable', async () => {
+    routedFetch.mockImplementation(async (url) => {
+      const u = typeof url === 'string' ? url : (url as Request).url;
+      if (u.includes('/v1/projects/adoptable')) {
+        return jsonResponse({
+          dbs: [],
+          total: 0,
+          notice: 'dolt server at 127.0.0.1:3307 unreachable',
+        });
+      }
+      return jsonResponse({ projects: [{ name: 'alpha', path: '/p/alpha' }], total: 1 });
+    });
+    renderPicker();
+    await waitFor(() => screen.getByTestId('workspace-label'));
+    fireEvent.click(screen.getByTestId('workspace-label'));
+    await waitFor(() =>
+      expect(screen.getByTestId('project-picker-adoptable-notice')).toBeTruthy()
+    );
+    expect(screen.getByTestId('project-picker-adoptable-notice').textContent).toContain(
+      'unreachable'
+    );
+    expect(screen.queryByTestId('project-picker-adoptable-section')).toBeNull();
   });
 });
