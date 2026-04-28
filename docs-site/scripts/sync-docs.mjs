@@ -21,6 +21,16 @@ const srcDocs = path.join(repoRoot, 'docs');
 const dstDocs = path.resolve(__dirname, '..', 'src', 'content', 'docs');
 const publicDir = path.resolve(__dirname, '..', 'public');
 
+// BASE mirrors astro.config.mjs's `base` default. Synthesized markdown
+// (the landing page + the API overview) writes site-absolute hrefs;
+// Astro's base prefix is NOT applied to raw markdown link strings, so
+// without prepending BASE here the links resolve to `/foo` on
+// github.io and 404 (gemba is published under `/gemba/`). Override
+// via the BASE env var for non-default deployments — keep it in
+// lockstep with astro.config.mjs.
+const BASE = (process.env.BASE ?? '/gemba/').replace(/\/+$/, '/');
+const withBase = (p) => `${BASE.replace(/\/$/, '')}${p}`;
+
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 const H1_RE = /^#\s+(.+?)\s*$/m;
 
@@ -85,7 +95,7 @@ hero:
   tagline: Bring a WorkPlane. Optionally an OrchestrationPlane. Render whatever the two declare.
   actions:
     - text: Get started
-      link: /getting-started/running-against-your-work-items/
+      link: ${withBase('/getting-started/running-against-your-work-items/')}
       icon: right-arrow
       variant: primary
     - text: Source on GitHub
@@ -97,11 +107,11 @@ ${body}
 
 ## Continue reading
 
-- [Run gemba against your work items](/getting-started/running-against-your-work-items/)
-- [WorkPlane adaptor contract](/adaptors/workplane/)
-- [OrchestrationPlane adaptor contract](/adaptors/orchestration/)
-- [Beads adaptor](/adaptors/beads/)
-- [Gas Town adaptor](/adaptors/gastown/)
+- [Run gemba against your work items](${withBase('/getting-started/running-against-your-work-items/')})
+- [WorkPlane adaptor contract](${withBase('/adaptors/workplane/')})
+- [OrchestrationPlane adaptor contract](${withBase('/adaptors/orchestration/')})
+- [Beads adaptor](${withBase('/adaptors/beads/')})
+- [Gas Town adaptor](${withBase('/adaptors/gastown/')})
 `;
   await fs.writeFile(path.join(dstDocs, 'index.md'), out, 'utf8');
 }
