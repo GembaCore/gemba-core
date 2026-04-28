@@ -1,49 +1,30 @@
-// specs/chrome/sidebar.spec.ts — gm-isxs (refresh after gm-e12.19+)
+// specs/chrome/sidebar.spec.ts — six-item left rail (gm-e12.19, second
+// amendment 2026-04-28).
 //
-// Sidebar nav: every visible link is reachable and routes to the
-// expected pathname. The Sidebar grew Sprints, Agent groups, Drift,
-// and Settings since the spec was last touched (the 'Setup' tab
-// referenced in the bead description has not yet shipped). Mail
-// stays gated behind features.mail and is excluded from the universal
-// surface check.
-
-import { test, expect } from '../../fixtures/server';
-
-// gm-e12.19.1: "Backlog" sidebar item still points at /backlog but
-// the route is now a permanent redirect to Board's list mode +
-// Backlog view. Click-then-URL assertion lands on the resolved URL.
-//
-// gm-uipx.17: the "Grid" sidebar entry was dropped — /grid folded
-// into Board's list+power layout, so Grid is no longer a top-level
-// destination. The /grid bookmark redirect is covered by the
-// dedicated grid-redirect spec.
+// Sidebar nav consolidated to six first-order panes plus a bottom-
+// anchored Settings entry. Secondary surfaces (Backlog, Sprints, Coach,
+// Agent groups, Graph, Drift, Capability Browser, Mail) survive as
+// deep-link routes today and roll up under their pane's in-screen
+// tabs as gm-e12.19.4-7 land.
 //
 // gm-i65 / gm-uipx.13: /walk implicitly starts a walk on mount via
 // POST /v1/walks:start. The fake backend returns {} for that
 // endpoint so the WalkContext can't initialise — clicking the
-// 'Gemba walk' link mid-loop leaves the page in an unfetched state
+// 'Review' link mid-loop leaves the page in an unfetched state
 // and the next click can race the spinner. The link is asserted
 // for visibility but excluded from the click-nav loop; the walk
 // suite (walk.spec.ts) installs its own page.route stubs and
 // covers the navigation contract there.
+
+import { test, expect } from '../../fixtures/server';
+
 const NAV_LINKS = [
-  { label: 'Board', path: '/board' },
-  { label: 'Backlog', path: '/board\\?layout=list&view=backlog' },
-  { label: 'Sprints', path: '/sprints' },
-  { label: 'Sessions', path: '/sessions' },
-  { label: 'Agent groups', path: '/agent-groups' },
-  // Coach is rendered (asserted by the renders test below) but
-  // excluded from the click-nav loop because /coach currently throws
-  // on mount in the route-fake harness — investigated in its own
-  // bead, not in scope for gm-isxs.
-  { label: 'Coach', path: '/coach', clickNav: false },
-  // Walk is rendered but click-nav-excluded — see comment above.
+  { label: 'Plan', path: '/board' },
+  { label: 'Agent Sessions', path: '/sessions' },
+  // Review is rendered but click-nav-excluded — see comment above.
   { label: 'Review', path: '/walk', clickNav: false },
-  { label: 'Graph', path: '/graph' },
-  { label: 'Insights', path: '/insights' },
   { label: 'Escalations', path: '/escalations' },
-  { label: 'Capability Browser', path: '/capabilities' },
-  { label: 'Drift', path: '/drift' },
+  { label: 'Insights', path: '/insights' },
   { label: 'Settings', path: '/settings' },
 ] as const;
 
@@ -86,7 +67,7 @@ test.describe('Sidebar @chrome', () => {
 
   test('the active link reflects the current route', async ({ page }) => {
     await page.goto('/sessions');
-    const sessions = page.locator('aside').first().getByRole('link', { name: 'Sessions' });
+    const sessions = page.locator('aside').first().getByRole('link', { name: 'Agent Sessions' });
     // NavLink stamps an `active` className when the route matches; we
     // assert the visual cue (bg-neutral-200 dark variant) only via
     // attribute, not the class string itself which churns with Tailwind.
@@ -98,31 +79,26 @@ test.describe('Sidebar @chrome', () => {
   });
 });
 
-// gm-root.17.12: cold-start happy path — workspace-scoped nav items
-// mute when no project is active. Capability Browser and Settings
-// remain interactive (they're operational without a workspace).
+// gm-root.17.12: cold-start happy path — workspace-scoped panes mute
+// when no project is active. Settings is the only item in the
+// six-pane rail that stays interactive without a workspace (Capability
+// Browser folded into Settings as a tab under gm-e12.19.2).
 test.describe('Sidebar cold-start @chrome', () => {
   test.beforeEach(({ projectsStore }) => {
     projectsStore.seed([]); // no projects → no active workspace
   });
 
-  test('workspace-scoped items render disabled', async ({ page }) => {
+  test('workspace-scoped panes render disabled', async ({ page }) => {
     await page.goto('/new');
     const sidebar = page.locator('aside').first();
     await expect(sidebar).toBeVisible();
 
     const workspaceScoped = [
-      'Board',
-      'Backlog',
-      'Sprints',
-      'Sessions',
-      'Agent groups',
-      'Coach',
+      'Plan',
+      'Agent Sessions',
       'Review',
-      'Graph',
-      'Insights',
       'Escalations',
-      'Drift',
+      'Insights',
     ];
     for (const label of workspaceScoped) {
       const item = sidebar.getByText(label, { exact: true });
@@ -134,17 +110,16 @@ test.describe('Sidebar cold-start @chrome', () => {
     }
   });
 
-  test('Settings and Capability Browser stay interactive on cold-start', async ({ page }) => {
+  test('Settings stays interactive on cold-start', async ({ page }) => {
     await page.goto('/new');
     const sidebar = page.locator('aside').first();
     await expect(sidebar.getByRole('link', { name: 'Settings' })).toBeVisible();
-    await expect(sidebar.getByRole('link', { name: 'Capability Browser' })).toBeVisible();
   });
 
   test('clicking a muted item does not navigate', async ({ page }) => {
     await page.goto('/new');
     const sidebar = page.locator('aside').first();
-    const muted = sidebar.locator('[aria-disabled="true"]', { hasText: 'Board' });
+    const muted = sidebar.locator('[aria-disabled="true"]', { hasText: 'Plan' });
     await muted.click({ force: true }); // bypass cursor: not-allowed for the test
     await expect(page).toHaveURL(/\/new$/);
   });
