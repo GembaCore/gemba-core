@@ -1,6 +1,6 @@
 <a name="top"></a>
 
-[![gemba](branding/social/social-5-gradient-dispatch.png)](https://github.com/MikeBengtson/gemba)
+[![gemba](branding/banner/banner-05-gradient-dispatch.png)](https://github.com/MikeBengtson/gemba)
 
 # gemba
 
