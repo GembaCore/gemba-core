@@ -9,6 +9,10 @@ items, configuring agent runtimes, and tuning parallelism.
   fastest path from `make build` to a Kanban in the browser.
   Covers both `--beads-dir` (CLI) and `--dolt-url` (direct-SQL) modes,
   expected banner output, and troubleshooting.
+- **[Configuration reference](configuration)** — every CLI flag,
+  environment variable, and config file Gemba reads, with the order
+  of precedence (CLI > env > `.gemba/<file>` > `~/.gemba/config.toml`
+  > built-in defaults).
 - **[Parallelism in Gemba](parallelism)** — declare per-agent
   parallelism in `.gemba/agents.toml`, understand intra- vs
   inter-session axes, the dispatcher's try-reuse-before-spawn

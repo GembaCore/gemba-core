@@ -84,3 +84,11 @@ Any password in the URL is redacted from the banner and logs. Mode B is read-onl
 **`connection refused` during Mode B startup** — Dolt isn't running on the host/port in your URL. Start it with `gt dolt start`, then retry.
 
 **Non-loopback bind rejected** — `--listen 0.0.0.0` requires `--auth token` or `--auth oidc` (loopback-only is the default safety posture). See `gemba serve --help`.
+
+## Where next
+
+- The full **[Configuration reference](configuration)** covers every
+  flag, environment variable, and config file Gemba reads, with the
+  order of precedence and the schema for each `.gemba/*` file.
+- **[Parallelism in Gemba](parallelism)** is the next thing operators
+  reach for once the basics work.
