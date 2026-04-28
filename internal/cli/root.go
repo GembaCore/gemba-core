@@ -60,6 +60,7 @@ See https://github.com/MikeBengtson/gemba for documentation.`,
 		newSessionCmd(),
 		newAgentCmd(),
 		newSizeCalibrationCmd(),
+		newNewProjectCmd(),
 	)
 
 	return root
