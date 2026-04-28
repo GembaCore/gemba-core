@@ -82,6 +82,10 @@ const projects: Project[] = [
       'bootstrap/**/*.spec.ts',
       // gm-root.17.3 — /new full-page conversational project creation.
       'newproject/**/*.spec.ts',
+      // gm-57p6 — README screenshot generator (skipped unless
+      // GEMBA_E2E_BASE_URL is set; invoked by
+      // scripts/generate-readme-screenshots.sh).
+      'screenshots/**/*.spec.ts',
     ],
     use: {
       ...devices['Desktop Chrome'],

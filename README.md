@@ -30,6 +30,7 @@ Kanban like planning, execution, and management of complex vibe coding projects 
 - [🧱 Architecture](#-architecture)
 - [🚦 Status](#-status)
 - [✨ What's New](#-whats-new)
+- [📸 Screenshots](#-screenshots)
 - [📦 Project Layout](#-project-layout)
 - [🏁 Getting Started](#-getting-started)
 - [🛠️ Development](#%EF%B8%8F-development)
@@ -140,6 +141,45 @@ surfacing, evidence v2, DoD v2 — `gm-e11`). Design docs live in
 
 > See the [GitHub commit log](https://github.com/MikeBengtson/gemba/commits/main)
 > for the full history.
+
+[⬆ back to top](#top)
+
+## 📸 Screenshots
+
+The following dark-mode screenshots are generated from the
+[**My Project**](examples/my-project/) sample rig — a fictional
+two-or-three tier app dev project (frontend / backend / data + auth /
+deploy / billing) with three milestones, six epics, and ~30 work
+items. Run `examples/my-project/load.sh && scripts/generate-readme-screenshots.sh`
+to regenerate them.
+
+### Board
+
+The Kanban surface — work items grouped by `state_category` (Backlog,
+Next up, Staged, In Progress, Done). Toggle Item ↔ Epic at the
+view switcher; swimlanes group by milestone, parent epic, agent, etc.
+
+![Gemba Board view — work items in dark mode](docs/img/screenshot-board.png)
+
+### Graph
+
+Dependency graph across every work item. Three core edge kinds
+(`blocks` / `parent_child` / `relates_to`) plus adaptor-declared
+extension edges. Toggles for Cycles, Critical path, and Items ↔ Epics
+granularity in the header.
+
+![Gemba Graph view — dependency graph in dark mode](docs/img/screenshot-graph.png)
+
+### Review (Gemba walk)
+
+A bounded review session: agenda lanes (Queued / Active / Decided /
+Deferred) on the left, decision conversation in the centre, open
+escalations + budget + perspectives on the right. The walk surfaces
+ready beads, escalations, and drift signals into one place where the
+operator (or the PM persona) can ratify, modify, reject, or defer
+each item in sequence.
+
+![Gemba Walk (Review) view — bounded review session in dark mode](docs/img/screenshot-walk.png)
 
 [⬆ back to top](#top)
 
