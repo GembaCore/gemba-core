@@ -1,0 +1,288 @@
+// Tests for GET /api/v1/projects and POST /api/v1/projects/switch (gm-root.18).
+//
+// Scenarios:
+//   - happy path: default_dir with two projects, returns both.
+//   - empty state: default_dir exists but has no project subdirs.
+//   - missing default_dir: treated as empty list, not an error.
+//   - switch to a known project: returns it as active.
+//   - switch to unknown project: 404.
+//   - switch with empty body: 400 validation.
+//   - list after switch: active flag set on the switched-to project.
+
+package server
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/MikeBengtson/gemba/internal/config"
+)
+
+// makeProject creates a minimal project directory with a .gemba/workspace.toml
+// file in the given parent dir. Returns the created project path.
+func makeProject(t *testing.T, parent, name string) string {
+	t.Helper()
+	projectDir := filepath.Join(parent, name)
+	gembaDir := filepath.Join(projectDir, ".gemba")
+	if err := os.MkdirAll(gembaDir, 0o755); err != nil {
+		t.Fatalf("makeProject %s: mkdir: %v", name, err)
+	}
+	wsToml := filepath.Join(gembaDir, "workspace.toml")
+	if err := os.WriteFile(wsToml, []byte("[workspace]\nname = \""+name+"\"\n"), 0o644); err != nil {
+		t.Fatalf("makeProject %s: write workspace.toml: %v", name, err)
+	}
+	return projectDir
+}
+
+// makeConfigTOML writes a ~/.gemba/config.toml pointing at defaultDir.
+// Returns the path to the config file.
+func makeConfigTOML(t *testing.T, home, defaultDir string) string {
+	t.Helper()
+	gembaDir := filepath.Join(home, ".gemba")
+	if err := os.MkdirAll(gembaDir, 0o755); err != nil {
+		t.Fatalf("makeConfigTOML: mkdir: %v", err)
+	}
+	cfgPath := filepath.Join(gembaDir, "config.toml")
+	content := "[projects]\ndefault_dir = \"" + defaultDir + "\"\n"
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("makeConfigTOML: write: %v", err)
+	}
+	return cfgPath
+}
+
+// projectsRouter builds a Router with a config pointing at the given
+// projects dir. The config.toml is written to a temp home dir so the
+// test doesn't touch the real ~/.gemba/config.toml.
+func projectsRouter(t *testing.T, projectsDir string) *Router {
+	t.Helper()
+	home := t.TempDir()
+	cfgPath := makeConfigTOML(t, home, projectsDir)
+	return NewRouter(config.ServeConfig{ConfigPath: cfgPath}, fakeSPA(), nil)
+}
+
+func TestListProjects_HappyPath(t *testing.T) {
+	projectsDir := t.TempDir()
+	makeProject(t, projectsDir, "alpha")
+	makeProject(t, projectsDir, "beta")
+
+	h := projectsRouter(t, projectsDir)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var env projectsEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
+	}
+	if env.Total != 2 {
+		t.Errorf("want Total=2, got %d", env.Total)
+	}
+	if len(env.Projects) != 2 {
+		t.Fatalf("want 2 projects, got %d", len(env.Projects))
+	}
+	// ReadDir returns alphabetical order — alpha before beta.
+	if env.Projects[0].Name != "alpha" || env.Projects[1].Name != "beta" {
+		t.Errorf("order: %v", env.Projects)
+	}
+	for _, p := range env.Projects {
+		if p.Path == "" {
+			t.Errorf("project %s has empty Path", p.Name)
+		}
+		if p.Active {
+			t.Errorf("project %s should not be active before any switch", p.Name)
+		}
+	}
+}
+
+func TestListProjects_EmptyDir(t *testing.T) {
+	projectsDir := t.TempDir() // exists but has no project subdirs
+
+	h := projectsRouter(t, projectsDir)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var env projectsEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if env.Total != 0 {
+		t.Errorf("want Total=0, got %d", env.Total)
+	}
+	if len(env.Projects) != 0 {
+		t.Errorf("want empty Projects, got %v", env.Projects)
+	}
+}
+
+func TestListProjects_MissingDefaultDir(t *testing.T) {
+	// Point default_dir at a path that doesn't exist — should not error.
+	projectsDir := filepath.Join(t.TempDir(), "nonexistent-projects-dir")
+
+	h := projectsRouter(t, projectsDir)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var env projectsEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if env.Total != 0 {
+		t.Errorf("want Total=0, got %d", env.Total)
+	}
+}
+
+func TestSwitchProject_ByName(t *testing.T) {
+	// Reset global state from any previous test run.
+	activeProjectMu.Lock()
+	activeProjectName = ""
+	activeProjectMu.Unlock()
+
+	projectsDir := t.TempDir()
+	makeProject(t, projectsDir, "alpha")
+	makeProject(t, projectsDir, "beta")
+
+	h := projectsRouter(t, projectsDir)
+
+	body, _ := json.Marshal(switchProjectRequest{Name: "beta"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/switch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var resp switchProjectResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
+	}
+	if resp.Active.Name != "beta" {
+		t.Errorf("want Active.Name=beta, got %q", resp.Active.Name)
+	}
+	if !resp.Active.Active {
+		t.Error("want Active.Active=true")
+	}
+}
+
+func TestSwitchProject_ByPath(t *testing.T) {
+	activeProjectMu.Lock()
+	activeProjectName = ""
+	activeProjectMu.Unlock()
+
+	projectsDir := t.TempDir()
+	alphaPath := makeProject(t, projectsDir, "alpha")
+
+	h := projectsRouter(t, projectsDir)
+
+	body, _ := json.Marshal(switchProjectRequest{Path: alphaPath})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/switch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var resp switchProjectResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Active.Name != "alpha" {
+		t.Errorf("want Active.Name=alpha, got %q", resp.Active.Name)
+	}
+}
+
+func TestSwitchProject_NotFound(t *testing.T) {
+	activeProjectMu.Lock()
+	activeProjectName = ""
+	activeProjectMu.Unlock()
+
+	projectsDir := t.TempDir()
+	makeProject(t, projectsDir, "alpha")
+
+	h := projectsRouter(t, projectsDir)
+
+	body, _ := json.Marshal(switchProjectRequest{Name: "does-not-exist"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/switch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSwitchProject_EmptyBody(t *testing.T) {
+	projectsDir := t.TempDir()
+	h := projectsRouter(t, projectsDir)
+
+	body, _ := json.Marshal(switchProjectRequest{}) // both Name and Path empty
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/switch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListProjects_ActiveFlagAfterSwitch(t *testing.T) {
+	activeProjectMu.Lock()
+	activeProjectName = ""
+	activeProjectMu.Unlock()
+
+	projectsDir := t.TempDir()
+	makeProject(t, projectsDir, "alpha")
+	makeProject(t, projectsDir, "beta")
+
+	h := projectsRouter(t, projectsDir)
+
+	// Switch to alpha.
+	switchBody, _ := json.Marshal(switchProjectRequest{Name: "alpha"})
+	switchReq := httptest.NewRequest(http.MethodPost, "/api/v1/projects/switch", bytes.NewReader(switchBody))
+	switchReq.Header.Set("Content-Type", "application/json")
+	switchRec := httptest.NewRecorder()
+	h.ServeHTTP(switchRec, switchReq)
+	if switchRec.Code != http.StatusOK {
+		t.Fatalf("switch: want 200, got %d", switchRec.Code)
+	}
+
+	// Now list — alpha should be active, beta should not.
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
+	listRec := httptest.NewRecorder()
+	h.ServeHTTP(listRec, listReq)
+
+	var env projectsEnvelope
+	if err := json.Unmarshal(listRec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	var activeCount int
+	for _, p := range env.Projects {
+		if p.Active {
+			activeCount++
+			if p.Name != "alpha" {
+				t.Errorf("unexpected active project: %q", p.Name)
+			}
+		}
+	}
+	if activeCount != 1 {
+		t.Errorf("want 1 active project, got %d; projects=%v", activeCount, env.Projects)
+	}
+}

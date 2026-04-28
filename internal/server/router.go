@@ -416,17 +416,6 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/bootstrap/commit", r.bootstrapCommit)
 
-		// gm-root.17: conversational New Project flow. Mounted under
-		// /api/v1/* per the design's §API table. start + turn are
-		// read-style mutations (mint/update in-memory session state);
-		// /ratify is the atomic project-creation transaction
-		// (gm-root.17.6) and is nonce-gated so a SPA double-click on
-		// the confirm modal cannot double-write the project on disk.
-		api.Post("/v1/newproject/start", r.newProjectStart)
-		api.Post("/v1/newproject/{id}/turn", r.newProjectTurn)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Post("/v1/newproject/{id}/ratify", r.newProjectRatify)
-
 		// gm-e4.1: canonical /api/v1/* alias surface. The bead's spec
 		// names eight resource roots — workitems, agents, groups,
 		// workspaces, sessions, escalations, sprints, capabilities —

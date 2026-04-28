@@ -10,11 +10,16 @@ import { PmPanelProvider } from '@/components/pm/PmPanelContext';
 import { ActiveWalkBanner } from '@/components/walk/ActiveWalkBanner';
 import { AppWalkBindings } from '@/components/walk/AppWalkBindings';
 import { WalkProvider } from '@/components/walk/WalkContext';
+// gm-root.18: project picker context — provides the project list and
+// active-workspace state to the Topbar picker and any future consumers
+// (e.g. gm-root.17.7 start-planning handoff).
+import { ProjectPickerProvider } from '@/components/projectpicker/ProjectPickerContext';
 
 export function AppShell() {
   return (
     <PaletteProvider>
       <PmPanelProvider>
+        <ProjectPickerProvider>
         <WalkProvider>
           <div className="flex h-screen w-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
             <Sidebar />
@@ -32,6 +37,7 @@ export function AppShell() {
             <AppWalkBindings />
           </div>
         </WalkProvider>
+        </ProjectPickerProvider>
       </PmPanelProvider>
     </PaletteProvider>
   );

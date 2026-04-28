@@ -94,6 +94,14 @@ type TestFixtures = {
   /** Per-test in-memory Agents roster store. gm-5v8v.9. */
   agentPlane: AgentStore;
   /**
+   * Per-test in-memory Projects store. gm-root.18. Specs call
+   * projectsStore.seed([...]) to populate the project list before
+   * navigating; the fake dispatcher serves /api/v1/projects (GET) and
+   * /api/v1/projects/switch (POST) from this store. Empty by default
+   * so the picker renders its empty state in most tests.
+   */
+  projectsStore: ProjectsStore;
+  /**
    * Per-test capabilities envelope (gm-5v8v.7/.8 follow-up). Specs
    * that need the SPA to see a non-empty WorkPlane / OrchestrationPlane
    * manifest call capabilitiesPlane.set({...}) or the typed
@@ -219,6 +227,11 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(state);
   },
 
+  projectsStore: async ({}, use) => {
+    const store = createProjectsStore();
+    await use(store);
+  },
+
   mode: async ({}, use) => {
     // Specs override the initial mode by setting WorkspaceMode on
     // test.use({ mode: createModeHandle('managed') }) in the spec
@@ -256,7 +269,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   page: async (
-    { page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane },
+    { page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane, projectsStore },
     use
   ) => {
     if (backend === 'fake') {
@@ -267,6 +280,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         agentPlane,
         adaptorsState,
         capabilitiesPlane,
+        projectsStore,
       });
     } else {
       if (!realServer) {
@@ -341,6 +355,38 @@ export type AdaptorStatus = {
   reason?: string;
 };
 
+// ── ProjectsStore fixture (gm-root.18) ──────────────────────────────────
+//
+// Drives /api/v1/projects (GET) and /api/v1/projects/switch (POST).
+// Specs seed the project list before navigating; the picker renders
+// against it without needing a real ~/.gemba directory.
+export type FakeProject = {
+  name: string;
+  path: string;
+  active?: boolean;
+};
+
+export type ProjectsStore = {
+  seed(projects: FakeProject[]): void;
+  list(): FakeProject[];
+  setActive(name: string): void;
+  getActive(): FakeProject | undefined;
+};
+
+function createProjectsStore(): ProjectsStore {
+  let projects: FakeProject[] = [];
+  return {
+    seed: (next) => {
+      projects = next.map((p) => ({ ...p }));
+    },
+    list: () => projects,
+    setActive: (name) => {
+      projects = projects.map((p) => ({ ...p, active: p.name === name }));
+    },
+    getActive: () => projects.find((p) => p.active),
+  };
+}
+
 export type AdaptorsState = {
   set(entries: AdaptorStatus[]): void;
   get(): AdaptorStatus[];
@@ -363,6 +409,7 @@ interface FakeStores {
   agentPlane: AgentStore;
   adaptorsState: AdaptorsState;
   capabilitiesPlane: CapabilitiesPlane;
+  projectsStore: ProjectsStore;
 }
 
 async function installFakeBackend(page: Page, stores: FakeStores): Promise<void> {
@@ -384,7 +431,7 @@ function matchesEvents(p: string): boolean {
 }
 
 function dispatch(route: Route, stores: FakeStores): unknown {
-  const { workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane } = stores;
+  const { workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane, projectsStore } = stores;
   const url = new URL(route.request().url());
   const path = url.pathname;
   const method = route.request().method();
@@ -681,6 +728,26 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   if (isPath(path, '/api/capabilities')) return json(capabilitiesPlane.get());
   if (isPath(path, '/api/adaptors')) return json({ adaptors: adaptorsState.get() });
   if (isPath(path, '/api/health')) return json({ status: 'ok' });
+
+  // /api/v1/projects (gm-root.18) — project picker list + switch.
+  if (path === '/api/v1/projects/switch' && method === 'POST') {
+    const body = parseBody(route.request().postData());
+    const name = typeof body.name === 'string' ? body.name : undefined;
+    const reqPath = typeof body.path === 'string' ? body.path : undefined;
+    const projects = projectsStore.list();
+    const target = projects.find(
+      (p) => (name && p.name === name) || (reqPath && p.path === reqPath)
+    );
+    if (!target) {
+      return route.fulfill({ status: 404, json: { error: 'project_not_found', message: 'not found' } });
+    }
+    projectsStore.setActive(target.name);
+    return json({ active: { ...target, active: true } });
+  }
+  if (isPath(path, '/api/v1/projects')) {
+    const list = projectsStore.list();
+    return json({ projects: list, total: list.length });
+  }
 
   // Anything else under /api/* — the smoke tier hasn't pinned a
   // shape, so empty-object is enough for rendering.
