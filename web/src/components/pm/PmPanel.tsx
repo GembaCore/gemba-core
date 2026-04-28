@@ -27,7 +27,7 @@
 
 import { useEffect, useRef } from 'react';
 import { CheckCircle2, ChevronLeft, ChevronRight, MessageSquare, X } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useHotkey } from '@/hotkeys';
 import { cn } from '@/lib/utils';
 import { totalCost, usePmPanel } from './PmPanelContext';
@@ -196,6 +196,7 @@ function QuickActionRow(): JSX.Element | null {
   // shape — the simpler path is to read location.pathname under
   // a defensive default when absent.
   const pathname = useSafePathname();
+  const navigate = useNavigate();
   const actions = quickActionsForPath(pathname);
   if (actions.length === 0) return null;
 
@@ -214,7 +215,19 @@ function QuickActionRow(): JSX.Element | null {
           action={a}
           variety={prefix}
           personaName={personaName}
-          onClick={() => panel.openAndFocus(a.prompt)}
+          onClick={() => {
+            // gm-szz0.1: actions with routeTo navigate to the
+            // canonical surface for that verb instead of seeding
+            // the panel input (e.g. recommend-order → /sprints).
+            // The panel itself stays in whatever open/closed state
+            // the operator chose so navigation never steals focus
+            // from a partial draft.
+            if (a.routeTo) {
+              navigate(a.routeTo);
+              return;
+            }
+            panel.openAndFocus(a.prompt);
+          }}
         />
       ))}
     </div>

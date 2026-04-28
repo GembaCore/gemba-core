@@ -38,6 +38,14 @@ export interface QuickAction {
   // click. Empty string is fine — some actions are pure "open a
   // fresh prompt with the label as a placeholder" affordances.
   prompt: string;
+  // routeTo (gm-szz0.1) — when set, clicking the action navigates
+  // to this path instead of seeding the panel input. Used for
+  // verbs whose canonical surface is a dedicated page (e.g.
+  // 'recommend-order' → /sprints, the PM epic_order drawer).
+  // The PM panel stays open so the operator can drop into the
+  // surface without losing conversation; the consuming view
+  // mounts the relevant skill UI itself.
+  routeTo?: string;
 }
 
 // QuickActionContext drives the variety-aware label prefix. The PM
@@ -58,7 +66,17 @@ export function quickActionsForPath(pathname: string): QuickAction[] {
     // entry mirrors the PM persona's 'epic_order' skill so an
     // operator one-click away from a recommendation gets there.
     return [
-      { id: 'recommend-order', label: 'Recommend order', prompt: 'Recommend an order for the candidate epics.' },
+      // gm-szz0.1: recommend-order routes to /sprints (where the
+      // PM epic_order drawer lives) instead of seeding a prompt.
+      // The prompt seed is retained so a future "stage as draft on
+      // /sprints" path has a sensible default; the PM panel honours
+      // routeTo first.
+      {
+        id: 'recommend-order',
+        label: 'Recommend order',
+        prompt: 'Recommend an order for the candidate epics.',
+        routeTo: '/sprints',
+      },
       { id: 'what-remains', label: 'What remains', prompt: 'What work remains in scope for the active sprint?' },
       { id: 'trim-to-budget', label: 'Trim to budget', prompt: 'Trim the candidate set to the current sprint budget.' },
     ];
