@@ -11,7 +11,7 @@
 // stream incremental graph patches — at 1000 nodes the recompute is
 // well under a frame budget thanks to the O(V+E) analysis passes.
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDown,
@@ -145,6 +145,26 @@ export function GraphPage() {
     () => layoutLayered(graph.nodeIds.map((id) => ({ id })), graph.structuralEdges),
     [graph.nodeIds, graph.structuralEdges]
   );
+
+  // ReactFlow's `fitView` prop only fits once on mount. When the
+  // initial render happens during the items-loading phase, ReactFlow
+  // mounts with nodes=[] and parks its camera at the empty origin —
+  // when items finally arrive the new nodes can land outside the
+  // viewport and the canvas looks blank. Re-fit when the node set
+  // becomes non-empty so the camera always frames real content.
+  const lastFitCount = useRef(0);
+  useEffect(() => {
+    const count = graph.nodeIds.length;
+    if (count > 0 && count !== lastFitCount.current) {
+      lastFitCount.current = count;
+      // Defer to the next paint so React Flow has translated the new
+      // nodes into its internal store before we ask for a fit.
+      const id = requestAnimationFrame(() => {
+        instanceRef.current?.fitView();
+      });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [graph.nodeIds]);
 
   // gm-e12.20: traversal indices. successors/predecessors are derived
   // once per render from the structural-edge slice (the same set the
@@ -411,6 +431,7 @@ export function GraphPage() {
             edges={edges}
             nodeTypes={NODE_TYPES}
             fitView
+            fitViewOptions={{ padding: 0.1 }}
             nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable
@@ -441,7 +462,14 @@ export function GraphPage() {
             // minimap gives the operator something to navigate by
             // without paying for a full layout pass per render.
             panOnScroll
-            minZoom={0.1}
+            // A real workspace's layered layout (200–500 nodes) sprawls
+            // far wider than 1.0×: without dropping minZoom below the
+            // React Flow default (0.5) — and below the prior 0.1 that
+            // still wasn't enough at 320 nodes — fitView clamps and
+            // ends up framing a slice that doesn't include most nodes.
+            // The operator-perceived symptom is "graph is blank"; the
+            // actual symptom is "graph is way off-camera."
+            minZoom={0.02}
             maxZoom={2}
           >
             <Background variant={BackgroundVariant.Dots} gap={16} size={1} />

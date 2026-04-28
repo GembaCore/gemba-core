@@ -17,17 +17,41 @@ import type { WorkItem } from '@/types/core.gen';
 // stub. The stub renders one DOM marker per node + invokes the
 // onNodeClick prop when our test code calls it; everything else
 // (Background, Controls, MiniMap, Panel) becomes a passthrough.
+// fitViewSpy is mutated by the stub's onInit callback so tests can
+// assert the late-arrival fitView path (the bug behind "graph view
+// appears blank" — ReactFlow's `fitView` prop only fits once on mount,
+// so when items arrive after first render the camera was parked on
+// nodes=[]. GraphPage now calls fitView() on the captured instance
+// when the node count first becomes non-zero).
+const fitViewSpy = vi.fn();
+
 vi.mock('reactflow', async () => {
   type StubNode = { id: string; data?: { id: string; title: string } };
+  type StubInstance = {
+    fitView: () => void;
+    setCenter: (x: number, y: number, opts?: unknown) => void;
+    getNode: (id: string) => StubNode | undefined;
+  };
   type Props = {
     nodes: StubNode[];
     edges: { id: string; source: string; target: string }[];
     onNodeClick?: (e: unknown, node: StubNode) => void;
+    onInit?: (instance: StubInstance) => void;
     children?: ReactNode;
   };
-  function ReactFlow({ nodes, edges, onNodeClick, children }: Props) {
+  function ReactFlow({ nodes, edges, onNodeClick, onInit, children }: Props) {
+    const ref = (el: HTMLDivElement | null) => {
+      if (el && onInit) {
+        const inst: StubInstance = {
+          fitView: () => fitViewSpy(),
+          setCenter: () => undefined,
+          getNode: (id: string) => nodes.find((n) => n.id === id),
+        };
+        onInit(inst);
+      }
+    };
     return (
-      <div data-testid="rf-stub">
+      <div data-testid="rf-stub" ref={ref}>
         <div data-testid="rf-stub-node-count">{nodes.length}</div>
         <div data-testid="rf-stub-edge-count">{edges.length}</div>
         {nodes.map((n) => (
@@ -129,6 +153,25 @@ describe('GraphPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     fetchSpy.mockReset();
+    fitViewSpy.mockReset();
+  });
+
+  // Regression: with `fitView` declared as a ReactFlow prop only, the
+  // camera fits once on mount. When items load AFTER mount, ReactFlow
+  // mounted with nodes=[] and the camera parked on the empty origin —
+  // when 320 nodes finally arrived they rendered offscreen and the
+  // canvas looked blank. GraphPage now imperatively calls fitView()
+  // when the node count first becomes non-zero.
+  it('re-fits the camera when work items load after mount', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      jsonResp({ items: [wi('a'), wi('b'), wi('c')], total: 3 })
+    );
+    render(<GraphPage />, { wrapper: wrapper() });
+    await waitFor(() =>
+      expect(screen.getByTestId('rf-stub-node-count').textContent).toBe('3')
+    );
+    // requestAnimationFrame is jsdom-stubbed via setTimeout; flush.
+    await waitFor(() => expect(fitViewSpy).toHaveBeenCalled());
   });
 
   it('renders an empty-state when the WorkPlane has nothing to draw', async () => {
