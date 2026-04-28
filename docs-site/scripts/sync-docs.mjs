@@ -86,7 +86,20 @@ async function copyAsset(rel) {
 async function writeLandingPage() {
   const readme = await fs.readFile(path.join(repoRoot, 'README.md'), 'utf8');
   // Use the first ~60 lines of the README as the landing-page body.
-  const body = readme.split('\n').slice(0, 80).join('\n');
+  // Strip embedded images + the badge link-blob: README hosts them at
+  // repo-root paths (branding/banner/...), but Astro's vite resolver
+  // looks relative to the docs-site content directory and 404s the
+  // build. Drop them rather than copy the assets — the Starlight
+  // hero block above already provides the visual identity.
+  // Patterns:
+  //   ![alt](path)              raw image
+  //   [![alt](path)](url)       linked image (banner / badges)
+  const body = readme
+    .split('\n')
+    .slice(0, 80)
+    .join('\n')
+    .replace(/\[!\[[^\]]*\]\([^)]+\)\]\([^)]+\)/g, '')
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, '');
   const out = `---
 title: gemba
 description: Single-binary work-tracker + agent orchestration UI.

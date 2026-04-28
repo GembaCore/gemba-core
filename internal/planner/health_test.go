@@ -19,8 +19,13 @@ import (
 func TestConceptDrift_IdenticalVectorsZero(t *testing.T) {
 	v := map[ConceptTag]float64{"glob": 0.7, "planner": 0.4}
 	got := ConceptDrift(v, v)
-	if got != 0 {
-		t.Errorf("ConceptDrift(v, v) = %v; want 0", got)
+	// ConceptDrift normalizes then computes 1 - dot(v̂, v̂); the
+	// normalization step introduces float64 roundoff (one ULP at
+	// scale 1.0 = ~2.22e-16), so a strict `!= 0` is mis-calibrated.
+	// Allow up to 1e-9 — well within "essentially zero" while still
+	// catching any real regression to non-trivial drift.
+	if got > 1e-9 {
+		t.Errorf("ConceptDrift(v, v) = %v; want ≈ 0 (within 1e-9)", got)
 	}
 }
 
