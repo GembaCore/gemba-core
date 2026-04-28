@@ -72,12 +72,12 @@ Top-to-bottom, in order:
 2. **Gemba walks**
 3. **Grid**
 4. **Escalations**
-5. **Setup** — single-surface admin (adaptors / personas / packs / agents / project config / bootstrap; see §5.20)
+5. **Setup** — single-surface admin (adaptors / personas / packs / agents / project config / import from advanced source; see §5.20)
 6. **Settings**
 
 > **Sidebar collapse rationale (ratified 2026-04-26):** Two prior items collapse into the list above.
 > - **Board ⇐ Backlog.** Both are WorkItem views over the same data; Backlog was a state-filtered list. Board now exposes a kanban / list view-mode toggle (§4.10) plus a "Backlog & Next Up" preset (§4.11). Standalone `/backlog` route persists as a deep-link redirect to `/board?view=list&preset=backlog`.
-> - **Setup ⇐ Capability browser + Agents + Personas + Packs + Project config + Bootstrap.** All six are configuration surfaces with low daily-traffic. They become sections within `/setup` using the single-scroll + sticky section nav pattern already specified for Project config (§5.16). Old routes deep-link to the matching section.
+> - **Setup ⇐ Capability browser + Agents + Personas + Packs + Project config + Import from advanced source.** All six are configuration surfaces with low daily-traffic. They become sections within `/setup` using the single-scroll + sticky section nav pattern already specified for Project config (§5.16). Old routes deep-link to the matching section.
 
 Secondary surfaces (`/plan`, `/graph`, `/insights`, `/qa/health`, `/qa/gates`, `/checkpoints`) are NOT in the sidebar. They're reachable via:
 - **Cmd-K** (primary: typing the surface name jumps to it)
@@ -276,9 +276,9 @@ Swimlane switcher (top-right of board): by parent-epic / by parallel-group / by 
 
 **PROPOSED copy:**
 > **No Epics yet.**
-> Import from Jira or Beads, analyze an existing repo, or start fresh with the Onboarder.
+> Start a new project with the Onboarder, or import from an existing source.
 >
-> [Start bootstrap →]
+> [New project →] [Import from advanced source →]
 
 ### 4.7 Loading state
 
@@ -460,14 +460,15 @@ Similar right-side drawer. Tabs: **Summary / Description / DoD / Activity / Comm
 - **Restore UX:** confirm-dialog with typing-guard
 - **Typing-guard copy:** "Type `restore` to confirm. This will roll back every git repo, the Beads database, live session state, sidecar, and artifacts to this checkpoint. Pushed commits cannot be un-pushed."
 
-### 5.15 Bootstrap wizard — Setup section (was: `/bootstrap`)
+### 5.15 Import from advanced source — Setup section (was: `/bootstrap`)
 
-> **Folded into Setup (ratified 2026-04-26).** Renders as the "Bootstrap" section inside `/setup` (§5.20). The legacy `/bootstrap` route is a deep-link to `/setup#bootstrap`. The wizard remains a guided multi-step flow inside that section — folding it into Setup did not flatten the steps.
+> **Superseded by `docs/design/newproject.md` (ratified 2026-04-28).** The primary project-creation path is now the conversational `/new` route, reachable via the top-bar `+` affordance or via `gemba serve` cold-start. The four-source Bootstrap wizard has been retired as the primary entry point. The advanced import paths (Jira / Beads workspace / Source-code repo) remain accessible from Setup as the "Import from advanced source" section. The legacy `/bootstrap` route redirects to `/setup#import`. The "Fresh" source tile is removed — that use case is handled by `/new`.
 
+**Import from advanced source** (Setup section `#import`):
 
-Steps (4): **Source → Analysis → Plan review → Ratify**
+Steps (3): **Source → Analysis → Plan review → Ratify**
 
-- **Source tiles:** Jira / Beads / Source-code / Fresh (each with icon + 1-line description)
+- **Source tiles:** Jira / Beads workspace / Source-code repo (each with icon + 1-line description). "Fresh" source tile removed — use the `/new` conversational flow instead.
 - **Analysis:** loading state with live progress ("Scanning 247 issues…" / "Analyzing module structure…" / "Generating epic decomposition…")
 - **Plan review:** side-by-side — generated plan on left, consistency report on right. Report format: **summary-then-details** (top-line PASS/WARN/FAIL with drill-down per finding)
 - **Ratify:** nonce-confirmed commit of the project config
@@ -520,7 +521,7 @@ Workspace.kind-specific affordances (from template):
 | `#personas` | **Personas** | §5.5 Persona roster | grid of persona cards + TOML editor modal |
 | `#packs` | **Packs** | §5.17 Pack browser | marketplace-grid + install UX |
 | `#project-config` | **Project config** | §5.16 Project config | values / guardrails / goals / mode / subscriptions / workspace repos / advanced (the inner sticky-nav from §5.16 collapses into a single nested accordion within this Setup section) |
-| `#bootstrap` | **Bootstrap** | §5.15 Bootstrap wizard | 4-step wizard renders inline in this section; opening `/setup#bootstrap` from cold start auto-jumps to step 1 |
+| `#import` | **Import from advanced source** | §5.15 Import from advanced source | 3-step import wizard (Jira / Beads workspace / Source-code repo) renders inline in this section; `/bootstrap` redirects here. New project creation uses `/new` instead. |
 | `#workspace` | **Workspace + repos** | (new) | repository registry, surface allow-lists (gm-v8vr), workspace mode |
 
 **Behavior:**
@@ -554,7 +555,7 @@ Retakes lane, session history, lease dashboard: v1.1 unless a Gemba walk promote
 
 ### 6.1 Modal vs drawer vs page
 
-- **Modal** = destructive confirmations (restore checkpoint, force-close convoy, hard-override gate), nonce-gated persona output-apply, bootstrap wizard step boundaries, value-edit forms, TOML editor on persona config.
+- **Modal** = destructive confirmations (restore checkpoint, force-close convoy, hard-override gate), nonce-gated persona output-apply, import wizard step boundaries (§5.15), new project ratification confirm (§5.20 `/new`), value-edit forms, TOML editor on persona config.
 - **Drawer** = Epic detail, WorkItem detail, persona config read-only view, quick persona-consult, Gemba walk agenda-item detail. Drawers are dismissible with Escape and overlay (don't navigate).
 - **Page** = top-level navigation surfaces (Board / Backlog / Grid / Gemba walks / Escalations / Project Config / Settings / all deep-linked surfaces). Changing pages changes the URL and updates history.
 
@@ -580,7 +581,7 @@ Destructive actions ALWAYS require typing-guard, regardless of mode: restore che
 
 - **Tone:** welcoming (friendly / illustrative aesthetic; not instructive-bossy, not quirky-cringe)
 - Pattern: illustration (small, playful) + one-sentence empty message + single primary CTA
-- **Primary CTA rule: PROPOSED** — always offer the next logical action, never a dead-end. "No Epics" → "Start bootstrap". "No escalations" → "See the Board" (because no escalation is good news).
+- **Primary CTA rule: PROPOSED** — always offer the next logical action, never a dead-end. "No Epics" → "New project" (primary) / "Import from advanced source" (secondary). "No escalations" → "See the Board" (because no escalation is good news).
 
 ### 6.5 Error states
 
