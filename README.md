@@ -67,31 +67,7 @@ scheduling or isolation semantics.
 
 ## 🧱 Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      Gemba SPA (React/TS)                        │
-│        no role names · no pack vocabulary · capability-driven    │
-└─────────────────────────────────────────────────────────────────┘
-                                ▲
-                  HTTP / SSE — capability-negotiated
-                                ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                     Gemba core (Go binary)                       │
-│   types: WorkItem · AgentRef · Relationship · Evidence · DoD     │
-│          Sprint · TokenBudget · CostMeter · EscalationRequest    │
-└─────────────────────────────────────────────────────────────────┘
-        ▲                                              ▲
-        │   WorkPlaneAdaptor                           │   OrchestrationPlaneAdaptor
-        │   REQUIRED                                   │   OPTIONAL
-        │   transport: api | jsonl | mcp               │   transport: api | jsonl | mcp
-        ▼                                              ▼
-  ┌───────────────────────┐                   ┌───────────────────────────┐
-  │  out-of-the-box: Beads│                   │  out-of-the-box: Native   │
-  │  forcing fn:   Jira   │                   │  optional: Gas Town,      │
-  │  (Linear, GH, …)      │                   │  LangGraph, Gas City,     │
-  │                       │                   │  OpenHands, CrewAI, …     │
-  └───────────────────────┘                   └───────────────────────────┘
-```
+![gemba system architecture — SPA over HTTP/SSE → Go core → required WorkPlaneAdaptor + optional OrchestrationPlaneAdaptor](docs/img/architecture.png)
 
 | Plane | Required | Default | What it gives you |
 |---|---|---|---|
