@@ -11,8 +11,8 @@ import (
 )
 
 // Decision is one ratified design decision surfaced in the log. The
-// shape mirrors the DD-<n> citation format used across gemba_prime's
-// domain doc and is intentionally flat — the log is narrative
+// shape mirrors the DD-<n> citation format used in workspace design
+// docs and is intentionally flat — the log is narrative
 // scaffolding, not a typed audit record.
 type Decision struct {
 	ID         string // e.g. "DD-24"

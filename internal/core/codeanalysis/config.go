@@ -7,13 +7,13 @@
 //	default_backend = "gitnexus"
 //
 //	[[repos]]
-//	name = "gemba"
+//	name = "primary"
 //	path = "./"
 //	reindex_policy = "post_merge"
 //
 //	[[repos]]
-//	name = "gemba_prime"
-//	path = "../gemba_prime"
+//	name = "sibling"
+//	path = "../sibling-project"
 //	backend = "gitnexus"     # optional, defaults to default_backend
 //
 // The design doc shows an alternate `[repos.<name>]` table form;

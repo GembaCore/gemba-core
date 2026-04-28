@@ -76,7 +76,7 @@ This is the load-bearing finding.
 
 ## 6. Feature gap vs Phase 12 — see fit-gap matrix
 
-Summary (full matrix in `/Users/mikebengtson/gt/gemba_prime/crew/mike/foolery-fit-gap.md`):
+Summary (full matrix in `crew/mike/foolery-fit-gap.md`):
 
 - **Green (already shipped, ~7/17):** App shell, WorkItem grid, WorkItem detail,
   AgentGroup board, creation flow, cmdk command palette, bulk actions.
@@ -117,7 +117,7 @@ third memory-manager backend", linking this spike and the `foolery-extension-pla
   not a dependency.
 
 Full architectural integration spec for both paths: see
-`/Users/mikebengtson/gt/gemba_prime/crew/mike/foolery-extension-plan.md`.
+`crew/mike/foolery-extension-plan.md`.
 
 ## Evidence index
 

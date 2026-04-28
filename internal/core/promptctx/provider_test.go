@@ -189,7 +189,7 @@ func TestCacheInvokeDistinguishesOptions(t *testing.T) {
 	}
 	_, err = c.Invoke(context.Background(), Config{
 		ID:      ProviderBeadDatabase,
-		Options: map[string]any{"scope": "gemba_prime"},
+		Options: map[string]any{"scope": "sibling"},
 	})
 	if err != nil {
 		t.Fatalf("invoke b: %v", err)

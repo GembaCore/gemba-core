@@ -9,8 +9,8 @@
 ## Naming
 
 - **Gemba** (noun, the view) — the main dashboard / home screen. Epic-granular
-  rendering + escalation dots + budget gauge + PM panel + workspace-repo toggle
-  + active-guardrail banner, all at once. "Open the Gemba", "on your Gemba".
+  rendering + escalation dots + budget gauge + PM panel + active-guardrail
+  banner, all at once. "Open the Gemba", "on your Gemba".
 - **Gemba walk** (noun, the action) — the interactive multi-topic decisioning
   conversation between operator and PM; aggregates escalations from all workers
   into a single agenda; resumable; auditable. "Start a Gemba walk", "wrap up

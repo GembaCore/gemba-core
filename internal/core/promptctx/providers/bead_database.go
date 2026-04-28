@@ -16,7 +16,7 @@ import (
 // full WorkItem tree, only the summary surface a specialist reads to
 // answer their question.
 type BeadSnapshot struct {
-	Repo         string // repo/db identifier ("gemba", "gemba_prime")
+	Repo         string // repo/db identifier (e.g. "gemba")
 	OpenCount    int
 	InProgress   int
 	Blocked      int

@@ -4,7 +4,7 @@
 **Author:** mike (captured by polecat jasper)
 **Date:** 2026-04-22 (ratification pending)
 **Parents:** `gm-root` (Gemba EPIC), `gm-eiw` (Context providers)
-**Related:** `gm-371` (bootstrap), `gm-gq2` (workspace-repo), `gm-57b` (Personas)
+**Related:** `gm-371` (bootstrap), `gm-57b` (Personas)
 **Resolves DD:** DD-33
 
 ## Summary
@@ -119,12 +119,12 @@ Per-workspace in `.gemba/code_analysis.toml`:
 ```toml
 backend = "gitnexus"
 
-[repos.gemba]
+[repos.primary]
 path = "./"
 reindex_policy = "post_merge"
 
-[repos.gemba_prime]
-path = "../gemba_prime"
+[repos.sibling]
+path = "../sibling-project"
 reindex_policy = "post_merge"
 
 [backend.gitnexus]
@@ -132,9 +132,9 @@ embeddings = false
 max_repo_size_mb = 500
 ```
 
-Multiple repos per workspace is first-class — it composes with the
-workspace-repo model (`gm-gq2`): a workspace typically has both the workspace
-repo and the output repo indexed.
+Multiple repos per workspace is first-class — a workspace can register any
+number of repos (the primary project plus optional siblings, dependencies, or
+adjacent codebases) and have them all indexed under one analysis backend.
 
 ## Integration with other primitives
 

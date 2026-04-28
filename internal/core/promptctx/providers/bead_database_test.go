@@ -59,12 +59,12 @@ func TestBeadDatabaseProviderAcceptsAnySliceScope(t *testing.T) {
 	src := &fakeBeadSrc{}
 	p, _ := NewBeadDatabaseProvider(src, nil, time.Second)
 	_, err := p.Refresh(context.Background(), map[string]any{
-		"scope": []any{"gemba", "gemba_prime"},
+		"scope": []any{"primary", "sibling"},
 	})
 	if err != nil {
 		t.Fatalf("refresh: %v", err)
 	}
-	if len(src.calls) != 1 || len(src.calls[0]) != 2 || src.calls[0][1] != "gemba_prime" {
+	if len(src.calls) != 1 || len(src.calls[0]) != 2 || src.calls[0][1] != "sibling" {
 		t.Errorf("scope []any not honored: %v", src.calls)
 	}
 }

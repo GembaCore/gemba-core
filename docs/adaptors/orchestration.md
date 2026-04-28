@@ -9,8 +9,7 @@ LangGraph, CrewAI, OpenHands, Devin, Factory, Gas City, etc. use the
 same contract. This document is the authoring reference for anyone
 implementing that contract in Go.
 
-It matches `core/orchestration.go` and the design in
-`gemba_prime/crew/mike/domain.md` §3.
+It matches `core/orchestration.go`.
 
 ---
 
@@ -414,4 +413,3 @@ guide (gm-e14.5).
   (gm-e3.2).
 - `testing/` — importable conformance harness (gm-2am).
 - `internal/adapter/noop/` — minimal adaptor that passes the harness.
-- `gemba_prime/crew/mike/domain.md` §3 — full design.
