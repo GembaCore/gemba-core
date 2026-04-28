@@ -31,7 +31,7 @@ set -euo pipefail
 PORT="${PORT:-17666}"
 GEMBA_BIN="${GEMBA_BIN:-./bin/gemba}"
 BEADS_DIR="${BEADS_DIR:-$(pwd)}"
-ORCH_CONFIG="${ORCH_CONFIG:-./fixtures/gastown.json}"
+ORCH_CONFIG="${ORCH_CONFIG:-./testing/fixtures/gastown.json}"
 SLING_TIMEOUT="${SLING_TIMEOUT:-300}"
 SHADER_INTEROP_SLING="${SHADER_INTEROP_SLING:-0}"
 
