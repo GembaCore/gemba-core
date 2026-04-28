@@ -322,15 +322,15 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
   });
 
-  // ui-spec §4.4 swimlane switcher. The select lives at the top of the
-  // Epic view; changing it rewrites ?swimlane=… and the EpicView
-  // re-groups. by-label MUST surface a swimlane per distinct label,
-  // not per parent-epic.
-  it('swimlane switcher re-groups epics by label when selected', async () => {
+  // gm-uekk: scope picker replaces the old swimlane-switcher.
+  // Selecting a scope in the picker narrows the board to that
+  // scope's lineage; the by-parent-epic swimlanes for the rest
+  // disappear.
+  it('scope picker narrows the kanban to the selected lineage', async () => {
     const data: WorkItem[] = [
-      { ...epic('e1'), labels: ['risk:high'] },
-      { ...epic('e2'), labels: ['risk:high', 'milestone:m1'] },
-      { ...epic('e3'), labels: ['milestone:m1'] },
+      epic('e1'),
+      epic('e2'),
+      epic('e3'),
     ];
     fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ items: data, total: data.length }), {
@@ -341,43 +341,58 @@ describe('BoardPage', () => {
     render(wrap(<BoardPage />));
     await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
 
-    // Default mode: by-parent-epic. Three top-level epics → three
-    // swimlanes keyed by epic id.
+    // Default scope=All: three swimlanes (one per root).
     expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
     expect(screen.getByTestId('board-epic-swimlane-e2')).toBeTruthy();
     expect(screen.getByTestId('board-epic-swimlane-e3')).toBeTruthy();
 
-    // Switch to by-label.
-    const switcher = screen.getByTestId('swimlane-switcher').querySelector('select')!;
-    fireEvent.change(switcher, { target: { value: 'by-label' } });
+    // Open the picker, click the e1 scope.
+    fireEvent.click(screen.getByTestId('board-scope-trigger'));
     await waitFor(() =>
-      expect(screen.getByTestId('board-epic-swimlane-milestone:m1')).toBeTruthy()
+      expect(screen.getByTestId('board-scope-option-e1')).toBeTruthy()
     );
-    expect(screen.getByTestId('board-epic-swimlane-risk:high')).toBeTruthy();
-    // by-parent-epic swimlanes (keyed by epic id) are gone.
-    expect(screen.queryByTestId('board-epic-swimlane-e1')).toBeNull();
+    fireEvent.click(screen.getByTestId('board-scope-option-e1'));
 
-    // Switch to none — single synthetic swimlane.
-    fireEvent.change(switcher, { target: { value: 'none' } });
     await waitFor(() =>
-      expect(screen.getByTestId('board-epic-swimlane-__all__')).toBeTruthy()
+      expect(screen.queryByTestId('board-epic-swimlane-e2')).toBeNull()
     );
+    expect(screen.queryByTestId('board-epic-swimlane-e3')).toBeNull();
+    // e1's lineage swimlane is still mounted.
+    expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
   });
 
-  // ?swimlane=by-label deep-link survives reload by reading from the
-  // URL on first render.
-  it('?swimlane=by-label boots straight into the by-label view', async () => {
-    const data: WorkItem[] = [{ ...epic('e1'), labels: ['risk:high'] }];
+  // ?scope=<id> deep-links narrow the kanban on first paint.
+  it('?scope=<id> boots scoped to that lineage', async () => {
+    const data: WorkItem[] = [epic('e1'), epic('e2')];
     fetchSpy.mockResolvedValueOnce(
       new Response(JSON.stringify({ items: data, total: data.length }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })
     );
-    render(wrap(<BoardPage />, '/board?swimlane=by-label'));
+    render(wrap(<BoardPage />, '/board?scope=e1'));
     await waitFor(() =>
-      expect(screen.getByTestId('board-epic-swimlane-risk:high')).toBeTruthy()
+      expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy()
     );
+    expect(screen.queryByTestId('board-epic-swimlane-e2')).toBeNull();
+  });
+
+  // ?swimlane=by-label is a legacy URL; the migration step in
+  // workItemViews.ts strips it on first paint so deep-links
+  // continue to render (without the by-label grouping that no
+  // longer exists).
+  it('legacy ?swimlane= param is stripped on load', async () => {
+    const data: WorkItem[] = [epic('e1')];
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify({ items: data, total: data.length }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    render(wrap(<BoardPage />, '/board?swimlane=by-label'));
+    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+    // Default scope=All means the e1 swimlane renders.
+    expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
   });
 
   it('shows error state with a retry button that re-fetches', async () => {

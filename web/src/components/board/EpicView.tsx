@@ -33,14 +33,10 @@ import { useAgents } from '@/hooks/useAgents';
 import { useStartSession } from '@/hooks/useSessions';
 import { EpicCard, type EpicChildCounts } from './EpicCard';
 import {
-  groupEpicsAsSingle,
-  groupEpicsByLabel,
   groupEpicsByRoot,
   ORPHAN_ROOT_ID,
-  SINGLE_LANE_ID,
   type EpicSwimlane,
 } from './epicHierarchy';
-import { DEFAULT_SWIMLANE_MODE, type SwimlaneMode } from './swimlaneMode';
 import { cellId, resolveRestage, shouldAutoStartSession } from './dragToRestage';
 
 // Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
@@ -58,26 +54,16 @@ const COLUMN_LABELS: Record<StateCategory, string> = {
 export interface EpicViewProps {
   items: WorkItem[];
   onSelectEpic: (id: string) => void;
-  // mode selects how the Epic set is partitioned into rows. Defaults
-  // to by-parent-epic so callers that haven't migrated yet keep the
-  // old behaviour.
-  mode?: SwimlaneMode;
 }
 
-export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: EpicViewProps) {
+export function EpicView({ items, onSelectEpic }: EpicViewProps) {
+  // gm-uekk: scope filtering happens in the page; the view always
+  // groups by-parent-epic. When scope is set, items is already
+  // narrowed and naturally collapses to a single swimlane.
   const swimlanes = useMemo(() => {
-    switch (mode) {
-      case 'by-label':
-        return groupEpicsByLabel(items);
-      case 'none':
-        return groupEpicsAsSingle(items);
-      case 'by-parent-epic':
-      default:
-        return groupEpicsByRoot(items);
-    }
-  }, [items, mode]);
+    return groupEpicsByRoot(items);
+  }, [items]);
   const childCountsByEpic = useMemo(() => buildChildCounts(items), [items]);
-  const rootEpics = useMemo(() => findRootEpics(items), [items]);
 
   // PointerSensor requires a 4px move before starting a drag so a plain
   // double-click doesn't accidentally begin a drag gesture. KeyboardSensor
@@ -150,7 +136,6 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
         data-testid="board-epic"
         className="flex h-full flex-col overflow-y-auto"
       >
-        <RootEpicBanner roots={rootEpics} onSelectEpic={onSelectEpic} />
         <ColumnHeader />
         <div className="flex flex-col">
           {swimlanes.map((s) => (
@@ -164,56 +149,6 @@ export function EpicView({ items, onSelectEpic, mode = DEFAULT_SWIMLANE_MODE }: 
         </div>
       </div>
     </DndContext>
-  );
-}
-
-// findRootEpics returns Epics that have no parent_child edge pointing to
-// them from another Epic — i.e., the top of the hierarchy. Used for the
-// board's top banner so the operator sees product-level context once,
-// not repeated in every swimlane gutter.
-function findRootEpics(items: WorkItem[]): WorkItem[] {
-  const epics = items.filter((i) => i.kind === 'epic');
-  const epicIDs = new Set(epics.map((e) => e.id));
-  return epics.filter((e) => {
-    return !(e.relationships ?? []).some(
-      (r) => r.kind === 'parent_child' && r.to === e.id && epicIDs.has(r.from)
-    );
-  });
-}
-
-interface RootEpicBannerProps {
-  roots: WorkItem[];
-  onSelectEpic: (id: string) => void;
-}
-
-// RootEpicBanner renders the board's top-level roots as a thin strip so
-// operators keep product-level context without the per-swimlane gutter
-// eating horizontal space.
-function RootEpicBanner({ roots, onSelectEpic }: RootEpicBannerProps) {
-  if (roots.length === 0) return null;
-  return (
-    <div
-      data-testid="board-root-epic-banner"
-      className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
-    >
-      {roots.map((r) => (
-        <button
-          key={r.id}
-          type="button"
-          data-testid={`board-root-epic-${r.id}`}
-          onClick={() => onSelectEpic(r.id)}
-          className="inline-flex items-baseline gap-2 text-left hover:underline focus:outline-none focus:ring-1 focus:ring-sky-500 rounded"
-        >
-          <span className="font-mono text-[11px] text-neutral-500">{r.id}</span>
-          <span className="font-semibold uppercase tracking-wide text-neutral-700 dark:text-neutral-300">
-            {r.title}
-          </span>
-          <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300">
-            {r.status}
-          </span>
-        </button>
-      ))}
-    </div>
   );
 }
 
@@ -245,10 +180,9 @@ interface SwimlaneRowProps {
 
 function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowProps) {
   const isOrphan = swimlane.root.id === ORPHAN_ROOT_ID;
-  // The "none" mode returns a single synthetic swimlane labelled
-  // "All epics" — suppress the row header so the layout reads as a
-  // flat board rather than an awkwardly-labelled single lane.
-  const isSingleLane = swimlane.root.id === SINGLE_LANE_ID;
+  // gm-uekk: scope-driven filtering may leave only one swimlane —
+  // suppress its label since it would just repeat the scope pill.
+  const isSingleLane = false;
   // Bucket members by state so each column renders only its slice.
   const byState: Record<StateCategory, WorkItem[]> = {
     backlog: [],

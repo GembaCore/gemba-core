@@ -26,6 +26,7 @@ import {
   type ViewContext,
   type WorkItemView,
 } from '@/lib/workItemViews';
+import { lineageIDs, SCOPE_ALL } from '@/components/board/scope';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 
@@ -62,6 +63,9 @@ export interface BoardListViewProps {
   // entry point. Off by default; the toolbar toggle in BoardPage flips
   // it. gm-uipx.17.
   power?: boolean;
+  // gm-uekk: optional scope id (e.g. an epic) to narrow the rows to
+  // its lineage. SCOPE_ALL or undefined = no narrowing.
+  scope?: string;
 }
 
 export function BoardListView({
@@ -75,6 +79,7 @@ export function BoardListView({
   onSelectWorkItem,
   viewContext,
   power = false,
+  scope,
 }: BoardListViewProps) {
   const updateWorkItem = useUpdateWorkItem();
   const [importOpen, setImportOpen] = useState(false);
@@ -143,10 +148,19 @@ export function BoardListView({
 
   const filtered = useMemo(() => {
     let rows = applyView(data, view, viewContext ?? {});
+    // gm-uekk: scope filtering layers on top of the named view +
+    // search box. Lineage is computed against the unfiltered
+    // dataset so the scope's tree is reachable even when the named
+    // view would have hidden the scope's root from the underlying
+    // result.
+    if (scope && scope !== SCOPE_ALL) {
+      const lineage = lineageIDs(data, scope);
+      rows = rows.filter((it) => lineage.has(it.id));
+    }
     const needle = search.trim().toLowerCase();
     if (needle) rows = rows.filter((it) => it.title.toLowerCase().includes(needle));
     return rows;
-  }, [data, search, view, viewContext]);
+  }, [data, search, view, viewContext, scope]);
 
   const toggleArrayValue = <T extends string>(arr: T[], value: T): T[] =>
     arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];

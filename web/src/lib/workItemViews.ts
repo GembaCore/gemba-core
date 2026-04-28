@@ -280,6 +280,15 @@ export function migrateLegacyParams(params: URLSearchParams): boolean {
       changed = true;
     }
   }
+
+  // Pass 4 (gm-uekk) — drop the deprecated ?swimlane= param. Scope
+  // subsumes its narrowing semantics; by-parent-epic was the
+  // implicit default and the others (by-label / none) are no longer
+  // surfaced. Leftover bookmarks just lose the param without error.
+  if (params.has('swimlane')) {
+    params.delete('swimlane');
+    changed = true;
+  }
   return changed;
 }
 

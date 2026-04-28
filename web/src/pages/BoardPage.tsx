@@ -33,12 +33,8 @@ import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
 import { EpicDrawer } from '@/components/board/EpicDrawer';
 import { EpicView } from '@/components/board/EpicView';
 import { NewWorkItemDialog } from '@/components/board/NewWorkItemDialog';
-import {
-  DEFAULT_SWIMLANE_MODE,
-  parseSwimlaneMode,
-  SWIMLANE_MODES,
-  type SwimlaneMode,
-} from '@/components/board/swimlaneMode';
+import { ScopePicker } from '@/components/board/ScopePicker';
+import { SCOPE_ALL, filterByScope, type ScopeID } from '@/components/board/scope';
 import {
   findView,
   LAYOUT_PARAM,
@@ -272,15 +268,16 @@ export function BoardPage() {
     [params, setParams]
   );
 
-  // Swimlane partition (ui-spec §4.4). URL is the source of truth so
-  // the operator's selection survives reloads + deep-links and a future
-  // workspace-switcher can clobber it without a stale-state hazard.
-  const swimlane = parseSwimlaneMode(params.get('swimlane'));
-  const setSwimlane = useCallback(
-    (next: SwimlaneMode) => {
+  // Scope (gm-uekk). Replaces the old swimlane-mode dropdown + root-
+  // epic banner. URL-owned so deep-links survive reloads.
+  // ?scope=<id> narrows the board to that scope's lineage; absent or
+  // ?scope=all is the full project view.
+  const scope: ScopeID = params.get('scope') ?? SCOPE_ALL;
+  const setScope = useCallback(
+    (next: ScopeID) => {
       const p = new URLSearchParams(params);
-      if (next === DEFAULT_SWIMLANE_MODE) p.delete('swimlane');
-      else p.set('swimlane', next);
+      if (next === SCOPE_ALL) p.delete('scope');
+      else p.set('scope', next);
       setParams(p, { replace: true });
     },
     [params, setParams]
@@ -325,13 +322,20 @@ export function BoardPage() {
   if (layout !== 'list' && isError)
     return <ErrorState message={error?.message ?? 'Unknown error.'} onRetry={() => void refetch()} />;
 
+  // gm-uekk: filter the dataset to the active scope's lineage. The
+  // unfiltered `data` is still passed to ScopePicker so its dropdown
+  // can enumerate every root + child epic regardless of which one
+  // is currently selected.
+  const scopedData = data ? filterByScope(data, scope) : data;
+
   return (
     <>
       <BoardHeader
         layout={layout}
         onChangeLayout={setLayout}
-        swimlane={swimlane}
-        onChangeSwimlane={setSwimlane}
+        items={data ?? []}
+        scope={scope}
+        onChangeScope={setScope}
         view={view}
         onChangeView={setView}
         power={power}
@@ -349,13 +353,14 @@ export function BoardPage() {
           onChangeSearch={setListSearch}
           onSelectWorkItem={setOpenWorkItemId}
           power={power}
+          scope={scope}
         />
-      ) : !data || data.length === 0 ? (
+      ) : !scopedData || scopedData.length === 0 ? (
         <EmptyState onCreate={() => setNewItemOpen(true)} />
       ) : layout === 'epic' ? (
-        <EpicView items={data} onSelectEpic={openEpic} mode={swimlane} />
+        <EpicView items={scopedData} onSelectEpic={openEpic} />
       ) : (
-        <WorkItemBoard data={data} onSelectWorkItem={setOpenWorkItemId} />
+        <WorkItemBoard data={scopedData} onSelectWorkItem={setOpenWorkItemId} />
       )}
       <EpicDrawer
         openId={epicId ?? null}
@@ -372,14 +377,19 @@ export function BoardPage() {
   );
 }
 
-// BoardHeader holds the layout picker — three layout buttons (Epic
-// / Item / List), the swimlane partition selector (epic-only), and
-// the named-view chip rail (gm-uipx.18).
+// BoardHeader holds three controls along one row (gm-uekk):
+//   Scope picker (left)   — narrow to a root or child epic
+//   View chips (centre)   — Mine / Ready / Done · 7d filter
+//   Layout toggles (right) — Epic / Item / List shape
+//
+// The pre-uekk swimlane-mode dropdown and root-epic banner are gone;
+// scope subsumes them.
 interface BoardHeaderProps {
   layout: LayoutMode;
   onChangeLayout: (v: LayoutMode) => void;
-  swimlane: SwimlaneMode;
-  onChangeSwimlane: (s: SwimlaneMode) => void;
+  items: WorkItem[];
+  scope: ScopeID;
+  onChangeScope: (s: ScopeID) => void;
   view: WorkItemView | null;
   onChangeView: (id: string | null) => void;
   power: boolean;
@@ -389,8 +399,9 @@ interface BoardHeaderProps {
 function BoardHeader({
   layout,
   onChangeLayout,
-  swimlane,
-  onChangeSwimlane,
+  items,
+  scope,
+  onChangeScope,
   view,
   onChangeView,
   power,
@@ -402,9 +413,7 @@ function BoardHeader({
       data-testid="board-view-toggle"
       className="flex flex-wrap items-center gap-3 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
     >
-      {layout === 'epic' ? (
-        <SwimlaneSwitcher value={swimlane} onChange={onChangeSwimlane} />
-      ) : null}
+      <ScopePicker items={items} value={scope} onChange={onChangeScope} />
       <ViewSwitcher value={view} onChange={onChangeView} />
       <div className="ml-auto flex items-center gap-1">
         <button
@@ -486,35 +495,6 @@ function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
         </button>
       ))}
     </div>
-  );
-}
-
-const SWIMLANE_LABELS: Record<SwimlaneMode, string> = {
-  'by-parent-epic': 'Parent epic',
-  'by-label': 'Label',
-  'none': 'None',
-};
-
-interface SwimlaneSwitcherProps {
-  value: SwimlaneMode;
-  onChange: (v: SwimlaneMode) => void;
-}
-function SwimlaneSwitcher({ value, onChange }: SwimlaneSwitcherProps) {
-  return (
-    <label className="inline-flex items-center gap-1" data-testid="swimlane-switcher">
-      <span className="text-neutral-500">Swimlane</span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as SwimlaneMode)}
-        className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 text-xs font-mono dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100"
-      >
-        {SWIMLANE_MODES.map((m) => (
-          <option key={m} value={m}>
-            {SWIMLANE_LABELS[m]}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 

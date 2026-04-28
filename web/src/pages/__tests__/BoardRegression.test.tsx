@@ -173,14 +173,17 @@ describe('Board regression — project-canonical fixture', () => {
     expect(screen.getByTestId('board-epic-swimlane-demo/pc-orphan')).toBeTruthy();
   });
 
-  it('renders the root-epic banner listing every top-level root', () => {
+  it('scope picker enumerates every top-level root in its dropdown', () => {
     const items = loadFixture();
     mountBoard(items);
-    const banner = screen.getByTestId('board-root-epic-banner');
-    expect(banner).toBeTruthy();
-    // Both top-level epics appear as banner chips.
-    expect(screen.getByTestId('board-root-epic-demo/pc-root')).toBeTruthy();
-    expect(screen.getByTestId('board-root-epic-demo/pc-orphan')).toBeTruthy();
+    // gm-uekk: the old root-epic banner is gone; root epics now
+    // surface as picker options. Open the picker and assert the
+    // canonical roots are present.
+    fireEvent.click(screen.getByTestId('board-scope-trigger'));
+    expect(screen.getByTestId('board-scope-option-demo/pc-root')).toBeTruthy();
+    expect(screen.getByTestId('board-scope-option-demo/pc-orphan')).toBeTruthy();
+    // "All" option always sits at the top.
+    expect(screen.getByTestId('board-scope-option-all')).toBeTruthy();
   });
 
   it('board-epic-cell-* counts match the fixture per-state-category breakdown', () => {
@@ -228,12 +231,17 @@ describe('Board regression — project-canonical fixture', () => {
     }
   });
 
-  it('opening an Epic from the banner navigates to its drawer route', async () => {
+  it('selecting a scope from the picker narrows the board to that lineage', async () => {
     const items = loadFixture();
     mountBoard(items);
-    fireEvent.click(screen.getByTestId('board-root-epic-demo/pc-orphan'));
-    await waitFor(() => expect(screen.getByTestId('epic-drawer-content')).toBeTruthy());
-    expect(screen.getByTestId('epic-drawer-id').textContent).toBe('demo/pc-orphan');
+    fireEvent.click(screen.getByTestId('board-scope-trigger'));
+    fireEvent.click(screen.getByTestId('board-scope-option-demo/pc-orphan'));
+    // The pc-orphan swimlane stays mounted; the pc-root swimlane
+    // gets filtered out.
+    await waitFor(() => {
+      expect(screen.getByTestId('board-epic-swimlane-demo/pc-orphan')).toBeTruthy();
+      expect(screen.queryByTestId('board-epic-swimlane-demo/pc-root')).toBeNull();
+    });
   });
 });
 
