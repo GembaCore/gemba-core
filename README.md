@@ -24,6 +24,8 @@
 
 Kanban like planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Start a new project with a guided conversation or import your existing work — see [Getting Started](#-getting-started) for a quick start. 
 
+In lean manufacturing, gemba (/ˈɡem.bə/ 現場) is "the actual place" — the factory floor, where real work happens. A gemba walk is when leadership observes the work directly, not through reports, and leaves actionable feedback as they go. Gemba the product is built around that metaphor. 
+
 ## Table of Contents
 
 - [🚀 About](#-about)
@@ -39,22 +41,34 @@ Kanban like planning, execution, and management of complex vibe coding projects 
 - [📜 License](#-license)
 
 ## 🚀 About
+
 Gemba was born out of frustration with the current state of vibe coding. 
 Massively parallel, "headless" agentic software development was technically
 possible but it was cumbersome. Before Gemba, a single app to manage the process using 
 concepts and terms familiar to developers did not exist - concepts like 
 milestones, epics, and Kanban planning to tie them together.  Systems like Beads made it possible 
-for agentic pipelines to discover, claim and report work progress but UI's 
-did not integrate this with execution - ordering, dispatching, and monitoring 
+for agentic pipelines to discover, claim and report work progress but these systems 
+were not functionally integrated with **execution - ordering, dispatching, and monitoring 
 the work. 
 
-Gemba creates a "side of the desk" experience for running vibe coding projects,
+This left developers to face several obstacles in projects of any appreciable scale:
+
+- Planning is disconnected from execution — issues in Jira, Beads, or Todo.txt, agents in a terminal, output in git.
+- Priority is invisible. The dep graph says what can run; nothing says what should run next.
+- Expertise is siloed — a side-of-the-desk project needs product judgment, architecture, UX review, QA gating, release mechanics, security, and the operator doesn't have time to personally don each hat.
+- State is fragile — git, Beads, LLM sessions, and sidecar artifacts each move on their own timeline; "undo back to yesterday" doesn't exist.
+- Orchestration tooling is tied to one runtime — playing nicely with one tracker or one agent framework means a rewrite when either moves.
+
+Gemba addresses all five: a browser-based UI for walking the floor of an agentic project, seeing the work at the right grain, directing it, with a roster of configurable LLM specialists a click away for the expertise the operator doesn't have time to personally deliver for every decision.
+
+In effect, Gemba creates a "side of the desk" experience for running vibe coding projects,
 meaning complex multi-milestone projects spanning weeks can be tackled while
 minimizing the cognitive load and freeing you up to keep the creative flow
 going. It keeps you in the driver's seat for what remains critical - 
 high level planning, review, and course correction - while allowing fully 
 automated agentic software development to take care of the execution.
 
+Here's a peek:
 ![Gemba board (default view)](docs/img/board.png)
 
 The only hard requirement is a **data plane**. [![Beads](https://github.com/gastownhall/beads) fullfills that out
