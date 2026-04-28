@@ -61,7 +61,7 @@ operators a curated path through the doc set rather than a noisy
 auto-generated tree. Sections:
 
 1. **Getting started** — install, first run, parallelism.
-2. **Concepts** — WorkPlane, OrchestrationPlane, gemba walk, code analysis.
+2. **Concepts** — WorkPlane, OrchestrationPlane, Gemba walk (review of work in progress), code analysis.
 3. **Adapters** — Beads, Gas Town, Native, plus their conformance docs.
 4. **Personas** — PM, Documentarian, Deployment Engineer.
 5. **API reference** — placeholder pointing at `docs/api/openapi.json`

@@ -28,7 +28,7 @@ const items: Item[] = [
   { to: '/sessions', label: 'Sessions', Icon: Terminal },
   { to: '/agent-groups', label: 'Agent groups', Icon: Users },
   { to: '/coach', label: 'Coach', Icon: CircuitBoard },
-  { to: '/walk', label: 'Gemba walk', Icon: Footprints },
+  { to: '/walk', label: 'Review', Icon: Footprints },
   { to: '/graph', label: 'Graph', Icon: Network },
   { to: '/insights', label: 'Insights', Icon: Sparkles },
   { to: '/escalations', label: 'Escalations', Icon: AlertTriangle },

@@ -38,7 +38,7 @@ const NAV_LINKS = [
   // bead, not in scope for gm-isxs.
   { label: 'Coach', path: '/coach', clickNav: false },
   // Walk is rendered but click-nav-excluded — see comment above.
-  { label: 'Gemba walk', path: '/walk', clickNav: false },
+  { label: 'Review', path: '/walk', clickNav: false },
   { label: 'Graph', path: '/graph' },
   { label: 'Insights', path: '/insights' },
   { label: 'Escalations', path: '/escalations' },

@@ -358,7 +358,7 @@ Tooling expected on `PATH`:
 |---|---|
 | [`docs/getting-started/`](docs/getting-started/) | Operator-facing guides — running against your work items, parallelism configuration |
 | [`docs/adaptors/`](docs/adaptors/) | Per-adaptor authoring docs + conformance reports — how to write a new WorkPlane / OrchestrationPlane |
-| [`docs/design/`](docs/design/) | Durable architectural decisions — parallelism boundary, milestone convention, gemba walk, persona PPPP |
+| [`docs/design/`](docs/design/) | Durable architectural decisions — parallelism boundary, milestone convention, Gemba walk (review of work in progress), persona PPPP |
 | [`docs/agents/`](docs/agents/) | Per-role agent operating docs |
 | [`docs/ui-spec.md`](docs/ui-spec.md) | The SPA spec — every surface, every affordance, every test-id |
 

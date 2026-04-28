@@ -2,7 +2,7 @@
 
 > **Deliverable 2 for `gm-p27`.** Generated from `ui-spec-template.md` answers + ratified design decisions (gm-2yg Coaches vs Managers, gm-hjx Epic elevation, gm-57b Persona architecture, gm-uf7 Agentic personas, gm-v6f Agentic QA, gm-tfy Checkpoints, gm-iw4 Project entity, gm-e8o Workspace modes, gm-c4l Role Packs, gm-9rv Persona PPPP + Phases, gm-3nk Gemba walks, gm-l1i Agentic code analysis, gm-hvs Subscriptions).
 >
-> **Authoritative for implementation.** Deviations require a Gemba walk with the UX Expert Coach before merging.
+> **Authoritative for implementation.** Deviations require a Gemba walk (review of work in progress) with the UX Expert Coach before merging. The "Review" tab in the SPA chrome opens this surface.
 >
 > Items marked **PROPOSED** are Claude's judgment calls on under-specified questions; mike reviews and ratifies.
 
