@@ -5,6 +5,7 @@ import {
   getWorkItem,
   listWorkItems,
   listWorkItemsEnvelope,
+  updateWorkItem,
 } from '../workItems';
 import type { WorkItem } from '@/types/core.gen';
 
@@ -91,6 +92,39 @@ describe('listWorkItems / getWorkItem', () => {
   // X-GEMBA-Confirm contract per row. Pins the {item: input} envelope
   // and the nonce header so a future helper refactor can't silently
   // drop the replay-safety guarantee mid-batch.
+  // gm-gsbj — the milestone child-epic panel needs both add and remove
+  // mutations. Pin the body shape so a future refactor can't silently
+  // drop parent_id (string for set, null for clear) from the wire.
+  it('updateWorkItem carries parent_id (set) on the PATCH body', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify(sampleItem), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    await updateWorkItem('gm-foo', { parent_id: 'gm-epic-a' }, { nonce: 'nonce-set' });
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe('/api/work-items/gm-foo');
+    expect(init.method).toBe('PATCH');
+    expect(init.headers[CONFIRM_HEADER]).toBe('nonce-set');
+    expect(JSON.parse(init.body as string)).toEqual({ parent_id: 'gm-epic-a' });
+  });
+
+  // Empty-string parent_id is the clear sentinel — must hit the wire
+  // verbatim so the Go *string decoder sees pointer-to-"" (clear)
+  // rather than nil (no change).
+  it('updateWorkItem carries parent_id="" on the PATCH body (clear)', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify(sampleItem), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    await updateWorkItem('gm-foo', { parent_id: '' }, { nonce: 'nonce-clear' });
+    const [, init] = fetchSpy.mock.calls[0]!;
+    expect(JSON.parse(init.body as string)).toEqual({ parent_id: '' });
+  });
+
   it('createWorkItem POSTs the {item} envelope with the confirm nonce', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(JSON.stringify({ ...sampleItem, id: 'gm-srv-7' }), {

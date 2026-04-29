@@ -499,6 +499,83 @@ func TestPatchWorkItem_NoHost_Returns503(t *testing.T) {
 	}
 }
 
+// gm-gsbj — `parent_id` on the PATCH body must round-trip through the
+// boundary decoder and reach the adaptor as patch.Parent. Both the
+// "set" path (string id) and the "clear" path (null) are pinned —
+// dropping either is what blocks the milestone child-epic panel.
+func TestPatchWorkItem_ParentIDReachesAdaptor(t *testing.T) {
+	host, rec := newPatchHost(t)
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	w := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"parent_id":"gm-foo"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/work-items/gm-1", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ConfirmHeader, "nonce-parent-set")
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if len(rec.patches) != 1 {
+		t.Fatalf("want 1 adaptor call, got %d", len(rec.patches))
+	}
+	if rec.patches[0].Parent == nil || *rec.patches[0].Parent != "gm-foo" {
+		t.Fatalf("patch.Parent did not reach adaptor: %+v", rec.patches[0].Parent)
+	}
+}
+
+func TestPatchWorkItem_ParentIDClearReachesAdaptor(t *testing.T) {
+	host, rec := newPatchHost(t)
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	// JSON null on parent_id is the clear sentinel: pointer to "" on
+	// the Go side, which the bd adaptor translates to `--parent ""`.
+	w := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"parent_id":""}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/work-items/gm-1", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ConfirmHeader, "nonce-parent-clear")
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if len(rec.patches) != 1 {
+		t.Fatalf("want 1 adaptor call, got %d", len(rec.patches))
+	}
+	if rec.patches[0].Parent == nil {
+		t.Fatalf("clear-sentinel lost: patch.Parent==nil")
+	}
+	if *rec.patches[0].Parent != "" {
+		t.Fatalf("clear-sentinel mangled: patch.Parent=%q", *rec.patches[0].Parent)
+	}
+}
+
+// Absence of parent_id keeps patch.Parent nil so an unrelated PATCH
+// can't accidentally orphan the bead.
+func TestPatchWorkItem_ParentIDAbsentLeavesNil(t *testing.T) {
+	host, rec := newPatchHost(t)
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	w := httptest.NewRecorder()
+	body := bytes.NewBufferString(`{"title":"renamed"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/api/work-items/gm-1", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(ConfirmHeader, "nonce-parent-absent")
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if len(rec.patches) != 1 {
+		t.Fatalf("want 1 adaptor call, got %d", len(rec.patches))
+	}
+	if rec.patches[0].Parent != nil {
+		t.Fatalf("patch.Parent must stay nil when parent_id absent; got %+v", rec.patches[0].Parent)
+	}
+}
+
 func ptr[T any](v T) *T { return &v }
 
 // ---------------------------------------------------------------------

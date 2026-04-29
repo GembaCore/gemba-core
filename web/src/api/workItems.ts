@@ -103,6 +103,13 @@ export interface WorkItemPatch {
   owner?: AgentRef | null;
   assignee?: AgentRef | null;
   sprint_id?: string | null;
+  // parent_id re-parents the work item via its parent_child edge.
+  // Three-state sentinel (gm-gsbj) matching the Go *string on the
+  // server: undefined / omitted = no change; "" (empty string) =
+  // clear (orphan); non-empty string = reparent under that id.
+  // JSON null is NOT used — it decodes to a nil Go pointer, which is
+  // the "no change" sentinel, not "clear".
+  parent_id?: string;
   dod?: DefinitionOfDone | null;
   // custom is sent as the full map the adaptor should persist. The
   // drawer's Extensions editor (gm-root.13) writes a single key by
