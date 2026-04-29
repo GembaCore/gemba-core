@@ -23,6 +23,16 @@ import { cn } from '@/lib/utils';
 const REFINE_PRESETS_STORAGE_KEY = 'gemba.refine.column-presets';
 const DEFER_LABEL_PREFIX = 'defer-until:';
 
+// /refine surfaces the refine-specific columns (gm-51i2). The grid hides
+// these globally so the Board's list mode stays lean; this override
+// flips them back on for /refine only.
+const REFINE_VISIBILITY = {
+  age: true,
+  suggested_epic: true,
+  blockers: true,
+  dispatch_status: true,
+};
+
 // Backlog rows sort by priority (lower number = higher) then by age
 // (older = updated_at ascending so it sinks to the top after the
 // reverse below). Stable sort.
@@ -185,6 +195,7 @@ export function RefinePage() {
             onSelect={setOpenId}
             onBulkAction={handleBulkAction}
             presets={{ storageKey: REFINE_PRESETS_STORAGE_KEY }}
+            visibilityOverride={REFINE_VISIBILITY}
           />
         )}
       </div>

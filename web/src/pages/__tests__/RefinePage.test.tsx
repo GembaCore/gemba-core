@@ -124,6 +124,121 @@ describe('RefinePage', () => {
     ]);
   });
 
+  it('surfaces the four refine columns with derived values (gm-51i2)', async () => {
+    const items = [
+      wi('gm-a', {
+        title: 'old item with epic + blockers + dispatch',
+        // ~5 days old relative to current date is fine; we just need a chip rendered.
+        created_at: '2026-04-24T00:00:00Z',
+        custom: { 'gemba.suggested_epic': 'gm-epic-1' },
+        relationships: [
+          { kind: 'blocks', from: 'gm-z', to: 'gm-a' },
+          { kind: 'blocks', from: 'gm-y', to: 'gm-a' },
+        ],
+        dispatch_status: 'awaiting-review',
+      }),
+      wi('gm-b', {
+        title: 'plain item',
+        created_at: '2026-04-28T00:00:00Z',
+      }),
+    ];
+    fetchSpy.mockResolvedValue(jsonResponse({ items, total: items.length }));
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByText(/plain item/)).toBeTruthy());
+    // Suggested-epic chip on row a.
+    expect(screen.getByTestId('grid-cell-suggested-epic-gm-a').textContent).toContain('gm-epic-1');
+    expect(screen.getByTestId('grid-cell-suggested-epic-gm-b').textContent).toBe('—');
+    // Blockers chip on row a (count = 2); row b shows the dim placeholder.
+    expect(screen.getByTestId('grid-cell-blockers-gm-a').textContent).toBe('2');
+    expect(screen.getByTestId('grid-cell-blockers-gm-b').textContent).toBe('—');
+    // Dispatch chip on row a only — ready / empty are suppressed.
+    expect(screen.getByTestId('grid-cell-dispatch-gm-a').textContent).toContain('awaiting-review');
+    expect(screen.getByTestId('grid-cell-dispatch-gm-b').textContent).toBe('—');
+    // Age columns rendered for both rows.
+    expect(screen.getByTestId('grid-cell-age-gm-a')).toBeTruthy();
+    expect(screen.getByTestId('grid-cell-age-gm-b')).toBeTruthy();
+  });
+
+  it('clicking the blockers header sorts numerically (gm-51i2)', async () => {
+    const items = [
+      wi('gm-zero', { title: 'zero blockers' }),
+      wi('gm-three', {
+        title: 'three blockers',
+        relationships: [
+          { kind: 'blocks', from: 'a', to: 'gm-three' },
+          { kind: 'blocks', from: 'b', to: 'gm-three' },
+          { kind: 'blocks', from: 'c', to: 'gm-three' },
+        ],
+      }),
+      wi('gm-one', {
+        title: 'one blocker',
+        relationships: [{ kind: 'blocks', from: 'a', to: 'gm-one' }],
+      }),
+    ];
+    fetchSpy.mockResolvedValue(jsonResponse({ items, total: items.length }));
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByTestId('grid-sort-blockers')).toBeTruthy());
+    // First click — tanstack defaults numeric columns to desc-first, so
+    // most-blocked rises to the top.
+    fireEvent.click(screen.getByTestId('grid-sort-blockers'));
+    await waitFor(() => {
+      const titles = Array.from(document.querySelectorAll('td'))
+        .map((c) => c.textContent ?? '')
+        .filter((t) => t.endsWith('blocker') || t.endsWith('blockers'));
+      expect(titles.slice(0, 3)).toEqual([
+        'three blockers',
+        'one blocker',
+        'zero blockers',
+      ]);
+    });
+    // Second click flips to ascending.
+    fireEvent.click(screen.getByTestId('grid-sort-blockers'));
+    await waitFor(() => {
+      const titles = Array.from(document.querySelectorAll('td'))
+        .map((c) => c.textContent ?? '')
+        .filter((t) => t.endsWith('blocker') || t.endsWith('blockers'));
+      expect(titles.slice(0, 3)).toEqual([
+        'zero blockers',
+        'one blocker',
+        'three blockers',
+      ]);
+    });
+  });
+
+  it('clicking the age header sorts by underlying timestamp (gm-51i2)', async () => {
+    const items = [
+      wi('gm-newest', { title: 'newest', created_at: '2026-04-28T00:00:00Z' }),
+      wi('gm-oldest', { title: 'oldest', created_at: '2025-01-01T00:00:00Z' }),
+      wi('gm-mid', { title: 'mid', created_at: '2026-01-01T00:00:00Z' }),
+    ];
+    fetchSpy.mockResolvedValue(jsonResponse({ items, total: items.length }));
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByTestId('grid-sort-age')).toBeTruthy());
+    // Click — ascending by timestamp puts oldest first.
+    fireEvent.click(screen.getByTestId('grid-sort-age'));
+    await waitFor(() => {
+      const titles = Array.from(document.querySelectorAll('td'))
+        .map((c) => c.textContent ?? '')
+        .filter((t) => ['newest', 'oldest', 'mid'].includes(t));
+      expect(titles.slice(0, 3)).toEqual(['oldest', 'mid', 'newest']);
+    });
+  });
+
   it('search input narrows by title and updates the URL', async () => {
     const items = [
       wi('gm-a', { title: 'fix login regression' }),
