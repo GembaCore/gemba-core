@@ -303,4 +303,3 @@ func redactedHost(raw string) string {
 	}
 	return u.Host
 }
-

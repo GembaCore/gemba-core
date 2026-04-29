@@ -26,8 +26,12 @@ const MissingClientDiagnostic = "No LLM client configured. Export ANTHROPIC_API_
 // ErrNoLLMClient is the sentinel returned by [Spawn] (and the
 // underlying [Resolve]) when no chat client is configured. The HTTP
 // layer maps this onto a 503 with [MissingClientDiagnostic] in the
-// body.
-var ErrNoLLMClient = errors.New(MissingClientDiagnostic)
+// body. The error string deliberately mirrors the diagnostic
+// verbatim — HTTP handlers and the CLI both surface err.Error() to
+// the operator unchanged, and the user-facing copy is a complete
+// sentence ending in a period. The staticcheck lint exemption is
+// intentional.
+var ErrNoLLMClient = errors.New(MissingClientDiagnostic) //nolint:staticcheck // ST1005: user-facing diagnostic; surfaced verbatim by SPA + CLI
 
 // Resolver hands back a [newproject.LLMClient] usable by the
 // Onboarder. Tests inject fake resolvers; production code uses

@@ -99,7 +99,7 @@ func TestIsWispID(t *testing.T) {
 		"gemba/wisp-mid/path":   true,
 		"gemba/gemba/gm-task-1": false,
 		"gemba/gemba/wisper":    true, // substring match — by design, mirrors the gastown shader's rule
-		"":                     false,
+		"":                      false,
 	}
 	for id, want := range cases {
 		got := isWispID(core.WorkItemID(id))

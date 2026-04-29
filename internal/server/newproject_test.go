@@ -502,7 +502,7 @@ func TestDetectCycle_SimpleTwoNode(t *testing.T) {
 	}
 	// Path should reference both A and B.
 	joined := strings.Join(got, "->")
-	if !(strings.Contains(joined, "A") && strings.Contains(joined, "B")) {
+	if !strings.Contains(joined, "A") || !strings.Contains(joined, "B") {
 		t.Errorf("cycle path missing nodes: %v", got)
 	}
 }

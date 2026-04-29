@@ -60,7 +60,7 @@ func probeBd(stderr io.Writer) error {
 	}
 	path, err := exec.LookPath("bd")
 	if err != nil {
-		fmt.Fprint(stderr, bdInstallInstructions)
+		_, _ = fmt.Fprint(stderr, bdInstallInstructions)
 		return fmt.Errorf("bd CLI not found on PATH: install bd before running gemba serve")
 	}
 	// Run `bd --version` to confirm the binary is functional.
@@ -70,7 +70,7 @@ func probeBd(stderr io.Writer) error {
 	// complexity without meaningful protection.
 	cmd := exec.Command(path, "--version") //nolint:gosec // path is from LookPath
 	if err := cmd.Run(); err != nil {
-		fmt.Fprint(stderr, bdInstallInstructions)
+		_, _ = fmt.Fprint(stderr, bdInstallInstructions)
 		return fmt.Errorf("bd --version failed (%w): install bd before running gemba serve", err)
 	}
 	return nil

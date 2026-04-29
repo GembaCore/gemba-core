@@ -70,23 +70,22 @@ test('every column data-testid has a stable selector @board', async ({ page, wor
   }
 });
 
-// Swimlane modes. The UI ships three (`by-parent-epic`, `by-label`,
-// `none`) — `by-parallel-group` is from the bead's spec wishlist but
-// not yet in the SPA, so its case is fixme'd below.
-test('Epic view exposes the swimlane switcher with implemented modes @board', async ({
-  page,
-  workPlane,
-}) => {
-  workPlane.seed([workItem({ kind: 'epic', state_category: 'unstarted' })]);
-  const board = new BoardPage(page);
-  await board.gotoEpicView();
-  await expect(board.swimlaneSwitcher).toBeVisible();
-  const select = board.swimlaneSwitcher.locator('select');
-  const optionValues = await select.locator('option').evaluateAll((opts) =>
-    opts.map((o) => (o as HTMLOptionElement).value)
-  );
-  expect(optionValues).toEqual(['by-parent-epic', 'by-label', 'none']);
-});
+// gm-uekk superseded the swimlane-mode dropdown with the ScopePicker
+// (a single pill that names the active board scope: All / a root
+// epic / a direct child epic). The old test asserted that the
+// swimlane switcher exposed three modes (`by-parent-epic`, `by-label`,
+// `none`); those modes are no longer user-facing — `by-parent-epic`
+// is the only swimlane shape rendered today, gated by scope.
+test.fixme(
+  'Epic view exposes the swimlane switcher with implemented modes @board',
+  () => {
+    /* fixme: gm-uekk replaced the swimlane-mode dropdown with the
+       ScopePicker (board-scope-picker / board-scope-trigger). A
+       follow-up should rewrite this assertion against the new
+       picker's option list — or drop it entirely if the modes are
+       no longer a contract worth pinning. */
+  }
+);
 
 // gm-5v8v.5 follow-up: the bead lists these features but they aren't
 // in the SPA yet. Each fixme references the bead that would unblock

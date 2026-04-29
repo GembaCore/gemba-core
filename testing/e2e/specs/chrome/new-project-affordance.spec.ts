@@ -76,9 +76,15 @@ test.describe('NewProjectAffordance @chrome', () => {
       await page.goto('/board');
     });
 
-    test('clicking navigates to /new', async ({ page }) => {
+    test('clicking opens the Create-project modal on /board', async ({ page }) => {
+      // gm-e12.21.3: /new is now a redirect that opens the unified
+      // Create-project modal on top of /board. The affordance still
+      // navigates to /new (the route is the stable entry point); the
+      // SPA's NewProjectRedirect handler then hops to /board and
+      // mounts the modal.
       await page.getByTestId('new-project-affordance').click();
-      await expect(page).toHaveURL(/\/new$/);
+      await expect(page).toHaveURL(/\/board$/);
+      await expect(page.getByTestId('create-project-modal')).toBeVisible();
     });
   });
 

@@ -116,22 +116,13 @@ func writeRatifyError(w http.ResponseWriter, err error) {
 
 // ─── Configuration ──────────────────────────────────────────────────
 
-// gembaConfig models the subset of ~/.gemba/config.toml the ratifier
-// reads. Only [projects].default_dir matters today; the file is
-// otherwise tolerated as opaque.
-type gembaConfig struct {
-	Projects struct {
-		DefaultDir string `toml:"default_dir"`
-	} `toml:"projects"`
-}
-
 // resolveDefaultDir returns the operator's configured projects
 // directory, expanding ~ and falling back to the built-in default
 // when the config file is absent or doesn't override the field.
 //
 // Order:
-//   1. ~/.gemba/config.toml [projects].default_dir if set.
-//   2. ~/gemba/projects/ (built-in default).
+//  1. ~/.gemba/config.toml [projects].default_dir if set.
+//  2. ~/gemba/projects/ (built-in default).
 func resolveDefaultDir(home string) (string, error) {
 	if home == "" {
 		var err error
@@ -224,10 +215,10 @@ type FilesystemBackend interface {
 
 type osFS struct{}
 
-func (osFS) Stat(p string) (os.FileInfo, error)                     { return os.Stat(p) }
-func (osFS) MkdirAll(p string, m os.FileMode) error                 { return os.MkdirAll(p, m) }
-func (osFS) WriteFile(p string, data []byte, m os.FileMode) error  { return os.WriteFile(p, data, m) }
-func (osFS) RemoveAll(p string) error                               { return os.RemoveAll(p) }
+func (osFS) Stat(p string) (os.FileInfo, error)                   { return os.Stat(p) }
+func (osFS) MkdirAll(p string, m os.FileMode) error               { return os.MkdirAll(p, m) }
+func (osFS) WriteFile(p string, data []byte, m os.FileMode) error { return os.WriteFile(p, data, m) }
+func (osFS) RemoveAll(p string) error                             { return os.RemoveAll(p) }
 
 // RatifierConfig configures the production ratifier. Zero values are
 // fine — DefaultDir empty falls back to ~/.gemba/config.toml resolution,

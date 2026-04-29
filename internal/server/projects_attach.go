@@ -345,4 +345,3 @@ func (r *Router) AttachProjects(cfg AttachConfig) {
 		r.adoptableLister = cfg.AdoptableLister
 	}
 }
-

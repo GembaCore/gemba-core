@@ -88,8 +88,13 @@ test.describe('Sidebar cold-start @chrome', () => {
     projectsStore.seed([]); // no projects → no active workspace
   });
 
+  // Use /settings as the staging route — it stays interactive on
+  // cold-start (gm-root.17.12) and does NOT trigger the /new →
+  // /board+modal redirect (gm-e12.21.3) that races against
+  // toHaveURL assertions in this suite.
+
   test('workspace-scoped panes render disabled', async ({ page }) => {
-    await page.goto('/new');
+    await page.goto('/settings');
     const sidebar = page.locator('aside').first();
     await expect(sidebar).toBeVisible();
 
@@ -111,16 +116,16 @@ test.describe('Sidebar cold-start @chrome', () => {
   });
 
   test('Settings stays interactive on cold-start', async ({ page }) => {
-    await page.goto('/new');
+    await page.goto('/settings');
     const sidebar = page.locator('aside').first();
     await expect(sidebar.getByRole('link', { name: 'Settings' })).toBeVisible();
   });
 
   test('clicking a muted item does not navigate', async ({ page }) => {
-    await page.goto('/new');
+    await page.goto('/settings');
     const sidebar = page.locator('aside').first();
     const muted = sidebar.locator('[aria-disabled="true"]', { hasText: 'Plan' });
     await muted.click({ force: true }); // bypass cursor: not-allowed for the test
-    await expect(page).toHaveURL(/\/new$/);
+    await expect(page).toHaveURL(/\/settings$/);
   });
 });

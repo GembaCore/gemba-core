@@ -127,15 +127,15 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, persona *onboarde
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 
-		switch {
-		case line == ":help":
+		switch line {
+		case ":help":
 			printHelp(out)
 
-		case line == ":quit":
+		case ":quit":
 			fmt.Fprintln(out, "Session discarded.")
 			return nil
 
-		case line == ":ratify":
+		case ":ratify":
 			if err := runRatify(ctx, out, scanner, ratifier, state); err != nil {
 				// A *server.RatifyError is a step failure; surface it and
 				// let the operator decide to fix + retry or quit.
@@ -154,7 +154,7 @@ func runREPL(ctx context.Context, in io.Reader, out io.Writer, persona *onboarde
 			// On success runRatify already printed the confirmation line;
 			// control falls through to the prompt naturally.
 
-		case line == "":
+		case "":
 			// blank line — ignore, just re-prompt
 
 		default:
@@ -249,7 +249,7 @@ func printPlanSummary(out io.Writer, state newproject.NewProjectState) {
 
 // printPrompt writes the readline-style input prompt.
 func printPrompt(out io.Writer) {
-	fmt.Fprint(out, "> ")
+	_, _ = fmt.Fprint(out, "> ")
 }
 
 // printHelp writes the REPL command reference.
