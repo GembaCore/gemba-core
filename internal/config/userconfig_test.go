@@ -406,3 +406,237 @@ func TestRedactBeadsURL_Unparseable(t *testing.T) {
 		t.Errorf("RedactBeadsURL modified unparseable URL: got %q, want %q", got, raw)
 	}
 }
+
+// ─── gm-root.17.14: discovery extensions ────────────────────────────
+
+// makeBeadsDir creates a `.beads/` subdir inside parent/name. Returns
+// the project root (parent/name).
+func makeBeadsDir(t *testing.T, parent, name string) string {
+	t.Helper()
+	dir := filepath.Join(parent, name, ".beads")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("makeBeadsDir: %v", err)
+	}
+	return filepath.Join(parent, name)
+}
+
+// makeWorkspaceTOML creates a `.gemba/workspace.toml` inside parent/name.
+// Returns the project root.
+func makeWorkspaceTOML(t *testing.T, parent, name string) string {
+	t.Helper()
+	gembaDir := filepath.Join(parent, name, ".gemba")
+	if err := os.MkdirAll(gembaDir, 0o755); err != nil {
+		t.Fatalf("makeWorkspaceTOML: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(gembaDir, "workspace.toml"), []byte(""), 0o600); err != nil {
+		t.Fatalf("makeWorkspaceTOML: %v", err)
+	}
+	return filepath.Join(parent, name)
+}
+
+// makeGitDir creates a `.git/` directory marker inside parent/name.
+func makeGitDir(t *testing.T, parent, name string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(parent, name, ".git"), 0o755); err != nil {
+		t.Fatalf("makeGitDir: %v", err)
+	}
+}
+
+func TestClassifyProject_Complete(t *testing.T) {
+	parent := t.TempDir()
+	makeBeadsDir(t, parent, "p")
+	makeWorkspaceTOML(t, parent, "p")
+	makeGitDir(t, parent, "p")
+	if got := ClassifyProject(filepath.Join(parent, "p")); got != KindComplete {
+		t.Errorf("got %q, want KindComplete", got)
+	}
+}
+
+func TestClassifyProject_NeedsWorkspace(t *testing.T) {
+	parent := t.TempDir()
+	makeBeadsDir(t, parent, "p")
+	if got := ClassifyProject(filepath.Join(parent, "p")); got != KindNeedsWorkspace {
+		t.Errorf("got %q, want KindNeedsWorkspace", got)
+	}
+}
+
+func TestClassifyProject_NeedsRepo(t *testing.T) {
+	parent := t.TempDir()
+	makeBeadsDir(t, parent, "p")
+	makeWorkspaceTOML(t, parent, "p")
+	// no .git
+	if got := ClassifyProject(filepath.Join(parent, "p")); got != KindNeedsRepo {
+		t.Errorf("got %q, want KindNeedsRepo", got)
+	}
+}
+
+// A workspace.toml without a beads DB is the gm-root.18 legacy shape;
+// classify it as NeedsRepo when no git repo so the SPA can still
+// surface it for binding.
+func TestClassifyProject_WorkspaceOnly_NoRepo(t *testing.T) {
+	parent := t.TempDir()
+	makeWorkspaceTOML(t, parent, "p")
+	if got := ClassifyProject(filepath.Join(parent, "p")); got != KindNeedsRepo {
+		t.Errorf("got %q, want KindNeedsRepo", got)
+	}
+}
+
+func TestClassifyProject_NotAProject(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(parent, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ClassifyProject(filepath.Join(parent, "empty")); got != "" {
+		t.Errorf("got %q, want empty", got)
+	}
+}
+
+func TestListProjectsUnder_PicksUpBeadsOnly(t *testing.T) {
+	parent := t.TempDir()
+	makeBeadsDir(t, parent, "beads-only")
+
+	got, err := ListProjectsUnder(parent)
+	if err != nil {
+		t.Fatalf("ListProjectsUnder: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 entry, got %d: %+v", len(got), got)
+	}
+	if got[0].Name != "beads-only" {
+		t.Errorf("name = %q", got[0].Name)
+	}
+	if got[0].Kind != KindNeedsWorkspace {
+		t.Errorf("kind = %q, want KindNeedsWorkspace", got[0].Kind)
+	}
+}
+
+func TestListProjectsUnder_PicksUpWorkspaceWithoutRepo(t *testing.T) {
+	parent := t.TempDir()
+	makeBeadsDir(t, parent, "no-repo")
+	makeWorkspaceTOML(t, parent, "no-repo")
+	// no .git/
+
+	got, err := ListProjectsUnder(parent)
+	if err != nil {
+		t.Fatalf("ListProjectsUnder: %v", err)
+	}
+	if len(got) != 1 || got[0].Kind != KindNeedsRepo {
+		t.Fatalf("want one needs_repo entry, got %+v", got)
+	}
+}
+
+func TestListProjectsUnder_CompleteEntriesUnchanged(t *testing.T) {
+	parent := t.TempDir()
+	makeBeadsDir(t, parent, "complete")
+	makeWorkspaceTOML(t, parent, "complete")
+	makeGitDir(t, parent, "complete")
+
+	got, err := ListProjectsUnder(parent)
+	if err != nil {
+		t.Fatalf("ListProjectsUnder: %v", err)
+	}
+	if len(got) != 1 || got[0].Kind != KindComplete {
+		t.Fatalf("want one complete entry, got %+v", got)
+	}
+}
+
+func TestListAllProjects_ScansExtraRoots(t *testing.T) {
+	defaultDir := t.TempDir()
+	makeBeadsDir(t, defaultDir, "p1")
+	makeWorkspaceTOML(t, defaultDir, "p1")
+	makeGitDir(t, defaultDir, "p1")
+
+	extraRoot := t.TempDir()
+	makeBeadsDir(t, extraRoot, "extra-only") // needs_workspace
+
+	got, err := ListAllProjects(defaultDir, []string{extraRoot})
+	if err != nil {
+		t.Fatalf("ListAllProjects: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 entries, got %d: %+v", len(got), got)
+	}
+	names := []string{got[0].Name, got[1].Name}
+	if names[0] != "p1" || names[1] != "extra-only" {
+		t.Errorf("order: %v", names)
+	}
+}
+
+func TestListAllProjects_MissingExtraRootDoesNotFail(t *testing.T) {
+	defaultDir := t.TempDir()
+	makeBeadsDir(t, defaultDir, "p1")
+	makeWorkspaceTOML(t, defaultDir, "p1")
+	makeGitDir(t, defaultDir, "p1")
+
+	missing := filepath.Join(t.TempDir(), "no-such-dir")
+
+	got, err := ListAllProjects(defaultDir, []string{missing})
+	if err != nil {
+		t.Fatalf("ListAllProjects must not fail on missing root; got %v", err)
+	}
+	if len(got) != 1 || got[0].Name != "p1" {
+		t.Errorf("want only p1, got %+v", got)
+	}
+}
+
+func TestListAllProjects_DedupsAcrossRoots(t *testing.T) {
+	shared := t.TempDir()
+	makeBeadsDir(t, shared, "shared")
+	makeWorkspaceTOML(t, shared, "shared")
+	makeGitDir(t, shared, "shared")
+
+	// defaultDir == extraRoot so the entry appears twice via different roots
+	got, err := ListAllProjects(shared, []string{shared})
+	if err != nil {
+		t.Fatalf("ListAllProjects: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 deduped entry, got %d: %+v", len(got), got)
+	}
+}
+
+func TestExpandRoot_TildePrefix(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home dir: %v", err)
+	}
+	got, err := ExpandRoot("~/foo/bar")
+	if err != nil {
+		t.Fatalf("ExpandRoot: %v", err)
+	}
+	want := filepath.Clean(filepath.Join(home, "foo", "bar"))
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestExpandRoot_AbsolutePassesThrough(t *testing.T) {
+	got, err := ExpandRoot("/srv/x/")
+	if err != nil {
+		t.Fatalf("ExpandRoot: %v", err)
+	}
+	if got != "/srv/x" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestLoadUserConfig_ParsesExtraRoots(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte(`[projects]
+default_dir = "/tmp/my-projects"
+extra_roots = ["~/work", "/srv/team"]
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadUserConfig(path)
+	if err != nil {
+		t.Fatalf("LoadUserConfig: %v", err)
+	}
+	if len(cfg.Projects.ExtraRoots) != 2 {
+		t.Fatalf("want 2 extra_roots, got %v", cfg.Projects.ExtraRoots)
+	}
+	if cfg.Projects.ExtraRoots[0] != "~/work" || cfg.Projects.ExtraRoots[1] != "/srv/team" {
+		t.Errorf("extra_roots = %v", cfg.Projects.ExtraRoots)
+	}
+}

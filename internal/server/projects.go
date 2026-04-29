@@ -29,11 +29,13 @@ import (
 // projectEntry is one row in GET /api/v1/projects. Name is the directory
 // basename; Path is the absolute disk path. Active is true for the
 // project the operator most recently switched to (persisted in-process;
-// resets on server restart).
+// resets on server restart). Kind classifies the entry's setup state
+// (gm-root.17.14): one of "complete", "needs_workspace", "needs_repo".
 type projectEntry struct {
-	Name   string `json:"name"`
-	Path   string `json:"path"`
-	Active bool   `json:"active,omitempty"`
+	Name   string             `json:"name"`
+	Path   string             `json:"path"`
+	Active bool               `json:"active,omitempty"`
+	Kind   config.ProjectKind `json:"kind"`
 }
 
 // projectsEnvelope is the response body of GET /api/v1/projects.
@@ -84,7 +86,7 @@ func (r *Router) listProjects(w http.ResponseWriter, _ *http.Request) {
 			"config_resolve_failed", "failed to resolve default_dir: "+err.Error())
 		return
 	}
-	found, err := config.ListProjectsUnder(defaultDir)
+	found, err := config.ListAllProjects(defaultDir, ucfg.Projects.ExtraRoots)
 	if err != nil {
 		httperr.Write(w, http.StatusInternalServerError,
 			"projects_scan_failed", "failed to enumerate projects: "+err.Error())
@@ -101,6 +103,7 @@ func (r *Router) listProjects(w http.ResponseWriter, _ *http.Request) {
 			Name:   p.Name,
 			Path:   p.Path,
 			Active: active != "" && p.Name == active,
+			Kind:   p.Kind,
 		})
 	}
 	writeJSON(w, http.StatusOK, projectsEnvelope{
@@ -140,7 +143,7 @@ func (r *Router) switchProject(w http.ResponseWriter, req *http.Request) {
 			"config_resolve_failed", "failed to resolve default_dir: "+err.Error())
 		return
 	}
-	found, err := config.ListProjectsUnder(defaultDir)
+	found, err := config.ListAllProjects(defaultDir, ucfg.Projects.ExtraRoots)
 	if err != nil {
 		httperr.Write(w, http.StatusInternalServerError,
 			"projects_scan_failed", "failed to enumerate projects: "+err.Error())
@@ -175,6 +178,7 @@ func (r *Router) switchProject(w http.ResponseWriter, req *http.Request) {
 			Name:   target.Name,
 			Path:   target.Path,
 			Active: true,
+			Kind:   target.Kind,
 		},
 	})
 }

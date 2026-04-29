@@ -36,6 +36,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
+	"github.com/MikeBengtson/gemba/internal/config"
 	"github.com/MikeBengtson/gemba/internal/server/httperr"
 )
 
@@ -306,6 +307,7 @@ func (r *Router) attachProject(w http.ResponseWriter, req *http.Request) {
 			Name:   name,
 			Path:   target,
 			Active: true,
+			Kind:   config.ClassifyProject(target),
 		},
 	}
 	writeJSON(w, http.StatusCreated, resp)

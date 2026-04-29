@@ -539,6 +539,74 @@
           }
         }
       }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "tags": ["work"],
+        "summary": "Enumerate projects discovered under the configured `default_dir` and any `extra_roots` (gm-root.17.14). Each entry carries a `kind` classifying its setup state — `complete`, `needs_workspace`, or `needs_repo`.",
+        "operationId": "listProjects",
+        "responses": {
+          "200": {
+            "description": "Project list.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProjectsEnvelope" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/projects/bind": {
+      "post": {
+        "tags": ["work"],
+        "summary": "Bind a partially-bootstrapped project to a git repo (gm-root.17.14). `mode=\"create\"` runs `git init` at the beads-DB directory and writes `.gemba/workspace.toml` in place. `mode=\"navigate\"` copies the beads DB into an existing git repo and writes `.gemba/workspace.toml` there. Returns the resolved `ProjectEntry` with `kind=\"complete\"` so the SPA can switch the active workspace immediately.",
+        "operationId": "bindProject",
+        "parameters": [
+          {
+            "name": "X-GEMBA-Confirm",
+            "in": "header",
+            "required": true,
+            "description": "Idempotency nonce. Replays of the same nonce return the cached response.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BindProjectRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bind succeeded. Body is the now-complete `ProjectEntry`.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ProjectEntry" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "409": {
+            "description": "Conflict — `mode=\"navigate\"` and the target repo already contains a `.beads/` directory the server refuses to clobber (`error` = `beads_dir_exists`).",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "500": {
+            "description": "Server-side failure during git_init / beads_copy / workspace_toml write.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1088,6 +1156,53 @@
           "reason": {
             "type": "string",
             "description": "Operator-facing diagnostic explaining why the Onboarder is unavailable. Empty / omitted when available is true."
+          }
+        }
+      },
+      "ProjectKind": {
+        "type": "string",
+        "description": "Setup-state classification for a discovered project (gm-root.17.14). `complete` — has a beads DB, a `.gemba/workspace.toml`, and is inside a git repo; the picker switches to it directly. `needs_workspace` — has a beads DB but no `.gemba/workspace.toml`. `needs_repo` — has a `.gemba/workspace.toml` but is not inside a git repo. Open string at the wire so future kinds don't break clients.",
+        "enum": ["complete", "needs_workspace", "needs_repo"]
+      },
+      "ProjectEntry": {
+        "type": "object",
+        "description": "One discovered project. `name` is the directory basename; `path` is the absolute disk path; `active` is true for the currently-selected project (in-process server state; resets on server restart); `kind` classifies the entry's setup state.",
+        "required": ["name", "path", "kind"],
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "active": { "type": "boolean" },
+          "kind": { "$ref": "#/components/schemas/ProjectKind" }
+        }
+      },
+      "ProjectsEnvelope": {
+        "type": "object",
+        "description": "Body of `GET /api/v1/projects`. The deduped union of `default_dir` and every entry in `[projects].extra_roots` from `~/.gemba/config.toml`.",
+        "required": ["projects", "total"],
+        "properties": {
+          "projects": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ProjectEntry" }
+          },
+          "total": { "type": "integer" }
+        }
+      },
+      "BindProjectRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/v1/projects/bind`. `mode=\"create\"` runs `git init` at `beads_db_path` (which must equal `target_repo_path`) and writes `.gemba/workspace.toml` in place. `mode=\"navigate\"` copies the beads DB at `beads_db_path/.beads/` into `target_repo_path/.beads/` and writes `.gemba/workspace.toml` at `target_repo_path` — `target_repo_path` must already be a git working tree.",
+        "required": ["beads_db_path", "target_repo_path", "mode"],
+        "properties": {
+          "beads_db_path": {
+            "type": "string",
+            "description": "Absolute path to the directory holding the beads DB (the parent of the `.beads/` subdir)."
+          },
+          "target_repo_path": {
+            "type": "string",
+            "description": "Absolute path to the directory to bind to. Equals `beads_db_path` when `mode=\"create\"`."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["create", "navigate"]
           }
         }
       }

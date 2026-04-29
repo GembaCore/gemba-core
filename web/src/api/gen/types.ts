@@ -412,6 +412,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Enumerate projects discovered under the configured `default_dir` and any `extra_roots` (gm-root.17.14). Each entry carries a `kind` classifying its setup state — `complete`, `needs_workspace`, or `needs_repo`. */
+        get: operations["listProjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/bind": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bind a partially-bootstrapped project to a git repo (gm-root.17.14). `mode="create"` runs `git init` at the beads-DB directory and writes `.gemba/workspace.toml` in place. `mode="navigate"` copies the beads DB into an existing git repo and writes `.gemba/workspace.toml` there. Returns the resolved `ProjectEntry` with `kind="complete"` so the SPA can switch the active workspace immediately. */
+        post: operations["bindProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -743,6 +777,32 @@ export interface components {
             available: boolean;
             /** @description Operator-facing diagnostic explaining why the Onboarder is unavailable. Empty / omitted when available is true. */
             reason?: string;
+        };
+        /**
+         * @description Setup-state classification for a discovered project (gm-root.17.14). `complete` — has a beads DB, a `.gemba/workspace.toml`, and is inside a git repo; the picker switches to it directly. `needs_workspace` — has a beads DB but no `.gemba/workspace.toml`. `needs_repo` — has a `.gemba/workspace.toml` but is not inside a git repo. Open string at the wire so future kinds don't break clients.
+         * @enum {string}
+         */
+        ProjectKind: "complete" | "needs_workspace" | "needs_repo";
+        /** @description One discovered project. `name` is the directory basename; `path` is the absolute disk path; `active` is true for the currently-selected project (in-process server state; resets on server restart); `kind` classifies the entry's setup state. */
+        ProjectEntry: {
+            name: string;
+            path: string;
+            active?: boolean;
+            kind: components["schemas"]["ProjectKind"];
+        };
+        /** @description Body of `GET /api/v1/projects`. The deduped union of `default_dir` and every entry in `[projects].extra_roots` from `~/.gemba/config.toml`. */
+        ProjectsEnvelope: {
+            projects: components["schemas"]["ProjectEntry"][];
+            total: number;
+        };
+        /** @description Body for `POST /api/v1/projects/bind`. `mode="create"` runs `git init` at `beads_db_path` (which must equal `target_repo_path`) and writes `.gemba/workspace.toml` in place. `mode="navigate"` copies the beads DB at `beads_db_path/.beads/` into `target_repo_path/.beads/` and writes `.gemba/workspace.toml` at `target_repo_path` — `target_repo_path` must already be a git working tree. */
+        BindProjectRequest: {
+            /** @description Absolute path to the directory holding the beads DB (the parent of the `.beads/` subdir). */
+            beads_db_path: string;
+            /** @description Absolute path to the directory to bind to. Equals `beads_db_path` when `mode="create"`. */
+            target_repo_path: string;
+            /** @enum {string} */
+            mode: "create" | "navigate";
         };
     };
     responses: {
@@ -1354,6 +1414,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OnboarderProbeResponse"];
+                };
+            };
+        };
+    };
+    listProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Project list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectsEnvelope"];
+                };
+            };
+        };
+    };
+    bindProject: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Idempotency nonce. Replays of the same nonce return the cached response. */
+                "X-GEMBA-Confirm": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BindProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description Bind succeeded. Body is the now-complete `ProjectEntry`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectEntry"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Conflict — `mode="navigate"` and the target repo already contains a `.beads/` directory the server refuses to clobber (`error` = `beads_dir_exists`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Server-side failure during git_init / beads_copy / workspace_toml write. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };

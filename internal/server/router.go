@@ -505,6 +505,15 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/projects/clone", r.cloneProject)
 
+		// gm-root.17.14: bind a partially-bootstrapped project to a
+		// git repo. Two modes — "create" (git init in place) and
+		// "navigate" (copy the beads DB into an existing repo).
+		// Nonce-gated for the same reason as /attach: the handler
+		// writes to disk and the operator must not accidentally
+		// trigger it twice.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/projects/bind", r.bindProject)
+
 		// gm-root.17.3: conversational new-project flow. All three
 		// endpoints are post-only; /start and /turn are fire-and-forget
 		// (low blast radius); /ratify is nonce-gated because it writes to

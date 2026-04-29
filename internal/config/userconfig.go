@@ -10,9 +10,11 @@ package config
 
 import (
 	"errors"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -58,6 +60,16 @@ type ProjectsConfig struct {
 	// directory. Empty string means "use the built-in default"
 	// (~/gemba/projects/).
 	DefaultDir string `toml:"default_dir"`
+
+	// ExtraRoots are additional directories whose immediate children
+	// are scanned for projects (gm-root.17.14). Each entry behaves like
+	// DefaultDir at scan time: every direct child that contains a beads
+	// DB or a .gemba/workspace.toml is reported. Tilde-prefixed paths
+	// are expanded; relative paths are taken as-is (filepath.Clean
+	// applied) so callers can point at fully-qualified locations like
+	// "/srv/team-projects". Missing or unreadable roots produce a log
+	// warning at scan time but do not fail the request.
+	ExtraRoots []string `toml:"extra_roots"`
 }
 
 // LLMConfig holds the [llm] table from config.toml — the shared
@@ -180,18 +192,100 @@ func HasProjectUnder(defaultDir string) (bool, error) {
 	return len(projects) > 0, nil
 }
 
-// ProjectEntry is one discovered project under the default_dir.
+// ProjectKind classifies a discovered project entry by its setup
+// completeness (gm-root.17.14). The picker UI dispatches on this to
+// render either an "open" affordance (KindComplete) or a
+// "finish setup" affordance (KindNeedsWorkspace, KindNeedsRepo).
+type ProjectKind string
+
+const (
+	// KindComplete: the directory has both a beads DB (a `.beads/`
+	// subdir, by convention) AND a `.gemba/workspace.toml`. The picker
+	// can open this project directly.
+	KindComplete ProjectKind = "complete"
+
+	// KindNeedsWorkspace: the directory has a beads DB but no
+	// `.gemba/workspace.toml`. The picker invites the operator to
+	// finish setup via /v1/projects/bind.
+	KindNeedsWorkspace ProjectKind = "needs_workspace"
+
+	// KindNeedsRepo: the directory has a beads DB AND a
+	// `.gemba/workspace.toml` but is not a git repo (no `.git/`). The
+	// picker invites the operator to bind to an existing repo or run
+	// `git init` via /v1/projects/bind.
+	KindNeedsRepo ProjectKind = "needs_repo"
+)
+
+// ProjectEntry is one discovered project — a direct child of one of
+// the configured discovery roots that has either a beads DB or a
+// .gemba/workspace.toml.
 type ProjectEntry struct {
 	// Name is the directory basename — the project's human-readable
 	// identifier (e.g. "my-project").
 	Name string
 	// Path is the absolute path to the project root (the directory that
-	// contains .gemba/workspace.toml).
+	// contains .gemba/workspace.toml or a .beads/ DB).
 	Path string
+	// Kind classifies the entry's setup state. See ProjectKind for the
+	// three values.
+	Kind ProjectKind
+}
+
+// hasBeadsDB reports whether dir contains a beads database. The
+// convention is a `.beads/` subdirectory (created by `bd init`); the
+// directory's contents are not inspected — a stub `.beads/redirect`
+// counts, matching how rigs symlink databases across worktrees.
+func hasBeadsDB(dir string) bool {
+	beadsDot := filepath.Join(dir, ".beads")
+	if info, err := os.Stat(beadsDot); err == nil && info.IsDir() {
+		return true
+	}
+	return false
+}
+
+// hasWorkspaceTOML reports whether dir contains .gemba/workspace.toml.
+func hasWorkspaceTOML(dir string) bool {
+	wsToml := filepath.Join(dir, ".gemba", "workspace.toml")
+	_, err := os.Stat(wsToml)
+	return err == nil
+}
+
+// hasGitRepo reports whether dir is the root of a git working tree.
+// A `.git` may be either a directory (normal repo) or a file (git
+// worktree pointer); both count.
+func hasGitRepo(dir string) bool {
+	gitDot := filepath.Join(dir, ".git")
+	_, err := os.Stat(gitDot)
+	return err == nil
+}
+
+// ClassifyProject returns the ProjectKind for dir, or "" if dir does
+// not look like any kind of project (no beads DB and no
+// .gemba/workspace.toml). Callers MUST check for "" before treating
+// the result as a project.
+func ClassifyProject(dir string) ProjectKind {
+	beads := hasBeadsDB(dir)
+	ws := hasWorkspaceTOML(dir)
+	if !beads && !ws {
+		return ""
+	}
+	if beads && !ws {
+		return KindNeedsWorkspace
+	}
+	// At this point: ws is true; beads may or may not be — historically
+	// (gm-root.18) we only checked workspace.toml. Treat ws+!repo as
+	// KindNeedsRepo regardless of whether beads exists, since a
+	// workspace.toml without a repo is the "partially-bootstrapped"
+	// signal the picker wants to surface.
+	if !hasGitRepo(dir) {
+		return KindNeedsRepo
+	}
+	return KindComplete
 }
 
 // ListProjectsUnder enumerates projects under defaultDir. A project is
-// a direct child directory that contains a .gemba/workspace.toml file.
+// a direct child directory whose ClassifyProject returns a non-empty
+// kind — i.e. it contains a beads DB and/or a .gemba/workspace.toml.
 // Results are returned in the order ReadDir provides them (alphabetical
 // by name on most filesystems). A missing or empty defaultDir returns
 // an empty slice and nil error. Any other I/O error is returned so the
@@ -199,7 +293,7 @@ type ProjectEntry struct {
 //
 // This is the shared scanning primitive used by both HasProjectUnder
 // (cold-start gate, gm-root.17.4) and the /api/v1/projects list
-// endpoint (gm-root.18).
+// endpoint (gm-root.18 / gm-root.17.14).
 func ListProjectsUnder(defaultDir string) ([]ProjectEntry, error) {
 	if defaultDir == "" {
 		return nil, nil
@@ -217,13 +311,110 @@ func ListProjectsUnder(defaultDir string) ([]ProjectEntry, error) {
 			continue
 		}
 		absPath := filepath.Join(defaultDir, e.Name())
-		wsToml := filepath.Join(absPath, ".gemba", "workspace.toml")
-		if _, err := os.Stat(wsToml); err == nil {
-			projects = append(projects, ProjectEntry{
-				Name: e.Name(),
-				Path: absPath,
-			})
+		kind := ClassifyProject(absPath)
+		if kind == "" {
+			continue
 		}
+		projects = append(projects, ProjectEntry{
+			Name: e.Name(),
+			Path: absPath,
+			Kind: kind,
+		})
 	}
 	return projects, nil
+}
+
+// ExpandRoot tilde-expands and cleans a single root path. A leading
+// "~" is replaced with the user's home directory; relative paths are
+// returned cleaned but otherwise untouched (callers that need
+// absolute resolution can wrap with filepath.Abs).
+func ExpandRoot(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", nil
+	}
+	if trimmed == "~" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return home, nil
+	}
+	if strings.HasPrefix(trimmed, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Clean(filepath.Join(home, trimmed[2:])), nil
+	}
+	return filepath.Clean(trimmed), nil
+}
+
+// ListAllProjects scans defaultDir + every entry in extraRoots,
+// classifies each direct-child directory, and returns the deduped
+// union (gm-root.17.14). Order: defaultDir results first, then
+// each extra_root in order. Dedup key is the canonicalized absolute
+// path; ties prefer the first-seen entry.
+//
+// Missing or unreadable roots are NOT fatal — they produce a slog
+// warning and the scan continues. Only the defaultDir itself surfaces
+// an error to the caller (via ListProjectsUnder), preserving the
+// existing /api/v1/projects contract.
+func ListAllProjects(defaultDir string, extraRoots []string) ([]ProjectEntry, error) {
+	primary, err := ListProjectsUnder(defaultDir)
+	if err != nil {
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(primary))
+	out := make([]ProjectEntry, 0, len(primary))
+	for _, p := range primary {
+		key := canonPath(p.Path)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, p)
+	}
+
+	for _, raw := range extraRoots {
+		root, err := ExpandRoot(raw)
+		if err != nil {
+			slog.Warn("projects: extra_root expansion failed",
+				"root", raw, "err", err)
+			continue
+		}
+		if root == "" {
+			continue
+		}
+		entries, err := ListProjectsUnder(root)
+		if err != nil {
+			slog.Warn("projects: extra_root scan failed",
+				"root", root, "err", err)
+			continue
+		}
+		for _, p := range entries {
+			key := canonPath(p.Path)
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// canonPath returns the canonical absolute form of p for dedup keys.
+// Falls back to the cleaned input when EvalSymlinks fails (e.g., the
+// path doesn't exist anymore between scans).
+func canonPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		abs = filepath.Clean(p)
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return abs
+	}
+	return resolved
 }
