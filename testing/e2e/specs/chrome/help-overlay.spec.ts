@@ -25,8 +25,11 @@ test.describe('Help overlay @chrome', () => {
 
     // CATEGORY_LABEL from HelpOverlay.tsx — at least one section per
     // populated category. The overlay omits an empty group, but
-    // DEFAULT_HOTKEYS currently fills every category.
-    for (const label of ['Navigation', 'Selection', 'Bulk', 'Create', 'Views', 'Drawer & panel', 'Help']) {
+    // DEFAULT_HOTKEYS currently fills every category. gm-root.22.8
+    // shortened the 'drawer' category label from "Drawer & panel"
+    // to "Panel" when the legacy drawers were retired in favor of
+    // the unified RHP detail-tab surface.
+    for (const label of ['Navigation', 'Selection', 'Bulk', 'Create', 'Views', 'Panel', 'Help']) {
       await expect(dialog.getByRole('heading', { name: label })).toBeVisible();
     }
 

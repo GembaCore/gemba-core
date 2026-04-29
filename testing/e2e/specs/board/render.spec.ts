@@ -22,7 +22,9 @@ test('flat board renders six columns in the canonical order @board', async ({
   workPlane.seed([workItem({ state_category: 'unstarted' })]);
 
   const board = new BoardPage(page);
-  await board.gotoWorkItemView();
+  // gm-5ekd: Backlog hidden by default; opt-in to keep six-column
+  // contract this spec pins.
+  await board.gotoWorkItemView({ showBacklog: true });
   await board.expectColumnOrder();
 });
 
@@ -37,7 +39,9 @@ test('column counts reflect seeded state_category distribution @board', async ({
     ...inColumn('completed', 1),
   ]);
   const board = new BoardPage(page);
-  await board.gotoWorkItemView();
+  // gm-5ekd: opt into the Backlog column so the seeded backlog beads
+  // surface for the count assertion.
+  await board.gotoWorkItemView({ showBacklog: true });
   await board.expectColumnCount('backlog', 3);
   await board.expectColumnCount('unstarted', 2);
   await board.expectColumnCount('staged', 0);
@@ -64,7 +68,8 @@ test('every column data-testid has a stable selector @board', async ({ page, wor
   // mysterious "selector not found" further down the suite.
   workPlane.seed([workItem({ state_category: 'started' })]);
   const board = new BoardPage(page);
-  await board.gotoWorkItemView();
+  // gm-5ekd: opt-in to keep the Backlog column in the rendered set.
+  await board.gotoWorkItemView({ showBacklog: true });
   for (const cat of COLUMN_ORDER) {
     await expect(board.column(cat)).toBeVisible();
   }

@@ -135,23 +135,37 @@ test.describe('GraphPage critical-path mode @route', () => {
     // in expect.poll so we re-hover and re-check until the state
     // propagates. force:true keeps Playwright from bailing when the
     // inner card transiently overlaps the React Flow controls.
+    //
+    // Loaded CI runners can also drop the hover state between the
+    // host-node poll above and the per-neighbour assertions below
+    // (the pointer drifts onto a sibling React Flow control between
+    // events). Extend the poll to cover the entire highlighted set
+    // — re-hover until host + both neighbours light up at the same
+    // time. The unrelated-node assertion stays a plain check because
+    // it's negative and converges fast.
+    // Snapshot the entire hover-related state in one poll so the
+    // hover gesture and every per-id check happen inside the same
+    // re-hover loop. Loaded CI runners can let the pointer drift
+    // between the host-node poll and per-neighbour assertions if
+    // they're separate steps; consolidating them here means the
+    // poll only succeeds once host + both neighbours are lit AND
+    // the unrelated node stays dark, all observed at the same time.
     const reactFlowNode = page.locator('.react-flow__node[data-id="gm-hov-b"]');
     await expect
       .poll(
         async () => {
           await reactFlowNode.hover({ force: true });
-          return await graph.node('gm-hov-b').getAttribute('data-hover-related');
+          const [a, b, c, d] = await Promise.all([
+            graph.node('gm-hov-a').getAttribute('data-hover-related'),
+            graph.node('gm-hov-b').getAttribute('data-hover-related'),
+            graph.node('gm-hov-c').getAttribute('data-hover-related'),
+            graph.node('gm-hov-d').getAttribute('data-hover-related'),
+          ]);
+          return { a, b, c, d };
         },
         { timeout: 10_000, intervals: [200, 500, 1000, 2000] }
       )
-      .toBe('true');
-
-    // The two neighbours and absence of the unrelated node settle
-    // synchronously once the host node lights up — assertions here
-    // are immediate (toHaveAttribute polls on its own).
-    await expect(graph.node('gm-hov-a')).toHaveAttribute('data-hover-related', 'true');
-    await expect(graph.node('gm-hov-c')).toHaveAttribute('data-hover-related', 'true');
-    await expect(graph.node('gm-hov-d')).not.toHaveAttribute('data-hover-related', 'true');
+      .toEqual({ a: 'true', b: 'true', c: 'true', d: null });
 
     // Move pointer well off-canvas so onNodeMouseLeave fires.
     await page.mouse.move(0, 0);

@@ -78,7 +78,7 @@ const AUTO_GRANULARITY_ZOOM_THRESHOLD = 0.3;
 export function GraphPage() {
   const { data: items = [], isLoading, error } = useWorkItems();
   const { workPlane } = useCapabilities();
-  const { popDetail } = useRhp();
+  const { popDetail, tabs } = useRhp();
   const [highlightCycles, setHighlightCycles] = useState(true);
   const [criticalMode, setCriticalMode] = useState(false);
   // gm-sfbh: selection-aware viewport. Track the ReactFlow instance
@@ -88,6 +88,16 @@ export function GraphPage() {
   // the selection without inspecting the React Flow viewport state.
   const instanceRef = useRef<ReactFlowInstance | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  // gm-sfbh (post-RHP): the legacy WorkItemDrawer's onClose used to
+  // clear focusedId + re-fit the camera in one step (Escape, ×, click-
+  // outside all funneled through it). The drawer is gone — its content
+  // lives on an RHP detail tab now — so we mirror the behavior by
+  // watching the RHP's open tabs: when no `workitem` detail tab is
+  // open anymore we drop focus and re-fit. Keeps Escape (Radix-
+  // independent: the RHP closes the focused detail tab on the
+  // drawer-close hotkey) and the × button consistent with the prior
+  // contract.
+  const hasWorkItemDetailTab = tabs.some((t) => t.kind === 'workitem');
   // gm-qdqu: hovered node + its one-hop neighbours light up via
   // data-hover-related on each affected node and edge. Hover state
   // is ephemeral — leaves the DOM as soon as the pointer moves off.
@@ -211,6 +221,26 @@ export function GraphPage() {
       return () => cancelAnimationFrame(id);
     }
   }, [items.length]);
+
+  // gm-sfbh (post-RHP migration): mirror the legacy onClose behavior —
+  // when the workitem detail tab transitions from open to closed
+  // (via Escape, ×, or any other path) clear the focused-node marker
+  // and re-fit the camera so the operator returns to the at-a-glance
+  // view in one keystroke. Tracking the previous state (rather than
+  // "absence == close") avoids racing with the registry: if the
+  // 'workitem' kind hasn't been registered yet, `tabs` may briefly
+  // omit the workitem entry on first paint even though `popDetail`
+  // queued it; we only clear focus on the open → closed edge.
+  const prevHasWorkItemDetailTabRef = useRef(false);
+  useEffect(() => {
+    const prev = prevHasWorkItemDetailTabRef.current;
+    prevHasWorkItemDetailTabRef.current = hasWorkItemDetailTab;
+    if (!prev) return;
+    if (hasWorkItemDetailTab) return;
+    if (!focusedId) return;
+    setFocusedId(null);
+    fitAll();
+  }, [focusedId, hasWorkItemDetailTab, fitAll]);
 
   // gm-e12.20: traversal indices. successors/predecessors are derived
   // once per render from the structural-edge slice (the same set the

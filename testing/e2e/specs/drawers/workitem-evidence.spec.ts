@@ -6,7 +6,18 @@
 
 import { test, expect } from '../../fixtures/server';
 import { WorkItemDrawerPO } from '../../pages/WorkItemDrawer';
+import { workPlaneManifest } from '../../fixtures/capabilitiesPlane';
 import * as build from '../../builders/workitem';
+
+// gm-t4af: the Evidence section is gated on `has_evidence`, which
+// mirrors `evidence_synthesis_required` on the WorkPlane manifest.
+// Seed a manifest with the flag set on for every test in this file
+// so the SPA renders the Evidence section the specs assert against.
+test.beforeEach(async ({ capabilitiesPlane }) => {
+  capabilitiesPlane.setWorkPlane(
+    workPlaneManifest({ evidence_synthesis_required: true })
+  );
+});
 
 test.describe('WorkItemDrawer Evidence @route', () => {
   test('Evidence renders inline on the Summary (description) tab', async ({
@@ -74,7 +85,10 @@ test.describe('WorkItemDrawer Evidence @route', () => {
     const drawer = new WorkItemDrawerPO(page);
     await drawer.openByDeepLink('gm-ev-no-tab');
     await expect(drawer.tabs).toBeVisible();
-    await expect(page.getByTestId('drawer-tab-evidence')).toHaveCount(0);
+    // New RHP detail-tab testid convention is detail-tab-<name>
+    // (gm-root.22.5/.6/.7). Pin against the new id so a future
+    // rename that re-introduces an evidence tab is caught here.
+    await expect(page.getByTestId('detail-tab-evidence')).toHaveCount(0);
   });
 
   test('citation refs render as <a> when the ref is a URL (gm-4z9n)', async ({

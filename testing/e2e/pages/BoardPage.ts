@@ -74,8 +74,14 @@ export class BoardPage extends AppShell {
   // gotoWorkItemView is the M1 flat-board variant:
   // /board?layout=workitem (post-uipx.18). Spec L293 in the ui-spec
   // calls this the "alternate" view; the default is Epic-primary.
-  async gotoWorkItemView(): Promise<void> {
-    await this.goto('/board?layout=workitem');
+  //
+  // gm-5ekd dropped Backlog from the default kanban (triage now lives
+  // on /refine). Specs that need to assert the full six-column
+  // contract pin show_backlog=1 so the Backlog column renders.
+  async gotoWorkItemView({ showBacklog }: { showBacklog?: boolean } = {}): Promise<void> {
+    const params = new URLSearchParams({ layout: 'workitem' });
+    if (showBacklog) params.set('show_backlog', '1');
+    await this.goto(`/board?${params.toString()}`);
     await this.expectShellRendered();
     await expect(this.workItemBoard).toBeVisible();
   }

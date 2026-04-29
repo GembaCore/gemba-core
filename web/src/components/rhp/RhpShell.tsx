@@ -15,12 +15,14 @@
 
 import {
   useCallback,
+  useContext,
   useEffect,
   useRef,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { HotkeysContext } from '@/hotkeys/context';
 import {
   RHP_WIDTH_MAX,
   RHP_WIDTH_MIN,
@@ -53,6 +55,29 @@ export function RhpShell() {
   useEffect(() => {
     activeButtonRef.current?.scrollIntoView({ block: 'nearest' });
   }, [activeTabId]);
+
+  // gm-root.22.8 (post-drawer-tear-down): the legacy WorkItemDrawer /
+  // EpicDrawer were Radix Dialogs that consumed Escape natively to
+  // close. Now that those drawers live as RHP detail tabs, Escape has
+  // no built-in close. Subscribe to the existing 'drawer-close'
+  // hotkey id (Escape, also bound by HelpOverlay) so the focused
+  // detail tab closes — matches the pre-migration single-keystroke
+  // behavior. Pinned tabs (Help) are not closeable; closeTab is a
+  // no-op against the pinned id.
+  //
+  // We use the registry directly (rather than the useHotkey helper)
+  // so the shell stays mountable in tests that don't wrap with a
+  // HotkeysProvider — the detail-registry tests in RhpDetail.test.tsx
+  // mount RhpShell under just an RhpProvider. When the context is
+  // absent we silently skip the binding.
+  const hotkeyRegistry = useContext(HotkeysContext);
+  useEffect(() => {
+    if (!hotkeyRegistry) return;
+    return hotkeyRegistry.subscribe('drawer-close', () => {
+      if (!activeTabId) return;
+      closeTab(activeTabId);
+    });
+  }, [hotkeyRegistry, activeTabId, closeTab]);
 
   // Drag-resize. Pointer events let one handler drive mouse + touch.
   // We track the start position and starting width on pointerdown,
