@@ -38,6 +38,7 @@ import {
   type EpicSwimlane,
 } from './epicHierarchy';
 import { cellId, resolveRestage, shouldAutoStartSession } from './dragToRestage';
+import { buildMilestoneByEpic } from './milestoneBadge';
 
 // Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
 // Progress → Done → Canceled). The STATE_CATEGORIES order from
@@ -64,6 +65,9 @@ export function EpicView({ items, onSelectEpic }: EpicViewProps) {
     return groupEpicsByRoot(items);
   }, [items]);
   const childCountsByEpic = useMemo(() => buildChildCounts(items), [items]);
+  // gm-4se1: resolve each epic's milestone ancestor once per render so
+  // the cards don't re-walk the relationship graph individually.
+  const milestoneByEpic = useMemo(() => buildMilestoneByEpic(items), [items]);
 
   // PointerSensor requires a 4px move before starting a drag so a plain
   // double-click doesn't accidentally begin a drag gesture. KeyboardSensor
@@ -143,6 +147,7 @@ export function EpicView({ items, onSelectEpic }: EpicViewProps) {
               key={s.root.id}
               swimlane={s}
               childCountsByEpic={childCountsByEpic}
+              milestoneByEpic={milestoneByEpic}
               onSelectEpic={onSelectEpic}
             />
           ))}
@@ -175,10 +180,16 @@ function ColumnHeader() {
 interface SwimlaneRowProps {
   swimlane: EpicSwimlane;
   childCountsByEpic: Map<string, EpicChildCounts>;
+  milestoneByEpic: Map<string, WorkItem>;
   onSelectEpic: (id: string) => void;
 }
 
-function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowProps) {
+function SwimlaneRow({
+  swimlane,
+  childCountsByEpic,
+  milestoneByEpic,
+  onSelectEpic,
+}: SwimlaneRowProps) {
   const isOrphan = swimlane.root.id === ORPHAN_ROOT_ID;
   // gm-uekk: scope-driven filtering may leave only one swimlane —
   // suppress its label since it would just repeat the scope pill.
@@ -225,6 +236,7 @@ function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowP
                 key={epicItem.id}
                 item={epicItem}
                 childCounts={childCountsByEpic.get(epicItem.id) ?? emptyCounts()}
+                milestone={milestoneByEpic.get(epicItem.id)}
                 onSelect={onSelectEpic}
               />
             ))}
@@ -268,9 +280,15 @@ function DroppableCell({ rootID, cat, children }: DroppableCellProps) {
 interface DraggableEpicCardProps {
   item: WorkItem;
   childCounts: EpicChildCounts;
+  milestone?: WorkItem;
   onSelect: (id: string) => void;
 }
-function DraggableEpicCard({ item, childCounts, onSelect }: DraggableEpicCardProps) {
+function DraggableEpicCard({
+  item,
+  childCounts,
+  milestone,
+  onSelect,
+}: DraggableEpicCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
@@ -281,7 +299,13 @@ function DraggableEpicCard({ item, childCounts, onSelect }: DraggableEpicCardPro
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <EpicCard item={item} childCounts={childCounts} onSelect={onSelect} draggable />
+      <EpicCard
+        item={item}
+        childCounts={childCounts}
+        milestone={milestone}
+        onSelect={onSelect}
+        draggable
+      />
     </div>
   );
 }
