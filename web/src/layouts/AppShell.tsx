@@ -18,6 +18,18 @@ import { ProjectPickerProvider } from '@/components/projectpicker/ProjectPickerC
 // level so the topbar '+' button, the picker dropdown, and the /new
 // redirect all open the same instance.
 import { CreateProjectModalProvider } from '@/components/projects/CreateProjectModalContext';
+// gm-root.22.2: Right-Hand Panel — persistent right-side surface
+// hosting the Help tab and unified detail tabs (replacing drawers).
+// The shell mounts here; pinned-tab content (Help) and detail-tab
+// content land in sibling beads .3 and .4.
+import { RhpProvider } from '@/components/rhp/RhpContext';
+import { RhpShell } from '@/components/rhp/RhpShell';
+// gm-root.22.3: Help pinned tab + pinned-content registry.
+// HelpTab registers itself (rail icon) and its body renderer on mount.
+// RhpPinnedContentProvider is the lightweight context that bridges the
+// two without touching the public RhpAPI.
+import { HelpTab } from '@/components/rhp/HelpTab';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 
 export function AppShell() {
   return (
@@ -26,6 +38,8 @@ export function AppShell() {
         <ProjectPickerProvider>
         <CreateProjectModalProvider>
         <WalkProvider>
+        <RhpProvider>
+        <RhpPinnedContentProvider>
           <div className="flex h-screen w-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
             <Sidebar />
             <div className="flex min-w-0 flex-1 flex-col">
@@ -46,11 +60,15 @@ export function AppShell() {
                 <Outlet />
               </main>
             </div>
+            <RhpShell />
+            <HelpTab />
             <AppHotkeys />
             <Palette />
             <PmPanel />
             <AppWalkBindings />
           </div>
+        </RhpPinnedContentProvider>
+        </RhpProvider>
         </WalkProvider>
         </CreateProjectModalProvider>
         </ProjectPickerProvider>
