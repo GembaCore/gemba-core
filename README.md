@@ -205,6 +205,22 @@ live in [Adaptors](https://mikebengtson.github.io/gemba/adaptors/).
 > See the [GitHub commit log](https://github.com/MikeBengtson/gemba/commits/main)
 > for the full history.
 
+### Coming soon
+
+- **Insights with Prometheus-backed time series** — sprint burn-down,
+  spawn rate, completion rate, stuck-session minutes, token spend,
+  escalation backlog. The data path was ratified as a Prometheus
+  proxy (`gm-sf51`): operators run a Prometheus instance scraping
+  Gemba's `/metrics` endpoint and the SPA queries Gemba's
+  `/api/v1/metrics/series` which translates to a Prometheus
+  `query_range`. Implementation deferred until the proxy chain
+  lands; the Insights tab is hidden from the sidebar in the
+  meantime (`gm-flij` re-enables it).
+- **Workflow** — beads molecules surfaced as a first-class Gemba
+  concept (Library / Active runs / Authoring + epic-gate enforcement).
+  See [`docs/design/workflows.md`](docs/design/workflows.md) for the
+  ratified UX.
+
 ## 🏁 Getting Started
 
 ### New project (starting from scratch)

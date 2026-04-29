@@ -27,7 +27,6 @@ const NAV_LINKS = [
   // Review is rendered but click-nav-excluded — see comment above.
   { label: 'Review', path: '/walk', clickNav: false },
   { label: 'Escalations', path: '/escalations' },
-  { label: 'Insights', path: '/insights' },
   { label: 'Agent Sessions', path: '/sessions' },
   { label: 'Settings', path: '/settings' },
 ] as const;
@@ -106,7 +105,6 @@ test.describe('Sidebar cold-start @chrome', () => {
       'Plan',
       'Review',
       'Escalations',
-      'Insights',
       'Agent Sessions',
     ];
     for (const label of workspaceScoped) {

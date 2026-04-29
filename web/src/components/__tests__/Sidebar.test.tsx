@@ -72,15 +72,16 @@ function renderSidebar() {
   );
 }
 
-// Six-item left rail (gm-e12.19, second amendment). Capability
-// Browser and Drift folded into Settings / Escalations panes; only
-// Settings remains workspace-agnostic (so a fresh install can reach
-// global config from a cold start).
+// Five-item left rail (gm-e12.19, second amendment + 2026-04-29
+// Insights removal). Capability Browser and Drift folded into
+// Settings / Escalations panes; Insights removed pending the
+// Prometheus-proxy chain (gm-sf51 / gm-flij). Only Settings remains
+// workspace-agnostic (so a fresh install can reach global config
+// from a cold start).
 const WORKSPACE_SCOPED = [
   'Plan',
   'Review',
   'Escalations',
-  'Insights',
   'Agent Sessions',
 ];
 
