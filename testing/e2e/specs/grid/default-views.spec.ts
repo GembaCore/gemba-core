@@ -78,22 +78,20 @@ test.describe('Grid default views (ui-spec §6.8) @route', () => {
     await expect(page.getByText('ready bead', { exact: false })).toBeVisible();
   });
 
-  // gm-9gub: assertion sees 1 row instead of 2 in route-fake mode.
-  // The done-recent view's 7d window logic looks correct on inspection;
-  // suspected page.clock.install timing or viewContext.now plumbing.
-  // Skipped until traced — see gm-9gub for the diagnostic notes.
-  test.skip('Recently Done view filters to state_category=completed within last 7d, sorted desc — TODO gm-9gub', async ({ page, workPlane }) => {
+  test('Recently Done view filters to state_category=completed within last 7d, sorted desc', async ({ page, workPlane }) => {
     workPlane.seed([
       { id: 'gm-old',    kind: 'task', title: 'closed-stale', status: 'closed',      state_category: 'completed', created_at: EIGHT_DAYS_AGO, updated_at: EIGHT_DAYS_AGO },
       { id: 'gm-recent', kind: 'task', title: 'closed-fresh', status: 'closed',      state_category: 'completed', created_at: SEVEN_DAYS_AGO, updated_at: SEVEN_DAYS_AGO },
       { id: 'gm-now',    kind: 'task', title: 'closed-now',   status: 'closed',      state_category: 'completed', created_at: NOW,            updated_at: NOW },
       { id: 'gm-open',   kind: 'task', title: 'open-recent',  status: 'in_progress', state_category: 'started',   created_at: NOW,            updated_at: NOW },
     ]);
-    // The post-filter compares updated_at against Date.now(); fix
-    // browser time to the assertion's NOW so the 7-day window is
-    // deterministic. The fake-mode dispatcher returns updated_at
-    // unchanged from the seed.
-    await page.clock.install({ time: new Date(NOW) });
+    // gm-9gub: pin Date.now() to NOW so the post-filter's 7-day window
+    // is deterministic. clock.install lets time tick at real-time, so
+    // by the time the click + render lands Date.now() has drifted
+    // ~1-2s past NOW and gm-recent (NOW - 7d + 1s) falls outside the
+    // window. setFixedTime freezes Date.now() at NOW for the entire
+    // page lifetime.
+    await page.clock.setFixedTime(new Date(NOW));
     await page.goto('/board?layout=list&power=1');
     await page.getByTestId('board-preset-done-recent').click();
     await expect(page.locator('[data-testid^="grid-row-gm-"]')).toHaveCount(2);
