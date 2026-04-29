@@ -27,6 +27,15 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { LayoutGrid, List, ListChecks, Plus, RotateCcw, Zap } from 'lucide-react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
 import { BoardColumn } from '@/components/board/BoardColumn';
 import { BoardListView } from '@/components/board/BoardListView';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
@@ -41,6 +50,13 @@ import {
   filterByMilestone,
   type MilestoneID,
 } from '@/components/board/milestone';
+import { resolveRestage, shouldAutoStartSession } from '@/components/board/dragToRestage';
+import { resolveReparent } from '@/components/board/dragToReparent';
+import { useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { useStartSession } from '@/hooks/useSessions';
+import { agentsKeys } from '@/hooks/useAgents';
+import { useQueryClient } from '@tanstack/react-query';
+import type { AgentRef } from '@/types/core.gen';
 import {
   findView,
   LAYOUT_PARAM,
@@ -337,6 +353,67 @@ export function BoardPage() {
 
   const [newItemOpen, setNewItemOpen] = useState(false);
 
+  // gm-75u + gm-935r: a single DndContext spans both the BoardHeader
+  // (so milestone-option rows can be drop targets) and the EpicView
+  // (so column cells can be drop targets). The handler routes by the
+  // over-id encoding: cell|... → restage; milestone-option|... →
+  // re-parent. PointerSensor's 4px threshold prevents accidental drags
+  // from a normal click; KeyboardSensor keeps the cards usable without
+  // a pointer.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor)
+  );
+  const updateWorkItem = useUpdateWorkItem();
+  const startSession = useStartSession();
+  // Read the agents roster lazily from the query cache when auto-start
+  // fires; we don't useAgents() here because mounting BoardPage in
+  // error/loading states shouldn't trigger an agents fetch.
+  const queryClient = useQueryClient();
+  // Index by id so the drag handler can read source state without
+  // re-walking the list. Keyed off the unfiltered dataset so a
+  // milestone-narrowed view still resolves cards correctly when their
+  // drag target lives outside the current filter.
+  const itemById = useMemo(() => {
+    const m = new Map<string, WorkItem>();
+    for (const it of data ?? []) m.set(it.id, it);
+    return m;
+  }, [data]);
+  const onDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const reparent = resolveReparent({
+        activeID: event.active.id,
+        overID: event.over?.id,
+        itemById,
+      });
+      if (reparent) {
+        updateWorkItem.mutate(reparent);
+        return;
+      }
+      const restage = resolveRestage({
+        activeID: event.active.id,
+        overID: event.over?.id,
+        itemById,
+      });
+      if (!restage) return;
+      updateWorkItem.mutate(restage, {
+        onSuccess: (updated) => {
+          if (!shouldAutoStartSession(updated)) return;
+          const agents = queryClient.getQueryData<AgentRef[]>(agentsKeys.list()) ?? [];
+          let agent = 'claude';
+          for (const a of agents) {
+            if (a.dialect) {
+              agent = a.dialect;
+              break;
+            }
+          }
+          startSession.mutate({ bead_id: updated.id, agent_type: agent });
+        },
+      });
+    },
+    [itemById, updateWorkItem, startSession, queryClient]
+  );
+
   // List layout runs its own filtered query; the kanban-level
   // loading and error gates only apply to the kanban renderers.
   if (layout !== 'list' && isLoading) return <SkeletonBoard />;
@@ -353,7 +430,7 @@ export function BoardPage() {
     : data;
 
   return (
-    <>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <BoardHeader
         layout={layout}
         onChangeLayout={setLayout}
@@ -400,7 +477,7 @@ export function BoardPage() {
         onClose={() => setNewItemOpen(false)}
         onCreated={(item) => setOpenWorkItemId(item.id)}
       />
-    </>
+    </DndContext>
   );
 }
 
