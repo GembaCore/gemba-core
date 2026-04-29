@@ -19,6 +19,7 @@ import {
   Layers,
   Network,
   Route as RouteIcon,
+  Wand2,
 } from 'lucide-react';
 import type { WorkItem } from '@/types/core.gen';
 import ReactFlow, {
@@ -66,6 +67,14 @@ const EXTENSION_EDGE_STYLE = { stroke: '#8b5cf6', strokeDasharray: '2 4' };
 const HIGHLIGHT_CYCLE = '#dc2626';
 const HIGHLIGHT_CRITICAL = '#f59e0b';
 
+// gm-vubw: density-UX threshold. Below this zoom the items view is
+// unreadable (a 320-node real workspace lands at ~0.02), so when the
+// operator hasn't taken manual control of the granularity toggle we
+// auto-flip to 'epics' aggregation. Picked at 0.3 because below it
+// nodes render under ~60px wide on a 200px layout — too small to
+// read titles. Above it items stay individually legible.
+const AUTO_GRANULARITY_ZOOM_THRESHOLD = 0.3;
+
 export function GraphPage() {
   const { data: items = [], isLoading, error } = useWorkItems();
   const { workPlane } = useCapabilities();
@@ -88,9 +97,22 @@ export function GraphPage() {
   // Epic. Edges between cross-Epic items aggregate to Epic→Epic
   // edges via deriveAggregatedItems below.
   const [granularity, setGranularity] = useState<'items' | 'epics'>('items');
+  // gm-vubw: when granularityOverride is false the effective view is
+  // driven by zoom — under AUTO_GRANULARITY_ZOOM_THRESHOLD we render
+  // epics so a 300-node workspace shows readable units instead of
+  // microscopic dots. Once the operator clicks the toggle we set
+  // override=true and stop auto-flipping; the operator can re-enable
+  // auto via the Auto button.
+  const [granularityOverride, setGranularityOverride] = useState(false);
+  const [currentZoom, setCurrentZoom] = useState(1);
+  const effectiveGranularity = useMemo<'items' | 'epics'>(() => {
+    if (granularityOverride) return granularity;
+    return currentZoom < AUTO_GRANULARITY_ZOOM_THRESHOLD ? 'epics' : 'items';
+  }, [granularity, granularityOverride, currentZoom]);
   const renderItems = useMemo(
-    () => (granularity === 'epics' ? deriveAggregatedItems(items) : items),
-    [granularity, items]
+    () =>
+      effectiveGranularity === 'epics' ? deriveAggregatedItems(items) : items,
+    [effectiveGranularity, items]
   );
 
   const focusOnNode = useCallback((id: string) => {
@@ -150,21 +172,45 @@ export function GraphPage() {
   // initial render happens during the items-loading phase, ReactFlow
   // mounts with nodes=[] and parks its camera at the empty origin —
   // when items finally arrive the new nodes can land outside the
-  // viewport and the canvas looks blank. Re-fit when the node set
-  // becomes non-empty so the camera always frames real content.
+  // viewport and the canvas looks blank. Re-fit when the *raw* item
+  // count first becomes non-zero (or changes between loads). gm-vubw:
+  // we deliberately key off raw items, not graph.nodeIds — flipping
+  // granularity changes the node count too, but it should preserve
+  // the operator's zoom intent rather than re-fit.
   const lastFitCount = useRef(0);
+  // gm-vubw: programmatic fitView fires onMove with no sourceEvent.
+  // The flag lets onMove ignore the auto-fit's emitted zoom event so
+  // currentZoom only tracks operator-initiated zoom/pan.
+  const suppressMoveZoom = useRef(false);
   useEffect(() => {
-    const count = graph.nodeIds.length;
+    const count = items.length;
     if (count > 0 && count !== lastFitCount.current) {
+      const isFirstFit = lastFitCount.current === 0;
       lastFitCount.current = count;
       // Defer to the next paint so React Flow has translated the new
       // nodes into its internal store before we ask for a fit.
       const id = requestAnimationFrame(() => {
-        instanceRef.current?.fitView();
+        const inst = instanceRef.current;
+        if (!inst) return;
+        suppressMoveZoom.current = true;
+        inst.fitView();
+        // gm-vubw: capture the post-fit zoom on first fit so the
+        // auto-granularity decision sees the real fitted zoom (the
+        // 320-node workspace lands at ~0.02). On later fits we
+        // already know the camera is bracketing the operator's view.
+        if (isFirstFit) {
+          const vp = inst.getViewport?.();
+          if (vp && typeof vp.zoom === 'number') setCurrentZoom(vp.zoom);
+        }
+        // d3-zoom fires its 'zoom' event synchronously inside the
+        // fitView call above, so by the time we get here onMove has
+        // already been invoked (and skipped). Releasing the flag
+        // synchronously lets the next operator gesture drive zoom.
+        suppressMoveZoom.current = false;
       });
       return () => cancelAnimationFrame(id);
     }
-  }, [graph.nodeIds]);
+  }, [items.length]);
 
   // gm-e12.20: traversal indices. successors/predecessors are derived
   // once per render from the structural-edge slice (the same set the
@@ -378,14 +424,27 @@ export function GraphPage() {
           </button>
           <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
           <ToggleButton
-            active={granularity === 'epics'}
-            onClick={() =>
-              setGranularity((g) => (g === 'epics' ? 'items' : 'epics'))
-            }
+            active={effectiveGranularity === 'epics'}
+            onClick={() => {
+              // gm-vubw: any explicit click pins granularity — auto
+              // mode resumes only via the Auto button below. The new
+              // value flips off whatever is currently effective so the
+              // operator's click always changes the view.
+              setGranularity(effectiveGranularity === 'epics' ? 'items' : 'epics');
+              setGranularityOverride(true);
+            }}
             testid="graph-toggle-granularity"
             icon={<Layers className="h-3.5 w-3.5" />}
           >
-            {granularity === 'epics' ? 'Epics' : 'Items'}
+            {effectiveGranularity === 'epics' ? 'Epics' : 'Items'}
+          </ToggleButton>
+          <ToggleButton
+            active={!granularityOverride}
+            onClick={() => setGranularityOverride(false)}
+            testid="graph-toggle-granularity-auto"
+            icon={<Wand2 className="h-3.5 w-3.5" />}
+          >
+            Auto
           </ToggleButton>
           <ToggleButton
             active={highlightCycles}
@@ -412,7 +471,8 @@ export function GraphPage() {
         className="relative min-h-0 flex-1"
         data-testid="graph-canvas-host"
         data-focused-node={focusedId ?? undefined}
-        data-granularity={granularity}
+        data-granularity={effectiveGranularity}
+        data-granularity-auto={granularityOverride ? undefined : 'true'}
       >
         {error ? (
           <div className="m-8 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
@@ -457,6 +517,10 @@ export function GraphPage() {
             }}
             onNodeMouseEnter={(_evt, node) => setHoveredId(node.id)}
             onNodeMouseLeave={() => setHoveredId(null)}
+            onMove={(_evt, viewport) => {
+              if (suppressMoveZoom.current) return;
+              setCurrentZoom(viewport.zoom);
+            }}
             // 1000-node DoD: panOnScroll keeps the canvas responsive
             // when the graph is bigger than the viewport, and the
             // minimap gives the operator something to navigate by
