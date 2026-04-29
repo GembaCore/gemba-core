@@ -189,10 +189,14 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 		// ["beads:dependents"] so the beads/ SPA extension can render
 		// them when loaded (gm-e6.2, DD-9).
 		Relationships: relationshipsFromBead(b, id, prefix),
-		DoD:           dod,
-		CreatedAt:     b.CreatedAt,
-		UpdatedAt:     b.UpdatedAt,
-		Custom:        custom,
+		// gm-e6.5: native `evidence:*` labels become non-synthesized
+		// Evidence entries. Synthesizer-backed entries are merged in
+		// later by GetWorkItem.
+		Evidence:  evidenceFromLabels(b.Labels),
+		DoD:       dod,
+		CreatedAt: b.CreatedAt,
+		UpdatedAt: b.UpdatedAt,
+		Custom:    custom,
 	}
 	if b.Owner != "" {
 		wi.Owner = &core.AgentRef{

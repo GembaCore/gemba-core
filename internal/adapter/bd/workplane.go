@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/evidence"
 )
 
 // Runner is the shape of the `bd` shell the adaptor uses. Tests
@@ -43,6 +44,16 @@ type Config struct {
 	// resolved [core.Repository.ID]. Nil keeps legacy behavior
 	// (operators get repo association only via explicit labels).
 	Repositories *core.RepositoryRegistry
+
+	// RepoPath is the absolute path to the working git repo. Forwarded
+	// to the evidence synthesis library (gm-e6.5) so the GitLog
+	// collector can scan for commits referencing each bead. Empty
+	// disables git-side synthesis.
+	RepoPath string
+
+	// GitHubRepo is "owner/name" passed to the synthesizer's GitHub PR
+	// + CI collectors. Empty disables PR / CI synthesis.
+	GitHubRepo string
 }
 
 // WorkPlane is the Beads-backed core.WorkPlane implementation
@@ -67,6 +78,12 @@ type WorkPlane struct {
 	beadsDir    string
 	watcherOnce sync.Once
 	watcherStop func()
+	// gm-e6.5: evidence synthesizer wired in by NewWorkPlane when a
+	// RepoPath / GitHubRepo is supplied. Nil-safe: GetWorkItem skips
+	// synthesis when synth is nil.
+	synth      *evidence.Synthesizer
+	repoPath   string
+	githubRepo string
 }
 
 // NewWorkPlane returns a WorkPlane shelling to the `bd` binary on PATH.
@@ -93,14 +110,23 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 	if format == "" {
 		format = core.DescriptionFormatMarkdown
 	}
-	return &WorkPlane{
+	wp := &WorkPlane{
 		run:               runner,
 		prefix:            defaultPrefix,
 		descriptionFormat: format,
 		emitter:           core.NewWorkPlaneEmitter(),
 		repos:             cfg.Repositories,
 		beadsDir:          beadsDir,
-	}, nil
+		repoPath:          cfg.RepoPath,
+		githubRepo:        cfg.GitHubRepo,
+	}
+	// Wire the synthesizer only when at least one collector has the
+	// context it needs. Skips spawning a no-op coordinator on bare
+	// installs.
+	if cfg.RepoPath != "" || cfg.GitHubRepo != "" {
+		wp.synth = evidence.NewSynthesizer()
+	}
+	return wp, nil
 }
 
 // NewWorkPlaneWithRunner is the constructor tests use to inject a stub
@@ -397,7 +423,11 @@ func (w *WorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.W
 		return core.WorkItem{}, core.NewAdaptorError(core.KindSessionNotFound,
 			"beads: bead %q not found", native)
 	}
-	return beads[0].toWorkItem(w.prefix, w.repos), nil
+	wi := beads[0].toWorkItem(w.prefix, w.repos)
+	// gm-e6.5: best-effort evidence synthesis. Never fails the call —
+	// synthesizeEvidence swallows errors after slog.Warn.
+	wi = w.synthesizeEvidence(ctx, wi)
+	return wi, nil
 }
 
 // CreateWorkItem creates a new bead via `bd create --json`. Caller-
