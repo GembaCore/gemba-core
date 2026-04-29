@@ -111,6 +111,65 @@ func TestBuildOmitsProfileWhenUnconfigured(t *testing.T) {
 	}
 }
 
+func TestBuildInjectsMilestoneBlockWhenBound(t *testing.T) {
+	// gm-yyo8: a bead resolved under a milestone ancestor must surface
+	// the milestone's title (with M<n> prefix), id, state, and
+	// description. The block is the only difference vs. an unbound bead.
+	ms := &core.WorkItem{
+		ID:          "gm-m7",
+		Kind:        core.KindMilestone,
+		Title:       "M7 Closed Beta",
+		Description: "Close-beta release: enable enterprise tenants.",
+		Status:      "in_progress",
+	}
+	item := core.WorkItem{ID: "gm-foo", Kind: "task", Title: "do thing"}
+	c := Build(Sources{Milestone: ms}, item)
+	for _, sub := range []string{
+		"## Milestone context",
+		"M7 Closed Beta",
+		"gm-m7",
+		"Close-beta release",
+		"in_progress",
+	} {
+		if !strings.Contains(c.Text, sub) {
+			t.Errorf("missing milestone fragment %q in composed:\n%s", sub, c.Text)
+		}
+	}
+}
+
+func TestBuildOmitsMilestoneBlockWhenUnbound(t *testing.T) {
+	// gm-yyo8 selective injection: with no Milestone resolved the
+	// preamble must be byte-identical to pre-yyo8. We assert the
+	// section heading does not appear, which is the only gate the
+	// downstream model uses.
+	item := core.WorkItem{ID: "gm-foo", Kind: "task", Title: "do thing"}
+	c := Build(Sources{}, item)
+	if strings.Contains(c.Text, "Milestone context") {
+		t.Errorf("unbound bead leaked milestone block:\n%s", c.Text)
+	}
+}
+
+func TestBuildTruncatesLongMilestoneDescription(t *testing.T) {
+	// A pathologically long milestone brief must not crowd out the
+	// bead's own DoD. Cap is enforced via milestoneDescCap; we assert
+	// the rendered text stays within a generous upper bound and shows
+	// the truncation marker.
+	long := strings.Repeat("x", milestoneDescCap+500)
+	ms := &core.WorkItem{
+		ID:          "gm-m8",
+		Kind:        core.KindMilestone,
+		Title:       "M8",
+		Description: long,
+	}
+	c := Build(Sources{Milestone: ms}, core.WorkItem{ID: "gm-y", Kind: "task"})
+	if !strings.Contains(c.Text, "…") {
+		t.Error("expected truncation marker on over-cap milestone description")
+	}
+	if strings.Count(c.Text, "x") > milestoneDescCap+10 {
+		t.Errorf("milestone description not truncated; saw %d xs", strings.Count(c.Text, "x"))
+	}
+}
+
 func TestApplyToClaudeMDIdempotent(t *testing.T) {
 	ws := t.TempDir()
 	writeFile(t, filepath.Join(ws, "CLAUDE.md"), "# operator notes\n\nhand-written content\n")
