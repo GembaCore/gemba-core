@@ -123,7 +123,7 @@ export function AdaptorBanner() {
   return (
     <div
       role="alert"
-      className="border-b border-amber-700 bg-amber-950/60 text-amber-100 px-4 py-2 text-sm"
+      className="border-b border-amber-700 bg-amber-950 text-amber-100 px-4 py-2 text-sm"
       data-testid="adaptor-banner"
     >
       <div className="max-w-5xl mx-auto flex flex-wrap gap-x-4 gap-y-1 items-baseline">
