@@ -1,7 +1,6 @@
 ---
 title: "New project \u2014 conversational creation flow"
 decision: none
-backfill: pending
 ---
 
 # New project — conversational creation flow

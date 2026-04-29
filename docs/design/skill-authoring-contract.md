@@ -1,7 +1,6 @@
 ---
 title: "Skill authoring contract (Coach / Manager)"
 decision: none
-backfill: pending
 ---
 
 # Skill authoring contract (Coach / Manager)
