@@ -76,7 +76,7 @@ automated agentic software development to take care of the execution.
 Here's a peek:
 ![Gemba board (default view)](docs/img/board2.png)
 
-The only hard requirement is a **data plane**. [Beads](https://github.com/gastownhall/beads) fullfills that out
+The only hard requirement is a **data plane**. [Beads](https://github.com/MikeBengtson/beads) fulfills that out
 of the box, so the minimum working deployment is `gemba serve` and a browser pointed at it — 
 no orchestrator, no scheduling infrastructure required. 
 **Native terminal orchestration is bundled** so operators who want
