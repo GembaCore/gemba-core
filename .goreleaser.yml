@@ -56,9 +56,9 @@ release:
 
 # Enabled in gm-e8.2 once the tap repo exists and HOMEBREW_TAP_TOKEN is set.
 # brews:
-#   - name: gemba
+#   - name: gemba-core
 #     repository:
-#       owner: MikeBengtson
+#       owner: GembaCore
 #       name: homebrew-tap
 #       token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
 #     homepage: https://github.com/GembaCore/gemba-core

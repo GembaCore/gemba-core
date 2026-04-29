@@ -17,10 +17,10 @@
 ⭐ **Star us on GitHub** — it helps people find this project and tells us we're solving a real problem.
 
 [![Share on X](https://img.shields.io/badge/share-000000?logo=x&logoColor=white)](https://x.com/intent/tweet?text=A%20single-binary%20Go%20%2B%20React%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator:%20https%3A//github.com/GembaCore/gemba-core%20%23kanban%20%23agents%20%23golang)
-[![Share on LinkedIn](https://img.shields.io/badge/share-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba)
-[![Share on Reddit](https://img.shields.io/badge/share-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/submit?url=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba&title=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
-[![Share on Hacker News](https://img.shields.io/badge/share-FF6600?logo=ycombinator&logoColor=white)](https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba&t=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
-[![Share on Mastodon](https://img.shields.io/badge/share-6364FF?logo=mastodon&logoColor=white)](https://mastodonshare.com/?text=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator&url=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba)
+[![Share on LinkedIn](https://img.shields.io/badge/share-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fgithub.com%2FGembaCore%2Fgemba-core)
+[![Share on Reddit](https://img.shields.io/badge/share-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/submit?url=https%3A%2F%2Fgithub.com%2FGembaCore%2Fgemba-core&title=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
+[![Share on Hacker News](https://img.shields.io/badge/share-FF6600?logo=ycombinator&logoColor=white)](https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fgithub.com%2FGembaCore%2Fgemba-core&t=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
+[![Share on Mastodon](https://img.shields.io/badge/share-6364FF?logo=mastodon&logoColor=white)](https://mastodonshare.com/?text=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator&url=https%3A%2F%2Fgithub.com%2FGembaCore%2Fgemba-core)
 
 Kanban like planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Start a new project with a guided conversation or import your existing work — see [Getting Started](#-getting-started) for a quick start. 
 
@@ -231,7 +231,7 @@ first run, which lands on `/board` and opens the unified
 **Create-project** modal:
 
 ```bash
-make build                                               # or: brew install MikeBengtson/tap/gemba (once taps ship)
+make build                                               # or: brew install GembaCore/tap/gemba-core (once taps ship)
 ./bin/gemba serve
 # -> http://127.0.0.1:7666  (redirects to /new on first run)
 ```
