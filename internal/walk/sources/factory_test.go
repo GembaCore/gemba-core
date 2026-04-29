@@ -10,9 +10,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 type stubLister struct {

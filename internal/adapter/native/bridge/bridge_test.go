@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func TestParseLineValid(t *testing.T) {

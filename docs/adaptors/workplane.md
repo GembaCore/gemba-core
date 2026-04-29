@@ -388,7 +388,7 @@ The contract tests ship as an importable Go package so third-party
 adaptor authors can run them in their own CI:
 
 ```go
-import gembatesting "github.com/MikeBengtson/gemba/testing"
+import gembatesting "github.com/GembaCore/gemba-core/testing"
 
 func TestYourAdaptorConformance(t *testing.T) {
     impl := youradaptor.New(...)

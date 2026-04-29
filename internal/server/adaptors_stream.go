@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
 )
 
 // sseHeartbeatInterval bounds the silence between bus events so

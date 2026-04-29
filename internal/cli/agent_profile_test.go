@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner"
 )
 
 func runAgentCmd(t *testing.T, args ...string) (string, error) {

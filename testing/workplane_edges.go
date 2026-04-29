@@ -3,7 +3,7 @@ package gembatesting
 import (
 	"context"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Group C: edge / relationship round-trip.

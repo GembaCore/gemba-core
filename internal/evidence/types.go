@@ -4,7 +4,7 @@ import (
 	"context"
 	"os/exec"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Source labels the origin system a piece of synthesized Evidence
@@ -44,7 +44,7 @@ type Target struct {
 	// collectors use the working directory's repo context.
 	RepoPath string
 	// GitHubRepo is "owner/name" of the GitHub repo to query
-	// (e.g. "MikeBengtson/gemba"). Empty disables the
+	// (e.g. "GembaCore/gemba-core"). Empty disables the
 	// GitHubPR / CI collectors.
 	GitHubRepo string
 }

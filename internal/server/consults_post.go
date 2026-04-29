@@ -36,8 +36,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 // createConsultRequest is the wire body. All optional context

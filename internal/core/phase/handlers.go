@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Advance applies a single Phase transition to state and returns the

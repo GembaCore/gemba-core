@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/GembaCore/gemba-core/internal/events"
 )
 
 // recPublisher captures every Publish call so tests can assert on

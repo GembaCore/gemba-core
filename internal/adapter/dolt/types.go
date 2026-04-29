@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // issueRow is the projection of the beads `issues` table we scan

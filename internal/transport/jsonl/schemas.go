@@ -12,8 +12,8 @@
 package jsonl
 
 import (
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/transport"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/transport"
 )
 
 // DecodeCreateWorkItem decodes the params of a create_work_item frame.

@@ -12,7 +12,7 @@
 // for inspection and registration.
 package regression
 
-import "github.com/MikeBengtson/gemba/internal/qa/linters"
+import "github.com/GembaCore/gemba-core/internal/qa/linters"
 
 // RegressionSuite is the minimal contract every QA-runnable check
 // satisfies. Kept deliberately small so future suite types (custom Go

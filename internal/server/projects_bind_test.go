@@ -27,7 +27,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // bindRouter builds a Router with stub GitInitRunner so the test

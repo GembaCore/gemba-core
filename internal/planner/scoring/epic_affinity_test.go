@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func TestEpicAffinity_FirstPickInStreakScoresOne(t *testing.T) {

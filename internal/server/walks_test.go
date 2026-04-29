@@ -19,11 +19,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/events"
-	"github.com/MikeBengtson/gemba/internal/skills/walk_summary"
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/events"
+	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 // newWalkRouter returns a Router with a fresh in-memory walk store

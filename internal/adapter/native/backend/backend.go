@@ -16,7 +16,7 @@ package backend
 import (
 	"context"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Session is the unit of identity: one tmux pane / iTerm tab /

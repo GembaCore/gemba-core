@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // gm-e12.21.2 — git clone endpoint backing the Create-project modal's

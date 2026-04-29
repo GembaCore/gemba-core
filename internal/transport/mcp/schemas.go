@@ -14,8 +14,8 @@ package mcp
 import (
 	"encoding/json"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/transport"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/transport"
 )
 
 // decodeArgs is the MCP-specific preamble: tool-call arguments arrive as

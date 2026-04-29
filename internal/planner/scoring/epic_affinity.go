@@ -11,7 +11,7 @@
 
 package scoring
 
-import "github.com/MikeBengtson/gemba/core"
+import "github.com/GembaCore/gemba-core/core"
 
 // DefaultEpicAffinityDecayPerTurn is the per-turn decrement applied
 // after a streak's first close. With the default 0.1 a session

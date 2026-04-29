@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner"
 )
 
 func TestAgeByDays_NilInIsNilOut(t *testing.T) {

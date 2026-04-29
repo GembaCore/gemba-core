@@ -31,7 +31,7 @@ Runtime deps (`tmux`, `git`, `bd`, `dolt`, agent CLIs) are listed in
 ## Build + install
 
 ```bash
-git clone https://github.com/MikeBengtson/gemba.git
+git clone https://github.com/GembaCore/gemba-core.git
 cd gemba
 
 make deps                       # go mod download + pnpm install
@@ -209,7 +209,7 @@ OIDC. Verify before deploying:
 
 ```bash
 cosign verify ghcr.io/mikebengtson/gemba-server:v0.1.0 \
-  --certificate-identity-regexp=https://github.com/MikeBengtson/gemba/.* \
+  --certificate-identity-regexp=https://github.com/GembaCore/gemba-core/.* \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 

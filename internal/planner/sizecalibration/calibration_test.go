@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/enrichment"
+	"github.com/GembaCore/gemba-core/internal/enrichment"
 )
 
 func sample(b enrichment.EstimatedSize, dur time.Duration) Sample {

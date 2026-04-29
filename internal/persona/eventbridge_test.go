@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/events"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/events"
 )
 
 // newDispatcherForBridge spins a Dispatcher seeded with one running

@@ -17,9 +17,9 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/planner/targets"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner/targets"
 )
 
 const fixedRetroTime = "2026-04-26T16:00:00Z"

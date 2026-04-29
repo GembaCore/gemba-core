@@ -22,8 +22,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // projectEntry is one row in GET /api/v1/projects. Name is the directory

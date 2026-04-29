@@ -24,7 +24,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner"
 )
 
 // Store persists session intents + the audit log. Wraps a *sql.DB

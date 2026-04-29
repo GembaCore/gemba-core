@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/GembaCore/gemba-core/internal/events"
 )
 
 func TestObserve_EscalationOpenCloseGauge(t *testing.T) {

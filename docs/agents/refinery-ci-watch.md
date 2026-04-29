@@ -22,11 +22,11 @@ Skip if the most recent run for the commit on `main` is already green.
 
 1. **Identify the latest CI run on `main`:**
    ```bash
-   gh run list --repo MikeBengtson/gemba --branch main --limit 1
+   gh run list --repo GembaCore/gemba-core --branch main --limit 1
    ```
 2. **If status is failure**, pull the failing log:
    ```bash
-   gh run view <run-id> --repo MikeBengtson/gemba --log-failed | head -200
+   gh run view <run-id> --repo GembaCore/gemba-core --log-failed | head -200
    ```
 3. **Classify the failure.** Use the table below. If it matches a known pattern,
    fix in place. Otherwise, file and sling a bead.

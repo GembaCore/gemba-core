@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/enrichment"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/enrichment"
 )
 
 // Sample is one closed bead's predicted-vs-actual pair. Predicted

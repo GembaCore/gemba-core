@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	gembatesting "github.com/MikeBengtson/gemba/testing"
+	"github.com/GembaCore/gemba-core/core"
+	gembatesting "github.com/GembaCore/gemba-core/testing"
 )
 
 // TestProbe_MutationWithoutEvent_NamedFailure proves the contract from

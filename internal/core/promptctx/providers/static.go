@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/promptctx"
+	"github.com/GembaCore/gemba-core/internal/core/promptctx"
 )
 
 // StaticProvider serves a fixed Content string. Useful as a baseline

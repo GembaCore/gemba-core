@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/agents"
 )
 
 const sampleProfile = `# Interaction profile

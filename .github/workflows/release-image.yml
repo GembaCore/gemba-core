@@ -10,7 +10,7 @@ name: Release Container Image
 # Image signing is keyless via cosign + GitHub OIDC — no key material in
 # secrets, no key rotation. Verification:
 #   cosign verify ghcr.io/mikebengtson/gemba-server:<tag> \
-#     --certificate-identity-regexp=https://github.com/MikeBengtson/gemba/.* \
+#     --certificate-identity-regexp=https://github.com/GembaCore/gemba-core/.* \
 #     --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 
 on:

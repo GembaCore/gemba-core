@@ -41,9 +41,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
-	"github.com/MikeBengtson/gemba/internal/walk"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 // PerspectiveContributionKind classifies an inline perspective. Kept

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func TestGembaEventJSONRoundTrip(t *testing.T) {

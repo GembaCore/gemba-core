@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/transport/api"
-	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/transport/api"
+	"github.com/GembaCore/gemba-core/internal/transport/testadaptors"
 )
 
 func newRouterWithOrch(t *testing.T, op core.OrchestrationPlaneAdaptor) *Router {

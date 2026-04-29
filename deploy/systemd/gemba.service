@@ -1,6 +1,6 @@
 [Unit]
 Description=Gemba — WorkPlane + OrchestrationPlane UI
-Documentation=https://github.com/MikeBengtson/gemba
+Documentation=https://github.com/GembaCore/gemba-core
 After=network-online.target
 Wants=network-online.target
 

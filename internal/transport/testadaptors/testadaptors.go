@@ -10,7 +10,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // FakeWorkPlane is a programmable core.WorkPlane for handler / transport

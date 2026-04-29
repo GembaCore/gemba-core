@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Claim is one entry in the index — "session S has been working

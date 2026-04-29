@@ -25,7 +25,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // bdInstallInstructions is the message printed to stderr when bd is not found.

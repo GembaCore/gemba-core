@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/skills/newproject"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/skills/newproject"
 )
 
 // MissingClientDiagnostic is the operator-facing message the SPA

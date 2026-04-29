@@ -3,7 +3,7 @@ package bd
 import (
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func TestRepositoriesFromLabels_Empty(t *testing.T) {

@@ -163,7 +163,7 @@ def social_01_dark_kanban():
            font=font(MENLO, 26, index=0), fill=(168, 172, 184, 255))
     _draw_kanban_motif(d, img, x0=720, y0=200, card_h=90, card_w=240, gap=18, agent_x_off=72)
     foot_f = font(MENLO, 18, index=0)
-    d.text((72, H_SOCIAL - 60), "MikeBengtson/gemba", font=foot_f, fill=(120, 124, 138, 255))
+    d.text((72, H_SOCIAL - 60), "GembaCore/gemba-core", font=foot_f, fill=(120, 124, 138, 255))
     fr = "single-binary · adaptor-agnostic"
     fw, _ = text_size(d, fr, foot_f)
     d.text((W - fw - 72, H_SOCIAL - 60), fr, font=foot_f, fill=(120, 124, 138, 255))
@@ -177,7 +177,7 @@ def banner_01_dark_kanban():
     d.text((48, 56), "gemba", font=font(HELV, 96, index=1), fill=(250, 250, 249, 255))
     d.text((52, 168), "human-ordered workflow  →  AI agents",
            font=font(MENLO, 18, index=0), fill=(168, 172, 184, 255))
-    d.text((52, 200), "MikeBengtson/gemba",
+    d.text((52, 200), "GembaCore/gemba-core",
            font=font(MENLO, 16, index=0), fill=(120, 124, 138, 255))
     # Compact horizontal kanban → arrow → 3 stacked agent pips.
     cx = 600
@@ -229,7 +229,7 @@ def social_02_light_serif():
         if i < 2:
             d.line([(x + r + 8, dy), (x + sp - r - 8, dy)], fill=(180, 184, 196, 255), width=2)
         d.ellipse([(x - r, dy - r), (x + r, dy + r)], fill=(*color, 255))
-    foot = "github.com/MikeBengtson/gemba"
+    foot = "github.com/GembaCore/gemba-core"
     foot_f = font(MENLO, 18, index=0)
     fw, _ = text_size(d, foot, foot_f)
     d.text(((W - fw) // 2, H_SOCIAL - 64), foot, font=foot_f, fill=(140, 144, 156, 255))
@@ -278,7 +278,7 @@ def social_03_brutalist_mono():
     d.text((72, H_SOCIAL - 130), "you order.  they execute.",
            font=font(MENLO, 28, index=1), fill=(*PRI["p1"], 255))
     d.text((72, H_SOCIAL - 60),
-           "MikeBengtson/gemba   ·   single-binary · workplane × orchestrationplane",
+           "GembaCore/gemba-core   ·   single-binary · workplane × orchestrationplane",
            font=font(MENLO, 18, index=0), fill=(120, 124, 138, 255))
     return img
 
@@ -458,7 +458,7 @@ def social_05_gradient_dispatch():
                font=font(MENLO, 22, index=1), fill=(255, 255, 255, 220))
         d.text((base_x + 240, y + 36), agent,
                font=font(MENLO, 20, index=0), fill=(255, 255, 255, 240))
-    d.text((72, H_SOCIAL - 60), "github.com/MikeBengtson/gemba",
+    d.text((72, H_SOCIAL - 60), "github.com/GembaCore/gemba-core",
            font=font(MENLO, 18, index=0), fill=(255, 255, 255, 200))
     return img
 
@@ -612,7 +612,7 @@ def social_arch_gradient():
                     "           OpenHands · CrewAI · …"])
 
     # Footer.
-    d.text((72, H_SOCIAL - 28), "github.com/MikeBengtson/gemba",
+    d.text((72, H_SOCIAL - 28), "github.com/GembaCore/gemba-core",
            font=font(MENLO, 14, index=0), fill=(255, 255, 255, 200))
     return img
 
@@ -738,7 +738,7 @@ def social_06_blueprint():
 
     foot_f = font(MENLO, 16, index=0)
     d.text((72, H_SOCIAL - 56),
-           "MikeBengtson/gemba   ·   adaptor-agnostic single binary",
+           "GembaCore/gemba-core   ·   adaptor-agnostic single binary",
            font=foot_f, fill=(160, 200, 220, 255))
     return img
 
@@ -830,7 +830,7 @@ def social_07_adaptor_matrix():
                         (x + cell // 2 + 14, y + cell // 2)],
                        fill=(170, 172, 180, 255), width=3)
 
-    foot = "github.com/MikeBengtson/gemba"
+    foot = "github.com/GembaCore/gemba-core"
     foot_f = font(MENLO, 18, index=0)
     fw, _ = text_size(d, foot, foot_f)
     d.text((W - fw - 72, H_SOCIAL - 60), foot, font=foot_f, fill=(140, 144, 156, 255))
@@ -943,7 +943,7 @@ def social_08_capability_flags():
         _capability_chip(d, x, y, on, label)
 
     d.text((72, H_SOCIAL - 60),
-           "MikeBengtson/gemba   ·   capability-aware UI",
+           "GembaCore/gemba-core   ·   capability-aware UI",
            font=font(MENLO, 18, index=0), fill=(120, 124, 138, 255))
     return img
 
@@ -955,7 +955,7 @@ def banner_08_capability_flags():
            font=font(HELV, 76, index=1), fill=(250, 250, 249, 255))
     d.text((52, 138), "the UI gates on what the adaptor declares.",
            font=font(MENLO, 16, index=0), fill=(180, 186, 200, 255))
-    d.text((52, 168), "MikeBengtson/gemba",
+    d.text((52, 168), "GembaCore/gemba-core",
            font=font(MENLO, 14, index=0), fill=(120, 124, 138, 255))
     flags = [
         (True,  "sprint_native"),
@@ -1022,7 +1022,7 @@ def social_09_persona_constellation():
     d.text((78, 222), "typed personas. coded skills. operator orbit.",
            font=font(MENLO, 22, index=0), fill=(180, 186, 200, 255))
     d.text((72, H_SOCIAL - 60),
-           "MikeBengtson/gemba   ·   Coach / Manager varieties · capability-gated",
+           "GembaCore/gemba-core   ·   Coach / Manager varieties · capability-gated",
            font=font(MENLO, 18, index=0), fill=(120, 124, 138, 255))
 
     personas = [
@@ -1048,7 +1048,7 @@ def banner_09_persona_constellation():
            font=font(HELV, 80, index=1), fill=(250, 250, 249, 255))
     d.text((52, 162), "typed personas. coded skills. operator orbit.",
            font=font(MENLO, 16, index=0), fill=(180, 186, 200, 255))
-    d.text((52, 196), "MikeBengtson/gemba",
+    d.text((52, 196), "GembaCore/gemba-core",
            font=font(MENLO, 14, index=0), fill=(120, 124, 138, 255))
 
     personas = [
@@ -1140,7 +1140,7 @@ def social_10_three_pane():
     )
 
     foot_f = font(MENLO, 18, index=0)
-    foot = "github.com/MikeBengtson/gemba"
+    foot = "github.com/GembaCore/gemba-core"
     fw, _ = text_size(d, foot, foot_f)
     d.text((W - fw - 72, H_SOCIAL - 56), foot, font=foot_f,
            fill=(140, 144, 156, 255))
@@ -1154,7 +1154,7 @@ def banner_10_three_pane():
            font=font(HELV_NEUE, 76, index=1), fill=PRI["ink"] + (255,))
     d.text((52, 152), "queue · dispatch · sessions.",
            font=font(HELV_NEUE, 18, index=0), fill=(80, 84, 96, 255))
-    d.text((52, 182), "MikeBengtson/gemba",
+    d.text((52, 182), "GembaCore/gemba-core",
            font=font(MENLO, 14, index=0), fill=(140, 144, 156, 255))
 
     # Compact three panes on the right.

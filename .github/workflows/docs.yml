@@ -6,7 +6,7 @@
 #   - manual dispatch
 #   - PRs that touch docs/, docs-site/, or this workflow (build-only, no deploy)
 #
-# Deploy URL: https://mikebengtson.github.io/gemba/
+# Deploy URL: https://gembacore.github.io/gemba-core/
 name: docs
 
 on:

@@ -387,7 +387,7 @@ expected to pass at minimum:
 The orchestration contract tests ship as an importable Go package:
 
 ```go
-import gembatesting "github.com/MikeBengtson/gemba/testing"
+import gembatesting "github.com/GembaCore/gemba-core/testing"
 
 func TestYourOrchestrationConformance(t *testing.T) {
     impl := youradaptor.New(...)

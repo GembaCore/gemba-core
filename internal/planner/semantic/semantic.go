@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner/conflicts"
-	"github.com/MikeBengtson/gemba/internal/planner/targets"
-	"github.com/MikeBengtson/gemba/internal/sourceanalysis"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner/conflicts"
+	"github.com/GembaCore/gemba-core/internal/planner/targets"
+	"github.com/GembaCore/gemba-core/internal/sourceanalysis"
 )
 
 // Detector implements conflicts.SemanticDetector by running

@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/bridge"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/bridge"
 )
 
 // OrchestrationPlane is the native adaptor. gm-native.9 extends the

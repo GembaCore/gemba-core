@@ -25,7 +25,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // SessionTelemetry is the input bundle CostMeter synthesis

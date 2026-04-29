@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/codeanalysis"
-	"github.com/MikeBengtson/gemba/internal/core/promptctx"
+	"github.com/GembaCore/gemba-core/internal/core/codeanalysis"
+	"github.com/GembaCore/gemba-core/internal/core/promptctx"
 )
 
 // ImpactAnalysisProvider renders the cascade-of-change for a

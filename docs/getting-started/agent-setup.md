@@ -18,7 +18,7 @@ picker reads that file at boot.
 This guide covers the most common agents people drop into Gemba.
 For the full schema (including the `[agent.container]` stanza for
 sandboxed runs), see
-[`internal/adapter/native/agents/registry.go`](https://github.com/MikeBengtson/gemba/blob/main/internal/adapter/native/agents/registry.go).
+[`internal/adapter/native/agents/registry.go`](https://github.com/GembaCore/gemba-core/blob/main/internal/adapter/native/agents/registry.go).
 
 ## The schema in one screen
 

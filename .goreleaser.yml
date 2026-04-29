@@ -61,7 +61,7 @@ release:
 #       owner: MikeBengtson
 #       name: homebrew-tap
 #       token: '{{ .Env.HOMEBREW_TAP_TOKEN }}'
-#     homepage: https://github.com/MikeBengtson/gemba
+#     homepage: https://github.com/GembaCore/gemba-core
 #     description: Atlassian-style UI for Gas Town
 #     license: MIT
 #     test: |

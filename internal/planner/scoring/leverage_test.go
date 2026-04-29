@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // fakeView is a literal in-memory DependencyView. blocks[X] = list of

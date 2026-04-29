@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Bead mirrors a row of `bd show --json` / `bd list --json`. Only the

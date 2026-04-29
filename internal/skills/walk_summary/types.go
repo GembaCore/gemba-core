@@ -3,7 +3,7 @@ package walk_summary
 import (
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 // ID is the canonical skill identifier referenced from the

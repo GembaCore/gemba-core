@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/concepts"
+	"github.com/GembaCore/gemba-core/internal/concepts"
 )
 
 // runCmd executes the root command with the supplied argv, returning

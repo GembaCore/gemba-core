@@ -21,7 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner"
 )
 
 // defaultPolicyFilePath is the conventional location for the

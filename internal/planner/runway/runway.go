@@ -21,8 +21,8 @@ package runway
 import (
 	"math"
 
-	"github.com/MikeBengtson/gemba/internal/enrichment"
-	"github.com/MikeBengtson/gemba/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/enrichment"
+	"github.com/GembaCore/gemba-core/internal/planner"
 )
 
 // DefaultDriftPenaltyWeight is the multiplier applied to

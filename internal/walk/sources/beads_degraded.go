@@ -26,8 +26,8 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
 )
 
 // HealthSnapshotter is the minimal HealthBus surface the lister

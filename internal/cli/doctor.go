@@ -9,15 +9,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
-	eventlog "github.com/MikeBengtson/gemba/internal/events/log"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
+	eventlog "github.com/GembaCore/gemba-core/internal/events/log"
 
 	// Registers the v1 adaptors via init() side effects. Doctor relies on
 	// these to enumerate what's available; new adaptors land by adding a
 	// blank import here.
-	_ "github.com/MikeBengtson/gemba/internal/adapter/bd"
-	_ "github.com/MikeBengtson/gemba/internal/adapter/gc"
-	_ "github.com/MikeBengtson/gemba/internal/adapter/gt"
+	_ "github.com/GembaCore/gemba-core/internal/adapter/bd"
+	_ "github.com/GembaCore/gemba-core/internal/adapter/gc"
+	_ "github.com/GembaCore/gemba-core/internal/adapter/gt"
 )
 
 type doctorFlags struct {

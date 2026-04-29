@@ -14,7 +14,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // SessionLookup is the per-session subset of core.OrchestrationPlane

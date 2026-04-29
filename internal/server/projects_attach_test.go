@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // attachRouter builds a Router with stub Pinger + GitInitRunner so the

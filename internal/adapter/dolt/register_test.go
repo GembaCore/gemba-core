@@ -5,8 +5,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/dolt"
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
+	"github.com/GembaCore/gemba-core/internal/adapter/dolt"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
 )
 
 // Pins the wire-up serve.go depends on (gm-* fix for the false

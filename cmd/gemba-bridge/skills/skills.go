@@ -16,7 +16,7 @@ import (
 	"embed"
 	"io/fs"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/install"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/install"
 )
 
 //go:embed coaching/* manager/*

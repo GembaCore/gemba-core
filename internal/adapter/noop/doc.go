@@ -4,7 +4,7 @@
 // valid zero-state adaptor while the real backend is being wired.
 //
 // The implementations are intentionally small: just enough to pass the
-// generic probes in github.com/MikeBengtson/gemba/testing. They are NOT
+// generic probes in github.com/GembaCore/gemba-core/testing. They are NOT
 // production adaptors — no event bus, no persistence, no concurrency
 // beyond a single mutex.
 package noop

@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // stubAdoptableLister returns the closure expected by AdoptableLister.

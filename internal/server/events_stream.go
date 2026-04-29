@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/GembaCore/gemba-core/internal/events"
 )
 
 // eventsHeartbeatInterval is the cadence between SSE keepalive lines

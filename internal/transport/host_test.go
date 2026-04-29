@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func TestNegotiate_OK(t *testing.T) {

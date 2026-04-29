@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/bd"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/bd"
 )
 
 // TestDoDExtractFromDescription locks the read-side DoD parse: a bead

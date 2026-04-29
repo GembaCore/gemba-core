@@ -10,8 +10,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/planner/targets"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner/targets"
 )
 
 // ── target comparison ────────────────────────────────────────────

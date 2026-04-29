@@ -29,7 +29,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // BeadTarget is the planner-derived operational location for a

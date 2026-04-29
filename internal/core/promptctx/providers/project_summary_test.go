@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/promptctx"
+	"github.com/GembaCore/gemba-core/internal/core/promptctx"
 )
 
 type fakeSummarySrc struct {

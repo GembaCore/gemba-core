@@ -10,12 +10,12 @@ import starlight from '@astrojs/starlight';
 // derived from the first H1 if missing. The mirrored copy is
 // gitignored — the source-of-truth markdown is untouched.
 //
-// Site / base URL targets GitHub Pages at MikeBengtson/gemba so the
-// deployed URL is https://mikebengtson.github.io/gemba/. Override
+// Site / base URL targets GitHub Pages at GembaCore/gemba-core so the
+// deployed URL is https://gembacore.github.io/gemba-core/. Override
 // with SITE / BASE env vars if hosted elsewhere.
 
-const site = process.env.SITE ?? 'https://mikebengtson.github.io';
-const base = process.env.BASE ?? '/gemba/';
+const site = process.env.SITE ?? 'https://gembacore.github.io';
+const base = process.env.BASE ?? '/gemba-core/';
 
 export default defineConfig({
   site,
@@ -28,13 +28,13 @@ export default defineConfig({
         'Single-binary work-tracker + agent orchestration UI. Bring a WorkPlane adaptor, optionally a runtime.',
       logo: { src: './src/assets/logo.svg' },
       social: {
-        github: 'https://github.com/MikeBengtson/gemba',
+        github: 'https://github.com/GembaCore/gemba-core',
       },
       // The mirrored content tree under docs-site/src/content/docs/ is
       // gitignored; the source-of-truth markdown lives in /docs at the
       // repo root, so "edit this page" should send operators there.
       editLink: {
-        baseUrl: 'https://github.com/MikeBengtson/gemba/edit/main/docs/',
+        baseUrl: 'https://github.com/GembaCore/gemba-core/edit/main/docs/',
       },
       sidebar: [
         {

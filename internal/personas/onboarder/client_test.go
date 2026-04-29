@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // TestClientFromLLMConfig_NoProvider_NoEnv: empty provider AND no

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/core/projectshape"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/core/projectshape"
 )
 
 // fakeSkill is the test-only skill stand-in. The full epic_order

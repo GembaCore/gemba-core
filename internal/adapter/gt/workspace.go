@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // A Gas Town rig is a git clone + witness/refinery tmux agents + a

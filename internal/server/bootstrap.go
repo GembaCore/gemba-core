@@ -46,7 +46,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // BootstrapSource enumerates the four source kinds the wizard

@@ -22,8 +22,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner/dispatch"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner/dispatch"
 )
 
 // PickCalibrationRow is one (recommended_top, picked, score_delta,

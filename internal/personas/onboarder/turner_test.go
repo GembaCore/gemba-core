@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/skills/newproject"
+	"github.com/GembaCore/gemba-core/internal/skills/newproject"
 )
 
 // TestSkillTurner_LazySpawn: Probe and Turn share one Persona and

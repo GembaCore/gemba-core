@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/persona/purviewgate"
+	"github.com/GembaCore/gemba-core/core"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/persona/purviewgate"
 )
 
 // Dispatcher is the in-memory orchestrator for persona consults. It

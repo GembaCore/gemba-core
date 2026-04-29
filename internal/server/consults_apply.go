@@ -24,7 +24,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/persona"
 	"github.com/go-chi/chi/v5"
 )
 

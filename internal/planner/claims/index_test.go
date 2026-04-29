@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func mustParse(t *testing.T, s string) time.Time {

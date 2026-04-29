@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/enrichment"
-	"github.com/MikeBengtson/gemba/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/enrichment"
+	"github.com/GembaCore/gemba-core/internal/planner"
 )
 
 func almostEqual(t *testing.T, name string, got, want float64) {

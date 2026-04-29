@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/internal/concepts"
+	"github.com/GembaCore/gemba-core/internal/concepts"
 )
 
 // newConceptsCmd builds the `gemba concepts` subcommand tree.

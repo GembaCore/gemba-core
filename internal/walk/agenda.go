@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // DefaultRecentWindow is the lookback window for bead_filed and

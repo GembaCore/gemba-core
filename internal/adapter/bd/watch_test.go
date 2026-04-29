@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // gm-e6.6 — fsnotify+poll Subscribe path.

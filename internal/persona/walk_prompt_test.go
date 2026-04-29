@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 func TestWalkPromptExtension_EmptyIDReturnsEmpty(t *testing.T) {

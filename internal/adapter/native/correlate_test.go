@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // fakeWorkPlane captures AttachEvidence calls for verification. Other

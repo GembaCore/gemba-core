@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/install"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/install"
 )
 
 // runInstall is the user-facing entry that the cobra command wires

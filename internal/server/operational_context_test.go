@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/transport/testadaptors"
 )
 
 func TestOperationalContext_HappyPath(t *testing.T) {

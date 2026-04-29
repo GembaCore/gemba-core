@@ -30,7 +30,7 @@ package persona
 import (
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 // walkSystemPromptFragment is the text appended to the persona

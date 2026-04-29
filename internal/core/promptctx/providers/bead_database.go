@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/promptctx"
+	"github.com/GembaCore/gemba-core/internal/core/promptctx"
 )
 
 // BeadSnapshot is the per-repo snapshot a BeadDatabaseSource returns.

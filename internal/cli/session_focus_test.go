@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/planner/intent"
+	"github.com/GembaCore/gemba-core/internal/planner/intent"
 )
 
 func runFocusCmd(t *testing.T, args ...string) (string, error) {

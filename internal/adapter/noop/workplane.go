@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // WorkPlane is a minimal in-memory core.WorkPlane. It declares a

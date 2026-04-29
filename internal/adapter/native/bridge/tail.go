@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Tail watches a single session's bridge log and emits

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/MikeBengtson/gemba/internal/skills/newproject"
+	"github.com/GembaCore/gemba-core/internal/skills/newproject"
 )
 
 // SkillTurner adapts an Onboarder Persona onto the

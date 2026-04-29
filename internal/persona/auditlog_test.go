@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 func sampleRecord(id string, started time.Time) corepersona.PersonaConsultRecord {

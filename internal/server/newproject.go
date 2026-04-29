@@ -41,8 +41,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
-	"github.com/MikeBengtson/gemba/internal/skills/newproject"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/skills/newproject"
 )
 
 // ─── Wire types (re-exported from internal/skills/newproject) ───────

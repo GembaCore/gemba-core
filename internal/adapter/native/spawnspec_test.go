@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/agents"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 func TestBuildSpawnSpec_TmuxPathUnchanged(t *testing.T) {

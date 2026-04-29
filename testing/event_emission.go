@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // gm-e3.6.3 — every state-changing adaptor method MUST emit a matching

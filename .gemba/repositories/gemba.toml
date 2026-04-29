@@ -12,7 +12,7 @@
 id = "gemba"
 path = "/Users/mikebengtson/gt/gemba/crew/mike3"
 default_branch = "main"
-url = "https://github.com/MikeBengtson/gemba.git"
+url = "https://github.com/GembaCore/gemba-core.git"
 
 # Bead-id prefix for cross-repo disambiguation (gm-d2ts). Beads
 # filed against this repository use IDs like gm-e3, gm-518.

@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/GembaCore/gemba-core/internal/events"
 )
 
 // EventPlane is the events.Plane stamped on every phase.* event.

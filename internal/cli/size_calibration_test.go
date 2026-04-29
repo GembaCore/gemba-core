@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/enrichment"
-	"github.com/MikeBengtson/gemba/internal/planner/sizecalibration"
+	"github.com/GembaCore/gemba-core/internal/enrichment"
+	"github.com/GembaCore/gemba-core/internal/planner/sizecalibration"
 )
 
 func runSizeCalibrationCmd(t *testing.T, in SizeCalibrationInput, args ...string) (string, error) {

@@ -11,8 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/config"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 // personasResponse mirrors the wire shape; tests decode into it

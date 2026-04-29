@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 const sampleTranscript = `{"type":"permission-mode","permissionMode":"bypassPermissions","sessionId":"s1"}

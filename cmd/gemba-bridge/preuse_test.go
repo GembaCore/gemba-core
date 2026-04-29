@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 // gm-eazw — Layer 2 enforcement tests.

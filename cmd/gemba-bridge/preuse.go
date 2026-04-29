@@ -31,7 +31,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 // preToolUsePayload mirrors the relevant fields of Claude Code's

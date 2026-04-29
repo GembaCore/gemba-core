@@ -14,7 +14,7 @@
 package transport
 
 import (
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // WorkPlane mutation requests -------------------------------------------

@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
+	"github.com/GembaCore/gemba-core/internal/config"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/skills/epic_order"
 )
 
 func newSkillsRouter(t *testing.T) (*Router, *corepersona.SkillRegistry) {

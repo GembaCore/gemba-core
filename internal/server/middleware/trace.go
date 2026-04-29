@@ -28,7 +28,7 @@ import (
 // server itself starts (i.e. when the request had no upstream
 // traceparent). Per OTEL convention it identifies the package that
 // emits the span, not the service.
-const tracerName = "github.com/MikeBengtson/gemba/internal/server"
+const tracerName = "github.com/GembaCore/gemba-core/internal/server"
 
 // Tracer returns the package's named tracer. Handlers that want to
 // open child spans share this so all server-emitted spans land under

@@ -5,8 +5,8 @@
     "version": "0.1.0",
     "description": "Wire schema for the gemba server's `/api/*` surface (gm-e4.2). The SPA at `web/` consumes a typed client generated from this document; the source of truth lives in `docs/api/openapi.json` and is served at runtime under `/api/openapi.json`.\n\nThis MVP covers the read endpoints the SPA depends on day-to-day: health, version, config, repositories, work items, sprints, agents, sessions, escalations, capabilities, and the new-project conversational flow. The remaining `/api/*` surface (consults, walks, planner, perspectives) is acknowledged in `paths` with summary-only stubs and will gain full request/response schemas in follow-up beads.",
     "contact": {
-      "name": "MikeBengtson/gemba",
-      "url": "https://github.com/MikeBengtson/gemba"
+      "name": "GembaCore/gemba-core",
+      "url": "https://github.com/GembaCore/gemba-core"
     }
   },
   "servers": [

@@ -4,7 +4,7 @@
 //
 // Import as:
 //
-//	import gembatesting "github.com/MikeBengtson/gemba/testing"
+//	import gembatesting "github.com/GembaCore/gemba-core/testing"
 //
 // The alias avoids the obvious clash with the standard-library `testing`
 // package, which every harness consumer also imports.

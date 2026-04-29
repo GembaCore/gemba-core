@@ -36,8 +36,8 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // attachProjectRequest is the request body for POST /api/v1/projects/attach.

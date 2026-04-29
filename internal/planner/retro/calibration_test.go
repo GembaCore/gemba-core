@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/planner/dispatch"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner/dispatch"
 )
 
 // pickRow builds a calibration row inline. Tests vary the

@@ -15,8 +15,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // workspaceKindEntry is one row of /api/v1/workspaces. Kind is the

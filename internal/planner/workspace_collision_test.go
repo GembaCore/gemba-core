@@ -3,7 +3,7 @@ package planner
 import (
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func TestWorkspaceCollisions_NoBeadsNoEdges(t *testing.T) {

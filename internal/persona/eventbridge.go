@@ -6,7 +6,7 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/GembaCore/gemba-core/internal/events"
 )
 
 // FanFromHub subscribes to the events Hub for [events.SkillOutputEmitted]

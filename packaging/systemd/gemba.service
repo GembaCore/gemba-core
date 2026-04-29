@@ -4,7 +4,7 @@
 # goreleaser .deb/.rpm packages — it carries slightly tighter hardening
 # defaults for an operator-managed install. Either unit is fine; pick one.
 Description=Gemba — WorkPlane + OrchestrationPlane UI (build-from-source)
-Documentation=https://github.com/MikeBengtson/gemba
+Documentation=https://github.com/GembaCore/gemba-core
 After=network-online.target
 Wants=network-online.target
 

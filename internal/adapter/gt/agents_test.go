@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // stubRunner returns canned bytes for each (subcommand) key. Unknown

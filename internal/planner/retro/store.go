@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/planner/targets"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner/targets"
 )
 
 // Grade is the persisted retrospective record. The Diff inside is

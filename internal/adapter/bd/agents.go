@@ -3,7 +3,7 @@ package bd
 import (
 	"strings"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Beads has a single scalar `assignee` field and a flat label bag. The

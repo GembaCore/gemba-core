@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 // Applier writes Output.Markdown to disk under a workspace root.

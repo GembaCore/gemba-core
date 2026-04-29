@@ -31,7 +31,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/internal/planner/intent"
+	"github.com/GembaCore/gemba-core/internal/planner/intent"
 )
 
 func newSessionCmd() *cobra.Command {

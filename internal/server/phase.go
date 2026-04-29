@@ -33,9 +33,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/core/phase"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/core/phase"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // AttachPhase binds the phase.Store the /api/v1/phase handlers read

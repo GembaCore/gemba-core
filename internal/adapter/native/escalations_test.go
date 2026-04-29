@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func openEvent(sessionID, escID, kind string) core.OrchestrationEvent {

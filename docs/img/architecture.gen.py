@@ -333,7 +333,7 @@ def main():
         d.text((x + 18, foot_y + 6), label,
                font=legend_f, fill=(*INK, 255))
         x += 18 + tw(d, label, legend_f) + 28
-    foot_text = "github.com/MikeBengtson/gemba"
+    foot_text = "github.com/GembaCore/gemba-core"
     fw = tw(d, foot_text, legend_f)
     d.text((W - 72 - fw, foot_y + 6), foot_text,
            font=legend_f, fill=(*DIM, 255))

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/core/phase"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/core/phase"
 )
 
 // Variety classifies the persona's authority over workspace state.

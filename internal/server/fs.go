@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // gm-e12.21.1 — directory-listing endpoint backing the SPA's

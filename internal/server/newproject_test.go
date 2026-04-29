@@ -20,7 +20,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // ─── HTTP wiring ────────────────────────────────────────────────────

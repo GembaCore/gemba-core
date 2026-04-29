@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Runner is the shape of the `bd` shell the adaptor uses. Tests

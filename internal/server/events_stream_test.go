@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/events"
-	"github.com/MikeBengtson/gemba/internal/transport/api"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/events"
+	"github.com/GembaCore/gemba-core/internal/transport/api"
 )
 
 // newRouterForEvents builds a router around a test-owned hub so the

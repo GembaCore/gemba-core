@@ -25,10 +25,10 @@ const publicDir = path.resolve(__dirname, '..', 'public');
 // (the landing page + the API overview) writes site-absolute hrefs;
 // Astro's base prefix is NOT applied to raw markdown link strings, so
 // without prepending BASE here the links resolve to `/foo` on
-// github.io and 404 (gemba is published under `/gemba/`). Override
+// github.io and 404 (gemba-core is published under `/gemba-core/`). Override
 // via the BASE env var for non-default deployments — keep it in
 // lockstep with astro.config.mjs.
-const BASE = (process.env.BASE ?? '/gemba/').replace(/\/+$/, '/');
+const BASE = (process.env.BASE ?? '/gemba-core/').replace(/\/+$/, '/');
 const withBase = (p) => `${BASE.replace(/\/$/, '')}${p}`;
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
@@ -162,7 +162,7 @@ hero:
       icon: right-arrow
       variant: primary
     - text: Source on GitHub
-      link: https://github.com/MikeBengtson/gemba
+      link: https://github.com/GembaCore/gemba-core
       icon: external
 ---
 

@@ -10,11 +10,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/bd"
-	"github.com/MikeBengtson/gemba/internal/adapter/gt"
-	"github.com/MikeBengtson/gemba/internal/adapter/noop"
-	gembatesting "github.com/MikeBengtson/gemba/testing"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/bd"
+	"github.com/GembaCore/gemba-core/internal/adapter/gt"
+	"github.com/GembaCore/gemba-core/internal/adapter/noop"
+	gembatesting "github.com/GembaCore/gemba-core/testing"
 )
 
 // testFlags captures the `gemba adaptor test` flag surface. See the

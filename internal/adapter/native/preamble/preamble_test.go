@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/claudemd"
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/agents"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/claudemd"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 func writeFile(t *testing.T, path, content string) {

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // TestBoundaryDecodeFailsAtTransport is the gm-io4 contract test: send

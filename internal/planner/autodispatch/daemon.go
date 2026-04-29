@@ -15,9 +15,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/planner/dispatch"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner/dispatch"
 )
 
 // IdleSessionLister returns sessions that just finished a bead and

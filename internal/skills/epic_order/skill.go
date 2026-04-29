@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 // ID is the canonical skill identifier. Personas reference this string

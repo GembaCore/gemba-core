@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/MikeBengtson/gemba/internal/skills/newproject"
+	"github.com/GembaCore/gemba-core/internal/skills/newproject"
 )
 
 // Greeting is the Onboarder's opening line on /start. Returned by

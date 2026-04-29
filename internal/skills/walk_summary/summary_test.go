@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 func mustTime(s string) time.Time {

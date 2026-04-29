@@ -33,7 +33,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/internal/planner/retro"
+	"github.com/GembaCore/gemba-core/internal/planner/retro"
 )
 
 // RetroListInput is the offline-mode wire shape for `gemba retro list`.

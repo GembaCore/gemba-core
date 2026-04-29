@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/persona/purviewgate"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/persona/purviewgate"
 )
 
 // purviewGateDispatcher seeds a dispatcher with a Manager-variety

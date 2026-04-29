@@ -16,8 +16,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 func (r *Router) listSprints(w http.ResponseWriter, req *http.Request) {

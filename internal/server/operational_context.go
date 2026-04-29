@@ -18,9 +18,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // orchSessionLookup adapts core.OrchestrationPlaneAdaptor to the

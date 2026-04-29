@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 // Generate renders the markdown summary for a completed walk. Pure:

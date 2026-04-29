@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/preamble"
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/preamble"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 // graceBeforeKill is how long EndSession waits after sending the

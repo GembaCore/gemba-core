@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/auth"
+	"github.com/GembaCore/gemba-core/internal/auth"
 )
 
 func TestTokenRotate_WritesHashAndPrintsToken(t *testing.T) {

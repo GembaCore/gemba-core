@@ -13,7 +13,7 @@ const minimalRepoTOML = `
 id = "gemba"
 path = "/tmp/repos/gemba"
 default_branch = "main"
-url = "https://github.com/MikeBengtson/gemba.git"
+url = "https://github.com/GembaCore/gemba-core.git"
 bead_prefix = "gm"
 `
 

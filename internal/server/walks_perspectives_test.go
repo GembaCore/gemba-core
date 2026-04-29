@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/config"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 func newWalkWithItem(t *testing.T, store *walk.MemoryStore, itemID, topic string) walk.Walk {

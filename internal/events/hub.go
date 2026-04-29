@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Hub is the in-process fan-out broker for GembaEvents. Sources

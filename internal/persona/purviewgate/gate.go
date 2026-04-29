@@ -40,7 +40,7 @@ package purviewgate
 import (
 	"fmt"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 // MutationKind names a category of mutation the dispatcher is about

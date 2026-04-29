@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 func minimalInput() map[string]any {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Report is the machine-readable summary of a conformance run. It is the

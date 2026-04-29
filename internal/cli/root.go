@@ -37,7 +37,7 @@ control surface for multi-agent orchestration.
     staged so the primary runtime flips from gt to gc via configuration,
     not code surgery, when Gas City reaches GA.
 
-See https://github.com/MikeBengtson/gemba for documentation.`,
+See https://github.com/GembaCore/gemba-core for documentation.`,
 		SilenceUsage: true,
 	}
 

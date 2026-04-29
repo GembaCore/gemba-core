@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // probeWorkItemCreateGet exercises the Group B CRUD round-trip. It

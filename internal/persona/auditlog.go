@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 // AuditLog is the on-disk store for [corepersona.PersonaConsultRecord]

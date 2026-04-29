@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/codeanalysis"
-	"github.com/MikeBengtson/gemba/internal/core/promptctx"
+	"github.com/GembaCore/gemba-core/internal/core/codeanalysis"
+	"github.com/GembaCore/gemba-core/internal/core/promptctx"
 )
 
 // stubBackend is a hand-rolled codeanalysis.Provider for tests.

@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/persona"
-	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/skills/epic_order"
 )
 
 // applyTestRouter spins a Router with one running consult and two

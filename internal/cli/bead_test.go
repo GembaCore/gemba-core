@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/concepts"
-	"github.com/MikeBengtson/gemba/internal/enrichment"
+	"github.com/GembaCore/gemba-core/internal/concepts"
+	"github.com/GembaCore/gemba-core/internal/enrichment"
 )
 
 func contains(s []string, v string) bool {

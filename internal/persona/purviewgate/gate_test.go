@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 // managerPersona returns a Manager persona with the given purview

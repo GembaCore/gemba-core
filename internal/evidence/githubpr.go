@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // GitHubPRCollector synthesizes [core.EvidenceURL] records from the

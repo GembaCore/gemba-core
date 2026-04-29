@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/sourceanalysis"
+	"github.com/GembaCore/gemba-core/internal/sourceanalysis"
 )
 
 // fakeSA is a tiny in-test SourceAnalysis that returns a fixed

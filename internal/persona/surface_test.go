@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/GembaCore/gemba-core/core"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 func TestResolveSurface_CwdAlone(t *testing.T) {

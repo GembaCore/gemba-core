@@ -4,8 +4,8 @@ import (
 	"os"
 	"sort"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 // SurfaceMode controls how operator-declared mounts in agents.toml

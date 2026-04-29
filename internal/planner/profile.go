@@ -11,7 +11,7 @@ package planner
 import (
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // LastBeadsRingSize is the default size of the SessionProfile.LastBeads

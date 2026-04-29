@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/core/phase"
-	"github.com/MikeBengtson/gemba/internal/events"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/core/phase"
+	"github.com/GembaCore/gemba-core/internal/events"
 )
 
 // newPhaseRouter returns a Router whose phase store is seeded at the

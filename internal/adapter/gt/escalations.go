@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // gtEscalation is the row shape `gt escalate list --json` emits.

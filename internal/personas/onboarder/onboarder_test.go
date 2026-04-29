@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/skills/newproject"
+	"github.com/GembaCore/gemba-core/internal/skills/newproject"
 )
 
 // fakeClient is a deterministic test double for newproject.LLMClient.

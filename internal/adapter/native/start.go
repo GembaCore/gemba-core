@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/install"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/preamble"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/worktrees"
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/agents"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/install"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/preamble"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/worktrees"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 // Keys the SessionPrompt.Extension map uses to carry Gemba-specific

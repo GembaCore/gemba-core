@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // capabilitiesResponse is the envelope the SPA reads at /api/capabilities

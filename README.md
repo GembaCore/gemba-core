@@ -1,22 +1,22 @@
 <a name="top"></a>
 
-[![gemba](branding/banner/banner-05-gradient-dispatch.png)](https://github.com/MikeBengtson/gemba)
+[![gemba](branding/banner/banner-05-gradient-dispatch.png)](https://github.com/GembaCore/gemba-core)
 
 # gemba
 
-[![CI](https://github.com/MikeBengtson/gemba/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MikeBengtson/gemba/actions/workflows/ci.yml)
-[![e2e](https://github.com/MikeBengtson/gemba/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/MikeBengtson/gemba/actions/workflows/e2e.yml)
-[![docs](https://github.com/MikeBengtson/gemba/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/MikeBengtson/gemba/actions/workflows/docs.yml)
+[![CI](https://github.com/GembaCore/gemba-core/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/GembaCore/gemba-core/actions/workflows/ci.yml)
+[![e2e](https://github.com/GembaCore/gemba-core/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/GembaCore/gemba-core/actions/workflows/e2e.yml)
+[![docs](https://github.com/GembaCore/gemba-core/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/GembaCore/gemba-core/actions/workflows/docs.yml)
 [![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](go.mod)
 [![TypeScript](https://img.shields.io/badge/TypeScript-React%20%2B%20Vite-3178C6?logo=typescript&logoColor=white)](web/)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey)](#)
-[![License](https://img.shields.io/github/license/MikeBengtson/gemba)](LICENSE)
-[![Last commit](https://img.shields.io/github/last-commit/MikeBengtson/gemba/main)](https://github.com/MikeBengtson/gemba/commits/main)
-[![Stars](https://img.shields.io/github/stars/MikeBengtson/gemba?style=social)](https://github.com/MikeBengtson/gemba/stargazers)
+[![License](https://img.shields.io/github/license/GembaCore/gemba-core)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/GembaCore/gemba-core/main)](https://github.com/GembaCore/gemba-core/commits/main)
+[![Stars](https://img.shields.io/github/stars/GembaCore/gemba-core?style=social)](https://github.com/GembaCore/gemba-core/stargazers)
 
 ⭐ **Star us on GitHub** — it helps people find this project and tells us we're solving a real problem.
 
-[![Share on X](https://img.shields.io/badge/share-000000?logo=x&logoColor=white)](https://x.com/intent/tweet?text=A%20single-binary%20Go%20%2B%20React%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator:%20https%3A//github.com/MikeBengtson/gemba%20%23kanban%20%23agents%20%23golang)
+[![Share on X](https://img.shields.io/badge/share-000000?logo=x&logoColor=white)](https://x.com/intent/tweet?text=A%20single-binary%20Go%20%2B%20React%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator:%20https%3A//github.com/GembaCore/gemba-core%20%23kanban%20%23agents%20%23golang)
 [![Share on LinkedIn](https://img.shields.io/badge/share-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/sharing/share-offsite/?url=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba)
 [![Share on Reddit](https://img.shields.io/badge/share-FF4500?logo=reddit&logoColor=white)](https://www.reddit.com/submit?url=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba&title=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
 [![Share on Hacker News](https://img.shields.io/badge/share-FF6600?logo=ycombinator&logoColor=white)](https://news.ycombinator.com/submitlink?u=https%3A%2F%2Fgithub.com%2FMikeBengtson%2Fgemba&t=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator)
@@ -110,7 +110,7 @@ every dispatch loop and powers the `/coach` affinity grid. **epic_order**
 (the PM persona's skill) is an LLM-driven planning consult that ranks
 candidate epics for sprint composition; it lives at `/sprints` and
 produces narrative recommendations with confidence scores. See
-[Dispatch vs Planning](https://mikebengtson.github.io/gemba/concepts/dispatch-vs-planning/).
+[Dispatch vs Planning](https://gembacore.github.io/gemba-core/concepts/dispatch-vs-planning/).
 
 [⬆ back to top](#top)
 
@@ -172,9 +172,9 @@ Active work lives in the project's Beads rig (`bd list`). Top-level
 open epics include token spending management (`gm-root.14`), the
 UI/SPA build-out (`gm-e12`), and cross-cutting features (escalation
 surfacing, evidence v2, DoD v2 — `gm-e11`).
-[Design docs](https://mikebengtson.github.io/gemba/design/) capture
+[Design docs](https://gembacore.github.io/gemba-core/design/) capture
 the durable architectural decisions; adaptor authoring references
-live in [Adaptors](https://mikebengtson.github.io/gemba/adaptors/).
+live in [Adaptors](https://gembacore.github.io/gemba-core/adaptors/).
 
 ## ✨ What's New
 
@@ -184,7 +184,7 @@ live in [Adaptors](https://mikebengtson.github.io/gemba/adaptors/).
   `intra_parallel` + `max_parallel` in `.gemba/agents.toml`; a
   try-reuse-before-spawn dispatcher policy co-locates beads on capable
   panes; SPA shows per-pane pills + a global in-flight counter. See
-  the [Parallelism guide](https://mikebengtson.github.io/gemba/getting-started/parallelism/).
+  the [Parallelism guide](https://gembacore.github.io/gemba-core/getting-started/parallelism/).
 - **TLS support** (`gm-e5.3`) — `--tls-self-signed` for instant HTTPS
   with a fingerprint banner, or `--tls-cert` / `--tls-key` for
   operator-supplied chains.
@@ -202,7 +202,7 @@ live in [Adaptors](https://mikebengtson.github.io/gemba/adaptors/).
   API + CI status collectors with parallel execution and partial-failure
   tolerance.
 
-> See the [GitHub commit log](https://github.com/MikeBengtson/gemba/commits/main)
+> See the [GitHub commit log](https://github.com/GembaCore/gemba-core/commits/main)
 > for the full history.
 
 ### Coming soon
@@ -276,7 +276,7 @@ that's a supported mode, not an error.
 
 End-to-end setup (both `--beads-dir` CLI mode and `--dolt-url`
 direct-SQL mode), expected banner output, and troubleshooting:
-[Running Gemba against your work items](https://mikebengtson.github.io/gemba/getting-started/running-against-your-work-items/).
+[Running Gemba against your work items](https://gembacore.github.io/gemba-core/getting-started/running-against-your-work-items/).
 
 ### Native terminal orchestration
 
@@ -326,7 +326,7 @@ max_parallel   = 3
 The dispatcher tries to reuse an existing capable session before
 spawning a new pane; the SPA renders an `n/max` pill per pane plus a
 global in-flight counter. Full detail:
-the [Parallelism guide](https://mikebengtson.github.io/gemba/getting-started/parallelism/).
+the [Parallelism guide](https://gembacore.github.io/gemba-core/getting-started/parallelism/).
 
 ### TLS
 
@@ -398,7 +398,7 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 │       ├── pages/                # Board, Sessions, Sprints, AgentGroups, AgentDetail, ...
 │       ├── components/           # WorkItemDrawer, Palette, AgentGroupBoard, ...
 │       └── extensions/           # adaptor-namespaced widgets (gated by capability manifest)
-├── testing/                      # public conformance harness (importable as github.com/MikeBengtson/gemba/testing)
+├── testing/                      # public conformance harness (importable as github.com/GembaCore/gemba-core/testing)
 │   ├── fixtures/                 # JSON fixtures used by the harness + scripts/
 │   └── e2e/                      # Playwright specs + page objects
 ├── docs/
@@ -450,15 +450,15 @@ Tooling expected on `PATH`:
 
 ## 📚 Documentation
 
-The full docsite is published at **<https://mikebengtson.github.io/gemba/>**.
+The full docsite is published at **<https://gembacore.github.io/gemba-core/>**.
 
 | Where | What |
 |---|---|
-| [Getting Started](https://mikebengtson.github.io/gemba/getting-started/) | Operator-facing guides — running against your work items, parallelism configuration |
-| [Adaptors](https://mikebengtson.github.io/gemba/adaptors/) | Per-adaptor authoring docs + conformance reports — how to write a new WorkPlane / OrchestrationPlane |
-| [Design](https://mikebengtson.github.io/gemba/design/) | Durable architectural decisions — parallelism boundary, milestone convention, Gemba walk (review of work in progress), persona PPPP |
-| [Agents](https://mikebengtson.github.io/gemba/agents/) | Per-role agent operating docs |
-| [UI spec](https://mikebengtson.github.io/gemba/ui-spec/) | The SPA spec — every surface, every affordance, every test-id |
+| [Getting Started](https://gembacore.github.io/gemba-core/getting-started/) | Operator-facing guides — running against your work items, parallelism configuration |
+| [Adaptors](https://gembacore.github.io/gemba-core/adaptors/) | Per-adaptor authoring docs + conformance reports — how to write a new WorkPlane / OrchestrationPlane |
+| [Design](https://gembacore.github.io/gemba-core/design/) | Durable architectural decisions — parallelism boundary, milestone convention, Gemba walk (review of work in progress), persona PPPP |
+| [Agents](https://gembacore.github.io/gemba-core/agents/) | Per-role agent operating docs |
+| [UI spec](https://gembacore.github.io/gemba-core/ui-spec/) | The SPA spec — every surface, every affordance, every test-id |
 
 > [!NOTE]
 > Architecture decisions live in beads (`bd list type:decision`) and
@@ -479,13 +479,13 @@ Where we got it wrong, your feedback is the fastest path to fixing it.
 > **what you expected**, and **what actually happened**, in roughly
 > that order.
 
-- 🐛 [File an issue](https://github.com/MikeBengtson/gemba/issues/new) — bugs, feature requests, design feedback
-- 💬 [Open a discussion](https://github.com/MikeBengtson/gemba/discussions) — questions, design conversations, "how would you …" threads
-- 🔧 [Pull requests](https://github.com/MikeBengtson/gemba/pulls) — start with a draft if the change is non-trivial; we'd rather review the design before the code
+- 🐛 [File an issue](https://github.com/GembaCore/gemba-core/issues/new) — bugs, feature requests, design feedback
+- 💬 [Open a discussion](https://github.com/GembaCore/gemba-core/discussions) — questions, design conversations, "how would you …" threads
+- 🔧 [Pull requests](https://github.com/GembaCore/gemba-core/pulls) — start with a draft if the change is non-trivial; we'd rather review the design before the code
 
 If you're writing a new adaptor, the conformance harness is the
-shortest path to "does it work": see the [WorkPlane authoring guide](https://mikebengtson.github.io/gemba/adaptors/workplane/)
-or the [OrchestrationPlane authoring guide](https://mikebengtson.github.io/gemba/adaptors/orchestration/).
+shortest path to "does it work": see the [WorkPlane authoring guide](https://gembacore.github.io/gemba-core/adaptors/workplane/)
+or the [OrchestrationPlane authoring guide](https://gembacore.github.io/gemba-core/adaptors/orchestration/).
 
 [⬆ back to top](#top)
 

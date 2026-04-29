@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // ── fakes ──────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ func fixture() (string, OperationalContextReaders) {
 	workspace := core.Workspace{
 		ID:         "ws-1",
 		Kind:       "worktree",
-		Repository: "github.com/MikeBengtson/gemba",
+		Repository: "github.com/GembaCore/gemba-core",
 		Branch:     "main",
 		Status:     core.WorkspaceInUse,
 	}

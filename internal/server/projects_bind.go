@@ -41,8 +41,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // BindProjectRequest is the request body for POST /api/v1/projects/bind.

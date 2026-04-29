@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	corecodeanalysis "github.com/MikeBengtson/gemba/internal/core/codeanalysis"
+	corecodeanalysis "github.com/GembaCore/gemba-core/internal/core/codeanalysis"
 )
 
 // adapterVersion identifies this adapter's wire-shape revision.

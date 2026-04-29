@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/internal/concepts"
-	"github.com/MikeBengtson/gemba/internal/enrichment"
+	"github.com/GembaCore/gemba-core/internal/concepts"
+	"github.com/GembaCore/gemba-core/internal/enrichment"
 )
 
 // newBeadCmd builds the `gemba bead` subtree (gm-s47n.1.3). Provides

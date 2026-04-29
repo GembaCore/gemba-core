@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 func startForEnd(t *testing.T, fb *fakeBackend) (*OrchestrationPlane, core.Session) {

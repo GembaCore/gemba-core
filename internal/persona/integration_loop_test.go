@@ -38,10 +38,10 @@ import (
 	"testing"
 	"time"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/events"
-	"github.com/MikeBengtson/gemba/internal/persona"
-	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/events"
+	"github.com/GembaCore/gemba-core/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/skills/epic_order"
 )
 
 // findRepoRoot walks up from the test's source file to find the repo

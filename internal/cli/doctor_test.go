@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
-	eventlog "github.com/MikeBengtson/gemba/internal/events/log"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
+	eventlog "github.com/GembaCore/gemba-core/internal/events/log"
 )
 
 // withRegistry swaps the process-wide adaptor registry for the duration of

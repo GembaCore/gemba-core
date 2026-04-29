@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/planner/retro"
-	"github.com/MikeBengtson/gemba/internal/planner/targets"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner/retro"
+	"github.com/GembaCore/gemba-core/internal/planner/targets"
 )
 
 func mustParseRFC(t *testing.T, s string) time.Time {

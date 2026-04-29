@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/codeanalysis"
-	"github.com/MikeBengtson/gemba/internal/core/promptctx"
+	"github.com/GembaCore/gemba-core/internal/core/codeanalysis"
+	"github.com/GembaCore/gemba-core/internal/core/promptctx"
 )
 
 // SymbolContextProvider renders on-demand symbol context for a

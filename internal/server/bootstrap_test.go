@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // newBootstrapRouter builds a Router with a memory bootstrap store

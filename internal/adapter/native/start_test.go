@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/agents"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
 )
 
 // fakeBackend is the in-memory backend.Backend used by StartSession

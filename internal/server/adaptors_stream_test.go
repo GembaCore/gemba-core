@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // gm-root.7: subscribing to /api/adaptors/stream must yield the

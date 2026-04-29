@@ -15,9 +15,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
-	"github.com/MikeBengtson/gemba/internal/transport/api"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/transport/api"
 )
 
 // createWorkItem is POST /api/work-items. Body MUST be the boundary

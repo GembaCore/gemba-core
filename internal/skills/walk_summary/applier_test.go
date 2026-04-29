@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 func TestApplier_NewWithEmptyRoot(t *testing.T) {

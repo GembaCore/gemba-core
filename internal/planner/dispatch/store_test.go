@@ -15,8 +15,8 @@ import (
 
 	"github.com/DATA-DOG/go-sqlmock"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/planner"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/planner"
 )
 
 const fixedDispatchTime = "2026-04-26T16:30:00Z"

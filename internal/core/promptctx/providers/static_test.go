@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/promptctx"
+	"github.com/GembaCore/gemba-core/internal/core/promptctx"
 )
 
 func TestStaticProvider(t *testing.T) {

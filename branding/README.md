@@ -27,7 +27,7 @@ the canvas fill in each variation accounts for that.
 **README banner** — embed at the top of `README.md`:
 
 ```markdown
-[![gemba](branding/banner/banner-01-dark-kanban.png)](https://github.com/MikeBengtson/gemba)
+[![gemba](branding/banner/banner-01-dark-kanban.png)](https://github.com/GembaCore/gemba-core)
 ```
 
 The banners pair with their social card so the GitHub project page

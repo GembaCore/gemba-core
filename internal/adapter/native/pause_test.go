@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
 )
 
 // pausableBackend wraps fakeBackend with Pause/Unpause so tests can

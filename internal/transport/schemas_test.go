@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // TestBoundaryValidationErrorShape pins the canonical error shape every

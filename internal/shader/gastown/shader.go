@@ -26,7 +26,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Config carries the operator-controlled bits of the Gas Town shader.

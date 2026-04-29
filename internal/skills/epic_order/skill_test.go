@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 // minimalInput returns a JSON body that ValidateInput accepts. Tests

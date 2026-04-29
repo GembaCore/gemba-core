@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
-	"github.com/MikeBengtson/gemba/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
+	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
 // existsAll is the test-friendly path predicate that says yes to

@@ -15,17 +15,17 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
-	"github.com/MikeBengtson/gemba/internal/auth"
-	"github.com/MikeBengtson/gemba/internal/config"
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/core/phase"
-	"github.com/MikeBengtson/gemba/internal/events"
-	"github.com/MikeBengtson/gemba/internal/persona"
-	tracemw "github.com/MikeBengtson/gemba/internal/server/middleware"
-	"github.com/MikeBengtson/gemba/internal/skills/walk_summary"
-	"github.com/MikeBengtson/gemba/internal/transport/api"
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
+	"github.com/GembaCore/gemba-core/internal/auth"
+	"github.com/GembaCore/gemba-core/internal/config"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/core/phase"
+	"github.com/GembaCore/gemba-core/internal/events"
+	"github.com/GembaCore/gemba-core/internal/persona"
+	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
+	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
+	"github.com/GembaCore/gemba-core/internal/transport/api"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 // healthBusInterval is the ticker cadence for the registry HealthBus

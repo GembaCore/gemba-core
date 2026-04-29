@@ -43,7 +43,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // NewProjectRatifier executes the atomic ratification transaction.

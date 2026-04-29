@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/shader/gastown"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/shader/gastown"
 )
 
 func newShader(t *testing.T) *gastown.Shader {

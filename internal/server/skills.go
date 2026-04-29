@@ -16,7 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 // skillSummary is the list-row shape — enough for a picker without

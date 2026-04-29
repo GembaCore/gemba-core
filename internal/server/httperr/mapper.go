@@ -52,7 +52,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // StatusFor returns the HTTP status code for kind. Unknown kinds fall

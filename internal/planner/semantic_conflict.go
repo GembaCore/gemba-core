@@ -34,7 +34,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/MikeBengtson/gemba/internal/sourceanalysis"
+	"github.com/GembaCore/gemba-core/internal/sourceanalysis"
 )
 
 // SemanticBeadInputs is one bead's contribution to the semantic

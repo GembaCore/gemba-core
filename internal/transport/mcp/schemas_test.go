@@ -3,7 +3,7 @@ package mcp
 import (
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // TestBoundaryDecodeFailsAtTransport is the gm-io4 contract test for

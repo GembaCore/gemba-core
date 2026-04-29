@@ -3,7 +3,7 @@ package bd
 import (
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // gm-e12.22.1 — matchesFilter handles IncludeTemplates + IncludeWisps.

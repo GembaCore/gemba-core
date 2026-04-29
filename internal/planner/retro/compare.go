@@ -5,8 +5,8 @@ package retro
 import (
 	"sort"
 
-	"github.com/MikeBengtson/gemba/internal/planner"
-	"github.com/MikeBengtson/gemba/internal/planner/targets"
+	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner/targets"
 )
 
 // Declared is the bead-authored input — what the planner thought

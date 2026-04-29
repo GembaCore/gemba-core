@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // notifyRequest is the body shape of POST /api/workitems/notify

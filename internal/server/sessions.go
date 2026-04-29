@@ -21,10 +21,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/MikeBengtson/gemba/core"
-	nativeadapter "github.com/MikeBengtson/gemba/internal/adapter/native"
-	"github.com/MikeBengtson/gemba/internal/server/dispatch"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/core"
+	nativeadapter "github.com/GembaCore/gemba-core/internal/adapter/native"
+	"github.com/GembaCore/gemba-core/internal/server/dispatch"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
 // listSessions handles GET /api/sessions. Optional query params:

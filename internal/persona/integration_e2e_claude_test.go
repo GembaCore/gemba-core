@@ -32,15 +32,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/native"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/agents"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/backend"
-	"github.com/MikeBengtson/gemba/internal/adapter/native/bridge"
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/events"
-	"github.com/MikeBengtson/gemba/internal/persona"
-	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/native"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/agents"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
+	"github.com/GembaCore/gemba-core/internal/adapter/native/bridge"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/events"
+	"github.com/GembaCore/gemba-core/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/skills/epic_order"
 )
 
 // gate_e2e_claude is the environment variable an operator sets to

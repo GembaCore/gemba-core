@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/bd"
-	gembatesting "github.com/MikeBengtson/gemba/testing"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/bd"
+	gembatesting "github.com/GembaCore/gemba-core/testing"
 )
 
 // TestBeadsConformanceR1R8Audit is the programmatic gm-zdx audit:

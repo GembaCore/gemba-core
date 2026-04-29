@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/core/promptctx"
+	"github.com/GembaCore/gemba-core/internal/core/promptctx"
 )
 
 // ProjectSummarySource supplies the narrative that ProjectSummaryProvider

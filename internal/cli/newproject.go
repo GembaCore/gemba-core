@@ -33,9 +33,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/internal/personas/onboarder"
-	"github.com/MikeBengtson/gemba/internal/server"
-	"github.com/MikeBengtson/gemba/internal/skills/newproject"
+	"github.com/GembaCore/gemba-core/internal/personas/onboarder"
+	"github.com/GembaCore/gemba-core/internal/server"
+	"github.com/GembaCore/gemba-core/internal/skills/newproject"
 )
 
 func newNewProjectCmd() *cobra.Command {

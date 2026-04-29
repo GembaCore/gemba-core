@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 )
 
 // fakeApplier records invocations and returns a canned result or

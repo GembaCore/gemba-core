@@ -3,8 +3,8 @@ package server
 import (
 	"net/http"
 
-	"github.com/MikeBengtson/gemba/internal/adapter/registry"
-	"github.com/MikeBengtson/gemba/internal/transport"
+	"github.com/GembaCore/gemba-core/internal/adapter/registry"
+	"github.com/GembaCore/gemba-core/internal/transport"
 )
 
 // adaptorsHealth is the /api/adaptors handler. The SPA polls this every

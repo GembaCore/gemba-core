@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	corepersona "github.com/MikeBengtson/gemba/internal/core/persona"
-	"github.com/MikeBengtson/gemba/internal/core/projectshape"
-	"github.com/MikeBengtson/gemba/internal/core/prompt"
+	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
+	"github.com/GembaCore/gemba-core/internal/core/projectshape"
+	"github.com/GembaCore/gemba-core/internal/core/prompt"
 )
 
 // TemplateValues are the substitutions applied to a persona's

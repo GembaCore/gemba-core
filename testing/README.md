@@ -1,4 +1,4 @@
-# `github.com/MikeBengtson/gemba/testing`
+# `github.com/GembaCore/gemba-core/testing`
 
 Conformance harness for Gemba adaptors. Import this package from your
 adaptor's own `go test` suite to validate that your `WorkPlane` or
@@ -28,8 +28,8 @@ import (
     "testing"
 
     "yourorg/beads" // your adaptor
-    "github.com/MikeBengtson/gemba/core"
-    gembatesting "github.com/MikeBengtson/gemba/testing"
+    "github.com/GembaCore/gemba-core/core"
+    gembatesting "github.com/GembaCore/gemba-core/testing"
 )
 
 func TestBeadsConformance(t *testing.T) {

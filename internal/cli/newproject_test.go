@@ -19,8 +19,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/server"
-	"github.com/MikeBengtson/gemba/internal/skills/newproject"
+	"github.com/GembaCore/gemba-core/internal/server"
+	"github.com/GembaCore/gemba-core/internal/skills/newproject"
 )
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -50,11 +50,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/events"
-	"github.com/MikeBengtson/gemba/internal/server/httperr"
-	"github.com/MikeBengtson/gemba/internal/skills/walk_summary"
-	"github.com/MikeBengtson/gemba/internal/walk"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/events"
+	"github.com/GembaCore/gemba-core/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
+	"github.com/GembaCore/gemba-core/internal/walk"
 )
 
 // walkPlane is the events.Plane stamped on every walk.* event.

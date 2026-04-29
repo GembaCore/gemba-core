@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/bd"
-	gembatesting "github.com/MikeBengtson/gemba/testing"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/bd"
+	gembatesting "github.com/GembaCore/gemba-core/testing"
 )
 
 // fakeBd is a stateful in-memory stand-in for the bd CLI. It understands

@@ -7,10 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/config"
-	"github.com/MikeBengtson/gemba/internal/transport/api"
-	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/config"
+	"github.com/GembaCore/gemba-core/internal/transport/api"
+	"github.com/GembaCore/gemba-core/internal/transport/testadaptors"
 )
 
 // gm-e12.8: /api/agent-groups wraps OrchestrationPlaneAdaptor.ListGroups

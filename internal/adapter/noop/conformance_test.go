@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/adapter/noop"
-	gembatesting "github.com/MikeBengtson/gemba/testing"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/adapter/noop"
+	gembatesting "github.com/GembaCore/gemba-core/testing"
 )
 
 // TestNoopWorkPlaneConformance wires the noop adaptor through the

@@ -39,7 +39,7 @@ make docs        # pnpm build
 
 The [`docs.yml`](../.github/workflows/docs.yml) GitHub Actions workflow
 builds the site on every push to `main` and deploys it to GitHub Pages
-at <https://mikebengtson.github.io/gemba/>.
+at <https://gembacore.github.io/gemba-core/>.
 
 ## Design choice — why Astro Starlight?
 

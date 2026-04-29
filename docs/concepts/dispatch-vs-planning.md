@@ -79,7 +79,7 @@ contract.
 
 ## Code pointers
 
-- Selection package overview: [`internal/planner/selection/doc.go`](https://github.com/MikeBengtson/gemba/blob/main/internal/planner/selection/doc.go)
-- epic_order skill overview: [`internal/skills/epic_order/doc.go`](https://github.com/MikeBengtson/gemba/blob/main/internal/skills/epic_order/doc.go)
+- Selection package overview: [`internal/planner/selection/doc.go`](https://github.com/GembaCore/gemba-core/blob/main/internal/planner/selection/doc.go)
+- epic_order skill overview: [`internal/skills/epic_order/doc.go`](https://github.com/GembaCore/gemba-core/blob/main/internal/skills/epic_order/doc.go)
 - Coach handler that surfaces Selection inputs: `internal/server/planner_coach.go`
 - PM persona doc (epic_order surface): [Project Manager](../personas/project-manager.md)

@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
-	nativeadapter "github.com/MikeBengtson/gemba/internal/adapter/native"
-	"github.com/MikeBengtson/gemba/internal/transport/testadaptors"
+	"github.com/GembaCore/gemba-core/core"
+	nativeadapter "github.com/GembaCore/gemba-core/internal/adapter/native"
+	"github.com/GembaCore/gemba-core/internal/transport/testadaptors"
 )
 
 // dispatchStub is a server-test fake that implements both the core

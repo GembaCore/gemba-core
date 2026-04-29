@@ -23,9 +23,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/MikeBengtson/gemba/core"
-	"github.com/MikeBengtson/gemba/internal/enrichment"
-	"github.com/MikeBengtson/gemba/internal/planner/sizecalibration"
+	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/enrichment"
+	"github.com/GembaCore/gemba-core/internal/planner/sizecalibration"
 )
 
 // SizeCalibrationInput is the wire shape `gemba size-calibration`

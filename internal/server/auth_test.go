@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MikeBengtson/gemba/internal/auth"
-	"github.com/MikeBengtson/gemba/internal/config"
+	"github.com/GembaCore/gemba-core/internal/auth"
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // gm-e5.2: with a hashed-file verifier, a request bearing the plaintext

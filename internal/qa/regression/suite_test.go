@@ -3,7 +3,7 @@ package regression
 import (
 	"testing"
 
-	"github.com/MikeBengtson/gemba/internal/qa/linters"
+	"github.com/GembaCore/gemba-core/internal/qa/linters"
 )
 
 func sampleConfig() linters.LintersConfig {

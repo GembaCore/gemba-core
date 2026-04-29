@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	corecodeanalysis "github.com/MikeBengtson/gemba/internal/core/codeanalysis"
+	corecodeanalysis "github.com/GembaCore/gemba-core/internal/core/codeanalysis"
 )
 
 // stubExec returns an exec hook that fans calls into a per-

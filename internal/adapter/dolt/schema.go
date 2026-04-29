@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // knownSchemaVersions pins the bd `schema_migrations` tip versions

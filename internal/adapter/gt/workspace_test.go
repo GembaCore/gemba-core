@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MikeBengtson/gemba/core"
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // workspaceRunner is a scriptable runner that records gt invocations so
@@ -243,8 +243,8 @@ func TestInspectWorkspaceReportsStatus(t *testing.T) {
 
 func TestDeriveRigName(t *testing.T) {
 	cases := map[string]string{
-		"https://github.com/MikeBengtson/gemba.git": "gemba",
-		"git@github.com:MikeBengtson/gemba.git":     "gemba",
+		"https://github.com/GembaCore/gemba-core.git": "gemba_core",
+		"git@github.com:GembaCore/gemba-core.git":     "gemba_core",
 		"https://example.com/foo/bar-baz":           "bar_baz",
 		"/local/path/to/ACME_Corp":                  "acme_corp",
 		"":                                          "",

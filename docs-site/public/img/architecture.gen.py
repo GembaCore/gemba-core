@@ -16,7 +16,7 @@ Run: `python3 docs/img/architecture.gen.py`
 import os
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-W, H = 1280, 880
+W, H = 1280, 1010
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "architecture.png")
 
 # ── Fonts ──
@@ -49,6 +49,7 @@ ACCENT = {
     "core": (16, 185, 129),    # emerald
     "wp": (244, 63, 94),       # rose — REQUIRED
     "orch": (245, 158, 11),    # amber — OPTIONAL
+    "analysis": (124, 58, 237), # violet — FOUNDATION (Source Code Analysis Store)
 }
 
 
@@ -264,6 +265,55 @@ def main():
                                    "OpenHands  ·  CrewAI  ·  …"]),
                  ])
 
+    # ── Connector 3 → 4: foundation underpins both adaptor columns ──
+    # Visual semantics: the analysis store *underpins* both planes
+    # rather than being consumed by them. We draw two thin vertical
+    # lines from each adaptor's bottom-center down to the foundation
+    # card's top — without arrowheads — so the foundation reads as a
+    # bedrock layer rather than a downstream consumer.
+    f_y = 824
+    f_h = 130
+    f_top = f_y
+    adaptor_bottom = t3_y + t3_h  # 780
+    d.line([(left_cx, adaptor_bottom), (left_cx, f_top)],
+           fill=(*SOFT, 255), width=1)
+    d.line([(right_cx, adaptor_bottom), (right_cx, f_top)],
+           fill=(*SOFT, 255), width=1)
+
+    # ── Tier 4: Source Code Analysis Store (foundation) ─────────────
+    # Distinct from the upper tiers in two ways: (a) top-stripe
+    # instead of left-stripe so the bar reads as a base/floor rather
+    # than a sidebar, (b) labelled FOUNDATION with the violet accent
+    # so the legend tells the operator this is its own concept tier.
+    t4 = (72, f_y, W - 72, f_y + f_h)
+    shadowed_round_rect(img, t4[0], t4[1], t4[2] - t4[0], t4[3] - t4[1])
+    d = ImageDraw.Draw(img)
+    stripe(d, t4[0], t4[1], t4[2] - t4[0], t4[3] - t4[1],
+           ACCENT["analysis"], side="top")
+    d.rectangle((t4[0] + 1, t4[1] + 4, t4[2] - 1, t4[1] + 40),
+                fill=(*HEADER, 255))
+    d.line([(t4[0] + 1, t4[1] + 40), (t4[2] - 1, t4[1] + 40)],
+           fill=(*BORDER, 255), width=1)
+    d.text((t4[0] + 18, t4[1] + 13), "Source Code Analysis Store",
+           font=f(HELV_NEUE, 16, idx=1), fill=(*INK, 255))
+    d.text((t4[0] + 282, t4[1] + 15), "e.g.  GitNexus",
+           font=f(HELV_NEUE, 13, idx=0), fill=(*DIM, 255))
+    chip_x = t4[2] - 12 - tw(d, "FOUNDATION", f(HELV_NEUE, 11, idx=1)) - 16
+    chip(d, chip_x, t4[1] + 13, "FOUNDATION", ACCENT["analysis"])
+    # Body — what the foundation provides.
+    d.text((t4[0] + 18, t4[1] + 58),
+           "indexes the repository as a graph: symbols  ·  call edges  ·  imports  "
+           "·  references  ·  execution flows",
+           font=f(MENLO, 12, idx=1), fill=(*INK, 255))
+    d.text((t4[0] + 18, t4[1] + 82),
+           "powers efficient agentic software development — impact analysis "
+           "before edits, 360° symbol context, safe refactor / rename",
+           font=f(MENLO, 12, idx=0), fill=(*DIM, 255))
+    d.text((t4[0] + 18, t4[1] + 104),
+           "consumed via MCP by every spawned agent; queried by the SPA's "
+           "Graph + drift surfaces; underpins both planes",
+           font=f(MENLO, 12, idx=0), fill=(*DIM, 255))
+
     # ── Footer / legend ──────────────────────────────────────────────
     foot_y = H - 56
     d.line([(72, foot_y - 6), (W - 72, foot_y - 6)],
@@ -274,6 +324,7 @@ def main():
         ("core", ACCENT["core"]),
         ("WorkPlane (REQUIRED)", ACCENT["wp"]),
         ("OrchestrationPlane (OPTIONAL)", ACCENT["orch"]),
+        ("Analysis Store (FOUNDATION)", ACCENT["analysis"]),
     ]
     x = 72
     for label, color in legend_items:
@@ -282,7 +333,7 @@ def main():
         d.text((x + 18, foot_y + 6), label,
                font=legend_f, fill=(*INK, 255))
         x += 18 + tw(d, label, legend_f) + 28
-    foot_text = "github.com/MikeBengtson/gemba"
+    foot_text = "github.com/GembaCore/gemba-core"
     fw = tw(d, foot_text, legend_f)
     d.text((W - 72 - fw, foot_y + 6), foot_text,
            font=legend_f, fill=(*DIM, 255))
