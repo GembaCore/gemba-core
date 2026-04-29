@@ -154,7 +154,7 @@ describe('InsightsPage', () => {
     expect(urls.some((u) => u.includes('since='))).toBe(true);
     expect(urls.some((u) => u.includes('until='))).toBe(true);
     // labels= only appears for the stuck-session tile.
-    expect(urls.some((u) => u.includes('labels=state%3Aprompting'))).toBe(true);
+    expect(urls.some((u) => u.includes('labels=state_category%3Astarted'))).toBe(true);
   });
 
   it('renders the per-tile empty state when a series has no samples', async () => {

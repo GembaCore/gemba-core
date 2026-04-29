@@ -141,12 +141,13 @@ export function MetricCard({
                   width={32}
                 />
                 <Tooltip
-                  formatter={(v) => {
+                  formatter={(v: unknown) => {
                     const display = unit ? `${String(v)} ${unit}` : String(v);
                     return [display, title];
                   }}
-                  labelFormatter={(_, payload) => {
-                    const t = payload?.[0]?.payload?.t;
+                  labelFormatter={(_: unknown, payload: unknown) => {
+                    const arr = payload as Array<{ payload?: { t?: unknown } }> | undefined;
+                    const t = arr?.[0]?.payload?.t;
                     return t ? formatTooltipLabel(String(t)) : '';
                   }}
                   contentStyle={{ fontSize: 11 }}
@@ -181,12 +182,13 @@ export function MetricCard({
                   width={32}
                 />
                 <Tooltip
-                  formatter={(v) => {
+                  formatter={(v: unknown) => {
                     const display = unit ? `${String(v)} ${unit}` : String(v);
                     return [display, title];
                   }}
-                  labelFormatter={(_, payload) => {
-                    const t = payload?.[0]?.payload?.t;
+                  labelFormatter={(_: unknown, payload: unknown) => {
+                    const arr = payload as Array<{ payload?: { t?: unknown } }> | undefined;
+                    const t = arr?.[0]?.payload?.t;
                     return t ? formatTooltipLabel(String(t)) : '';
                   }}
                   contentStyle={{ fontSize: 11 }}

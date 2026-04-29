@@ -77,7 +77,7 @@ export function InsightsPage(): JSX.Element {
     since: range.since,
     until: range.until,
     bucket: range.bucket,
-    labels: { state: 'prompting' },
+    labels: { state_category: 'started' },
   });
 
   return (
