@@ -16,8 +16,10 @@
 // suite (walk.spec.ts) installs its own page.route stubs and
 // covers the navigation contract there.
 //
-// gm-e11.8.2: escalation badge — numeric pill on the Escalations nav
-// item, live-count from useEscalations (SSE-invalidated).
+// gm-e11.8.2: escalation badge — numeric pill on the Triage nav
+// item, live-count from useEscalations (SSE-invalidated). The
+// underlying entity / hook / route stay named Escalations; the
+// chrome label reads "Triage" per the operator-facing rename.
 
 import { test, expect } from '../../fixtures/server';
 import type { EscalationRequest } from '../../fixtures/escalationStore';
@@ -26,7 +28,7 @@ const NAV_LINKS = [
   { label: 'Plan', path: '/board' },
   // Review is rendered but click-nav-excluded — see comment above.
   { label: 'Review', path: '/walk', clickNav: false },
-  { label: 'Escalations', path: '/escalations' },
+  { label: 'Triage', path: '/escalations' },
   { label: 'Sessions', path: '/sessions' },
   { label: 'Settings', path: '/settings' },
 ] as const;
@@ -104,7 +106,7 @@ test.describe('Sidebar cold-start @chrome', () => {
     const workspaceScoped = [
       'Plan',
       'Review',
-      'Escalations',
+      'Triage',
       'Sessions',
     ];
     for (const label of workspaceScoped) {
@@ -132,7 +134,7 @@ test.describe('Sidebar cold-start @chrome', () => {
   });
 });
 
-// gm-e11.8.2: escalation badge — numeric pill on the Escalations nav item.
+// gm-e11.8.2: escalation badge — numeric pill on the Triage nav item.
 test.describe('Sidebar escalation badge @chrome', () => {
   test.beforeEach(({ projectsStore }) => {
     projectsStore.seed([
@@ -159,11 +161,11 @@ test.describe('Sidebar escalation badge @chrome', () => {
     escalationPlane.seed([]);
     await page.goto('/board');
     const sidebar = page.locator('aside').first();
-    await expect(sidebar.getByRole('link', { name: 'Escalations' })).toBeVisible();
+    await expect(sidebar.getByRole('link', { name: 'Triage' })).toBeVisible();
     await expect(sidebar.locator('[data-testid="sidebar-escalations-badge"]')).toHaveCount(0);
   });
 
-  test('badge is absent on cold-start (muted Escalations item)', async ({ page, escalationPlane, projectsStore }) => {
+  test('badge is absent on cold-start (muted Triage item)', async ({ page, escalationPlane, projectsStore }) => {
     // Override projectsStore to cold-start state.
     projectsStore.seed([]);
     const now = new Date().toISOString();
@@ -172,8 +174,8 @@ test.describe('Sidebar escalation badge @chrome', () => {
     ]);
     await page.goto('/settings');
     const sidebar = page.locator('aside').first();
-    // Escalations item is muted (aria-disabled).
-    await expect(sidebar.locator('[aria-disabled="true"]', { hasText: 'Escalations' })).toBeVisible();
+    // Triage item is muted (aria-disabled).
+    await expect(sidebar.locator('[aria-disabled="true"]', { hasText: 'Triage' })).toBeVisible();
     // No badge anywhere.
     await expect(sidebar.locator('[data-testid="sidebar-escalations-badge"]')).toHaveCount(0);
   });

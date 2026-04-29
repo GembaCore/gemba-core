@@ -17,17 +17,22 @@ import { useEscalations } from '@/hooks/useEscalations';
 // deep-link routes today and roll up under their pane's in-screen
 // tabs as gm-e12.19.4-7 land.
 //
-// Order goes high-leverage planning → reflective review → operator-
-// attention surfaces → live runtime, with Settings bottom-anchored.
-// Sessions sits last because operators drop into it less often than
-// Plan / Review / Escalations once the dispatcher is humming.
+// Three core panes (Plan / Review / Triage) cluster at the top —
+// these are the operator's daily verbs. Below a divider, Sessions
+// and Settings sit as secondary / utility surfaces — the operator
+// drops into them less often once the dispatcher is humming.
 //
 // Initial route map (until pane consolidation lands):
-//   Plan         → /board       (gm-e12.19.4 grows tabs Board/List/Sprints/Graph)
-//   Review       → /walk        (Gemba walk surface)
-//   Escalations  → /escalations (gm-e12.19.6 grows a Drift tab)
-//   Sessions     → /sessions    (gm-e12.19.5 grows tabs Sessions/Groups/Coach)
-//   Settings     → /settings    (gm-e12.19.2 grows tabs for Adaptors/Agents/Mail)
+//   Plan      → /board       (gm-e12.19.4 grows tabs Board/List/Sprints/Graph)
+//   Review    → /walk        (Gemba walk surface)
+//   Triage    → /escalations (gm-e12.19.6 grows a Drift tab)
+//   Sessions  → /sessions    (gm-e12.19.5 grows tabs Sessions/Groups/Coach)
+//   Settings  → /settings    (gm-e12.19.2 grows tabs for Adaptors/Agents/Mail)
+//
+// The user-facing label for /escalations is "Triage" — operators
+// triage incoming attention. The route, the page title, and the
+// EscalationRequest entity itself stay named Escalations; this is a
+// chrome-only relabel (same pattern as Walk → Review).
 //
 // Insights pane was removed 2026-04-29 pending the Prometheus-proxy
 // chain (gm-sf51 ratified Path A; gm-e9m0 backend + gm-e12.17.1
@@ -48,14 +53,20 @@ type Item = {
   workspaceScoped?: boolean;
 };
 
+// Core panes — the operator's daily verbs.
 const items: Item[] = [
   { to: '/board', label: 'Plan', Icon: LayoutGrid, workspaceScoped: true },
   { to: '/walk', label: 'Review', Icon: Footprints, workspaceScoped: true },
-  { to: '/escalations', label: 'Escalations', Icon: AlertTriangle, workspaceScoped: true },
-  { to: '/sessions', label: 'Sessions', Icon: Terminal, workspaceScoped: true },
+  { to: '/escalations', label: 'Triage', Icon: AlertTriangle, workspaceScoped: true },
 ];
 
-const settingsItem: Item = { to: '/settings', label: 'Settings', Icon: SettingsIcon };
+// Secondary / utility surfaces — bottom-anchored under a divider.
+// Sessions is a runtime view rather than a daily destination; Settings
+// is configuration. Both belong below the core verbs.
+const secondaryItems: Item[] = [
+  { to: '/sessions', label: 'Sessions', Icon: Terminal, workspaceScoped: true },
+  { to: '/settings', label: 'Settings', Icon: SettingsIcon },
+];
 
 const COLD_START_TITLE = 'Available after creating or switching to a project.';
 
@@ -95,8 +106,10 @@ export function Sidebar() {
           <NavItem key={item.to} item={item} coldStart={coldStart} />
         ))}
       </nav>
-      <div className="mt-auto border-t border-neutral-200 p-2 dark:border-neutral-800">
-        <NavItem item={settingsItem} coldStart={coldStart} />
+      <div className="mt-auto flex flex-col gap-0.5 border-t border-neutral-200 p-2 dark:border-neutral-800">
+        {secondaryItems.map((item) => (
+          <NavItem key={item.to} item={item} coldStart={coldStart} />
+        ))}
       </div>
     </aside>
   );

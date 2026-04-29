@@ -81,7 +81,7 @@ function renderSidebar() {
 const WORKSPACE_SCOPED = [
   'Plan',
   'Review',
-  'Escalations',
+  'Triage',
   'Sessions',
 ];
 
@@ -190,7 +190,7 @@ describe('Sidebar', () => {
       })
     );
     renderSidebar();
-    await screen.findByRole('link', { name: /Escalations/ });
+    await screen.findByRole('link', { name: /Triage/ });
     const badge = screen.getByTestId('sidebar-escalations-badge');
     expect(badge).toBeTruthy();
     expect(badge.textContent).toBe('3');
@@ -210,7 +210,7 @@ describe('Sidebar', () => {
       })
     );
     renderSidebar();
-    await screen.findByRole('link', { name: 'Escalations' });
+    await screen.findByRole('link', { name: 'Triage' });
     expect(screen.queryByTestId('sidebar-escalations-badge')).toBeNull();
   });
 
@@ -237,7 +237,7 @@ describe('Sidebar', () => {
       })
     );
     renderSidebar();
-    await screen.findByRole('link', { name: /Escalations/ });
+    await screen.findByRole('link', { name: /Triage/ });
     const badge = screen.getByTestId('sidebar-escalations-badge');
     expect(badge.textContent).toBe('99+');
   });
@@ -287,7 +287,7 @@ describe('Sidebar', () => {
     renderSidebar();
     // Wait for picker to resolve (Settings is always a link).
     await screen.findByRole('link', { name: 'Settings' });
-    // The Escalations item should be the muted span, not a link.
+    // The Triage item should be the muted span, not a link.
     const wrap = document.querySelector('[aria-disabled="true"][data-testid="sidebar-item-escalations"]');
     expect(wrap).toBeTruthy();
     // No badge inside the muted span.
