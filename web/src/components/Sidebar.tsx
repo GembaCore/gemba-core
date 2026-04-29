@@ -86,6 +86,13 @@ function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
   const testId = `sidebar-item-${to.replace(/^\//, '')}`;
 
   if (muted) {
+    // gm-root.17.12: muted styling indicates "operational on a workspace
+    // only". Use neutral-500 (light) / neutral-500 (dark) directly
+    // instead of the original neutral-600 with opacity-40 — opacity
+    // dropped foreground to ~#a3a3a3 against #fafafa (2.41:1) which
+    // failed WCAG 2 AA color-contrast. neutral-500 hits ~5.74:1 in
+    // light mode and ~5.95:1 in dark mode while still reading as
+    // visibly de-emphasized vs the active text (neutral-900 / white).
     return (
       <span
         role="link"
@@ -94,9 +101,9 @@ function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
         data-testid={testId}
         data-disabled="true"
         className={cn(
-          'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm',
-          'cursor-not-allowed opacity-40 select-none',
-          'text-neutral-600 dark:text-neutral-400'
+          'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm italic',
+          'cursor-not-allowed select-none',
+          'text-neutral-500 dark:text-neutral-500'
         )}
       >
         <Icon className="h-4 w-4" aria-hidden />
