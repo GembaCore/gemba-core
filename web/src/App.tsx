@@ -24,8 +24,9 @@ import { AgentGroupsPage } from '@/pages/agent-groups/AgentGroupsPage';
 // gm-e11.5: sprint roster + detail pages (token-budget surface deferred).
 import { SprintsPage } from '@/pages/SprintsPage';
 import { SprintDetailPage } from '@/pages/SprintDetailPage';
+// gm-e11.8.1: real Escalations inbox replaces the placeholder.
+import { EscalationsPage } from '@/pages/EscalationsPage';
 import {
-  EscalationsPage,
   HealthPage,
   InsightsPage,
   MailPage,

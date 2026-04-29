@@ -74,6 +74,8 @@ const projects: Project[] = [
       'graph/**/*.spec.ts',
       'grid/**/*.spec.ts',
       'sessions/**/*.spec.ts',
+      // gm-e11.8.1 — /escalations inbox.
+      'escalations/**/*.spec.ts',
       // gm-uipx.8 — /project/config (Values / Adaptors / Workspace
       // repos / sticky-nav). The rest of the Setup section family
       // will land here as it ships.

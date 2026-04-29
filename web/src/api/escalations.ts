@@ -8,6 +8,9 @@ import { apiFetch } from './client';
 import { CONFIRM_HEADER } from './workItems';
 import type { AgentID, WorkItemID } from '@/types/core.gen';
 
+// EscalationKind mirrors core.EscalationKind in core/orchestration.go.
+// Keep this union in lock-step with the Go const block; the SPA's
+// severity-mapping + per-kind icon dispatch reads every member.
 export type EscalationKind =
   | 'mcp_elicitation'
   | 'a2a_input_required'
@@ -15,7 +18,10 @@ export type EscalationKind =
   | 'hitl_approval'
   | 'orchestrator_pause'
   | 'blocker'
-  | 'question';
+  | 'question'
+  | 'witness_finding'
+  | 'refinery_rejection'
+  | 'beads_degraded';
 
 export type EscalationChannel = 'notification' | 'tool_call';
 export type EscalationUrgency = 'blocking' | 'advisory';

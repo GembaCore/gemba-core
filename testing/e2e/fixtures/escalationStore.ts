@@ -15,7 +15,10 @@ export type EscalationKind =
   | 'hitl_approval'
   | 'orchestrator_pause'
   | 'blocker'
-  | 'question';
+  | 'question'
+  | 'witness_finding'
+  | 'refinery_rejection'
+  | 'beads_degraded';
 
 export type EscalationUrgency = 'blocking' | 'advisory';
 export type EscalationState = 'open' | 'resolved' | 'canceled' | 'expired';

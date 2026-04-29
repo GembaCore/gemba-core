@@ -16,9 +16,7 @@ function Page({ title, children }: { title: string; children?: ReactNode }) {
 export function InsightsPage() {
   return <Page title="Insights" />;
 }
-export function EscalationsPage() {
-  return <Page title="Escalations" />;
-}
+// EscalationsPage moved to web/src/pages/EscalationsPage.tsx (gm-e11.8.1).
 export function MailPage() {
   return <Page title="Mail" />;
 }
