@@ -205,7 +205,14 @@ describe('WalkPage', () => {
 
   it('D hotkey defers the active item', async () => {
     render(wrap(<WalkPage />));
-    await waitFor(() => expect(screen.getByTestId('walk-agenda-item-a')).toBeTruthy());
+    // Wait for item-a to actually be in the active lane before
+    // dispatching `d` — the hotkey only defers the *active* item, so
+    // firing it before promotion completes is a no-op (silently
+    // produced 'active' instead of 'deferred' in CI when the runner
+    // was under load). Mirrors the R-hotkey test pattern above.
+    await waitFor(() =>
+      expect(screen.getByTestId('walk-agenda-item-a').dataset.lane).toBe('active')
+    );
     await act(async () => {
       window.dispatchEvent(
         new KeyboardEvent('keydown', { key: 'd', bubbles: true, cancelable: true })
