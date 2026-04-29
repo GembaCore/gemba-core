@@ -138,6 +138,27 @@ describe('WorkItemCard', () => {
     expect(onSelect).toHaveBeenCalledWith('gm-x1');
   });
 
+  it('renders escalation badge when escalationCount > 0 (gm-e11.3)', () => {
+    render(<WorkItemCard item={base} escalationCount={2} />);
+    const badge = screen.getByTestId('workitem-card-gm-x1-escalation-badge');
+    expect(badge).toBeTruthy();
+    expect(badge.textContent).toContain('2');
+    expect(badge.getAttribute('title')).toContain('2 open escalations');
+  });
+
+  it('uses singular "escalation" in the title for count of 1', () => {
+    render(<WorkItemCard item={base} escalationCount={1} />);
+    const badge = screen.getByTestId('workitem-card-gm-x1-escalation-badge');
+    expect(badge.getAttribute('title')).toBe('1 open escalation');
+  });
+
+  it('omits escalation badge when count is 0 or unset', () => {
+    render(<WorkItemCard item={base} />);
+    expect(screen.queryByTestId('workitem-card-gm-x1-escalation-badge')).toBeNull();
+    render(<WorkItemCard item={base} escalationCount={0} />);
+    expect(screen.queryByTestId('workitem-card-gm-x1-escalation-badge')).toBeNull();
+  });
+
   it('activates on Enter and Space from the keyboard', () => {
     const onSelect = vi.fn();
     render(<WorkItemCard item={base} onSelect={onSelect} />);

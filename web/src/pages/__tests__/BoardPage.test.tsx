@@ -3,11 +3,50 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { BoardPage } from '../BoardPage';
 import { CapabilitiesProvider } from '@/capabilities';
 import type { CapabilitiesResponse } from '@/capabilities';
 import { HotkeyRegistry, HotkeysContext } from '@/hotkeys';
 import { STATE_CATEGORIES, type WorkItem } from '@/types/core.gen';
+import type { EscalationRequest } from '@/api/escalations';
+import type { ApiError } from '@/api/client';
+
+// gm-e11.3: BoardPage now reads escalations to power the banner +
+// per-card badges. Mock it out so existing fetch-driven tests don't
+// trip on the extra /api/escalations request.
+vi.mock('@/hooks/useEscalations', () => ({
+  useEscalations: vi.fn(),
+}));
+
+import { useEscalations } from '@/hooks/useEscalations';
+const mockUseEscalations = vi.mocked(useEscalations);
+
+function emptyEscalationsResult(): UseQueryResult<EscalationRequest[], ApiError> {
+  return {
+    data: [],
+    error: null,
+    isError: false,
+    isPending: false,
+    isLoading: false,
+    isSuccess: true,
+    isFetching: false,
+    isRefetching: false,
+    isStale: false,
+    isPlaceholderData: false,
+    isLoadingError: false,
+    isRefetchError: false,
+    status: 'success',
+    fetchStatus: 'idle',
+    dataUpdatedAt: 0,
+    errorUpdatedAt: 0,
+    failureCount: 0,
+    failureReason: null,
+    errorUpdateCount: 0,
+    isPaused: false,
+    refetch: vi.fn(),
+  } as unknown as UseQueryResult<EscalationRequest[], ApiError>;
+}
 
 // Seed a CapabilitiesProvider so WorkItemDrawer / EpicDrawer's
 // useCapabilities() resolves. The board itself doesn't consult the
@@ -74,11 +113,13 @@ describe('BoardPage', () => {
 
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchSpy);
+    mockUseEscalations.mockReturnValue(emptyEscalationsResult());
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     fetchSpy.mockReset();
+    mockUseEscalations.mockReset();
   });
 
   it('shows skeleton columns while loading', () => {

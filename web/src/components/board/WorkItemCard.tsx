@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from 'react';
-import { FileText, GitBranch, Paperclip, Workflow } from 'lucide-react';
+import { AlertTriangle, FileText, GitBranch, Paperclip, Workflow } from 'lucide-react';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './relativeTime';
@@ -9,6 +9,10 @@ export interface WorkItemCardProps {
   // onSelect makes the card clickable (and keyboard-activatable). Wire
   // it from BoardPage to open the drill-in drawer. Omitted → static card.
   onSelect?: (id: string) => void;
+  // Open EscalationRequest count targeting this work item (gm-e11.3).
+  // Threaded by the page so each card stays stateless and the lookup
+  // is O(1) per render. Zero / undefined → no badge.
+  escalationCount?: number;
 }
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -67,7 +71,7 @@ function workflowParentID(item: WorkItem): string | null {
 
 const MAX_VISIBLE_LABELS = 3;
 
-export function WorkItemCard({ item, onSelect }: WorkItemCardProps) {
+export function WorkItemCard({ item, onSelect, escalationCount = 0 }: WorkItemCardProps) {
   const pri = priorityLabel(item.priority);
   const name = assigneeName(item);
   const labels = item.labels ?? [];
@@ -121,6 +125,20 @@ export function WorkItemCard({ item, onSelect }: WorkItemCardProps) {
         <span className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
           {item.id}
         </span>
+        {escalationCount > 0 && (
+          <span
+            data-testid={`workitem-card-${item.id}-escalation-badge`}
+            title={`${escalationCount} open escalation${escalationCount === 1 ? '' : 's'}`}
+            className={cn(
+              'inline-flex h-4 items-center gap-0.5 rounded-full bg-rose-100 px-1.5 text-[10px] font-semibold text-rose-700',
+              'dark:bg-rose-950 dark:text-rose-300',
+              !pri && 'ml-auto'
+            )}
+          >
+            <AlertTriangle className="h-2.5 w-2.5" aria-hidden />
+            <span>{escalationCount}</span>
+          </span>
+        )}
         {pri && (
           <span
             className={cn(

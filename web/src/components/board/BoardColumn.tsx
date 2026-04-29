@@ -7,6 +7,9 @@ export interface BoardColumnProps {
   items: WorkItem[];
   // Forwarded to each WorkItemCard. Clicking a card fires this with the id.
   onSelect?: (id: string) => void;
+  // Open-escalation count by work-item id (gm-e11.3). Threaded by the
+  // page so the lookup is O(1) per card.
+  escalationCounts?: Map<string, number>;
 }
 
 // Sort within a column: priority ascending (P0 first), nulls last; tie-break
@@ -21,7 +24,13 @@ function sortItems(items: WorkItem[]): WorkItem[] {
   });
 }
 
-export function BoardColumn({ category, label, items, onSelect }: BoardColumnProps) {
+export function BoardColumn({
+  category,
+  label,
+  items,
+  onSelect,
+  escalationCounts,
+}: BoardColumnProps) {
   const sorted = sortItems(items);
   return (
     <section
@@ -42,7 +51,11 @@ export function BoardColumn({ category, label, items, onSelect }: BoardColumnPro
       <ol className="flex-1 space-y-2 overflow-y-auto p-2">
         {sorted.map((item) => (
           <li key={item.id}>
-            <WorkItemCard item={item} onSelect={onSelect} />
+            <WorkItemCard
+              item={item}
+              onSelect={onSelect}
+              escalationCount={escalationCounts?.get(item.id) ?? 0}
+            />
           </li>
         ))}
       </ol>

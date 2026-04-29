@@ -51,9 +51,17 @@ export interface EpicViewProps {
   // the rendered column set. Filter is applied at the render site
   // rather than in STATE_CATEGORIES, which is the canonical core enum.
   showBacklog?: boolean;
+  // Open-escalation count by work-item id (gm-e11.3). Threaded by the
+  // page so each card's badge lookup is O(1).
+  escalationCounts?: Map<string, number>;
 }
 
-export function EpicView({ items, onSelectEpic, showBacklog = false }: EpicViewProps) {
+export function EpicView({
+  items,
+  onSelectEpic,
+  showBacklog = false,
+  escalationCounts,
+}: EpicViewProps) {
   // gm-uekk: scope filtering happens in the page; the view always
   // groups by-parent-epic. When scope is set, items is already
   // narrowed and naturally collapses to a single swimlane.
@@ -98,6 +106,7 @@ export function EpicView({ items, onSelectEpic, showBacklog = false }: EpicViewP
             columns={columns}
             childCountsByEpic={childCountsByEpic}
             milestoneByEpic={milestoneByEpic}
+            escalationCounts={escalationCounts}
             onSelectEpic={onSelectEpic}
           />
         ))}
@@ -131,6 +140,7 @@ interface SwimlaneRowProps {
   columns: readonly StateCategory[];
   childCountsByEpic: Map<string, EpicChildCounts>;
   milestoneByEpic: Map<string, WorkItem>;
+  escalationCounts?: Map<string, number>;
   onSelectEpic: (id: string) => void;
 }
 
@@ -139,6 +149,7 @@ function SwimlaneRow({
   columns,
   childCountsByEpic,
   milestoneByEpic,
+  escalationCounts,
   onSelectEpic,
 }: SwimlaneRowProps) {
   const isOrphan = swimlane.root.id === ORPHAN_ROOT_ID;
@@ -188,6 +199,7 @@ function SwimlaneRow({
                 item={epicItem}
                 childCounts={childCountsByEpic.get(epicItem.id) ?? emptyCounts()}
                 milestone={milestoneByEpic.get(epicItem.id)}
+                escalationCount={escalationCounts?.get(epicItem.id) ?? 0}
                 onSelect={onSelectEpic}
               />
             ))}
@@ -232,12 +244,14 @@ interface DraggableEpicCardProps {
   item: WorkItem;
   childCounts: EpicChildCounts;
   milestone?: WorkItem;
+  escalationCount?: number;
   onSelect: (id: string) => void;
 }
 function DraggableEpicCard({
   item,
   childCounts,
   milestone,
+  escalationCount,
   onSelect,
 }: DraggableEpicCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
@@ -248,12 +262,17 @@ function DraggableEpicCard({
     position: isDragging ? 'relative' : undefined,
     touchAction: 'none',
   };
+  // Only build a badges object when there's at least one signal to
+  // show; the EpicCard collapses the row when every sub-field is empty.
+  const badges =
+    escalationCount && escalationCount > 0 ? { escalations: escalationCount } : undefined;
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
       <EpicCard
         item={item}
         childCounts={childCounts}
         milestone={milestone}
+        badges={badges}
         onSelect={onSelect}
         draggable
       />

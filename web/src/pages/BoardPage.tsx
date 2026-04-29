@@ -43,7 +43,14 @@ import { EpicDrawer } from '@/components/board/EpicDrawer';
 import { EpicView } from '@/components/board/EpicView';
 import { NewWorkItemDialog } from '@/components/board/NewWorkItemDialog';
 import { ScopePicker } from '@/components/board/ScopePicker';
-import { SCOPE_ALL, filterByScope, type ScopeID } from '@/components/board/scope';
+import { SCOPE_ALL, filterByScope, lineageIDs, type ScopeID } from '@/components/board/scope';
+import {
+  buildEscalationsByItem,
+  countEscalationsInScope,
+} from '@/components/board/escalationLookup';
+import { useEscalations } from '@/hooks/useEscalations';
+import { Link } from 'react-router-dom';
+import { AlertTriangle } from 'lucide-react';
 import { MilestonePicker } from '@/components/board/MilestonePicker';
 import {
   MILESTONE_ALL,
@@ -466,6 +473,28 @@ export function BoardPage() {
     [itemById, updateWorkItem, startSession, queryClient]
   );
 
+  // gm-e11.3: build the per-item escalation lookup once, then derive
+  // both the per-card badge counts and the scope-aware banner count
+  // from it. These hooks run unconditionally (before the early
+  // returns) so the hook order stays stable across paint cycles.
+  const escalationsQuery = useEscalations();
+  const escalationsByItem = useMemo(
+    () => buildEscalationsByItem(escalationsQuery.data),
+    [escalationsQuery.data]
+  );
+  const escalationCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const [id, list] of escalationsByItem) m.set(id, list.length);
+    return m;
+  }, [escalationsByItem]);
+  // Scope-aware banner: when scope=all, count every targeted open
+  // escalation; otherwise restrict to the current scope's lineage.
+  const bannerCount = useMemo(() => {
+    if (escalationsByItem.size === 0) return 0;
+    const ids = scope === SCOPE_ALL ? undefined : lineageIDs(data ?? [], scope);
+    return countEscalationsInScope(escalationsByItem, ids);
+  }, [escalationsByItem, scope, data]);
+
   // List layout runs its own filtered query; the kanban-level
   // loading and error gates only apply to the kanban renderers.
   if (layout !== 'list' && isLoading) return <SkeletonBoard />;
@@ -500,6 +529,7 @@ export function BoardPage() {
         onChangeShowBacklog={setShowBacklog}
         onNewWorkItem={() => setNewItemOpen(true)}
       />
+      {bannerCount > 0 && <EscalationBanner count={bannerCount} />}
       {layout === 'list' ? (
         <BoardListView
           view={view}
@@ -520,12 +550,14 @@ export function BoardPage() {
           items={scopedData}
           onSelectEpic={openEpic}
           showBacklog={showBacklog}
+          escalationCounts={escalationCounts}
         />
       ) : (
         <WorkItemBoard
           data={scopedData}
           onSelectWorkItem={setOpenWorkItemId}
           showBacklog={showBacklog}
+          escalationCounts={escalationCounts}
         />
       )}
       <EpicDrawer
@@ -718,12 +750,43 @@ function ToggleButton({ active, onClick, label, icon, testid }: ToggleButtonProp
   );
 }
 
+// EscalationBanner (gm-e11.3) — surfaces the count of open
+// EscalationRequests within the board's current scope, with a
+// click-through to /escalations. Hidden when count is zero (the
+// page only mounts this when count > 0).
+function EscalationBanner({ count }: { count: number }) {
+  return (
+    <Link
+      to="/escalations"
+      data-testid="board-escalation-banner"
+      data-escalation-count={count}
+      className={cn(
+        'flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-4 py-1.5 text-xs',
+        'text-rose-800 hover:bg-rose-100',
+        'dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200 dark:hover:bg-rose-950/70'
+      )}
+    >
+      <AlertTriangle className="h-3.5 w-3.5" aria-hidden />
+      <span>
+        {count} open escalation{count === 1 ? '' : 's'} in this scope
+      </span>
+      <span className="ml-auto font-medium underline-offset-2 hover:underline">View →</span>
+    </Link>
+  );
+}
+
 interface WorkItemBoardProps {
   data: WorkItem[];
   onSelectWorkItem: (id: string | null) => void;
   showBacklog: boolean;
+  escalationCounts?: Map<string, number>;
 }
-function WorkItemBoard({ data, onSelectWorkItem, showBacklog }: WorkItemBoardProps) {
+function WorkItemBoard({
+  data,
+  onSelectWorkItem,
+  showBacklog,
+  escalationCounts,
+}: WorkItemBoardProps) {
   const groups = useMemo(() => groupByStateCategory(data), [data]);
   const columns = visibleColumns(showBacklog);
   return (
@@ -735,6 +798,7 @@ function WorkItemBoard({ data, onSelectWorkItem, showBacklog }: WorkItemBoardPro
           label={COLUMN_LABELS[cat]}
           items={groups[cat]}
           onSelect={onSelectWorkItem}
+          escalationCounts={escalationCounts}
         />
       ))}
     </div>
