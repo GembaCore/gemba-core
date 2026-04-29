@@ -132,13 +132,6 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 }
 
 func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bool, bannerOut io.Writer) error {
-	// gm-root.17.4: bd presence gate — must run before any other
-	// initialization so a missing bd produces an actionable message
-	// instead of a later cryptic adaptor error.
-	if err := probeBd(os.Stderr); err != nil {
-		return err
-	}
-
 	if err := cfg.ValidateBindPolicy(); err != nil {
 		return err
 	}
@@ -165,6 +158,15 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// is what bd's subprocess will use as cwd (see registerWorkPlane).
 	resolvedBeadsDir, err := cfg.ResolveBeadsDir()
 	if err != nil {
+		return err
+	}
+
+	// gm-root.17.4: bd presence gate. Runs AFTER flag/config
+	// validation so the operator gets actionable feedback on wrong
+	// invocations before being asked to install bd, but BEFORE any
+	// subprocess-spawning work that would fail cryptically without
+	// bd on PATH.
+	if err := probeBd(os.Stderr); err != nil {
 		return err
 	}
 	cfg.BeadsDir = resolvedBeadsDir
