@@ -89,6 +89,40 @@ describe('WorkItemCard', () => {
     expect(screen.getByTestId('glyph-parent')).toBeTruthy();
   });
 
+  it('renders the workflow chip when bead is a step of a poured molecule', () => {
+    const stepBead: WorkItem = {
+      ...base,
+      custom: { 'beads:parent': 'mol-shiny-feature-1' },
+    };
+    render(<WorkItemCard item={stepBead} />);
+    const chip = screen.getByTestId('workitem-card-gm-x1-workflow-chip');
+    expect(chip).toBeTruthy();
+    expect(chip.getAttribute('title')).toContain('mol-shiny-feature-1');
+  });
+
+  it('renders the workflow chip for a wisp parent', () => {
+    const stepBead: WorkItem = {
+      ...base,
+      custom: { 'beads:parent': 'wisp-deacon-patrol-3' },
+    };
+    render(<WorkItemCard item={stepBead} />);
+    expect(screen.getByTestId('workitem-card-gm-x1-workflow-chip')).toBeTruthy();
+  });
+
+  it('omits the workflow chip when parent is not a workflow run', () => {
+    const stepBead: WorkItem = {
+      ...base,
+      custom: { 'beads:parent': 'gm-other-epic' },
+    };
+    render(<WorkItemCard item={stepBead} />);
+    expect(screen.queryByTestId('workitem-card-gm-x1-workflow-chip')).toBeNull();
+  });
+
+  it('omits the workflow chip when no parent is set', () => {
+    render(<WorkItemCard item={base} />);
+    expect(screen.queryByTestId('workitem-card-gm-x1-workflow-chip')).toBeNull();
+  });
+
   it('is not interactive when onSelect is omitted', () => {
     render(<WorkItemCard item={base} />);
     const article = screen.getByText('gm-x1').closest('article') as HTMLElement;

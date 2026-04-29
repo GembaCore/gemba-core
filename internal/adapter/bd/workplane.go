@@ -336,7 +336,37 @@ func matchesFilter(wi core.WorkItem, f core.WorkItemFilter) bool {
 	if f.UpdatedSince != nil && wi.UpdatedAt.Before(*f.UpdatedSince) {
 		return false
 	}
+	// gm-e12.22.1: hide template / wisp beads by default. The Workflow
+	// Library opts in via IncludeTemplates; the Active runs tab opts
+	// in via IncludeWisps. Templates carry the 'template' label;
+	// wisps are recognised by id substring (matching the gastown
+	// shader's existing isWisp() rule).
+	if !f.IncludeTemplates && hasTemplateLabel(wi) {
+		return false
+	}
+	if !f.IncludeWisps && isWispID(wi.ID) {
+		return false
+	}
 	return true
+}
+
+// hasTemplateLabel reports whether a bead is a cooked protomolecule
+// (carries the bd-side 'template' label). The molecule subsystem
+// stamps this label when bd cook materialises a formula.
+func hasTemplateLabel(wi core.WorkItem) bool {
+	for _, l := range wi.Labels {
+		if l == "template" {
+			return true
+		}
+	}
+	return false
+}
+
+// isWispID matches the gastown shader's recognition rule (substring
+// "wisp" in the id) so the WorkPlane filter agrees with the shader on
+// what counts as ephemeral. gm-e12.22.1.
+func isWispID(id core.WorkItemID) bool {
+	return strings.Contains(string(id), "wisp")
 }
 
 // GetWorkItem resolves a single bead via `bd show <id> --json`. bd's

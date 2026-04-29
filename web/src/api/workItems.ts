@@ -29,6 +29,12 @@ export interface WorkItemListFilter {
   assignee_id?: string;
   sprint_id?: string;
   limit?: number;
+  // gm-e12.22.1: workflow-template + wisp opt-ins. Default behavior
+  // hides templates and wisps from work surfaces (Plan / Backlog /
+  // Sessions / Sprints). The Workflow Library opts in via
+  // include_templates; the Active runs tab opts in via include_wisps.
+  include_templates?: boolean;
+  include_wisps?: boolean;
 }
 
 // buildListQuery turns the filter into a URLSearchParams. Multi-valued
@@ -46,6 +52,8 @@ function buildListQuery(filter?: WorkItemListFilter): string {
   if (filter.assignee_id) p.set('assignee_id', filter.assignee_id);
   if (filter.sprint_id) p.set('sprint_id', filter.sprint_id);
   if (filter.limit != null) p.set('limit', String(filter.limit));
+  if (filter.include_templates) p.set('include_templates', 'true');
+  if (filter.include_wisps) p.set('include_wisps', 'true');
   const qs = p.toString();
   return qs ? `?${qs}` : '';
 }

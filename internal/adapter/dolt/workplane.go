@@ -537,5 +537,26 @@ func matchesFilter(wi core.WorkItem, f core.WorkItemFilter) bool {
 			}
 		}
 	}
+	// gm-e12.22.1: workflow-template / wisp filter, mirrors bd adaptor.
+	// Default-hide; opt-in via IncludeTemplates / IncludeWisps.
+	if !f.IncludeTemplates && hasTemplateLabel(wi) {
+		return false
+	}
+	if !f.IncludeWisps && strings.Contains(string(wi.ID), "wisp") {
+		return false
+	}
 	return true
+}
+
+// hasTemplateLabel — duplicated from the bd adaptor on purpose. Both
+// packages keep their own copy so the two stay independent (the
+// shader package's isWisp() also lives standalone for the same
+// reason). Dolt-direct paths share the convention. gm-e12.22.1.
+func hasTemplateLabel(wi core.WorkItem) bool {
+	for _, l := range wi.Labels {
+		if l == "template" {
+			return true
+		}
+	}
+	return false
 }

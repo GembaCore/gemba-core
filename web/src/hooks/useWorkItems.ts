@@ -60,6 +60,8 @@ function normalizeFilter(filter: WorkItemListFilter): WorkItemListFilter {
   if (filter.assignee_id) out.assignee_id = filter.assignee_id;
   if (filter.sprint_id) out.sprint_id = filter.sprint_id;
   if (filter.limit != null) out.limit = filter.limit;
+  if (filter.include_templates) out.include_templates = true;
+  if (filter.include_wisps) out.include_wisps = true;
   return out;
 }
 
@@ -88,7 +90,9 @@ export function useWorkItems(): UseQueryResult<WorkItem[], ApiError> {
 // filter (gm-e12.9.1). Callers pass the canonical filter shape from
 // api/workItems.ts; the hook memoises into a filter-keyed cache so
 // filter changes cause a refetch only when the normalised payload
-// differs.
+// differs. The Workflow surface (gm-e12.22.1) opts in to template /
+// wisp visibility by setting include_templates / include_wisps; all
+// other surfaces leave them off and the server hides those beads.
 export function useFilteredWorkItems(
   filter: WorkItemListFilter
 ): UseQueryResult<WorkItem[], ApiError> {

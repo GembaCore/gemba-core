@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from 'react';
-import { FileText, GitBranch, Paperclip } from 'lucide-react';
+import { FileText, GitBranch, Paperclip, Workflow } from 'lucide-react';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './relativeTime';
@@ -50,6 +50,21 @@ function hasEvidence(item: WorkItem): boolean {
   return !!item.evidence && item.evidence.length > 0;
 }
 
+// workflowParentID returns the parent run id when this bead is a step
+// of a poured molecule (parent id starts with `mol-`) or a wisp
+// (`wisp-`). Returns null otherwise. Detection is parent-only: the
+// step itself doesn't carry a 'workflow_step' label today, but its
+// parent is the molecule's id, surfaced via Custom['beads:parent'].
+// gm-e12.22.1.
+function workflowParentID(item: WorkItem): string | null {
+  const parent = item.custom?.['beads:parent'];
+  if (typeof parent !== 'string') return null;
+  if (parent.startsWith('mol-') || parent.startsWith('wisp-')) {
+    return parent;
+  }
+  return null;
+}
+
 const MAX_VISIBLE_LABELS = 3;
 
 export function WorkItemCard({ item, onSelect }: WorkItemCardProps) {
@@ -58,6 +73,7 @@ export function WorkItemCard({ item, onSelect }: WorkItemCardProps) {
   const labels = item.labels ?? [];
   const visibleLabels = labels.slice(0, MAX_VISIBLE_LABELS);
   const overflow = Math.max(0, labels.length - visibleLabels.length);
+  const workflowRun = workflowParentID(item);
 
   const interactive = !!onSelect;
   const handleClick = onSelect ? () => onSelect(item.id) : undefined;
@@ -121,8 +137,18 @@ export function WorkItemCard({ item, onSelect }: WorkItemCardProps) {
         {item.title}
       </h3>
 
-      {visibleLabels.length > 0 && (
+      {(visibleLabels.length > 0 || workflowRun) && (
         <ul className="mt-2 flex flex-wrap gap-1">
+          {workflowRun && (
+            <li
+              data-testid={`workitem-card-${item.id}-workflow-chip`}
+              title={`Workflow step of ${workflowRun}`}
+              className="inline-flex items-center gap-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700 dark:bg-violet-950 dark:text-violet-300"
+            >
+              <Workflow className="h-2.5 w-2.5" aria-hidden />
+              workflow
+            </li>
+          )}
           {visibleLabels.map((label) => (
             <li
               key={label}

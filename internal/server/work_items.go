@@ -111,7 +111,29 @@ func parseWorkItemFilter(q url.Values) (core.WorkItemFilter, error) {
 		// later milestone; this is the interim cap.
 		f.Limit = defaultListLimit
 	}
+	// gm-e12.22.1: opt-in to workflow templates / wisps. Default
+	// behavior hides them so Plan / Backlog / planner surfaces stay
+	// clean; the Workflow Library / Active runs tabs pass these
+	// flags to surface them.
+	if isTrue(q.Get("include_templates")) {
+		f.IncludeTemplates = true
+	}
+	if isTrue(q.Get("include_wisps")) {
+		f.IncludeWisps = true
+	}
 	return f, nil
+}
+
+// isTrue parses a permissive truth value off a query string. Anything
+// in {1, true, yes, on} is true; the empty string and everything else
+// is false. Mirrors the convention used elsewhere in the work-items
+// query parser.
+func isTrue(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // defaultListLimit is the cap parseWorkItemFilter applies when the

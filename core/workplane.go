@@ -572,6 +572,17 @@ type WorkItemFilter struct {
 	UpdatedSince  *time.Time      `json:"updated_since,omitempty"`
 	// Limit caps the returned set. 0 means "adaptor default".
 	Limit int `json:"limit,omitempty"`
+
+	// IncludeTemplates surfaces work items carrying the "template"
+	// label — the cooked protomolecules `bd cook` produces. Default
+	// false: templates stay off Plan / Backlog / planner. The
+	// Workflow Library opts in by setting this true. gm-e12.22.1.
+	IncludeTemplates bool `json:"include_templates,omitempty"`
+
+	// IncludeWisps surfaces ephemeral molecules (wisps). Default
+	// false: wisps stay off work surfaces. The Workflow Active runs
+	// tab opts in by setting this true. gm-e12.22.1.
+	IncludeWisps bool `json:"include_wisps,omitempty"`
 }
 
 // WorkItemPatch carries an update intended for an existing WorkItem.
