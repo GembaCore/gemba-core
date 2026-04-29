@@ -128,17 +128,27 @@ test.describe('GraphPage critical-path mode @route', () => {
     await expect(graph.node('gm-hov-a')).not.toHaveAttribute('data-hover-related', 'true');
 
     // React Flow listens via onMouseEnter on the wrapping
-    // .react-flow__node element. Use force:true on hover so
-    // Playwright doesn't bail out when the inner card briefly
-    // overlaps the React Flow controls/minimap during initial
-    // layout, then anchor the assertion on the hovered node first.
-    await page
-      .locator('.react-flow__node[data-id="gm-hov-b"]')
-      .hover({ force: true });
+    // .react-flow__node element. CI has a persistent flake here
+    // where hover() returns before React Flow's onNodeMouseEnter
+    // handler runs — the assertion's built-in polling never sees
+    // data-hover-related. Wrap the hover + the host-node assertion
+    // in expect.poll so we re-hover and re-check until the state
+    // propagates. force:true keeps Playwright from bailing when the
+    // inner card transiently overlaps the React Flow controls.
+    const reactFlowNode = page.locator('.react-flow__node[data-id="gm-hov-b"]');
+    await expect
+      .poll(
+        async () => {
+          await reactFlowNode.hover({ force: true });
+          return await graph.node('gm-hov-b').getAttribute('data-hover-related');
+        },
+        { timeout: 10_000, intervals: [200, 500, 1000, 2000] }
+      )
+      .toBe('true');
 
-    // hovered node + its two neighbours light up; the unrelated
-    // node stays cold.
-    await expect(graph.node('gm-hov-b')).toHaveAttribute('data-hover-related', 'true');
+    // The two neighbours and absence of the unrelated node settle
+    // synchronously once the host node lights up — assertions here
+    // are immediate (toHaveAttribute polls on its own).
     await expect(graph.node('gm-hov-a')).toHaveAttribute('data-hover-related', 'true');
     await expect(graph.node('gm-hov-c')).toHaveAttribute('data-hover-related', 'true');
     await expect(graph.node('gm-hov-d')).not.toHaveAttribute('data-hover-related', 'true');
