@@ -268,6 +268,11 @@ export function RhpProvider({ children }: { children: ReactNode }) {
   const [focusedKind, setFocusedKind] = useState<string | null>(null);
   // Active pinned tab id (Help in v1).
   const [activePinnedId, setActivePinnedId] = useState<string | null>(null);
+  // gm-root.22.9: distinguishes "user explicitly clicked the pinned
+  // tab" from "no manual focus yet (cold-start hydrate-from-URL)". The
+  // former should win over the rightmost-detail fallback in the
+  // activeTabId derivation; the latter is the documented hydrate path.
+  const [userPickedPinned, setUserPickedPinned] = useState<boolean>(false);
 
   // ── Layout state ─────────────────────────────────────────────────
   const [width, setWidthState] = useState<number>(() => readStoredWidth());
@@ -361,6 +366,7 @@ export function RhpProvider({ children }: { children: ReactNode }) {
     if (lastPathRef.current === location.pathname) return;
     lastPathRef.current = location.pathname;
     setFocusedKind(null);
+    setUserPickedPinned(false);
     if (searchParams.get(RHP_URL_PARAM) !== null) {
       const next = new URLSearchParams(searchParams);
       next.delete(RHP_URL_PARAM);
@@ -384,6 +390,7 @@ export function RhpProvider({ children }: { children: ReactNode }) {
       }
       writeDetails(next);
       setFocusedKind(kind);
+      setUserPickedPinned(false);
     },
     [urlDetails, writeDetails]
   );
@@ -418,6 +425,7 @@ export function RhpProvider({ children }: { children: ReactNode }) {
       if (pinnedHit) {
         setActivePinnedId(id);
         setFocusedKind(null);
+        setUserPickedPinned(true);
         return;
       }
       // Detail tab: id is 'kind:id'. Split on first ':' to match the
@@ -427,6 +435,7 @@ export function RhpProvider({ children }: { children: ReactNode }) {
         const kind = id.slice(0, colon);
         if (urlDetails.some((d) => d.kind === kind)) {
           setFocusedKind(kind);
+          setUserPickedPinned(false);
         }
       }
     },
@@ -490,14 +499,16 @@ export function RhpProvider({ children }: { children: ReactNode }) {
       const hit = urlDetails.find((d) => d.kind === focusedKind);
       if (hit) return `${hit.kind}:${hit.id}`;
     }
-    if (focusedKind === null && urlDetails.length > 0) {
+    if (focusedKind === null && urlDetails.length > 0 && !userPickedPinned) {
       // Hydrate-from-URL: rightmost is focused on first paint when
-      // the operator hasn't manually picked a tab yet.
+      // the operator hasn't manually picked a tab yet. Suppressed once
+      // the operator clicks a pinned tab (gm-root.22.9) so that
+      // explicit pinned focus wins over the rightmost-detail fallback.
       const last = urlDetails[urlDetails.length - 1];
       return `${last.kind}:${last.id}`;
     }
     return activePinnedId;
-  }, [focusedKind, urlDetails, activePinnedId]);
+  }, [focusedKind, urlDetails, activePinnedId, userPickedPinned]);
 
   const value = useMemo<RhpAPI>(
     () => ({

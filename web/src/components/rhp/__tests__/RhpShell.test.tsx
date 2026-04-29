@@ -137,6 +137,39 @@ describe('RhpShell', () => {
     expect(api!.activeTabId).toBe('workitem:gm-1');
   });
 
+  // gm-root.22.9: clicking a pinned tab (Help) while a detail tab is
+  // open in ?rhp= must refocus the pinned tab. Before this fix the
+  // activeTabId derivation fell back to the rightmost detail whenever
+  // focusedKind was null, ignoring the operator's click on the rail.
+  it('clicking a pinned tab while a detail is open refocuses the pinned tab (gm-root.22.9)', () => {
+    let api: ReturnType<typeof useRhp> | undefined;
+    function App() {
+      return (
+        <Providers>
+          <HelpRegistrar />
+          <ApiProbe onApi={(a) => (api = a)} />
+          <RhpShell />
+        </Providers>
+      );
+    }
+    render(<App />);
+    // Pop a detail — Help loses focus, the detail wins (cold-start
+    // rightmost-detail fallback after popDetail sets focusedKind).
+    act(() => {
+      api!.popDetail({ kind: 'workitem', id: 'gm-1' });
+    });
+    expect(api!.activeTabId).toBe('workitem:gm-1');
+    // Click Help — explicit pinned focus must win over the
+    // rightmost-detail fallback.
+    fireEvent.click(screen.getByTestId('rhp-tab-help'));
+    expect(api!.activeTabId).toBe('help');
+    // Detail tab remains in the rail (URL ?rhp= is untouched).
+    expect(screen.getByTestId('rhp-tab-workitem:gm-1')).toBeTruthy();
+    // Clicking the detail icon switches focus back to it.
+    fireEvent.click(screen.getByTestId('rhp-tab-workitem:gm-1'));
+    expect(api!.activeTabId).toBe('workitem:gm-1');
+  });
+
   it('closeTab removes a detail tab; no-op on pinned', () => {
     let api: ReturnType<typeof useRhp> | undefined;
     function App() {
