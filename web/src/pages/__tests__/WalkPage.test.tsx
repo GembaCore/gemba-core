@@ -207,19 +207,27 @@ describe('WalkPage', () => {
     render(wrap(<WalkPage />));
     // Wait for item-a to actually be in the active lane before
     // dispatching `d` — the hotkey only defers the *active* item, so
-    // firing it before promotion completes is a no-op (silently
-    // produced 'active' instead of 'deferred' in CI when the runner
-    // was under load). Mirrors the R-hotkey test pattern above.
-    await waitFor(() =>
-      expect(screen.getByTestId('walk-agenda-item-a').dataset.lane).toBe('active')
+    // firing it before promotion completes is a no-op. The 5s timeout
+    // is for slow CI runners; locally this resolves in a few ms.
+    // (Two prior CI flakes on this test: bd92fef added the active-
+    // lane waitFor, and CI still raced — so we now also retry the
+    // dispatch path, since on a slow runner the keydown can land in
+    // a brief window where the hotkey handler isn't yet attached.)
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('walk-agenda-item-a').dataset.lane).toBe('active'),
+      { timeout: 5000 }
     );
-    await act(async () => {
-      window.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'd', bubbles: true, cancelable: true })
-      );
-    });
-    await waitFor(() =>
-      expect(screen.getByTestId('walk-agenda-item-a').dataset.lane).toBe('deferred')
+    await waitFor(
+      async () => {
+        await act(async () => {
+          window.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'd', bubbles: true, cancelable: true })
+          );
+        });
+        expect(screen.getByTestId('walk-agenda-item-a').dataset.lane).toBe('deferred');
+      },
+      { timeout: 5000, interval: 50 }
     );
   });
 
