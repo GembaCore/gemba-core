@@ -22,7 +22,7 @@ export function BottomBar(): JSX.Element {
   const w = walk.walk;
   const decisionsCount = w?.decisions?.length ?? 0;
   const beadsTouched = w?.beads_touched?.length ?? 0;
-  const dollars = w?.cost.dollars ?? 0;
+  const dollars = w?.cost?.dollars ?? 0;
   const duration = w ? walkDuration(w) : 0;
 
   return (
