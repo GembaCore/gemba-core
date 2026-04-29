@@ -15,8 +15,12 @@
 // for visibility but excluded from the click-nav loop; the walk
 // suite (walk.spec.ts) installs its own page.route stubs and
 // covers the navigation contract there.
+//
+// gm-e11.8.2: escalation badge — numeric pill on the Escalations nav
+// item, live-count from useEscalations (SSE-invalidated).
 
 import { test, expect } from '../../fixtures/server';
+import type { EscalationRequest } from '../../fixtures/escalationStore';
 
 const NAV_LINKS = [
   { label: 'Plan', path: '/board' },
@@ -127,5 +131,52 @@ test.describe('Sidebar cold-start @chrome', () => {
     const muted = sidebar.locator('[aria-disabled="true"]', { hasText: 'Plan' });
     await muted.click({ force: true }); // bypass cursor: not-allowed for the test
     await expect(page).toHaveURL(/\/settings$/);
+  });
+});
+
+// gm-e11.8.2: escalation badge — numeric pill on the Escalations nav item.
+test.describe('Sidebar escalation badge @chrome', () => {
+  test.beforeEach(({ projectsStore }) => {
+    projectsStore.seed([
+      { name: 'demo', path: '/tmp/projects/demo', active: true },
+    ]);
+  });
+
+  test('shows open escalation count when escalations are seeded', async ({ page, escalationPlane }) => {
+    const now = new Date().toISOString();
+    const escalations: EscalationRequest[] = [
+      { id: 'esc-1', source: 'question', urgency: 'advisory', title: 'Q1', prompt: 'p1', state: 'open', created_at: now },
+      { id: 'esc-2', source: 'question', urgency: 'advisory', title: 'Q2', prompt: 'p2', state: 'open', created_at: now },
+    ];
+    escalationPlane.seed(escalations);
+
+    await page.goto('/board');
+    const sidebar = page.locator('aside').first();
+    const badge = sidebar.locator('[data-testid="sidebar-escalations-badge"]');
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveText('2');
+  });
+
+  test('badge is absent when there are no escalations', async ({ page, escalationPlane }) => {
+    escalationPlane.seed([]);
+    await page.goto('/board');
+    const sidebar = page.locator('aside').first();
+    await expect(sidebar.getByRole('link', { name: 'Escalations' })).toBeVisible();
+    await expect(sidebar.locator('[data-testid="sidebar-escalations-badge"]')).toHaveCount(0);
+  });
+
+  test('badge is absent on cold-start (muted Escalations item)', async ({ page, escalationPlane, projectsStore }) => {
+    // Override projectsStore to cold-start state.
+    projectsStore.seed([]);
+    const now = new Date().toISOString();
+    escalationPlane.seed([
+      { id: 'esc-1', source: 'question', urgency: 'advisory', title: 'Q1', prompt: 'p', state: 'open', created_at: now },
+    ]);
+    await page.goto('/settings');
+    const sidebar = page.locator('aside').first();
+    // Escalations item is muted (aria-disabled).
+    await expect(sidebar.locator('[aria-disabled="true"]', { hasText: 'Escalations' })).toBeVisible();
+    // No badge anywhere.
+    await expect(sidebar.locator('[data-testid="sidebar-escalations-badge"]')).toHaveCount(0);
   });
 });

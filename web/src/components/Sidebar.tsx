@@ -10,6 +10,7 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjectPicker } from './projectpicker/ProjectPickerContext';
+import { useEscalations } from '@/hooks/useEscalations';
 
 // Six first-order panes per the 2026-04-28 ratification (gm-e12.19,
 // second amendment). Secondary surfaces — Backlog, Sprints, Coach,
@@ -56,6 +57,25 @@ const settingsItem: Item = { to: '/settings', label: 'Settings', Icon: SettingsI
 
 const COLD_START_TITLE = 'Available after creating or switching to a project.';
 
+// EscalationBadge renders a numeric pill to the right of the label.
+// Visible only when the query has resolved without error and the count
+// is > 0. For counts >= 100, shows "99+".
+function EscalationBadge() {
+  const query = useEscalations();
+  if (!query.isSuccess || query.isError) return null;
+  const count = (query.data ?? []).length;
+  if (count === 0) return null;
+  const label = count >= 100 ? '99+' : String(count);
+  return (
+    <span
+      data-testid="sidebar-escalations-badge"
+      className="ml-auto rounded-full px-1.5 py-0.5 text-xs font-medium leading-none bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-200"
+    >
+      {label}
+    </span>
+  );
+}
+
 export function Sidebar() {
   const { activeProject, isLoading } = useProjectPicker();
   // Cold-start = picker has finished its initial fetch and there is no
@@ -84,6 +104,7 @@ function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
   const { to, label, Icon, workspaceScoped } = item;
   const muted = coldStart && Boolean(workspaceScoped);
   const testId = `sidebar-item-${to.replace(/^\//, '')}`;
+  const isEscalations = to === '/escalations';
 
   if (muted) {
     // gm-root.17.12: muted styling indicates "operational on a workspace
@@ -93,6 +114,8 @@ function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
     // failed WCAG 2 AA color-contrast. neutral-500 hits ~5.74:1 in
     // light mode and ~5.95:1 in dark mode while still reading as
     // visibly de-emphasized vs the active text (neutral-900 / white).
+    // Badge is intentionally absent from the muted variant — there is
+    // no active workspace to scope the count against (gm-e11.8.2).
     return (
       <span
         role="link"
@@ -127,6 +150,7 @@ function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
     >
       <Icon className="h-4 w-4" aria-hidden />
       <span>{label}</span>
+      {isEscalations && <EscalationBadge />}
     </NavLink>
   );
 }

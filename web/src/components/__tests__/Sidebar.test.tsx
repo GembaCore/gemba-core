@@ -1,4 +1,4 @@
-// Sidebar tests (gm-root.17.12).
+// Sidebar tests (gm-root.17.12, gm-e11.8.2).
 //
 // Coverage:
 //   - active project: workspace-scoped items render as interactive links
@@ -6,12 +6,54 @@
 //     spans with aria-disabled="true" and a tooltip; clicking is a no-op
 //   - Settings + Capability Browser remain interactive on cold-start
 //   - initial-fetch loading state does not flash the muted UI
+//   - escalation badge: renders correct count, hides on 0/loading/error,
+//     caps at "99+", absent from cold-start muted variant
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import type { UseQueryResult } from '@tanstack/react-query';
 import { Sidebar } from '../Sidebar';
 import { ProjectPickerProvider } from '../projectpicker/ProjectPickerContext';
+import type { EscalationRequest } from '@/api/escalations';
+import type { ApiError } from '@/api/client';
+
+// Mock useEscalations so badge tests don't depend on network.
+vi.mock('@/hooks/useEscalations', () => ({
+  useEscalations: vi.fn(),
+}));
+
+import { useEscalations } from '@/hooks/useEscalations';
+const mockUseEscalations = vi.mocked(useEscalations);
+
+function makeEscalationsResult(
+  overrides: Partial<UseQueryResult<EscalationRequest[], ApiError>>
+): UseQueryResult<EscalationRequest[], ApiError> {
+  return {
+    data: undefined,
+    error: null,
+    isError: false,
+    isPending: true,
+    isLoading: true,
+    isSuccess: false,
+    isFetching: false,
+    isRefetching: false,
+    isStale: false,
+    isPlaceholderData: false,
+    isLoadingError: false,
+    isRefetchError: false,
+    status: 'pending',
+    fetchStatus: 'fetching',
+    dataUpdatedAt: 0,
+    errorUpdatedAt: 0,
+    failureCount: 0,
+    failureReason: null,
+    errorUpdateCount: 0,
+    isPaused: false,
+    refetch: vi.fn(),
+    ...overrides,
+  } as UseQueryResult<EscalationRequest[], ApiError>;
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -52,6 +94,8 @@ describe('Sidebar', () => {
     originalFetch = globalThis.fetch;
     fetchSpy = vi.fn();
     globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+    // Default: query loading (no badge rendered).
+    mockUseEscalations.mockReturnValue(makeEscalationsResult({}));
   });
 
   afterEach(() => {
@@ -123,5 +167,131 @@ describe('Sidebar', () => {
 
     // Resolve to drain the fixture.
     resolve(jsonResponse({ projects: [], total: 0 }));
+  });
+
+  // ── Escalation badge (gm-e11.8.2) ──────────────────────────────────
+
+  it('escalation badge: shows count when query resolves with items', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({ projects: [{ name: 'demo', path: '/tmp/demo', active: true }], total: 1 })
+    );
+    mockUseEscalations.mockReturnValue(
+      makeEscalationsResult({
+        isSuccess: true,
+        isPending: false,
+        isLoading: false,
+        status: 'success',
+        data: [
+          { id: 'e1', source: 'question', urgency: 'advisory', title: 'Q1', prompt: '', state: 'open', created_at: '' },
+          { id: 'e2', source: 'question', urgency: 'advisory', title: 'Q2', prompt: '', state: 'open', created_at: '' },
+          { id: 'e3', source: 'question', urgency: 'advisory', title: 'Q3', prompt: '', state: 'open', created_at: '' },
+        ] as EscalationRequest[],
+      })
+    );
+    renderSidebar();
+    await screen.findByRole('link', { name: /Escalations/ });
+    const badge = screen.getByTestId('sidebar-escalations-badge');
+    expect(badge).toBeTruthy();
+    expect(badge.textContent).toBe('3');
+  });
+
+  it('escalation badge: hidden when count is 0', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({ projects: [{ name: 'demo', path: '/tmp/demo', active: true }], total: 1 })
+    );
+    mockUseEscalations.mockReturnValue(
+      makeEscalationsResult({
+        isSuccess: true,
+        isPending: false,
+        isLoading: false,
+        status: 'success',
+        data: [] as EscalationRequest[],
+      })
+    );
+    renderSidebar();
+    await screen.findByRole('link', { name: 'Escalations' });
+    expect(screen.queryByTestId('sidebar-escalations-badge')).toBeNull();
+  });
+
+  it('escalation badge: caps at 99+ for counts >= 100', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({ projects: [{ name: 'demo', path: '/tmp/demo', active: true }], total: 1 })
+    );
+    const manyItems = Array.from({ length: 100 }, (_, i) => ({
+      id: `e${i}`,
+      source: 'question' as const,
+      urgency: 'advisory' as const,
+      title: `Q${i}`,
+      prompt: '',
+      state: 'open' as const,
+      created_at: '',
+    }));
+    mockUseEscalations.mockReturnValue(
+      makeEscalationsResult({
+        isSuccess: true,
+        isPending: false,
+        isLoading: false,
+        status: 'success',
+        data: manyItems as EscalationRequest[],
+      })
+    );
+    renderSidebar();
+    await screen.findByRole('link', { name: /Escalations/ });
+    const badge = screen.getByTestId('sidebar-escalations-badge');
+    expect(badge.textContent).toBe('99+');
+  });
+
+  it('escalation badge: hidden while loading', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({ projects: [{ name: 'demo', path: '/tmp/demo', active: true }], total: 1 })
+    );
+    // Default mock (from beforeEach) has isLoading: true, isSuccess: false.
+    renderSidebar();
+    await screen.findByRole('link', { name: 'Settings' });
+    expect(screen.queryByTestId('sidebar-escalations-badge')).toBeNull();
+  });
+
+  it('escalation badge: hidden on error', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({ projects: [{ name: 'demo', path: '/tmp/demo', active: true }], total: 1 })
+    );
+    mockUseEscalations.mockReturnValue(
+      makeEscalationsResult({
+        isSuccess: false,
+        isPending: false,
+        isLoading: false,
+        isError: true,
+        status: 'error',
+        error: { message: 'network error' } as ApiError,
+      })
+    );
+    renderSidebar();
+    await screen.findByRole('link', { name: 'Settings' });
+    expect(screen.queryByTestId('sidebar-escalations-badge')).toBeNull();
+  });
+
+  it('escalation badge: absent from cold-start muted variant', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ projects: [], total: 0 }));
+    mockUseEscalations.mockReturnValue(
+      makeEscalationsResult({
+        isSuccess: true,
+        isPending: false,
+        isLoading: false,
+        status: 'success',
+        data: [
+          { id: 'e1', source: 'question', urgency: 'advisory', title: 'Q1', prompt: '', state: 'open', created_at: '' },
+        ] as EscalationRequest[],
+      })
+    );
+    renderSidebar();
+    // Wait for picker to resolve (Settings is always a link).
+    await screen.findByRole('link', { name: 'Settings' });
+    // The Escalations item should be the muted span, not a link.
+    const wrap = document.querySelector('[aria-disabled="true"][data-testid="sidebar-item-escalations"]');
+    expect(wrap).toBeTruthy();
+    // No badge inside the muted span.
+    expect(wrap?.querySelector('[data-testid="sidebar-escalations-badge"]')).toBeNull();
+    // No badge anywhere in the document.
+    expect(screen.queryByTestId('sidebar-escalations-badge')).toBeNull();
   });
 });
