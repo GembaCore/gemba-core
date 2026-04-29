@@ -206,13 +206,27 @@ consumers (drawer migrations) call `popDetail` from the trigger sites.
 
 ```ts
 // Registers a content component for a kind. Returns an unregister function.
-function registerDetailContent(kind: string, render: (id: string) => JSX.Element): () => void;
+interface RhpDetailContentRegistration {
+  kind: string;
+  render: (id: string) => ReactNode;
+  icon: LucideIcon;
+  label: string;
+}
+function registerDetailContent(reg: RhpDetailContentRegistration): () => void;
 ```
 
 The detail-tab system bead (`gm-root.22.4`) ships the registry. Each
 drawer-migration bead (`.5`, `.6`, `.7`) calls `registerDetailContent`
-with its kind once on mount. Calling `popDetail({kind: 'unregistered'})`
-falls back to a placeholder ("no content registered for kind X").
+with its kind once on mount. The kind owner supplies the icon and
+label as part of the registration so kind metadata stays in one place
+— the RHP itself does not bake a kind→icon map. Calling
+`popDetail({kind: 'unregistered'})` falls back to a placeholder ("no
+content registered for kind X") and the rail uses a sentinel fallback
+icon registered by the RHP itself on mount.
+
+A hook variant `useRegisterDetailContent(reg)` is provided for
+components that want to register on mount without writing the
+useEffect boilerplate manually.
 
 ## Help tab
 

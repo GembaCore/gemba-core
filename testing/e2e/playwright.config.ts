@@ -54,7 +54,13 @@ const projects: Project[] = [
   // AdaptorBanner integration belongs in gm-5v8v.10 realtime).
   {
     name: 'chrome-fake',
-    testMatch: ['chrome/**/*.spec.ts'],
+    testMatch: [
+      'chrome/**/*.spec.ts',
+      // gm-root.22.2 — Right-Hand Panel shell. Pure chrome (renders
+      // on every route, no backend dependency); subsequent RHP
+      // beads (.3 Help, .4 detail tabs) plug their specs in here.
+      'rhp/**/*.spec.ts',
+    ],
     use: {
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },

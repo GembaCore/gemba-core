@@ -20,7 +20,7 @@
 //   /board/:epicId                      → Epic kanban + EpicDrawer auto-open
 //   /board/:epicId?bead=X               → Epic drawer + WorkItemDrawer stacked
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useNavigate,
   useParams,
@@ -264,6 +264,41 @@ export function BoardPage() {
   const splatRaw = splatParams['*'] ?? '';
   const epicId = splatRaw.length > 0 ? splatRaw : null;
   const navigate = useNavigate();
+
+  // gm-root.22.4 RHP migration shim — runs once on first paint of the
+  // BoardPage. Translates legacy URL conventions into the new `?rhp=`
+  // codec so the Right-Hand Panel picks up deep-links that were
+  // historically routed through the drawer-specific params:
+  //
+  //   /board?bead=X     → also pop ?rhp=workitem:X
+  //   /board/:epicId    → also pop ?rhp=epic:<epicId>
+  //
+  // We DO NOT clear `?bead=X` or change the path. In Wave 1 the legacy
+  // WorkItemDrawer / EpicDrawer are still wired up and need their
+  // original inputs. Wave-2 migrations (gm-root.22.5 / .6) will sweep
+  // both when the drawer code is replaced. Until kind owners register
+  // 'workitem' / 'epic' content, the RHP renders a placeholder tab
+  // body for the popped tab — that's expected and harmless.
+  //
+  // Guard with a ref so the effect runs once per mount; a setSearchParams
+  // call inside this effect bumps rawParams and would otherwise loop.
+  const rhpShimRanRef = useRef(false);
+  useEffect(() => {
+    if (rhpShimRanRef.current) return;
+    rhpShimRanRef.current = true;
+    // Operator already used the new codec — don't double-pop.
+    if (rawParams.get('rhp')) return;
+    const beadParam = rawParams.get('bead');
+    const segments: string[] = [];
+    if (epicId) segments.push(`epic:${epicId}`);
+    if (beadParam) segments.push(`workitem:${beadParam}`);
+    if (segments.length === 0) return;
+    const next = new URLSearchParams(rawParams);
+    next.set('rhp', segments.join(','));
+    setParams(next, { replace: true });
+    // Intentionally a one-shot effect — see ref guard above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Both drawers are URL-routed now (gm-e12.5 DoD: "Opens from grid,
   // board, palette, deep link"). Epic id lives in the path; work-item
