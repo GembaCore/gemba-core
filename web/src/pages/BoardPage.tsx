@@ -574,7 +574,7 @@ function SkeletonBoard() {
           className="flex h-full min-w-[18rem] flex-1 flex-col rounded-md bg-neutral-50 dark:bg-neutral-950"
         >
           <header className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:text-neutral-600">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-400">
               {COLUMN_LABELS[cat]}
             </h2>
           </header>
