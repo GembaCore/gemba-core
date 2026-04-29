@@ -446,8 +446,16 @@ func (r *ratifier) Ratify(ctx context.Context, state NewProjectState) (RatifyRes
 		if !containsLabel(labels, "type:milestone") {
 			labels = append(labels, "type:milestone")
 		}
+		// gm-lw6h: stamp `M<n>` prefix (1-based; per-project, monotonic).
+		// Ratify is the only milestone-creating path during bootstrap, so
+		// numbering against the loop index is correct here. Operator-
+		// supplied prefix is honoured (extractMilestoneNumber > 0).
+		title := m.Title
+		if extractMilestoneNumber(title) == 0 {
+			title = applyMilestonePrefix(title, mi+1)
+		}
 		mID, err := r.bdCreate(ctx, target, bdCreateArgs{
-			Title:       m.Title,
+			Title:       title,
 			Type:        "epic",
 			Description: m.Description,
 			Acceptance:  m.Acceptance,

@@ -186,6 +186,88 @@ func TestCreateWorkItem_ValidationError(t *testing.T) {
 	}
 }
 
+// Milestone create auto-prefixes the title with `M<n>` (gm-lw6h).
+// Numbering is monotonic against the existing milestone set.
+func TestCreateWorkItem_MilestoneAutoPrefixes(t *testing.T) {
+	host := api.New()
+	wp := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	wp.ListFn = func(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
+		return []core.WorkItem{
+			{ID: "gm-a", Kind: core.KindMilestone, Title: "M1 Beta"},
+			{ID: "gm-b", Kind: core.KindMilestone, Title: "M3 Q3"},
+		}, nil
+	}
+	var seen core.WorkItem
+	wp.CreateFn = func(_ context.Context, wi core.WorkItem) (core.WorkItem, error) {
+		seen = wi
+		out := wi
+		out.ID = "gm-new"
+		return out, nil
+	}
+	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
+		t.Fatalf("RegisterWorkPlane: %v", err)
+	}
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	body := map[string]any{
+		"item": map[string]any{
+			"title":          "Production launch",
+			"kind":           core.KindMilestone,
+			"status":         "open",
+			"state_category": "backlog",
+		},
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, postCreateReq(t, "nonce-M", body))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if seen.Title != "M4 Production launch" {
+		t.Errorf("title sent to adaptor = %q, want %q", seen.Title, "M4 Production launch")
+	}
+}
+
+// Operator-supplied M<n> prefix is preserved (gm-lw6h).
+func TestCreateWorkItem_MilestoneRespectsExplicitPrefix(t *testing.T) {
+	host := api.New()
+	wp := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	wp.ListFn = func(_ context.Context, _ core.WorkItemFilter) ([]core.WorkItem, error) {
+		return []core.WorkItem{
+			{ID: "gm-a", Kind: core.KindMilestone, Title: "M5 thing"},
+		}, nil
+	}
+	var seen core.WorkItem
+	wp.CreateFn = func(_ context.Context, wi core.WorkItem) (core.WorkItem, error) {
+		seen = wi
+		out := wi
+		out.ID = "gm-new"
+		return out, nil
+	}
+	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
+		t.Fatalf("RegisterWorkPlane: %v", err)
+	}
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	body := map[string]any{
+		"item": map[string]any{
+			"title":          "M99 Special",
+			"kind":           core.KindMilestone,
+			"status":         "open",
+			"state_category": "backlog",
+		},
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, postCreateReq(t, "nonce-MX", body))
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("want 201, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if seen.Title != "M99 Special" {
+		t.Errorf("operator prefix lost: title = %q, want %q", seen.Title, "M99 Special")
+	}
+}
+
 // Parent carried as a parent_child Relationship with To="" round-trips
 // to the adaptor so the bd layer can translate it to `--parent`.
 func TestCreateWorkItem_ParentRelationshipReachesAdaptor(t *testing.T) {
