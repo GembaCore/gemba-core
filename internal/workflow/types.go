@@ -88,8 +88,8 @@ type RunStep struct {
 // dispatches to bd mol wisp; false to bd mol pour. The SPA sends the
 // same shape for both.
 type PourRequest struct {
-	Formula       string            `json:"formula"`
-	Vars          map[string]string `json:"vars,omitempty"`
-	AttachToBead  string            `json:"attach_to_bead,omitempty"`
-	Ephemeral     bool              `json:"ephemeral,omitempty"`
+	Formula      string            `json:"formula"`
+	Vars         map[string]string `json:"vars,omitempty"`
+	AttachToBead string            `json:"attach_to_bead,omitempty"`
+	Ephemeral    bool              `json:"ephemeral,omitempty"`
 }

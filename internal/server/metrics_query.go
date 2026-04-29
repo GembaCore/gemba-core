@@ -356,8 +356,8 @@ func promLabelMatcher(labels map[string]string) string {
 // All upstream-facing failures wrap into typed core.AdaptorError so
 // the caller's httperr.WriteError lands on the right status:
 //
-//	  ctx cancel / dial / 5xx     → KindAdaptorDegraded (503)
-//	  malformed JSON / empty data → KindAdaptorDegraded (502 via Detail)
+//	ctx cancel / dial / 5xx     → KindAdaptorDegraded (503)
+//	malformed JSON / empty data → KindAdaptorDegraded (502 via Detail)
 //
 // 502 vs 503 is currently coarse — both ride the same Kind because
 // httperr.StatusFor maps KindAdaptorDegraded to 503. Keeping the

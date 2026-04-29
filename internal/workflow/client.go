@@ -173,9 +173,10 @@ func (c *Client) ListRuns(ctx context.Context, filter string) ([]Run, error) {
 
 	// Persistent mols via `bd list --type molecule`.
 	molArgs := []string{"list", "--type", "molecule", "--json"}
-	if filter == "active" {
+	switch filter {
+	case "active":
 		molArgs = append(molArgs, "--status", "open")
-	} else if filter == "done" {
+	case "done":
 		molArgs = append(molArgs, "--status", "closed")
 	}
 	if mols, err := c.runListBeads(ctx, molArgs); err == nil {

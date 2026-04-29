@@ -245,10 +245,10 @@ func TestDeriveRigName(t *testing.T) {
 	cases := map[string]string{
 		"https://github.com/GembaCore/gemba-core.git": "gemba_core",
 		"git@github.com:GembaCore/gemba-core.git":     "gemba_core",
-		"https://example.com/foo/bar-baz":           "bar_baz",
-		"/local/path/to/ACME_Corp":                  "acme_corp",
-		"":                                          "",
-		"___":                                       "",
+		"https://example.com/foo/bar-baz":             "bar_baz",
+		"/local/path/to/ACME_Corp":                    "acme_corp",
+		"":                                            "",
+		"___":                                         "",
 	}
 	for in, want := range cases {
 		if got := deriveRigName(in); got != want {
