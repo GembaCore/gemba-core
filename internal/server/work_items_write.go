@@ -123,6 +123,9 @@ func (r *Router) patchWorkItem(w http.ResponseWriter, req *http.Request) {
 		httperr.WriteError(w, err)
 		return
 	}
+	// gm-mqiz: when this patch closed a milestone child, roll the
+	// milestone closed and notify. Best-effort — see milestone_autoclose.go.
+	r.maybeAutoCloseMilestone(req.Context(), wp, out)
 	writeJSON(w, http.StatusOK, out)
 }
 
