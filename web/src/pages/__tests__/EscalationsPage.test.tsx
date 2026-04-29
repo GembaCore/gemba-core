@@ -1,4 +1,4 @@
-// EscalationsPage tests (gm-e11.8.1 / gm-e11.8.3 / gm-e11.8.4).
+// EscalationsPage tests (gm-e11.8.1 / gm-e11.8.3 / gm-e11.8.4 / gm-e11.8.5).
 //
 // Covers:
 //   - severity grouping and within-section ordering
@@ -23,6 +23,13 @@
 //   - escalation is NOT resolved after hand-off (no respond call)
 //   - Cancel closes modal without mutation
 //   - success banner shown after confirm; escalation card remains
+//
+// gm-e11.8.5 additions (filters + search):
+//   - Kind filter reduces visible set to matching kinds only
+//   - Severity filter reduces visible set to matching severities only
+//   - Free-text search matches on title and prompt
+//   - Multi-category compose: kind + severity ANDs the filters
+//   - Filtered-empty state shown when no items match; Clear filters resets
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -651,5 +658,137 @@ describe('EscalationsPage', () => {
       (c) => (c[1] as RequestInit | undefined)?.method === 'POST'
     );
     expect(postCalls).toHaveLength(0);
+  });
+
+  // ── gm-e11.8.5: filters + search ─────────────────────────────────────────
+
+  it('filter: Kind pill reduces visible escalations to matching kind only', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-blocker', source: 'blocker', urgency: 'advisory', title: 'A blocker' }),
+      esc({ id: 'esc-question', source: 'question', urgency: 'advisory', title: 'A question' }),
+      esc({ id: 'esc-witness', source: 'witness_finding', urgency: 'advisory', title: 'Witness' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-blocker', undefined, { timeout: 3000 });
+
+    // Open the Kind popover and select 'blocker'.
+    fireEvent.click(screen.getByTestId('escalations-filter-kind-trigger'));
+    fireEvent.click(screen.getByTestId('escalations-filter-kind-option-blocker'));
+
+    // Only the blocker card should be visible.
+    expect(screen.getByTestId('escalation-card-esc-blocker')).toBeTruthy();
+    expect(screen.queryByTestId('escalation-card-esc-question')).toBeNull();
+    expect(screen.queryByTestId('escalation-card-esc-witness')).toBeNull();
+  });
+
+  it('filter: Severity pill reduces visible escalations to matching severity only', async () => {
+    const escalations: EscalationRequest[] = [
+      // critical: permission_prompt + blocking
+      esc({ id: 'esc-crit', source: 'permission_prompt', urgency: 'blocking', title: 'Critical one' }),
+      // medium: question + advisory
+      esc({ id: 'esc-medium', source: 'question', urgency: 'advisory', title: 'Medium one' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-crit', undefined, { timeout: 3000 });
+
+    // Open Severity popover and select 'medium'.
+    fireEvent.click(screen.getByTestId('escalations-filter-severity-trigger'));
+    fireEvent.click(screen.getByTestId('escalations-filter-severity-option-medium'));
+
+    // Only medium card visible.
+    expect(screen.getByTestId('escalation-card-esc-medium')).toBeTruthy();
+    expect(screen.queryByTestId('escalation-card-esc-crit')).toBeNull();
+  });
+
+  it('filter: free-text search matches on title and prompt', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-title-match', source: 'question', urgency: 'advisory', title: 'Approve deployment', prompt: 'unrelated' }),
+      esc({ id: 'esc-prompt-match', source: 'question', urgency: 'advisory', title: 'unrelated', prompt: 'Should we deploy now?' }),
+      esc({ id: 'esc-no-match', source: 'question', urgency: 'advisory', title: 'Something else', prompt: 'Nothing here' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-title-match', undefined, { timeout: 3000 });
+
+    // Type search term that appears in both a title and a prompt.
+    fireEvent.change(screen.getByTestId('escalations-filter-search'), {
+      target: { value: 'deploy' },
+    });
+
+    expect(screen.getByTestId('escalation-card-esc-title-match')).toBeTruthy();
+    expect(screen.getByTestId('escalation-card-esc-prompt-match')).toBeTruthy();
+    expect(screen.queryByTestId('escalation-card-esc-no-match')).toBeNull();
+  });
+
+  it('filter: multi-category compose — kind=question AND severity=medium keeps only matching items', async () => {
+    const escalations: EscalationRequest[] = [
+      // question + advisory → medium
+      esc({ id: 'esc-q-med', source: 'question', urgency: 'advisory', title: 'Q medium' }),
+      // blocker + advisory → medium (blocker doesn't map to high without blocking urgency)
+      // Actually blocker+advisory → low. Use witness_finding for high.
+      esc({ id: 'esc-witness-high', source: 'witness_finding', urgency: 'advisory', title: 'Witness high' }),
+      // question + blocking → high
+      esc({ id: 'esc-q-high', source: 'question', urgency: 'blocking', title: 'Q high' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-q-med', undefined, { timeout: 3000 });
+
+    // Set kind=question
+    fireEvent.click(screen.getByTestId('escalations-filter-kind-trigger'));
+    fireEvent.click(screen.getByTestId('escalations-filter-kind-option-question'));
+
+    // Set severity=medium
+    fireEvent.click(screen.getByTestId('escalations-filter-severity-trigger'));
+    fireEvent.click(screen.getByTestId('escalations-filter-severity-option-medium'));
+
+    // Only esc-q-med should be visible (question AND medium).
+    expect(screen.getByTestId('escalation-card-esc-q-med')).toBeTruthy();
+    expect(screen.queryByTestId('escalation-card-esc-witness-high')).toBeNull();
+    expect(screen.queryByTestId('escalation-card-esc-q-high')).toBeNull();
+  });
+
+  it('filter: filtered-empty state shown when no items match; Clear filters restores view', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-q', source: 'question', urgency: 'advisory', title: 'A question' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-q', undefined, { timeout: 3000 });
+
+    // Set kind=blocker — no blocker in the seed, so everything disappears.
+    fireEvent.click(screen.getByTestId('escalations-filter-kind-trigger'));
+    fireEvent.click(screen.getByTestId('escalations-filter-kind-option-blocker'));
+
+    expect(screen.getByTestId('escalations-filtered-empty')).toBeTruthy();
+    expect(screen.queryByTestId('escalation-card-esc-q')).toBeNull();
+
+    // Clear filters button restores the view.
+    fireEvent.click(screen.getByTestId('escalations-filtered-empty-clear'));
+
+    expect(screen.queryByTestId('escalations-filtered-empty')).toBeNull();
+    expect(screen.getByTestId('escalation-card-esc-q')).toBeTruthy();
   });
 });

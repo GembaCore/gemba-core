@@ -1,4 +1,4 @@
-// specs/escalations/inbox.spec.ts (gm-e11.8.1 / gm-e11.8.3 / gm-e11.8.4).
+// specs/escalations/inbox.spec.ts (gm-e11.8.1 / gm-e11.8.3 / gm-e11.8.4 / gm-e11.8.5).
 //
 // Tier: route. /escalations inbox renders escalations grouped by
 // severity; the per-card Resolve button opens the nonce-confirmed modal
@@ -9,6 +9,7 @@
 // gm-e11.8.3 additions: multi-select toolbar and bulk-dismiss flow.
 // gm-e11.8.4 additions: per-card Hand-off → POST /api/consults; escalation
 //   stays in the inbox (does NOT resolve).
+// gm-e11.8.5 additions: Kind filter pill reduces visible set to matching kinds.
 
 import { expect, test } from '../../fixtures/server';
 import { EscalationsPage } from '../../pages/EscalationsPage';
@@ -244,4 +245,43 @@ test('Hand-off → Cancel closes modal without POSTing @escalations', async ({
 
   // Escalation card still in the inbox.
   await expect(ep.card('esc-hc')).toBeVisible();
+});
+
+// ── gm-e11.8.5: filter bar ────────────────────────────────────────────────────
+
+test('Kind filter pill: selecting one kind hides non-matching escalations @escalations', async ({
+  page,
+  escalationPlane,
+}) => {
+  escalationPlane.seed([
+    escalation({
+      id: 'esc-blocker',
+      source: 'blocker',
+      urgency: 'advisory',
+      title: 'A blocker item',
+      created_at: '2026-04-25T12:00:00Z',
+    }),
+    escalation({
+      id: 'esc-question',
+      source: 'question',
+      urgency: 'advisory',
+      title: 'Just a question',
+      created_at: '2026-04-25T11:00:00Z',
+    }),
+  ]);
+
+  const ep = new EscalationsPage(page);
+  await ep.goto();
+
+  // Both cards visible before filtering.
+  await expect(ep.card('esc-blocker')).toBeVisible();
+  await expect(ep.card('esc-question')).toBeVisible();
+
+  // Open the Kind popover and select 'blocker'.
+  await ep.kindFilterTrigger().click();
+  await ep.kindFilterOption('blocker').click();
+
+  // Only the blocker card should now be visible.
+  await expect(ep.card('esc-blocker')).toBeVisible();
+  await expect(ep.card('esc-question')).toHaveCount(0);
 });

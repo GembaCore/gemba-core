@@ -1,10 +1,12 @@
-// pages/EscalationsPage.ts — POM for /escalations (gm-e11.8.1 / gm-e11.8.4).
+// pages/EscalationsPage.ts — POM for /escalations (gm-e11.8.1 / gm-e11.8.4 / gm-e11.8.5).
 //
 // Composes AppShell so chrome assertions come for free. Testids come
 // from web/src/pages/EscalationsPage.tsx; per-card actions key off the
 // escalation id (escalation-card-${id}-resolve / -handoff / -agent / -workitem).
 // gm-e11.8.4 adds handoffButton(), handoffModal(), handoffPersonaSelect(),
 // handoffConfirmButton(), handoffCancelButton(), handoffSuccess().
+// gm-e11.8.5 adds filterBar(), kindFilterTrigger(), kindFilterOption(),
+// severityFilterTrigger(), searchInput(), filteredEmpty(), clearFiltersButton().
 
 import type { Locator, Page } from '@playwright/test';
 import { AppShell } from './AppShell';
@@ -108,5 +110,39 @@ export class EscalationsPage extends AppShell {
 
   handoffSuccess(): Locator {
     return this.page.getByTestId('escalation-handoff-success');
+  }
+
+  // ── gm-e11.8.5: filter bar ────────────────────────────────────────────────
+
+  filterBar(): Locator {
+    return this.page.getByTestId('escalations-filter-bar');
+  }
+
+  kindFilterTrigger(): Locator {
+    return this.page.getByTestId('escalations-filter-kind-trigger');
+  }
+
+  kindFilterOption(kind: string): Locator {
+    return this.page.getByTestId(`escalations-filter-kind-option-${kind}`);
+  }
+
+  severityFilterTrigger(): Locator {
+    return this.page.getByTestId('escalations-filter-severity-trigger');
+  }
+
+  severityFilterOption(severity: string): Locator {
+    return this.page.getByTestId(`escalations-filter-severity-option-${severity}`);
+  }
+
+  searchInput(): Locator {
+    return this.page.getByTestId('escalations-filter-search');
+  }
+
+  filteredEmpty(): Locator {
+    return this.page.getByTestId('escalations-filtered-empty');
+  }
+
+  clearFiltersButton(): Locator {
+    return this.page.getByTestId('escalations-filtered-empty-clear');
   }
 }
