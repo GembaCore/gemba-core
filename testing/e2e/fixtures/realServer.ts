@@ -196,7 +196,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
       }
     );
   } catch (err) {
-    rmSync(baseDir, { recursive: true, force: true });
+    rmSyncRetry(baseDir, { recursive: true, force: true });
     throw new Error(`bd init failed in ${baseDir}: ${(err as Error).message}`);
   }
 
@@ -210,7 +210,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   try {
     assertEmbeddedIsolation(join(baseDir, '.beads'), prefix);
   } catch (err) {
-    rmSync(baseDir, { recursive: true, force: true });
+    rmSyncRetry(baseDir, { recursive: true, force: true });
     throw err;
   }
 
@@ -296,7 +296,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   // with exitCode populated and baseURL undefined.
   if (opts.expectBootFailure) {
     const exitInfo = await waitForExit(child, bootTimeoutMs);
-    rmSync(baseDir, { recursive: true, force: true });
+    rmSyncRetry(baseDir, { recursive: true, force: true });
     return {
       baseURL: '',
       beadsDir: baseDir,
@@ -316,7 +316,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     await waitForHealth(baseURL, bootTimeoutMs, () => exited);
   } catch (err) {
     child.kill('SIGKILL');
-    rmSync(baseDir, { recursive: true, force: true });
+    rmSyncRetry(baseDir, { recursive: true, force: true });
     throw new Error(
       `${(err as Error).message}\n\nServer stderr:\n${stderrChunks.join('') || '(empty)'}`
     );
@@ -330,7 +330,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     authToken = parseAuthTokenFromStderr(stderrChunks.join(''));
     if (!authToken) {
       child.kill('SIGKILL');
-      rmSync(baseDir, { recursive: true, force: true });
+      rmSyncRetry(baseDir, { recursive: true, force: true });
       throw new Error(
         `gemba serve --auth=token did not print a bootstrap token to stderr.\n` +
           `stderr:\n${stderrChunks.join('') || '(empty)'}`
@@ -353,7 +353,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
       if (disposed) return;
       disposed = true;
       await killGracefully(child);
-      rmSync(baseDir, { recursive: true, force: true });
+      rmSyncRetry(baseDir, { recursive: true, force: true });
     },
   };
 }
@@ -525,4 +525,42 @@ async function killGracefully(child: ChildProcess): Promise<void> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+// rmSyncRetry wraps rmSync to absorb the ENOTEMPTY race in CI when a
+// child process (embedded Dolt server) hasn't fully released its
+// files by the time the test teardown tries to recursive-rm the
+// fixture's baseDir. The teardown calls killGracefully on gemba; the
+// parent exits, but its child processes may still flush/close files
+// for a few ms after. node's `force: true` flag suppresses ENOENT
+// but NOT ENOTEMPTY, so a fresh subdir landing during walk-down
+// races the rmdir.
+//
+// Strategy: try once; on ENOTEMPTY (or any IO error) sleep + retry
+// up to 5 times with 100ms backoff. After that, swallow the error —
+// the runner exits anyway and a stuck temp dir is annoying but not
+// a test failure. Worst case the OS / GH-actions cleanup handles it.
+function rmSyncRetry(path: string, opts: { recursive?: boolean; force?: boolean }): void {
+  // Lazy-import inside the helper so the test entry-point doesn't
+  // pay node:fs cost just to expose the type. (rmSync is the same
+  // import the rest of this module uses.)
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      rmSync(path, opts);
+      return;
+    } catch (err) {
+      lastErr = err;
+      // Synchronously sleep ~100ms × attempt+1. We're in a teardown
+      // hook that's expected to be sync-ish; busy-wait is acceptable
+      // for the small backoff windows we need.
+      const deadline = Date.now() + 100 * (attempt + 1);
+      while (Date.now() < deadline) {
+        // tight loop; node's micro/macro task queue still ticks.
+      }
+    }
+  }
+  // Final attempt failure is logged but swallowed — see helper docs.
+  // eslint-disable-next-line no-console
+  console.warn(`rmSyncRetry: giving up on ${path}: ${(lastErr as Error)?.message ?? lastErr}`);
 }
