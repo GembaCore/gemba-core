@@ -16,6 +16,8 @@ import { BootstrapPage } from '@/pages/BootstrapPage';
 import { NewProjectRedirect } from '@/pages/NewProjectRedirect';
 import { OnboardPage } from '@/pages/OnboardPage';
 import { InsightsPersonasPage } from '@/pages/InsightsPersonasPage';
+// gm-e12.17.1: real recharts-driven /insights with three first-viewport tiles.
+import { InsightsPage } from '@/pages/InsightsPage';
 import { DriftPage } from '@/pages/DriftPage';
 // gm-e12.15: provider-aware agent detail view (Workspace.kind switch).
 import { AgentDetailPage } from '@/pages/agents/AgentDetailPage';
@@ -28,7 +30,6 @@ import { SprintDetailPage } from '@/pages/SprintDetailPage';
 import { EscalationsPage } from '@/pages/EscalationsPage';
 import {
   HealthPage,
-  InsightsPage,
   MailPage,
   NotFoundPage,
 } from '@/pages/placeholders';
