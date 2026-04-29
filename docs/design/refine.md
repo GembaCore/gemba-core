@@ -1,3 +1,8 @@
+---
+title: "/refine — dedicated triage + refinement surface"
+decision: gm-3ofd
+---
+
 # /refine — dedicated triage + refinement surface (gm-3ofd)
 
 > **Status**: accepted 2026-04-29.
