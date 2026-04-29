@@ -353,6 +353,14 @@ func TestLoadRegistry_SeedFiles(t *testing.T) {
 	if !containsString(pm.Skills, "escalation_handoff") {
 		t.Errorf("project-manager skills = %v, want includes escalation_handoff", pm.Skills)
 	}
+	// gm-yjst: PM must know it can propose milestone creation through a
+	// suggested_action. The guidance lives in system_prompt; a missing
+	// reference means the dispatched persona will not know the verb/path.
+	for _, want := range []string{"milestone", "/api/work-items"} {
+		if !strings.Contains(pm.SystemPrompt, want) {
+			t.Errorf("project-manager system_prompt missing %q (gm-yjst)", want)
+		}
+	}
 }
 
 // gm-8qr: Personality + Perspective + Purview round-trip from TOML.
