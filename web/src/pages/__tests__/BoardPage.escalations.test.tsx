@@ -11,6 +11,8 @@ import type { UseQueryResult } from '@tanstack/react-query';
 import { BoardPage } from '../BoardPage';
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import { HotkeyRegistry, HotkeysContext } from '@/hotkeys';
+import { RhpProvider } from '@/components/rhp/RhpContext';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 import type { WorkItem } from '@/types/core.gen';
 import type { EscalationRequest } from '@/api/escalations';
 import type { ApiError } from '@/api/client';
@@ -82,16 +84,20 @@ function wrap(ui: ReactNode, initialEntry = '/board') {
   const registry = new HotkeyRegistry();
   return (
     <MemoryRouter initialEntries={[initialEntry]}>
-      <QueryClientProvider client={client}>
-        <CapabilitiesProvider initial={caps}>
-          <HotkeysContext.Provider value={registry}>
-            <Routes>
-              <Route path="/board" element={ui} />
-              <Route path="/board/*" element={ui} />
-            </Routes>
-          </HotkeysContext.Provider>
-        </CapabilitiesProvider>
-      </QueryClientProvider>
+      <RhpProvider>
+        <RhpPinnedContentProvider>
+          <QueryClientProvider client={client}>
+            <CapabilitiesProvider initial={caps}>
+              <HotkeysContext.Provider value={registry}>
+                <Routes>
+                  <Route path="/board" element={ui} />
+                  <Route path="/board/*" element={ui} />
+                </Routes>
+              </HotkeysContext.Provider>
+            </CapabilitiesProvider>
+          </QueryClientProvider>
+        </RhpPinnedContentProvider>
+      </RhpProvider>
     </MemoryRouter>
   );
 }

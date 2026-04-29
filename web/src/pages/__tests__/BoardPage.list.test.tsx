@@ -4,7 +4,7 @@
 // and Backlog-preset state-category defaults from the URL.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -13,6 +13,10 @@ import { HotkeysProvider } from '@/hotkeys';
 import { CapabilitiesProvider } from '@/capabilities';
 import type { CapabilitiesResponse } from '@/capabilities';
 import type { WorkItem } from '@/types/core.gen';
+import { RhpProvider } from '@/components/rhp/RhpContext';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
+import { RhpShell } from '@/components/rhp/RhpShell';
+import { WorkItemDetailRegistration } from '@/components/rhp/details/WorkItemDetailRegistration';
 
 function caps(): CapabilitiesResponse {
   return {
@@ -36,13 +40,19 @@ function wrapper(initialUrl: string): (props: { children: ReactNode }) => JSX.El
   });
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <QueryClientProvider client={client}>
-        <CapabilitiesProvider initial={caps()}>
-          <HotkeysProvider>
-            <MemoryRouter initialEntries={[initialUrl]}>{children}</MemoryRouter>
-          </HotkeysProvider>
-        </CapabilitiesProvider>
-      </QueryClientProvider>
+      <MemoryRouter initialEntries={[initialUrl]}>
+        <RhpProvider>
+          <RhpPinnedContentProvider>
+            <QueryClientProvider client={client}>
+              <CapabilitiesProvider initial={caps()}>
+                <HotkeysProvider>{children}</HotkeysProvider>
+                <WorkItemDetailRegistration />
+                <RhpShell />
+              </CapabilitiesProvider>
+            </QueryClientProvider>
+          </RhpPinnedContentProvider>
+        </RhpProvider>
+      </MemoryRouter>
     );
   };
 }
@@ -154,7 +164,7 @@ describe('BoardPage list mode (gm-e12.19.1)', () => {
     expect(wiCall ?? '').toMatch(/state_category=completed/);
   });
 
-  it('clicking a row opens the WorkItemDrawer', async () => {
+  it('clicking a row opens the WorkItemDetail in the RHP', async () => {
     const item = wi('gm-77', { title: 'drill-in target' });
     fetchSpy.mockResolvedValueOnce(jsonResponse({ items: [item], total: 1 }));
     fetchSpy.mockResolvedValueOnce(jsonResponse(item));
@@ -165,8 +175,8 @@ describe('BoardPage list mode (gm-e12.19.1)', () => {
       screen.getByTestId('grid-row-gm-77').click();
     });
 
-    const drawer = await screen.findByTestId('work-item-drawer-content');
-    expect(within(drawer).getByTestId('work-item-drawer-id').textContent).toBe('gm-77');
+    const idLabel = await screen.findByTestId('workitem-detail-id');
+    expect(idLabel.textContent).toBe('gm-77');
   });
 
   it('shows the empty state when the adaptor returns zero items', async () => {

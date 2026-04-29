@@ -12,6 +12,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import type { WorkItem } from '@/types/core.gen';
+import { RhpProvider } from '@/components/rhp/RhpContext';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
+import { RhpShell } from '@/components/rhp/RhpShell';
+import { WorkItemDetailRegistration } from '@/components/rhp/details/WorkItemDetailRegistration';
 
 // Mock reactflow before importing GraphPage so the page sees the
 // stub. The stub renders one DOM marker per node + invokes the
@@ -112,13 +116,19 @@ function wrapper(extDeclared = false): (p: { children: ReactNode }) => JSX.Eleme
   });
   return function Wrapper({ children }: { children: ReactNode }): JSX.Element {
     return (
-      <QueryClientProvider client={client}>
-        <CapabilitiesProvider initial={caps(extDeclared)}>
-          <HotkeysProvider>
-            <MemoryRouter>{children}</MemoryRouter>
-          </HotkeysProvider>
-        </CapabilitiesProvider>
-      </QueryClientProvider>
+      <MemoryRouter>
+        <RhpProvider>
+          <RhpPinnedContentProvider>
+            <QueryClientProvider client={client}>
+              <CapabilitiesProvider initial={caps(extDeclared)}>
+                <HotkeysProvider>{children}</HotkeysProvider>
+                <WorkItemDetailRegistration />
+                <RhpShell />
+              </CapabilitiesProvider>
+            </QueryClientProvider>
+          </RhpPinnedContentProvider>
+        </RhpProvider>
+      </MemoryRouter>
     );
   };
 }
@@ -268,12 +278,12 @@ describe('GraphPage', () => {
     act(() => {
       screen.getByTestId('rf-stub-node-a').click();
     });
-    // The drawer's container test id pattern lives in WorkItemDrawer;
-    // settle on any rendered drawer marker so this test stays
-    // resilient to drawer layout tweaks.
+    // Node click pops a workitem detail tab in the RHP. Assert that
+    // popDetail was called — the RHP body becomes visible and the
+    // tab rail shows the workitem icon. Settle on the rhp-body testid
+    // which is always present when a detail tab is open.
     await waitFor(() => {
-      const drawer = document.querySelector('[role="dialog"]');
-      expect(drawer).toBeTruthy();
+      expect(screen.getByTestId('rhp-body')).toBeTruthy();
     });
   });
 });

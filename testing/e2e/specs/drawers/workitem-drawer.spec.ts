@@ -1,68 +1,66 @@
-// specs/drawers/workitem-drawer.spec.ts — gm-5v8v.8
+// specs/drawers/workitem-drawer.spec.ts — gm-root.22.5
 //
-// Covers WorkItemDrawer's "always-on" surface: open via deep-link,
-// header (id / copy / close), tab navigation, Escape-closes,
-// dispatch button gated by state. The 70KB component carries far
-// more (title editor, description editor, edges, evidence, DoD,
-// activity, extensions); each gets its own spec under this dir.
+// Was: WorkItemDrawer spec (gm-5v8v.8).
+// Now: WorkItemDetail in the RHP (gm-root.22.5).
+//
+// Covers: open via ?bead= legacy deep-link (shim), open via ?rhp= codec,
+// header (id / copy), tab navigation, dispatch button, error state,
+// back button, card-click → RHP.
 
 import { test, expect } from '../../fixtures/server';
-import { WorkItemDrawerPO } from '../../pages/WorkItemDrawer';
+import { WorkItemDetailPO } from '../../pages/WorkItemDetail';
 import * as build from '../../builders/workitem';
 
-test.describe('WorkItemDrawer @route', () => {
-  test('opens via /board?bead=ID', async ({ page, workPlane }) => {
+test.describe('WorkItemDetail (RHP) @route', () => {
+  test('opens via legacy /board?bead=ID — shim translates to ?rhp=workitem:ID', async ({
+    page,
+    workPlane,
+  }) => {
     const id = 'gm-test-wi';
     workPlane.seed([build.workItem({ id, title: 'Hello bead' })]);
 
-    const drawer = new WorkItemDrawerPO(page);
-    await drawer.openByDeepLink(id);
+    const detail = new WorkItemDetailPO(page);
+    await detail.openByLegacyDeepLink(id);
 
-    await drawer.expectOpenWith(id);
+    await detail.expectOpenWith(id);
+    // URL should have been rewritten — ?bead= gone, ?rhp= present.
+    await expect(page).toHaveURL(/rhp=workitem/);
+    await expect(page).not.toHaveURL(/bead=/);
   });
 
-  test('opens with id containing slashes (workspace-prefixed)', async ({ page, workPlane }) => {
-    // The board route uses a `*` segment so canonical bd ids like
-    // gemba/gemba/gm-1 round-trip without losing path segments.
+  test('opens via canonical /board?rhp=workitem:ID', async ({ page, workPlane }) => {
+    const id = 'gm-rhp-direct';
+    workPlane.seed([build.workItem({ id, title: 'Direct RHP open' })]);
+
+    const detail = new WorkItemDetailPO(page);
+    await detail.openByRhpDeepLink(id);
+
+    await detail.expectOpenWith(id);
+  });
+
+  test('opens with id containing slashes (workspace-prefixed)', async ({
+    page,
+    workPlane,
+  }) => {
     const id = 'gemba/gemba/gm-1';
     workPlane.seed([build.workItem({ id, title: 'Workspace-prefixed' })]);
 
-    const drawer = new WorkItemDrawerPO(page);
-    await drawer.openByDeepLink(id);
+    const detail = new WorkItemDetailPO(page);
+    await detail.openByRhpDeepLink(id);
 
-    await drawer.expectOpenWith(id);
+    await detail.expectOpenWith(id);
   });
 
-  test('Escape closes the drawer', async ({ page, workPlane }) => {
-    const id = 'gm-test-esc';
-    workPlane.seed([build.workItem({ id })]);
-
-    const drawer = new WorkItemDrawerPO(page);
-    await drawer.openByDeepLink(id);
-    await drawer.closeViaEscape();
-  });
-
-  test('close button closes the drawer', async ({ page, workPlane }) => {
-    const id = 'gm-test-x';
-    workPlane.seed([build.workItem({ id })]);
-
-    const drawer = new WorkItemDrawerPO(page);
-    await drawer.openByDeepLink(id);
-    await drawer.closeViaButton();
-  });
-
-  test('renders the tablist with the standard five tabs (Evidence is inline on Summary)', async ({ page, workPlane }) => {
+  test('renders the tablist with the standard five tabs', async ({ page, workPlane }) => {
     const id = 'gm-test-tabs';
     workPlane.seed([build.workItem({ id })]);
 
-    const drawer = new WorkItemDrawerPO(page);
-    await drawer.openByDeepLink(id);
+    const detail = new WorkItemDetailPO(page);
+    await detail.openByRhpDeepLink(id);
 
-    await expect(drawer.tabs).toBeVisible();
-    // Evidence is folded into the Summary/description tab per
-    // ui-spec §5.7 (gm-g9t1) — no standalone evidence tab.
+    await expect(detail.tabs).toBeVisible();
     for (const tab of ['description', 'edges', 'dod', 'sprint', 'activity'] as const) {
-      await expect(drawer.tab(tab)).toBeVisible();
+      await expect(detail.tab(tab)).toBeVisible();
     }
   });
 
@@ -70,12 +68,12 @@ test.describe('WorkItemDrawer @route', () => {
     const id = 'gm-test-tab-switch';
     workPlane.seed([build.workItem({ id })]);
 
-    const drawer = new WorkItemDrawerPO(page);
-    await drawer.openByDeepLink(id);
+    const detail = new WorkItemDetailPO(page);
+    await detail.openByRhpDeepLink(id);
 
-    await drawer.selectTab('dod');
-    await drawer.selectTab('edges');
-    await drawer.selectTab('description');
+    await detail.selectTab('dod');
+    await detail.selectTab('edges');
+    await detail.selectTab('description');
   });
 
   test('dispatch button is disabled for terminal beads', async ({ page, workPlane }) => {
@@ -84,31 +82,30 @@ test.describe('WorkItemDrawer @route', () => {
       build.workItem({ id, state_category: 'completed', status: 'closed' }),
     ]);
 
-    const drawer = new WorkItemDrawerPO(page);
-    await drawer.openByDeepLink(id);
+    const detail = new WorkItemDetailPO(page);
+    await detail.openByRhpDeepLink(id);
 
-    await expect(drawer.dispatch).toBeDisabled();
+    await expect(detail.dispatch).toBeDisabled();
   });
 
-  test('error state renders when bead is not in the WorkPlane', async ({ page, workPlane }) => {
+  test('error state renders when bead is not in the WorkPlane', async ({
+    page,
+    workPlane,
+  }) => {
     workPlane.seed([]);
 
-    const drawer = new WorkItemDrawerPO(page);
-    await page.goto('/board?bead=gm-missing');
+    const detail = new WorkItemDetailPO(page);
+    await page.goto('/board?rhp=workitem:gm-missing');
 
-    // Drawer shell renders even on error; the error pane lives inside.
-    await expect(drawer.content).toBeVisible();
-    await expect(page.getByTestId('work-item-drawer-error')).toBeVisible();
+    // RHP body is visible; error pane lives inside.
+    await expect(detail.rhpBody).toBeVisible();
+    await expect(page.getByTestId('workitem-detail-error')).toBeVisible();
   });
 
   test('back button restores the previous bead in the nav stack', async ({
     page,
     workPlane,
   }) => {
-    // The drawer pushes a new bead onto its internal stack when an
-    // edge target inside the Edges tab is clicked. Seed two beads
-    // with a "blocks" relationship so the relgroup renders a
-    // navigable target.
     const a = build.workItem({
       id: 'gm-stack-a',
       title: 'Source bead',
@@ -117,41 +114,55 @@ test.describe('WorkItemDrawer @route', () => {
     const b = build.workItem({ id: 'gm-stack-b', title: 'Target bead' });
     workPlane.seed([a, b]);
 
-    const drawer = new WorkItemDrawerPO(page);
-    await drawer.openByDeepLink('gm-stack-a');
-    await expect(drawer.backButton).toHaveCount(0);
+    const detail = new WorkItemDetailPO(page);
+    await detail.openByRhpDeepLink('gm-stack-a');
+    await detail.expectOpenWith('gm-stack-a');
+    await expect(detail.backButton).toHaveCount(0);
 
-    await drawer.selectTab('edges');
-    // The "blocks" relgroup wrapper carries its own testid; the
-    // inner navigation buttons are anchored by their bead-id text.
-    await page.getByTestId('relgroup-blocks').getByRole('button', { name: 'gm-stack-b' }).click();
-    await drawer.expectOpenWith('gm-stack-b');
-    await expect(drawer.backButton).toBeVisible();
+    await detail.selectTab('edges');
+    await page
+      .getByTestId('relgroup-blocks')
+      .getByRole('button', { name: 'gm-stack-b' })
+      .click();
+    await detail.expectOpenWith('gm-stack-b');
+    await expect(detail.backButton).toBeVisible();
 
-    await drawer.backButton.click();
-    await drawer.expectOpenWith('gm-stack-a');
-    await expect(drawer.backButton).toHaveCount(0);
+    await detail.backButton.click();
+    await detail.expectOpenWith('gm-stack-a');
+    await expect(detail.backButton).toHaveCount(0);
+  });
+
+  test('card click on the board opens the RHP workitem detail', async ({
+    page,
+    workPlane,
+  }) => {
+    const id = 'gm-card-click';
+    workPlane.seed([build.workItem({ id, title: 'Card click target' })]);
+
+    const detail = new WorkItemDetailPO(page);
+    await page.goto('/board?layout=workitem');
+
+    // Card carries data-work-item-id; click it.
+    const card = page.locator(`[data-work-item-id="${id}"]`);
+    await expect(card).toBeVisible();
+    await card.click();
+
+    await detail.expectOpenWith(id);
   });
 
   test('opens via the "o" hotkey on the focused card (gm-fqiw)', async ({
     page,
     workPlane,
   }) => {
-    // Workitem-flat layout (?layout=workitem post-uipx.18) renders
-    // WorkItemCard — its keydown handler treats `o` as drawer-open
-    // (gm-fqiw). Seed a single bead, focus the card, press 'o',
-    // assert the drawer opens with the seeded id.
     const id = 'gm-hot-o';
     workPlane.seed([build.workItem({ id, title: 'Hotkey o target' })]);
 
-    const drawer = new WorkItemDrawerPO(page);
+    const detail = new WorkItemDetailPO(page);
     await page.goto('/board?layout=workitem');
-    // The card carries data-work-item-id and role=button; locate by
-    // the id attribute (no card-level testid on the SPA side).
     const card = page.locator(`[data-work-item-id="${id}"]`);
     await expect(card).toBeVisible();
     await card.focus();
     await page.keyboard.press('o');
-    await drawer.expectOpenWith(id);
+    await detail.expectOpenWith(id);
   });
 });

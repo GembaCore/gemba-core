@@ -1,7 +1,7 @@
 // NewWorkItemDialog (gm-e12.10). Operator fills in title + kind +
 // priority + description and submits. Two entry contexts:
 //   - Board header "+ New" button → no parent
-//   - EpicDrawer "+ Child" button → parent prefilled + locked
+//   - EpicDetail "+ Child" button → parent prefilled + locked
 //
 // Parent is carried on the wire as a parent_child Relationship with
 // From=parent and To="" (bd adaptor translates to `bd create --parent`).
@@ -27,7 +27,7 @@ const PRIORITY_OPTIONS: { value: number; label: string }[] = [
 export interface NewWorkItemDialogProps {
   open: boolean;
   onClose: () => void;
-  // parentId locks a parent for the new item. EpicDrawer passes the
+  // parentId locks a parent for the new item. EpicDetail passes the
   // epic's id; the board's top-level "+ New" leaves it undefined.
   parentId?: string;
   // parentTitle is shown alongside parentId so the operator sees what

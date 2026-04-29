@@ -9,6 +9,8 @@ import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { RefinePage } from '../RefinePage';
 import { HotkeysProvider } from '@/hotkeys';
+import { RhpProvider } from '@/components/rhp/RhpContext';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 import { CapabilitiesProvider } from '@/capabilities';
 import type { CapabilitiesResponse } from '@/capabilities';
 import type { WorkItem } from '@/types/core.gen';
@@ -34,13 +36,17 @@ function wrap(url: string): (p: { children: ReactNode }) => JSX.Element {
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   return ({ children }) => (
-    <QueryClientProvider client={client}>
-      <CapabilitiesProvider initial={caps()}>
-        <HotkeysProvider>
-          <MemoryRouter initialEntries={[url]}>{children}</MemoryRouter>
-        </HotkeysProvider>
-      </CapabilitiesProvider>
-    </QueryClientProvider>
+    <MemoryRouter initialEntries={[url]}>
+      <RhpProvider>
+        <RhpPinnedContentProvider>
+          <QueryClientProvider client={client}>
+            <CapabilitiesProvider initial={caps()}>
+              <HotkeysProvider>{children}</HotkeysProvider>
+            </CapabilitiesProvider>
+          </QueryClientProvider>
+        </RhpPinnedContentProvider>
+      </RhpProvider>
+    </MemoryRouter>
   );
 }
 

@@ -13,7 +13,7 @@
 // Differences from WorkItemCard:
 //   - kind chip ("EPIC") replaces the implicit-task look
 //   - child progress bar replaces the assignee/glyphs row
-//   - clicking opens the EpicDrawer, not the WorkItem drawer
+//   - clicking opens the EpicDetail tab in the RHP, not the WorkItem drawer
 
 import type { KeyboardEvent } from 'react';
 import type { StateCategory, WorkItem } from '@/types/core.gen';

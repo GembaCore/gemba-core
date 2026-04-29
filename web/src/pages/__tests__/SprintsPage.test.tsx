@@ -1,4 +1,4 @@
-// SprintsPage + SprintDetailPage tests (gm-e11.5, gm-szz0.1).
+// SprintsPage + SprintDetailPage tests (gm-e11.5, gm-szz0.1, gm-root.22.7).
 //
 // Coverage:
 //   - empty list when adaptor returns no sprints
@@ -8,12 +8,15 @@
 //   - detail page renders the sprint + work-item roster scoped via
 //     /api/work-items?sprint_id
 //
-// gm-szz0.1: /sprints became the home of the PM persona's
-// epic_order drawer (moved off /coach as part of the dispatch-vs-
-// planning surface split). The drawer's own behaviour is covered
-// by RecommendOrderDrawer.test.tsx; here we only assert that
-// SprintsPage exposes the planner header + 'Recommend order'
-// trigger and surfaces the drawer overlay on click.
+// gm-szz0.1: /sprints became the home of the PM persona's epic_order
+// surface. The 'Recommend order' button is the primary planning action.
+//
+// gm-root.22.7: the button now calls popDetail (RHP) instead of
+// opening a drawer overlay. We assert that the button is present and
+// enabled, and that clicking it does not crash (popDetail is satisfied
+// by the RhpProvider in the wrapper). The drawer overlay test-id
+// (recommend-order-drawer) is gone; the RHP tab rendering is covered
+// by RecommendOrderDetail.test.tsx.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
@@ -22,6 +25,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { SprintsPage } from '../SprintsPage';
 import { SprintDetailPage } from '../SprintDetailPage';
+import { RhpProvider } from '@/components/rhp/RhpContext';
 
 // emptyCoach is the planner/coach response shape with no ready
 // beads or sessions — the gm-szz0.1 planner header on SprintsPage
@@ -53,11 +57,13 @@ function wrapper(initial = '/'): (props: { children: ReactNode }) => JSX.Element
     return (
       <QueryClientProvider client={client}>
         <MemoryRouter initialEntries={[initial]}>
-          <Routes>
-            <Route path="/sprints" element={children} />
-            <Route path="/sprints/:id" element={children} />
-            <Route path="/" element={children} />
-          </Routes>
+          <RhpProvider>
+            <Routes>
+              <Route path="/sprints" element={children} />
+              <Route path="/sprints/:id" element={children} />
+              <Route path="/" element={children} />
+            </Routes>
+          </RhpProvider>
         </MemoryRouter>
       </QueryClientProvider>
     );
@@ -138,10 +144,10 @@ describe('SprintsPage', () => {
     expect(row.textContent).toContain('1 / 2 done');
   });
 
-  // gm-szz0.1: the page hosts the PM persona's epic_order drawer
-  // that used to live on /coach. Pin the planner header testids
-  // and the drawer-open path so a future change can't silently
-  // unmount the planning surface.
+  // gm-szz0.1 / gm-root.22.7: the page hosts the PM persona's
+  // epic_order RHP detail tab. The drawer overlay is gone — clicking
+  // 'Recommend order' now calls popDetail which writes the kind into
+  // the ?rhp URL param (verified by the RHP URL codec contract).
   it('renders the planner header with the Recommend order trigger', async () => {
     routeFetch({
       '/api/planner/coach': {
@@ -175,12 +181,21 @@ describe('SprintsPage', () => {
       { timeout: 3000 }
     )) as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
-    // Drawer is closed by default; clicking the button mounts it.
+
+    // No drawer overlay — the drawer pattern is replaced by the RHP tab.
     expect(screen.queryByTestId('recommend-order-drawer')).toBeNull();
+
+    // Clicking the button pops a detail tab into the RHP (URL-driven).
+    // The RHP provider is in the tree (wrapper includes RhpProvider) so
+    // popDetail does not throw; we verify no crash and the button is
+    // still present after the click.
     act(() => {
       fireEvent.click(btn);
     });
-    expect(screen.getByTestId('recommend-order-drawer')).toBeTruthy();
+    // Button remains in the DOM after click (not a toggle that removes itself).
+    expect(screen.getByTestId('sprints-recommend-order')).toBeTruthy();
+    // Drawer never appeared — confirm the old testid is still absent.
+    expect(screen.queryByTestId('recommend-order-drawer')).toBeNull();
   });
 
   it('shows error state on fetch failure', async () => {

@@ -7,17 +7,17 @@
 // create) is tagged @deep — it lives behind gm-5v8v.2.
 
 import { test, expect } from '../../fixtures/server';
-import { EpicDrawerPO } from '../../pages/EpicDrawer';
+import { EpicDetailPO } from '../../pages/EpicDetail';
 import * as build from '../../builders/workitem';
 
 test.describe('NewWorkItemDialog @route', () => {
-  test('opens from EpicDrawer "+ New child" with parent prefilled', async ({ page, workPlane }) => {
+  test('opens from EpicDetail "+ New child" with parent prefilled', async ({ page, workPlane }) => {
     const epicId = 'gm-test-epic-newchild';
     workPlane.seed([build.epic({ id: epicId, title: 'Parent epic' })]);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
-    await drawer.newChild.click();
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
+    await detail.newChild.click();
 
     const dialog = page.getByRole('dialog', { name: 'New work item' });
     await expect(dialog).toBeVisible();
@@ -30,9 +30,9 @@ test.describe('NewWorkItemDialog @route', () => {
     const epicId = 'gm-test-epic-validation';
     workPlane.seed([build.epic({ id: epicId })]);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
-    await drawer.newChild.click();
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
+    await detail.newChild.click();
 
     const dialog = page.getByRole('dialog', { name: 'New work item' });
     const create = dialog.getByRole('button', { name: 'Create' });
@@ -46,9 +46,9 @@ test.describe('NewWorkItemDialog @route', () => {
     const epicId = 'gm-test-epic-cancel';
     workPlane.seed([build.epic({ id: epicId })]);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
-    await drawer.newChild.click();
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
+    await detail.newChild.click();
 
     const dialog = page.getByRole('dialog', { name: 'New work item' });
     await dialog.getByRole('button', { name: 'Cancel' }).click();

@@ -1,25 +1,26 @@
-// EpicDrawer Stage / Start workers actions (gm-vzy). Covers the four
-// enablement corners of the capability × state gate:
+// EpicDetail tests — gm-root.22.6.
 //
-//   agent_claimable | state    | Stage | Start
-//   ----------------|----------|-------|-------
-//   false           | any      | off   | off
-//   true            | unstarted| on    | off
-//   true            | staged   | off   | on
-//   true            | started  | off   | off
+// Covers:
+//   - Loading / error / body render states.
+//   - Action-button enablement gates (Stage / Start / Dispatch / New child).
+//   - Stage button fires PATCH with X-GEMBA-Confirm header.
+//   - Registration: EpicDetailRegistration registers kind='epic' with icon + label.
 //
-// plus a positive test that clicking Stage fires PATCH with the
-// X-GEMBA-Confirm nonce header via useUpdateWorkItem.
+// The RHP shell, URL codec, and route-change scoping are exercised by
+// RhpDetail.test.tsx — this file focuses on EpicDetail's own surface.
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { EpicDrawer } from '../EpicDrawer';
+import { EpicDetail, EpicDetailRegistration } from '../EpicDetail';
 import { workItemsKeys } from '@/hooks/useWorkItems';
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
+import { RhpProvider, useRhpDetailRegistry } from '@/components/rhp/RhpContext';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
+import { useEffect, useState } from 'react';
 
 const caps: CapabilitiesResponse = {
   work_plane: {
@@ -54,14 +55,17 @@ function epicFixture(
 
 function mount(epic: WorkItem) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  // Preload detail + list so the drawer has the epic without fetching.
   client.setQueryData(workItemsKeys.detail(epic.id), epic);
   client.setQueryData(workItemsKeys.list(), [epic]);
   const ui: ReactNode = (
     <MemoryRouter>
       <QueryClientProvider client={client}>
         <CapabilitiesProvider initial={caps}>
-          <EpicDrawer openId={epic.id} onClose={() => {}} />
+          <RhpProvider>
+            <RhpPinnedContentProvider>
+              <EpicDetail id={epic.id} />
+            </RhpPinnedContentProvider>
+          </RhpProvider>
         </CapabilitiesProvider>
       </QueryClientProvider>
     </MemoryRouter>
@@ -69,7 +73,33 @@ function mount(epic: WorkItem) {
   return { ...render(ui), client };
 }
 
-describe('EpicDrawer — Stage / Start workers actions (gm-vzy)', () => {
+describe('EpicDetail — rendering', () => {
+  it('renders the id label in the header', async () => {
+    mount(epicFixture());
+    await waitFor(() => expect(screen.getByTestId('epic-detail-id')).toBeTruthy());
+    expect(screen.getByTestId('epic-detail-id').textContent).toBe('demo/pc-e-test');
+  });
+
+  it('renders the state section with state_category', async () => {
+    mount(epicFixture({ state_category: 'staged', status: 'staged' }));
+    const section = await screen.findByTestId('epic-section-state');
+    expect(section.textContent).toContain('staged');
+  });
+
+  it('renders the description section when present', async () => {
+    mount(epicFixture({ description: 'An important epic.' }));
+    await waitFor(() => expect(screen.getByTestId('epic-section-description')).toBeTruthy());
+    expect(screen.getByText('An important epic.')).toBeTruthy();
+  });
+
+  it('renders children section with count 0 when no children', async () => {
+    mount(epicFixture());
+    const section = await screen.findByTestId('epic-section-children');
+    expect(section.textContent).toContain('Children (0)');
+  });
+});
+
+describe('EpicDetail — Stage / Start workers actions (gm-vzy)', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -81,21 +111,23 @@ describe('EpicDrawer — Stage / Start workers actions (gm-vzy)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders both buttons in the drawer header', async () => {
+  it('renders Stage, Start, Dispatch, and New child buttons', async () => {
     mount(epicFixture());
-    await waitFor(() => expect(screen.getByTestId('epic-drawer-stage')).toBeTruthy());
-    expect(screen.getByTestId('epic-drawer-start')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('epic-detail-stage')).toBeTruthy());
+    expect(screen.getByTestId('epic-detail-start')).toBeTruthy();
+    expect(screen.getByTestId('epic-detail-dispatch')).toBeTruthy();
+    expect(screen.getByTestId('epic-detail-new-child')).toBeTruthy();
   });
 
-  it('disables both when derived.agent_claimable is false', async () => {
+  it('disables both Stage and Start when derived.agent_claimable is false', async () => {
     mount(
       epicFixture({
         state_category: 'unstarted',
         derived: { agent_claimable: false, human_action_required: false, review_pending: false },
       })
     );
-    const stage = await screen.findByTestId('epic-drawer-stage');
-    const start = screen.getByTestId('epic-drawer-start');
+    const stage = await screen.findByTestId('epic-detail-stage');
+    const start = screen.getByTestId('epic-detail-start');
     expect(stage.hasAttribute('disabled')).toBe(true);
     expect(start.hasAttribute('disabled')).toBe(true);
     expect(stage.getAttribute('title')).toMatch(/agent-claimable/i);
@@ -108,9 +140,9 @@ describe('EpicDrawer — Stage / Start workers actions (gm-vzy)', () => {
         derived: { agent_claimable: true, human_action_required: false, review_pending: false },
       })
     );
-    const stage = await screen.findByTestId('epic-drawer-stage');
+    const stage = await screen.findByTestId('epic-detail-stage');
     expect(stage.hasAttribute('disabled')).toBe(false);
-    const start = screen.getByTestId('epic-drawer-start');
+    const start = screen.getByTestId('epic-detail-start');
     expect(start.hasAttribute('disabled')).toBe(true);
     expect(start.getAttribute('title')).toMatch(/stage the epic/i);
   });
@@ -122,8 +154,8 @@ describe('EpicDrawer — Stage / Start workers actions (gm-vzy)', () => {
         derived: { agent_claimable: true, human_action_required: false, review_pending: false },
       })
     );
-    const stage = await screen.findByTestId('epic-drawer-stage');
-    const start = screen.getByTestId('epic-drawer-start');
+    const stage = await screen.findByTestId('epic-detail-stage');
+    const start = screen.getByTestId('epic-detail-start');
     expect(start.hasAttribute('disabled')).toBe(false);
     expect(stage.hasAttribute('disabled')).toBe(true);
     expect(stage.getAttribute('title')).toMatch(/already staged/i);
@@ -136,7 +168,7 @@ describe('EpicDrawer — Stage / Start workers actions (gm-vzy)', () => {
         derived: { agent_claimable: true, human_action_required: false, review_pending: false },
       })
     );
-    const start = await screen.findByTestId('epic-drawer-start');
+    const start = await screen.findByTestId('epic-detail-start');
     expect(start.hasAttribute('disabled')).toBe(true);
     expect(start.getAttribute('title')).toMatch(/already started/i);
   });
@@ -148,11 +180,9 @@ describe('EpicDrawer — Stage / Start workers actions (gm-vzy)', () => {
         derived: { agent_claimable: false, human_action_required: false, review_pending: false },
       })
     );
-    const stage = await screen.findByTestId('epic-drawer-stage');
+    const stage = await screen.findByTestId('epic-detail-stage');
     fireEvent.click(stage);
     await Promise.resolve();
-    // React Query may fire background GETs on mount despite the preload;
-    // the invariant we care about is that NO PATCH was dispatched.
     const patches = fetchSpy.mock.calls.filter(
       ([, init]) => (init as RequestInit | undefined)?.method === 'PATCH'
     );
@@ -177,7 +207,7 @@ describe('EpicDrawer — Stage / Start workers actions (gm-vzy)', () => {
         derived: { agent_claimable: true, human_action_required: false, review_pending: false },
       })
     );
-    const stage = await screen.findByTestId('epic-drawer-stage');
+    const stage = await screen.findByTestId('epic-detail-stage');
     fireEvent.click(stage);
     await waitFor(() =>
       expect(
@@ -190,12 +220,41 @@ describe('EpicDrawer — Stage / Start workers actions (gm-vzy)', () => {
       ([, init]) => (init as RequestInit | undefined)?.method === 'PATCH'
     )!;
     const [url, init] = patchCall;
-    // Slashes in the bd-prefixed id are percent-encoded by the api
-    // wrapper (encodeURIComponent) — assert the encoded form.
     expect(url).toBe('/api/work-items/demo%2Fpc-e-test');
     const headers = init.headers as Record<string, string>;
     expect(headers['X-GEMBA-Confirm']).toBeTruthy();
     const body = JSON.parse(init.body as string);
     expect(body.state_category).toBe('staged');
+  });
+});
+
+describe('EpicDetailRegistration', () => {
+  it('registers kind=epic in the RHP detail registry', async () => {
+    function RegistryProbe() {
+      const registry = useRhpDetailRegistry();
+      const [kind, setKind] = useState<string | undefined>(undefined);
+      useEffect(() => {
+        // Poll the registry after registration.
+        const reg = registry.resolve('epic');
+        setKind(reg?.kind);
+      }, [registry]);
+      return <div data-testid="probe">{kind ?? 'none'}</div>;
+    }
+
+    render(
+      <MemoryRouter>
+        <RhpProvider>
+          <RhpPinnedContentProvider>
+            <EpicDetailRegistration />
+            <RegistryProbe />
+          </RhpPinnedContentProvider>
+        </RhpProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      const probe = screen.getByTestId('probe');
+      expect(probe.textContent).toBe('epic');
+    });
   });
 });

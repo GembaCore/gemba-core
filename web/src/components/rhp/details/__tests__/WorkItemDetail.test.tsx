@@ -1,18 +1,29 @@
+// WorkItemDetail component tests — gm-root.22.5.
+//
+// Coverage:
+//   - render: all sections visible for a fixture bead
+//   - action buttons: dispatch, close button, title edit, status edit
+//   - error state: fetch failure surfaces workitem-detail-error
+//   - loading state: loading indicator while fetch pending
+//   - markdown description rendered when adaptor declares it
+//   - plain description fallback when format is unset
+//   - navigation: relationship click pushes stack; back button pops it
+//   - id prop change resets the nav stack
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import type { ReactNode } from 'react';
-import { useState } from 'react';
-import { WorkItemDrawer } from '../WorkItemDrawer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type ReactNode, useState } from 'react';
+import { WorkItemDetail } from '../WorkItemDetail';
 import { CapabilitiesProvider } from '@/capabilities';
 import type { CapabilitiesResponse } from '@/capabilities';
 import type { WorkItem } from '@/types/core.gen';
+import { RhpProvider } from '../../RhpContext';
+import { RhpPinnedContentProvider } from '../../RhpPinnedContent';
 
-// Seed a minimal CapabilitiesResponse so WorkItemDrawer's useCapabilities()
-// has a manifest to read description_format from. Tests that care about
-// markdown rendering pass `markdown`; the default here is undefined,
-// which the renderer registry maps to the PlainDescription fallback.
+// ── Helpers ───────────────────────────────────────────────────────────
+
 function capsWith(format?: string): CapabilitiesResponse {
   return {
     work_plane: {
@@ -20,7 +31,7 @@ function capsWith(format?: string): CapabilitiesResponse {
       adaptor_version: '0.1.0',
       protocol_version: '0.1.0',
       transport: 'api',
-      state_map: { open: 'unstarted' },
+      state_map: { open: 'unstarted', closed: 'completed' },
       sprint_native: false,
       token_budget_enforced: false,
       evidence_synthesis_required: false,
@@ -30,16 +41,13 @@ function capsWith(format?: string): CapabilitiesResponse {
   };
 }
 
-// Representative fixture that exercises every section the drawer
-// renders. Drawer DoD (gm-qai): every WorkItem field visible; none
-// silently dropped.
 const fixture: WorkItem = {
   id: 'gm-foo',
   kind: 'task',
   title: 'Fixture bead',
   description: 'Line one\nLine two',
-  status: 'in_progress',
-  state_category: 'started',
+  status: 'open',
+  state_category: 'unstarted',
   priority: 1,
   owner: {
     id: 'gemba/crew/mike',
@@ -67,7 +75,7 @@ const fixture: WorkItem = {
       kind: 'commit',
       source: 'git',
       ref: 'abc123',
-      summary: 'implements drawer',
+      summary: 'implements detail',
       captured_at: '2026-04-22T10:00:00Z',
     },
   ],
@@ -115,10 +123,14 @@ function wrapper(
   });
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <MemoryRouter>
-        <QueryClientProvider client={client}>
-          <CapabilitiesProvider initial={caps}>{children}</CapabilitiesProvider>
-        </QueryClientProvider>
+      <MemoryRouter initialEntries={['/board']}>
+        <RhpProvider>
+          <RhpPinnedContentProvider>
+            <QueryClientProvider client={client}>
+              <CapabilitiesProvider initial={caps}>{children}</CapabilitiesProvider>
+            </QueryClientProvider>
+          </RhpPinnedContentProvider>
+        </RhpProvider>
       </MemoryRouter>
     );
   };
@@ -131,7 +143,7 @@ function mockJSON(body: unknown, status = 200): Response {
   });
 }
 
-describe('WorkItemDrawer', () => {
+describe('WorkItemDetail', () => {
   const fetchSpy = vi.fn();
 
   beforeEach(() => {
@@ -146,36 +158,29 @@ describe('WorkItemDrawer', () => {
   it('renders every tab for a fixture bead', async () => {
     fetchSpy.mockResolvedValueOnce(mockJSON(fixture));
 
-    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
+    render(<WorkItemDetail id="gm-foo" />, { wrapper: wrapper() });
 
     await waitFor(() => expect(screen.getByTestId('section-overview')).toBeTruthy());
 
-    // Header: id + title + copy button. The title appears in both the
-    // Dialog header and the editable TitleEditor (gm-root.8 slice 3),
-    // so getAllByText is the correct shape.
+    // Header: id + copy button
+    expect(screen.getByTestId('workitem-detail-id').textContent).toBe('gm-foo');
+    expect(screen.getByTestId('workitem-detail-copy')).toBeTruthy();
     expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('work-item-drawer-id').textContent).toBe('gm-foo');
-    expect(screen.getByTestId('work-item-drawer-copy')).toBeTruthy();
 
-    // Overview is always visible (pinned above the tabs). Labels chip
-    // lives here too.
+    // Overview is always visible above tabs
     expect(screen.getByTestId('section-overview')).toBeTruthy();
     expect(screen.getByText('milestone:m1')).toBeTruthy();
 
-    // Default tab: Description. Close-reason also lives here because
-    // it's a description-like narrative field.
+    // Default tab: Description + close-reason + evidence
     expect(screen.getByTestId('section-description')).toBeTruthy();
     expect(screen.getByTestId('section-close-reason')).toBeTruthy();
     expect(screen.getByText(/Line one/)).toBeTruthy();
     expect(screen.getByText('superseded by gm-bar')).toBeTruthy();
 
-    // Edges tab: relationships split by direction + extension edges
-    // from Custom["beads:*"]. Inactive tabs must not have mounted
-    // their section, so asserting before click ensures the partition
-    // really is working.
+    // Edges tab
     expect(screen.queryByTestId('section-relationships')).toBeNull();
     act(() => {
-      screen.getByTestId('drawer-tab-edges').click();
+      screen.getByTestId('detail-tab-edges').click();
     });
     expect(screen.getByTestId('section-relationships')).toBeTruthy();
     expect(screen.getByTestId('relgroup-blocks')).toBeTruthy();
@@ -187,18 +192,16 @@ describe('WorkItemDrawer', () => {
     expect(screen.getByText('gm-dep1')).toBeTruthy();
     expect(screen.getByText('gm-dep2')).toBeTruthy();
 
-    // Evidence is a Summary-tab table per ui-spec §5.7 (gm-g9t1) —
-    // it renders inline at the bottom of the description tab pane,
-    // no separate tab. Switch back to description and assert.
+    // Evidence inline on description tab
     act(() => {
-      screen.getByTestId('drawer-tab-description').click();
+      screen.getByTestId('detail-tab-description').click();
     });
     expect(screen.getByTestId('section-evidence')).toBeTruthy();
-    expect(screen.getByText('implements drawer')).toBeTruthy();
+    expect(screen.getByText('implements detail')).toBeTruthy();
 
-    // DoD tab: section + informational banner + acceptance criterion
+    // DoD tab
     act(() => {
-      screen.getByTestId('drawer-tab-dod').click();
+      screen.getByTestId('detail-tab-dod').click();
     });
     expect(screen.getByTestId('section-dod')).toBeTruthy();
     expect(screen.getByTestId('work-item-dod-banner')).toBeTruthy();
@@ -206,104 +209,146 @@ describe('WorkItemDrawer', () => {
 
     // Sprint tab
     act(() => {
-      screen.getByTestId('drawer-tab-sprint').click();
+      screen.getByTestId('detail-tab-sprint').click();
     });
     expect(screen.getByTestId('section-sprint')).toBeTruthy();
     expect(screen.getByText('sprint-1')).toBeTruthy();
 
-    // Activity tab: timestamps + derived signals live together here.
+    // Activity tab: timestamps + derived signals
     act(() => {
-      screen.getByTestId('drawer-tab-activity').click();
+      screen.getByTestId('detail-tab-activity').click();
     });
     expect(screen.getByTestId('section-timestamps')).toBeTruthy();
     expect(screen.getByTestId('section-derived')).toBeTruthy();
     expect(screen.getByText(/human-action-required/)).toBeTruthy();
 
-    // Extensions tab: conditional on the bead actually having custom
-    // fields. The fixture has beads:* and gt:* so the tab is offered.
+    // Extensions tab: conditional on custom fields
     act(() => {
-      screen.getByTestId('drawer-tab-extensions').click();
+      screen.getByTestId('detail-tab-extensions').click();
     });
     expect(screen.getByTestId('section-custom')).toBeTruthy();
     expect(screen.getByText('beads')).toBeTruthy();
     expect(screen.getByText('gt')).toBeTruthy();
   });
 
-  it('relationship click navigates to target bead and back', async () => {
+  it('shows loading state then data', async () => {
+    let resolve!: (v: Response) => void;
+    const deferred = new Promise<Response>((r) => {
+      resolve = r;
+    });
+    fetchSpy.mockReturnValueOnce(deferred);
+
+    render(<WorkItemDetail id="gm-foo" />, { wrapper: wrapper() });
+
+    // Loading indicator
+    expect(screen.getByTestId('workitem-detail-loading')).toBeTruthy();
+
+    // Resolve the fetch
+    act(() => {
+      resolve(mockJSON(fixture));
+    });
+    await waitFor(() => expect(screen.getByTestId('section-overview')).toBeTruthy());
+    expect(screen.queryByTestId('workitem-detail-loading')).toBeNull();
+  });
+
+  it('shows error state when fetch fails', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      mockJSON({ error: 'adaptor_degraded', message: 'reconnecting' }, 503)
+    );
+    render(<WorkItemDetail id="gm-foo" />, { wrapper: wrapper() });
+    await waitFor(() => expect(screen.getByTestId('workitem-detail-error')).toBeTruthy());
+    expect(screen.getByTestId('workitem-detail-error').textContent).toMatch(/reconnecting/);
+  });
+
+  it('dispatch button is present and disabled when orchestration plane is null', async () => {
+    fetchSpy.mockResolvedValueOnce(mockJSON(fixture));
+    render(<WorkItemDetail id="gm-foo" />, { wrapper: wrapper() });
+    await waitFor(() => expect(screen.getByTestId('section-overview')).toBeTruthy());
+    const btn = screen.getByTestId('workitem-detail-dispatch');
+    expect(btn).toBeTruthy();
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('relationship click navigates to target bead and back button pops the stack', async () => {
     fetchSpy.mockImplementation((input: RequestInfo) => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url.endsWith('/work-items/gm-foo')) return Promise.resolve(mockJSON(fixture));
       if (url.endsWith('/work-items/gm-child')) return Promise.resolve(mockJSON(navigateTarget));
-      return Promise.resolve(mockJSON({ error: 'session_not_found', message: '' }, 404));
+      return Promise.resolve(mockJSON({ error: 'not_found', message: '' }, 404));
     });
 
-    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
+    render(<WorkItemDetail id="gm-foo" />, { wrapper: wrapper() });
     await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
 
-    // Relationships now live on the Edges tab (gm-e12.5).
     act(() => {
-      screen.getByTestId('drawer-tab-edges').click();
+      screen.getByTestId('detail-tab-edges').click();
     });
 
-    // Click a relationship link — gm-child appears under "blocks".
+    // Click the gm-child link in the blocks relgroup
     const link = screen.getAllByText('gm-child')[0];
     act(() => {
       link.click();
     });
 
-    await waitFor(() => expect(screen.getAllByText('Navigated child').length).toBeGreaterThan(0));
-    // Back button now exists (stack length > 1).
-    const back = screen.getByTestId('work-item-drawer-back');
+    await waitFor(() =>
+      expect(screen.getAllByText('Navigated child').length).toBeGreaterThan(0)
+    );
+    // Back button should be visible
+    const back = screen.getByTestId('workitem-detail-back');
+    expect(back).toBeTruthy();
+
     act(() => {
       back.click();
     });
-    await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0)
+    );
+    expect(screen.queryByTestId('workitem-detail-back')).toBeNull();
   });
 
-  it('closing the drawer fires onClose', async () => {
-    fetchSpy.mockResolvedValueOnce(mockJSON(fixture));
-    const onClose = vi.fn();
+  it('id prop change resets the nav stack', async () => {
+    fetchSpy.mockImplementation((input: RequestInfo) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/work-items/gm-foo')) return Promise.resolve(mockJSON(fixture));
+      if (url.endsWith('/work-items/gm-child')) return Promise.resolve(mockJSON(navigateTarget));
+      return Promise.resolve(mockJSON({ error: 'not_found', message: '' }, 404));
+    });
 
     function Harness() {
-      const [id, setId] = useState<string | null>('gm-foo');
+      const [id, setId] = useState('gm-foo');
       return (
-        <WorkItemDrawer
-          openId={id}
-          onClose={() => {
-            setId(null);
-            onClose();
-          }}
-        />
+        <>
+          <button data-testid="swap" onClick={() => setId('gm-child')} type="button">
+            swap
+          </button>
+          <WorkItemDetail id={id} />
+        </>
       );
     }
 
     render(<Harness />, { wrapper: wrapper() });
     await waitFor(() => expect(screen.getAllByText('Fixture bead').length).toBeGreaterThan(0));
 
+    // Navigate into the stack by clicking a relationship
     act(() => {
-      screen.getByTestId('work-item-drawer-close').click();
+      screen.getByTestId('detail-tab-edges').click();
     });
-    await waitFor(() => expect(onClose).toHaveBeenCalled());
-  });
-
-  it('renders nothing while closed', () => {
-    render(<WorkItemDrawer openId={null} onClose={() => {}} />, { wrapper: wrapper() });
-    expect(screen.queryByTestId('work-item-drawer-content')).toBeNull();
-    expect(fetchSpy).not.toHaveBeenCalled();
-  });
-
-  it('shows loading then error when the fetch fails', async () => {
-    fetchSpy.mockResolvedValueOnce(
-      mockJSON({ error: 'adaptor_degraded', message: 'reconnecting' }, 503)
+    const link = screen.getAllByText('gm-child')[0];
+    act(() => {
+      link.click();
+    });
+    await waitFor(() =>
+      expect(screen.getAllByText('Navigated child').length).toBeGreaterThan(0)
     );
-    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, { wrapper: wrapper() });
-    await waitFor(() => expect(screen.getByTestId('work-item-drawer-error')).toBeTruthy());
-    expect(screen.getByTestId('work-item-drawer-error').textContent).toMatch(/reconnecting/);
+    expect(screen.getByTestId('workitem-detail-back')).toBeTruthy();
+
+    // Swap the prop — stack should reset to only gm-child (no back button)
+    act(() => {
+      screen.getByTestId('swap').click();
+    });
+    await waitFor(() => expect(screen.queryByTestId('workitem-detail-back')).toBeNull());
   });
 
-  // Description renderer is chosen from the manifest. When the adaptor
-  // declares description_format="markdown", headings and lists must
-  // render as real HTML, not literal `#` / `-` characters.
   it('renders markdown description when the adaptor declares it', async () => {
     fetchSpy.mockResolvedValueOnce(
       mockJSON({
@@ -311,27 +356,22 @@ describe('WorkItemDrawer', () => {
         description: '# Goal\n\n- first\n- second',
       })
     );
-    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, {
+    render(<WorkItemDetail id="gm-foo" />, {
       wrapper: wrapper(capsWith('markdown')),
     });
-    // Lazy markdown chunk resolves → renders the <div data-testid="description-markdown">.
-    // DoD notes also render through the same renderer, so there can be
-    // more than one; assert on the first (Description section).
     const md = (await screen.findAllByTestId('description-markdown'))[0];
     expect(md.querySelector('h1')?.textContent).toBe('Goal');
     expect(md.querySelectorAll('li')).toHaveLength(2);
     expect(screen.queryByTestId('description-plain')).toBeNull();
   });
 
-  it('falls back to plain description when format is missing / unknown', async () => {
+  it('falls back to plain description when format is missing', async () => {
     fetchSpy.mockResolvedValueOnce(
       mockJSON({ ...fixture, description: '# not-a-heading' })
     );
-    render(<WorkItemDrawer openId="gm-foo" onClose={() => {}} />, {
+    render(<WorkItemDetail id="gm-foo" />, {
       wrapper: wrapper(capsWith(undefined)),
     });
-    // DoD notes render through the same (plain) renderer, so there
-    // can be more than one; assert on the first.
     await waitFor(() =>
       expect(screen.getAllByTestId('description-plain').length).toBeGreaterThan(0)
     );

@@ -1,28 +1,31 @@
-// WorkItemDrawer (gm-qai / M1.7c): right-side drill-in that renders every
-// attribute of a WorkItem returned by useWorkItem(id).
+// WorkItemDetail — RHP detail tab for a WorkItem (gm-root.22.5).
 //
-// Controlled by the parent via (openId, onClose). Internally maintains a
-// small nav stack so clicking a Relationship swaps the drawer to the
-// target bead while preserving a Back affordance. When openId changes
-// externally (user clicks a new card while the drawer is already open)
-// the stack resets to that id — parent-initiated navigation is an
-// explicit "new drawer", not a history push.
+// Renders the same data + actions as WorkItemDrawer did, adapted to the
+// RHP tab context:
+//   - No overlay shell or close button — those live on the RhpShell tab.
+//   - Props: { id: string } — workspace-prefixed bead id.
+//   - Internal nav stack: clicking a Relationship pushes a new id onto
+//     the stack; a Back button pops it. This keeps the UX parity with
+//     the old drawer without opening a second tab for every edge click.
+//   - Registration: WorkItemDetailRegistration (sibling file) registers
+//     the 'workitem' kind on mount so the tab rail and popDetail work
+//     without callers passing icon / label.
 //
-// Design tenets:
-//   - Show every field on the wire. Collapse sections that are empty
-//     (rather than dropping them silently) so missing data is visible.
-//   - Relationships are the navigable surface; clicking them pushes a
-//     new id onto the stack. Extension edges from Custom["beads:*"]
-//     render with an "ext" badge so the user can see that those come
-//     from the adaptor, not core.
-//   - No markdown library pulled in for this milestone — Description /
-//     notes render as whitespace-preserved prose. Rich rendering is a
-//     deliberate follow-up (see gm-qai DoD: "visible; none silently
-//     dropped", not "formatted").
+// Test-ids: work-item-drawer-* → workitem-detail-* per design-doc
+// convention (docs/design/rhp.md).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
-import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Pencil, Plus, Terminal, Trash2, X } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Check,
+  Copy,
+  Pencil,
+  Plus,
+  Terminal,
+  Trash2,
+} from 'lucide-react';
 import { useWorkItem, useUpdateWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useAgents, useSprints } from '@/hooks/useAgents';
 import { useNavigate } from 'react-router-dom';
@@ -31,108 +34,69 @@ import { cn } from '@/lib/utils';
 import { KIND_MILESTONE } from '@/types/core.gen';
 import type { AgentRef, DefinitionOfDone, StateCategory, WorkItem } from '@/types/core.gen';
 import type { Evidence } from '@/types/core.gen';
-import { rendererFor } from './descriptionRenderers';
-import { canEdit } from './canEdit';
-import { MilestoneChildrenPanel } from './MilestoneChildrenPanel';
+import { rendererFor } from '@/components/board/descriptionRenderers';
+import { canEdit } from '@/components/board/canEdit';
+import { MilestoneChildrenPanel } from '@/components/board/MilestoneChildrenPanel';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
 
-export interface WorkItemDrawerProps {
-  // Bead id to show. null keeps the drawer closed. Changing this prop
-  // resets the internal nav stack (treat it as parent-initiated open).
-  openId: string | null;
-  onClose: () => void;
+export interface WorkItemDetailProps {
+  /** Workspace-prefixed bead id, e.g. `gemba/gemba/gm-1` or `gm-1`. */
+  id: string;
 }
 
-export function WorkItemDrawer({ openId, onClose }: WorkItemDrawerProps) {
-  // Seed from openId so the first render already has a currentId —
-  // otherwise Radix briefly mounts <Dialog.Content> without a
-  // <Dialog.Title> (rendered by WorkItemDrawerBody) and logs an a11y
-  // warning before the effect runs.
-  const [stack, setStack] = useState<string[]>(() => (openId ? [openId] : []));
+export function WorkItemDetail({ id }: WorkItemDetailProps) {
+  // Internal nav stack: seed from the prop id so the first render
+  // already has a currentId. When the prop id changes (RHP
+  // kind-replace), reset the stack.
+  const [stack, setStack] = useState<string[]>([id]);
 
   useEffect(() => {
-    if (openId && openId !== stack[stack.length - 1]) {
-      setStack([openId]);
-    } else if (!openId && stack.length > 0) {
-      setStack([]);
-    }
-    // Only react to parent-initiated openId transitions. The in-drawer
-    // push/pop handlers own everything else.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openId]);
+    setStack([id]);
+  }, [id]);
 
-  const currentId = stack[stack.length - 1] ?? null;
+  const currentId = stack[stack.length - 1] ?? id;
   const canGoBack = stack.length > 1;
 
   const goBack = useCallback(() => {
     setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
   }, []);
 
-  const navigate = useCallback((id: string) => {
-    setStack((s) => [...s, id]);
+  const navigateTo = useCallback((targetId: string) => {
+    setStack((s) => [...s, targetId]);
   }, []);
 
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open) onClose();
-    },
-    [onClose]
-  );
-
   return (
-    <Dialog.Root open={!!openId} onOpenChange={handleOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0"
-          data-testid="work-item-drawer-overlay"
-        />
-        <Dialog.Content
-          aria-describedby={undefined}
-          className="fixed right-0 top-0 z-50 flex h-full w-full max-w-xl flex-col border-l border-neutral-200 bg-white shadow-xl outline-none dark:border-neutral-800 dark:bg-neutral-950 data-[state=open]:animate-in data-[state=open]:slide-in-from-right data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right"
-          data-testid="work-item-drawer-content"
-        >
-          {currentId ? (
-            <WorkItemDrawerBody
-              id={currentId}
-              canGoBack={canGoBack}
-              onBack={goBack}
-              onNavigate={navigate}
-            />
-          ) : null}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <WorkItemDetailBody
+      id={currentId}
+      canGoBack={canGoBack}
+      onBack={goBack}
+      onNavigate={navigateTo}
+    />
   );
 }
 
-interface WorkItemDrawerBodyProps {
+interface WorkItemDetailBodyProps {
   id: string;
   canGoBack: boolean;
   onBack: () => void;
   onNavigate: (id: string) => void;
 }
 
-function WorkItemDrawerBody({ id, canGoBack, onBack, onNavigate }: WorkItemDrawerBodyProps) {
+function WorkItemDetailBody({ id, canGoBack, onBack, onNavigate }: WorkItemDetailBodyProps) {
   const { data, isLoading, error } = useWorkItem(id);
 
   return (
     <>
-      <DrawerHeader
-        id={id}
-        title={data?.title ?? ''}
-        canGoBack={canGoBack}
-        onBack={onBack}
-        item={data}
-      />
-      <div className="flex-1 overflow-y-auto px-6 pb-10" data-testid="work-item-drawer-scroll">
+      <DetailHeader id={id} title={data?.title ?? ''} canGoBack={canGoBack} onBack={onBack} item={data} />
+      <div className="flex-1 overflow-y-auto px-4 pb-10" data-testid="workitem-detail-scroll">
         {isLoading ? (
-          <div className="py-8 text-sm text-neutral-500" data-testid="work-item-drawer-loading">
+          <div className="py-8 text-sm text-neutral-500" data-testid="workitem-detail-loading">
             Loading bead…
           </div>
         ) : error ? (
           <div
             className="py-8 text-sm text-red-600 dark:text-red-400"
-            data-testid="work-item-drawer-error"
+            data-testid="workitem-detail-error"
           >
             {error.message}
           </div>
@@ -144,7 +108,7 @@ function WorkItemDrawerBody({ id, canGoBack, onBack, onNavigate }: WorkItemDrawe
   );
 }
 
-function DrawerHeader({
+function DetailHeader({
   id,
   title,
   canGoBack,
@@ -166,32 +130,32 @@ function DrawerHeader({
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     } catch {
-      // Clipboard unavailable (jsdom, insecure context). Surface the
-      // state transiently so the user knows the click registered; a
-      // future milestone can add a manual-copy fallback.
       setCopied(false);
     }
   }, [id]);
 
   return (
-    <div className="flex items-start gap-2 border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
+    <div
+      className="flex items-start gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"
+      data-testid="workitem-detail-header"
+    >
       {canGoBack ? (
         <button
           type="button"
           onClick={onBack}
           className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
           aria-label="Back"
-          data-testid="work-item-drawer-back"
+          data-testid="workitem-detail-back"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
       ) : null}
       <div className="min-w-0 flex-1">
-        <Dialog.Title className="truncate text-base font-semibold text-neutral-900 dark:text-neutral-100">
+        <div className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
           {title || id}
-        </Dialog.Title>
-        <div className="mt-1 flex items-center gap-1 text-xs text-neutral-500">
-          <span className="font-mono" data-testid="work-item-drawer-id">
+        </div>
+        <div className="mt-0.5 flex items-center gap-1 text-xs text-neutral-500">
+          <span className="font-mono" data-testid="workitem-detail-id">
             {id}
           </span>
           <button
@@ -199,23 +163,13 @@ function DrawerHeader({
             onClick={copyId}
             className="rounded p-0.5 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
             aria-label="Copy bead ID"
-            data-testid="work-item-drawer-copy"
+            data-testid="workitem-detail-copy"
           >
             {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           </button>
         </div>
       </div>
-      <DispatchButton
-        item={item}
-        onOpen={() => setDispatchOpen(true)}
-      />
-      <Dialog.Close
-        className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-        aria-label="Close"
-        data-testid="work-item-drawer-close"
-      >
-        <X className="h-4 w-4" />
-      </Dialog.Close>
+      <DispatchButton item={item} onOpen={() => setDispatchOpen(true)} />
       {item && dispatchOpen ? (
         <NewSessionDialog
           open={dispatchOpen}
@@ -229,10 +183,8 @@ function DrawerHeader({
 }
 
 // DispatchButton renders the header's Start-session shortcut for a
-// leaf WorkItem. Disabled when the bead is closed/canceled (no point
-// dispatching a session against terminal work), before the underlying
-// item has loaded, or when no OrchestrationPlane is bound (nothing
-// would accept the dispatch).
+// leaf WorkItem. Disabled when the bead is closed/canceled, before the
+// item has loaded, or when no OrchestrationPlane is bound.
 function DispatchButton({
   item,
   onOpen,
@@ -258,7 +210,7 @@ function DispatchButton({
       onClick={onOpen}
       disabled={disabled}
       title={title}
-      data-testid="work-item-drawer-dispatch"
+      data-testid="workitem-detail-dispatch"
       className={cn(
         'mt-1 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium',
         disabled
@@ -272,20 +224,7 @@ function DispatchButton({
   );
 }
 
-// Tab identifiers for the drawer body (gm-e12.5). The Overview strip
-// (title + status/priority/assignee/owner/labels) is rendered above
-// the tabs as always-visible context; tabs partition the rest of the
-// record so the drawer stays scannable at one viewport height.
-// gm-g9t1: ui-spec §5.7 puts Evidence as a table on the Summary tab,
-// not its own tab. The Summary tab here is the 'description' tab —
-// Evidence renders inline at the bottom of the description pane.
-type DrawerTab =
-  | 'description'
-  | 'edges'
-  | 'dod'
-  | 'sprint'
-  | 'activity'
-  | 'extensions';
+type DetailTab = 'description' | 'edges' | 'dod' | 'sprint' | 'activity' | 'extensions';
 
 function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: string) => void }) {
   const grouped = useMemo(() => groupRelationships(item), [item]);
@@ -293,17 +232,9 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   const timestamps = useMemo(() => extractTimestamps(item), [item]);
   const sprintBudget = useMemo(() => extractSprintBudget(item.custom), [item.custom]);
   const closeReason = useMemo(() => extractCloseReason(item.custom), [item.custom]);
-  // The adaptor declares how its Description field should be rendered
-  // (plain / markdown / …) on the CapabilityManifest. We pick the right
-  // component from the registry on every render rather than threading
-  // the format through props; the manifest changes rarely (adaptor
-  // restart) and useCapabilities memoizes.
   const { workPlane } = useCapabilities();
   const DescriptionRenderer = rendererFor(workPlane?.description_format);
   const adaptorReadOnly = workPlane?.read_only === true;
-  // field_extensions is the manifest's type declaration for custom keys
-  // — we consult it in the Extensions tab to pick the right inline
-  // editor (string / number / boolean / markdown / json).
   const fieldTypeByName = useMemo(() => {
     const out = new Map<string, string>();
     for (const fe of workPlane?.field_extensions ?? []) out.set(fe.name, fe.type);
@@ -313,10 +244,7 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   const update = useUpdateWorkItem();
 
   const hasExtensions = customGroups.length > 0;
-  const [tab, setTab] = useState<DrawerTab>('description');
-  // If the active tab disappears (e.g. the user navigates via Back to
-  // a bead with no extension fields), fall back to Description rather
-  // than leaving the drawer with no panel rendered.
+  const [tab, setTab] = useState<DetailTab>('description');
   useEffect(() => {
     if (tab === 'extensions' && !hasExtensions) setTab('description');
   }, [tab, hasExtensions]);
@@ -395,7 +323,7 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
 
       {item.kind === KIND_MILESTONE ? <MilestoneChildrenPanelMount milestone={item} /> : null}
 
-      <DrawerTabBar tab={tab} onChange={setTab} hasExtensions={hasExtensions} />
+      <DetailTabBar tab={tab} onChange={setTab} hasExtensions={hasExtensions} />
 
       {tab === 'description' ? (
         <>
@@ -415,7 +343,6 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
               </pre>
             </Section>
           ) : null}
-          {/* gm-g9t1: Evidence is a Summary-tab table per ui-spec §5.7. */}
           <Section title="Evidence" testid="section-evidence">
             {item.evidence && item.evidence.length > 0 ? (
               <ul className="space-y-2">
@@ -554,23 +481,19 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   );
 }
 
-// DrawerTabBar — horizontal tab strip below the Overview strip.
-// Extensions tab only appears when the bead actually has extension
-// fields; an empty tab is clutter on every core bead.
-function DrawerTabBar({
+// DetailTabBar — horizontal tab strip below the Overview strip.
+function DetailTabBar({
   tab,
   onChange,
   hasExtensions,
 }: {
-  tab: DrawerTab;
-  onChange: (t: DrawerTab) => void;
+  tab: DetailTab;
+  onChange: (t: DetailTab) => void;
   hasExtensions: boolean;
 }) {
-  const tabs: Array<{ id: DrawerTab; label: string }> = [
+  const tabs: Array<{ id: DetailTab; label: string }> = [
     { id: 'description', label: 'Description' },
     { id: 'edges', label: 'Edges' },
-    // Evidence intentionally omitted — renders as a Summary-tab table
-    // per ui-spec §5.7 (gm-g9t1).
     { id: 'dod', label: 'DoD' },
     { id: 'sprint', label: 'Sprint' },
     { id: 'activity', label: 'Activity' },
@@ -580,7 +503,7 @@ function DrawerTabBar({
     <div
       role="tablist"
       aria-label="Work item details"
-      data-testid="work-item-drawer-tabs"
+      data-testid="workitem-detail-tabs"
       className="-mx-1 flex flex-wrap items-center gap-0.5 border-b border-neutral-200 dark:border-neutral-800"
     >
       {tabs.map((t) => {
@@ -592,7 +515,7 @@ function DrawerTabBar({
             type="button"
             aria-selected={active}
             data-active={active}
-            data-testid={`drawer-tab-${t.id}`}
+            data-testid={`detail-tab-${t.id}`}
             onClick={() => onChange(t.id)}
             className={cn(
               '-mb-px border-b-2 px-3 py-1.5 text-xs',
@@ -609,16 +532,6 @@ function DrawerTabBar({
   );
 }
 
-// DoDSynthBanner (gm-xbqw) — surfaces whether the rendered DoD is
-// operator-authored or synthesized server-side (gm-native.11 dod
-// package writes Version="synthesized-v1"). The synthesized state
-// is informational + a CTA: "edit the bead to override".
-//
-// Three states:
-//   - null DoD            → "No DoD authored" prompt
-//   - synthesized-v* DoD  → "synthesized; edit to override" CTA
-//   - other DoD           → no banner (operator-authored, the editor
-//                            is the surface)
 function DoDSynthBanner({ dod }: { dod: DefinitionOfDone | null }) {
   if (!dod) {
     return (
@@ -648,9 +561,6 @@ function DoDSynthBanner({ dod }: { dod: DefinitionOfDone | null }) {
   return null;
 }
 
-// DoDBanner — informational-only reminder that the DoD is documentation,
-// not a state-machine gate. Closing a bead doesn't validate DoD; we
-// surface that here so operators don't treat the checklist as a lock.
 function DoDBanner() {
   return (
     <div
@@ -663,10 +573,6 @@ function DoDBanner() {
   );
 }
 
-// TitleEditor renders the WorkItem title as a header. Pencil → input
-// → Save/Cancel. Title is the most-edited field in practice; keeping
-// it at the top of the body (above Overview) means the operator never
-// has to scroll to rename a card.
 function TitleEditor({
   item,
   canEdit,
@@ -745,8 +651,6 @@ function TitleEditor({
   );
 }
 
-// PriorityEditor renders a select 0..4 plus an "unset" option (priority
-// can be null on a WorkItem). Returns to a chip when not editable.
 function PriorityEditor({
   item,
   canEdit,
@@ -791,11 +695,6 @@ function PriorityEditor({
   );
 }
 
-// LabelsEditor toggles between the chip strip (read mode) and a
-// comma-separated input (edit mode). Comma-split is intentional
-// minimum-viable — bd labels are restricted character-set strings, so
-// a bare text input + split-on-comma is good enough until a proper
-// chip-input lands. Preserves order; trims whitespace; drops empties.
 function LabelsEditor({
   item,
   canEdit,
@@ -889,9 +788,6 @@ function LabelsEditor({
   );
 }
 
-// StatusEditor renders a select bound to the workplane's state_map.
-// When canEdit is false (e.g. read-only adaptor) it falls back to a
-// pair of static chips so the visual weight of the row stays the same.
 function StatusEditor({
   item,
   stateMap,
@@ -930,8 +826,6 @@ function StatusEditor({
           disabled && 'opacity-60'
         )}
       >
-        {/* If the current status isn't in the map, surface it as the
-            first option so the select doesn't silently mutate state. */}
         {!tokens.includes(item.status) ? (
           <option value={item.status}>{item.status}</option>
         ) : null}
@@ -945,12 +839,6 @@ function StatusEditor({
   );
 }
 
-// CloseButton — quick-action for human-assigned beads. Shows when:
-//   * adaptor is writable
-//   * bead is assigned to a human (per gm-root.8 design Q3)
-//   * bead isn't already in a terminal state
-// Sends `{state_category: 'completed'}`; the adaptor maps that back to
-// its native "closed" status.
 function CloseButton({
   item,
   adaptorReadOnly,
@@ -983,10 +871,6 @@ function CloseButton({
   );
 }
 
-// DescriptionEditor toggles between the renderer (read mode) and a
-// textarea (edit mode). Save fires the patch; Cancel discards. Empty
-// description in read mode shows the existing "No description." copy
-// plus the edit pencil so the user can add one.
 function DescriptionEditor({
   item,
   renderer: Renderer,
@@ -1003,9 +887,6 @@ function DescriptionEditor({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.description ?? '');
 
-  // If the upstream description changes (e.g. another agent edits), and
-  // we're not editing, re-seed the draft so a future edit starts from
-  // the new baseline.
   useEffect(() => {
     if (!editing) setDraft(item.description ?? '');
   }, [item.description, editing]);
@@ -1071,9 +952,6 @@ function DescriptionEditor({
   );
 }
 
-// MilestoneChildrenPanelMount fetches the project list only when a
-// milestone bead is open, so non-milestone drawer renders don't pay
-// the extra round-trip.
 function MilestoneChildrenPanelMount({ milestone }: { milestone: WorkItem }) {
   const { data: allItems = [] } = useWorkItems();
   return <MilestoneChildrenPanel milestone={milestone} allItems={allItems} />;
@@ -1122,13 +1000,6 @@ function Chip({ label, value }: { label: string; value: string }) {
   );
 }
 
-// AgentEditor lets the operator edit assignee / owner. When the
-// orchestrator's roster is reachable via /api/agents (gm-root.10),
-// the top of the form renders a picker over that list; selecting a
-// row pre-fills id + name + kind. When the roster is empty (no
-// orchestration plane bound, or it returns []), the freeform inputs
-// remain the only UI — operators can still type a custom id+name+kind
-// triple. Clearing id saves null (unassigned).
 function AgentEditor({
   agent,
   canEdit,
@@ -1146,8 +1017,6 @@ function AgentEditor({
   const [id, setId] = useState(agent?.id ?? '');
   const [name, setName] = useState(agent?.name ?? '');
   const [kind, setKind] = useState<'human' | 'agent'>(agent?.agent_kind ?? 'human');
-  // Roster fetched lazily so closed drawers don't pay for it. Empty
-  // list → picker hides and the freeform editor takes over.
   const { data: roster } = useAgents();
   useEffect(() => {
     if (!editing) {
@@ -1274,9 +1143,6 @@ function SprintEditor({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(sprintId ?? '');
-  // Roster from /api/sprints (gm-root.11). Empty for adaptors with
-  // sprint_native=false (bd today) — picker hides and the freeform
-  // input below remains the only UI.
   const { data: roster } = useSprints();
   useEffect(() => {
     if (!editing) setDraft(sprintId ?? '');
@@ -1358,14 +1224,6 @@ function SprintEditor({
   );
 }
 
-// DoDEditor — structured editor for WorkItem.dod (gm-root.12). Renders
-// each acceptance criterion as its own row with inline text input,
-// add / remove buttons, and up / down reorder arrows. Notes run through
-// the adaptor's description renderer in read mode so markdown adaptors
-// get rich rendering; edit mode uses a plain textarea.
-//
-// Empty save (no criteria, no notes, no version) sends `null` so the
-// adaptor clears the field rather than persisting an empty object.
 function DoDEditor({
   dod,
   renderer: Renderer,
@@ -1392,9 +1250,6 @@ function DoDEditor({
   }, [dod, editing]);
 
   const startEditing = () => {
-    // Seed with one empty row when the bead has no criteria so the
-    // user has something to type into immediately. Saving drops empty
-    // rows, so an unedited placeholder doesn't persist.
     setCriteria(dod?.acceptance_criteria?.length ? dod.acceptance_criteria : ['']);
     setNotes(dod?.notes ?? '');
     setVersion(dod?.version ?? '');
@@ -1611,8 +1466,6 @@ function Timestamp({ label, ts }: { label: string; ts: string | null }) {
 
 interface RelRow {
   id: string;
-  // extension-edge rows carry a kind hint so the UI can show e.g.
-  // "parent" vs. "discovered-from" — core rows leave this undefined.
   hint?: string;
 }
 
@@ -1673,9 +1526,6 @@ function EvidenceRow({ evidence }: { evidence: Evidence }) {
   );
 }
 
-// EvidenceRef (gm-4z9n) — promote ref to <a> when the kind+ref pair
-// resolves to a real URL. Unrecognised pairs fall through to plain
-// text so a free-form ref doesn't render as a broken link.
 function EvidenceRef({ evidence }: { evidence: Evidence }) {
   const href = resolveEvidenceHref(evidence);
   const ref = evidence.ref ?? '';
@@ -1695,28 +1545,16 @@ function EvidenceRef({ evidence }: { evidence: Evidence }) {
   );
 }
 
-// resolveEvidenceHref maps an Evidence record to a URL when the
-// kind+source+ref combination is one of the well-known shapes the
-// adaptor surfaces. Returns null for anything it doesn't recognise —
-// the row falls back to plain text, which is preferable to rendering
-// a broken / misleading link.
 function resolveEvidenceHref(evidence: Evidence): string | null {
   const ref = evidence.ref?.trim();
   if (!ref) return null;
-  // 1. Anything that already looks like a URL renders as-is.
   if (/^https?:\/\//i.test(ref)) return ref;
-  // 2. Heuristic resolution by kind/source. The patterns mirror what
-  //    bd surfaces today; future adaptors can extend the table.
   if (evidence.kind === 'url') return ref;
   return null;
 }
 
-// CustomRow (gm-root.13) renders an extension-field row with an
-// inline editor chosen by the field's declared type from
-// CapabilityManifest.field_extensions. If the manifest doesn't declare
-// a type for this key we fall back to JSON (the most permissive). The
-// save path goes through the parent's onSave so the drawer's single
-// mutation manages the PATCH + invalidation.
+type CustomEditorKind = 'string' | 'number' | 'boolean' | 'markdown' | 'json';
+
 function CustomRow({
   fullKey,
   value,
@@ -1797,16 +1635,7 @@ function CustomRow({
   );
 }
 
-type CustomEditorKind = 'string' | 'number' | 'boolean' | 'markdown' | 'json';
-
-// customEditorKind picks the editor shape for a custom field. Manifest
-// declarations win; otherwise we infer from the current value's JS
-// type. Unknown types fall through to JSON so the operator can at
-// least see + round-trip the raw value.
-function customEditorKind(
-  fieldType: string | undefined,
-  value: unknown
-): CustomEditorKind {
+function customEditorKind(fieldType: string | undefined, value: unknown): CustomEditorKind {
   if (fieldType) {
     const t = fieldType.toLowerCase();
     if (t === 'string' || t === 'text') return 'string';
@@ -1846,7 +1675,6 @@ function CustomRowEditor({
       setError(parsed.error);
       return;
     }
-    // Empty patch (value unchanged) is a no-op — don't round-trip.
     if (stableEqual(parsed.value, value)) {
       onCancel();
       return;
@@ -1865,12 +1693,7 @@ function CustomRowEditor({
           data-testid={`${testBase}-input`}
           onChange={(e) => setDraft(e.target.checked ? 'true' : 'false')}
         />
-        <SaveCancel
-          testBase={testBase}
-          saving={saving}
-          onSave={commit}
-          onCancel={onCancel}
-        />
+        <SaveCancel testBase={testBase} saving={saving} onSave={commit} onCancel={onCancel} />
       </div>
     );
   }
@@ -1952,7 +1775,6 @@ function initialEditorText(kind: CustomEditorKind, value: unknown): string {
   if (kind === 'boolean') {
     return value === true ? 'true' : 'false';
   }
-  // json
   if (value === null || value === undefined) return '';
   if (typeof value === 'string') return value;
   try {
@@ -1962,9 +1784,7 @@ function initialEditorText(kind: CustomEditorKind, value: unknown): string {
   }
 }
 
-type ParseResult =
-  | { ok: true; value: unknown }
-  | { ok: false; error: string };
+type ParseResult = { ok: true; value: unknown } | { ok: false; error: string };
 
 function parseEditorValue(kind: CustomEditorKind, draft: string): ParseResult {
   if (kind === 'string' || kind === 'markdown') return { ok: true, value: draft };
@@ -1977,7 +1797,6 @@ function parseEditorValue(kind: CustomEditorKind, draft: string): ParseResult {
   if (kind === 'boolean') {
     return { ok: true, value: draft === 'true' };
   }
-  // json
   if (draft.trim() === '') return { ok: true, value: null };
   try {
     return { ok: true, value: JSON.parse(draft) };
@@ -2043,10 +1862,6 @@ function groupRelationships(item: WorkItem): GroupedRelationships {
   return out;
 }
 
-// extractExtensionEdges reads adaptor-declared non-core edges from
-// Custom. For the bd adaptor those live under "beads:dependencies" /
-// "beads:dependents" either as []string or []{issue_id, kind} records
-// depending on the bd edge shape (internal/adapter/bd/types.go).
 function extractExtensionEdges(custom: Record<string, unknown> | undefined): RelRow[] {
   if (!custom) return [];
   const rows: RelRow[] = [];
@@ -2086,9 +1901,6 @@ interface CustomGroup {
 
 function groupCustom(custom: Record<string, unknown> | undefined): CustomGroup[] {
   if (!custom) return [];
-  // Extension-edge blobs are already surfaced in the Relationships
-  // section; showing them again under Extension fields is redundant.
-  // Same for the handful of fields lifted into their own sections.
   const suppress = new Set([
     'beads:dependencies',
     'beads:dependents',

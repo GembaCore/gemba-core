@@ -39,7 +39,7 @@ test.fixme('context menu: Open drawer @board', () => {
 });
 
 test.fixme('context menu: Copy ID writes the bead id to the clipboard @board', () => {
-  /* fixme: WorkItemDrawer already has a copy-id button (data-testid
-     work-item-drawer-copy); the context-menu version is a parallel
+  /* fixme: WorkItemDetail (RHP) already has a copy-id button (data-testid
+     workitem-detail-copy); the context-menu version is a parallel
      entry point. */
 });

@@ -1,16 +1,19 @@
-// EpicDrawer (gm-root.6 / ui-spec §5.6): drill-in for Epic cards.
+// EpicDetail (gm-root.22.6): RHP detail-tab content for Epic items.
 //
-// Header carries Stage / Start workers actions (gm-vzy). Both go
-// through useUpdateWorkItem which already carries the X-GEMBA-Confirm
-// nonce flow (gm-root.8 slice 2). Stage transitions state_category →
-// "staged"; Start transitions → "started". Enablement is gated by
-// derived.agent_claimable on the epic; Start additionally requires
-// the epic to already be in Staged state (ui-spec §5.6 + gm-vzy DoD).
+// This is the successor to EpicDrawer — same content, minus the Dialog
+// shell (the RHP provides the panel, tab rail, and close affordance).
+//
+// Registered as kind 'epic' via useRegisterDetailContent. The /board/:epicId
+// route handler calls popDetail({kind: 'epic', id: epicId}) on mount so the
+// URL grows the ?rhp=epic:<id> segment via the RHP codec.
+//
+// Props: { id: string } — workspace-prefixed epic id (e.g. "gemba/gemba/gm-e1").
+//
+// Test-ids use the epic-detail-* prefix (migrated from epic-drawer-*).
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import * as Dialog from '@radix-ui/react-dialog';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Copy, Play, Plus, Send, Terminal, X } from 'lucide-react';
+import { Check, Copy, Layers, Play, Plus, Send, Terminal } from 'lucide-react';
 import { useUpdateWorkItem, useWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
@@ -21,9 +24,11 @@ import {
   type StateCategory,
   type WorkItem,
 } from '@/types/core.gen';
-import { rendererFor } from './descriptionRenderers';
-import { epicChildren } from './epicHierarchy';
-import { EpicMilestoneDropdown } from './EpicMilestoneDropdown';
+import { rendererFor } from '@/components/board/descriptionRenderers';
+import { epicChildren } from '@/components/board/epicHierarchy';
+import { EpicMilestoneDropdown } from '@/components/board/EpicMilestoneDropdown';
+import { useRegisterDetailContent } from '@/components/rhp/RhpDetail';
+import { useRhp } from '@/components/rhp/RhpContext';
 
 const STATE_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
@@ -34,78 +39,65 @@ const STATE_LABELS: Record<StateCategory, string> = {
   canceled: 'Canceled',
 };
 
-export interface EpicDrawerProps {
-  openId: string | null;
-  onClose: () => void;
-  // onOpenChild lets the parent route a child WorkItem click into the
-  // existing single-WorkItem drawer (WorkItemDrawer). Optional — when
-  // omitted, child rows are inert.
-  onOpenChild?: (id: string) => void;
+// Module-scope render function so useRegisterDetailContent's dependency
+// on reg.render is stable across re-renders — prevents the registration
+// useEffect from re-firing (and causing a bumpDetailReg loop) every time
+// EpicDetailRegistration's parent re-renders. Pattern mirrors
+// RecommendOrderDetail / WorkItemDetailRegistration.
+function renderEpicDetail(id: string) {
+  return <EpicDetail id={id} />;
 }
 
-export function EpicDrawer({ openId, onClose, onOpenChild }: EpicDrawerProps) {
-  // Mirror WorkItemDrawer's nav-stack pattern in a slimmed-down form: the
-  // drawer doesn't navigate between Epics here, but parent-initiated
-  // openId changes still need the safe reset.
-  const [currentId, setCurrentId] = useState<string | null>(openId);
-  useEffect(() => setCurrentId(openId), [openId]);
-
-  const handleOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open) onClose();
-    },
-    [onClose]
-  );
-
-  return (
-    <Dialog.Root open={!!openId} onOpenChange={handleOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-          data-testid="epic-drawer-overlay"
-        />
-        <Dialog.Content
-          aria-describedby={undefined}
-          className="fixed right-0 top-0 z-50 flex h-full w-full max-w-2xl flex-col border-l border-neutral-200 bg-white shadow-xl outline-none dark:border-neutral-800 dark:bg-neutral-950"
-          data-testid="epic-drawer-content"
-        >
-          {currentId ? <EpicDrawerBody id={currentId} onOpenChild={onOpenChild} /> : null}
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
-  );
+// Registration component: mount once in the app tree (e.g. AppShell or
+// BoardPage) to register the 'epic' kind with the RHP registry.
+export function EpicDetailRegistration() {
+  useRegisterDetailContent({
+    kind: 'epic',
+    icon: Layers,
+    label: 'Epic',
+    render: renderEpicDetail,
+  });
+  return null;
 }
 
-interface EpicDrawerBodyProps {
+export interface EpicDetailProps {
   id: string;
-  onOpenChild?: (id: string) => void;
 }
 
-function EpicDrawerBody({ id, onOpenChild }: EpicDrawerBodyProps) {
+export function EpicDetail({ id }: EpicDetailProps) {
   const { data: epicItem, isLoading, error } = useWorkItem(id);
-  // Children come from the list payload (populated by gm-peg) so we
-  // avoid an N+1 Get per child. The relationships graph on the list
-  // result is enough to pick out the direct children of this Epic.
   const { data: allItems } = useWorkItems();
   const children = useMemo(
     () => (allItems ? epicChildren(allItems, id) : []),
     [allItems, id]
   );
+  const { popDetail } = useRhp();
+
+  const onOpenChild = useCallback(
+    (childId: string) => {
+      // Pop the workitem kind in the RHP. The workitem kind is
+      // registered by gm-root.22.5 (WorkItemDetail); if it isn't
+      // registered yet the RHP renders a placeholder body which is
+      // acceptable and harmless.
+      popDetail({ kind: 'workitem', id: childId });
+    },
+    [popDetail]
+  );
 
   return (
-    <>
-      <DrawerHeader id={id} epic={epicItem} />
-      <div className="flex-1 overflow-y-auto px-6 pb-10" data-testid="epic-drawer-scroll">
+    <div className="flex h-full flex-col">
+      <DetailHeader id={id} epic={epicItem} />
+      <div className="flex-1 overflow-y-auto px-6 pb-10" data-testid="epic-detail-scroll">
         {isLoading ? (
-          <div className="py-8 text-sm text-neutral-500" data-testid="epic-drawer-loading">
+          <div className="py-8 text-sm text-neutral-500" data-testid="epic-detail-loading">
             Loading epic…
           </div>
         ) : error ? (
           <div
             className="py-8 text-sm text-red-600 dark:text-red-400"
-            data-testid="epic-drawer-error"
+            data-testid="epic-detail-error"
           >
-            {error.message}
+            {(error as Error).message}
           </div>
         ) : epicItem ? (
           <Body
@@ -116,11 +108,11 @@ function EpicDrawerBody({ id, onOpenChild }: EpicDrawerBodyProps) {
           />
         ) : null}
       </div>
-    </>
+    </div>
   );
 }
 
-function DrawerHeader({ id, epic }: { id: string; epic: WorkItem | undefined }) {
+function DetailHeader({ id, epic }: { id: string; epic: WorkItem | undefined }) {
   const [copied, setCopied] = useState(false);
   const copyId = useCallback(async () => {
     try {
@@ -135,14 +127,14 @@ function DrawerHeader({ id, epic }: { id: string; epic: WorkItem | undefined }) 
   return (
     <div className="flex items-start gap-2 border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
       <div className="min-w-0 flex-1">
-        <Dialog.Title className="truncate text-base font-semibold text-neutral-900 dark:text-neutral-100">
+        <div className="truncate text-base font-semibold text-neutral-900 dark:text-neutral-100">
           {title || id}
-        </Dialog.Title>
+        </div>
         <div className="mt-1 flex items-center gap-2 text-xs text-neutral-500">
           <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950 dark:text-violet-300">
             epic
           </span>
-          <span className="font-mono" data-testid="epic-drawer-id">
+          <span className="font-mono" data-testid="epic-detail-id">
             {id}
           </span>
           <button
@@ -150,36 +142,19 @@ function DrawerHeader({ id, epic }: { id: string; epic: WorkItem | undefined }) 
             onClick={copyId}
             className="rounded p-0.5 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
             aria-label="Copy epic ID"
-            data-testid="epic-drawer-copy"
+            data-testid="epic-detail-copy"
           >
             {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
           </button>
         </div>
       </div>
       {epic ? <EpicActions epic={epic} /> : null}
-      <Dialog.Close
-        className="mt-1 rounded p-1 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
-        aria-label="Close"
-        data-testid="epic-drawer-close"
-      >
-        <X className="h-4 w-4" />
-      </Dialog.Close>
     </div>
   );
 }
 
-// EpicActions renders the Stage / Start workers buttons per ui-spec
-// §5.6. Both are PATCH state_category mutations routed through
-// useUpdateWorkItem — it already wires the X-GEMBA-Confirm nonce
-// flow (gm-root.8 slice 2) and handles optimistic updates + rollback.
-//
-// Enablement rules (gm-vzy DoD):
-//   - Stage: requires derived.agent_claimable. Idempotent if already
-//     staged; we still disable in that case so the button never turns
-//     a confirmed click into a no-op surprise.
-//   - Start workers: requires derived.agent_claimable AND
-//     state_category === 'staged'. Starting an unstaged epic is a
-//     workflow violation, not a UX shortcut.
+// EpicActions mirrors EpicDrawer's actions per ui-spec §5.6 / gm-vzy.
+// The close button is absent — the RHP tab rail provides that affordance.
 function EpicActions({ epic }: { epic: WorkItem }) {
   const mutation = useUpdateWorkItem();
   const navigate = useNavigate();
@@ -191,25 +166,16 @@ function EpicActions({ epic }: { epic: WorkItem }) {
   const isStarted = epic.state_category === 'started';
   const isTerminal = epic.state_category === 'completed' || epic.state_category === 'canceled';
 
-  // New-child is a pure create; the only hard gate is terminal state
-  // (adding children to a closed epic is almost always a mistake).
   const newChildDisabledReason = isTerminal
     ? 'Epic is closed; reopen before adding children.'
     : null;
 
-  // Dispatch is independent of Stage/Start: starting a session for a
-  // bead is the operator's call regardless of whether the epic itself
-  // is marked staged. Hard gates: terminal state (closed bead has
-  // nothing meaningful to dispatch against) and no OrchestrationPlane
-  // bound (nothing would accept the dispatch).
   const dispatchDisabledReason = isTerminal
     ? 'Bead is closed; cannot dispatch a session.'
     : !orchestrationPlane
       ? 'No orchestration plane bound; cannot dispatch a session.'
       : null;
 
-  // Disabled reasons drive both the `disabled` attr and the `title`
-  // tooltip so operators understand why a button won't fire.
   const stageDisabledReason = !agentClaimable
     ? 'Not agent-claimable: check derived signals or open escalations.'
     : isStaged
@@ -244,28 +210,28 @@ function EpicActions({ epic }: { epic: WorkItem }) {
         icon={<Send className="h-3 w-3" />}
         onClick={onStage}
         disabledReason={stageDisabledReason}
-        testid="epic-drawer-stage"
+        testid="epic-detail-stage"
       />
       <ActionButton
         label="Start workers"
         icon={<Play className="h-3 w-3" />}
         onClick={onStart}
         disabledReason={startDisabledReason}
-        testid="epic-drawer-start"
+        testid="epic-detail-start"
       />
       <ActionButton
         label="Dispatch"
         icon={<Terminal className="h-3 w-3" />}
         onClick={() => setDispatchOpen(true)}
         disabledReason={dispatchDisabledReason}
-        testid="epic-drawer-dispatch"
+        testid="epic-detail-dispatch"
       />
       <ActionButton
         label="New child"
         icon={<Plus className="h-3 w-3" />}
         onClick={() => setNewChildOpen(true)}
         disabledReason={newChildDisabledReason}
-        testid="epic-drawer-new-child"
+        testid="epic-detail-new-child"
       />
       {dispatchOpen ? (
         <NewSessionDialog
@@ -333,7 +299,6 @@ function Body({ epic, children, items, onOpenChild }: BodyProps) {
   const { workPlane } = useCapabilities();
   const DescriptionRenderer = rendererFor(workPlane?.description_format);
 
-  // Bucket children by state for the §5.6 progress section.
   const byState: Record<StateCategory, WorkItem[]> = {
     backlog: [],
     unstarted: [],

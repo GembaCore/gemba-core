@@ -36,7 +36,7 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import { useWorkItems } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities/context-internal';
-import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
+import { useRhp } from '@/components/rhp/RhpContext';
 import { WorkItemNode, type WorkItemNodeData } from '@/components/graph/WorkItemNode';
 import { buildGraph } from '@/components/graph/buildGraph';
 import { criticalPath, detectCycles, edgeKey } from '@/components/graph/graphAnalysis';
@@ -78,7 +78,7 @@ const AUTO_GRANULARITY_ZOOM_THRESHOLD = 0.3;
 export function GraphPage() {
   const { data: items = [], isLoading, error } = useWorkItems();
   const { workPlane } = useCapabilities();
-  const [openId, setOpenId] = useState<string | null>(null);
+  const { popDetail } = useRhp();
   const [highlightCycles, setHighlightCycles] = useState(true);
   const [criticalMode, setCriticalMode] = useState(false);
   // gm-sfbh: selection-aware viewport. Track the ReactFlow instance
@@ -294,8 +294,8 @@ export function GraphPage() {
     if (backTarget) moveFocus(backTarget);
   }, [moveFocus, backTarget]);
   const openFocused = useCallback(() => {
-    if (focusedId) setOpenId(focusedId);
-  }, [focusedId]);
+    if (focusedId) popDetail({ kind: 'workitem', id: focusedId });
+  }, [focusedId, popDetail]);
 
   // Push the graph scope while this page is mounted so the
   // ArrowLeft / ArrowRight / Enter bindings don't leak into Board /
@@ -500,14 +500,15 @@ export function GraphPage() {
               instanceRef.current = instance;
             }}
             onNodeClick={(_evt, node) => {
-              // gm-sfbh: focus camera on the clicked node, then open
-              // the drawer. The two surfaces are independent — drawer
-              // closes via Escape; the focus persists until the
-              // operator clicks the canvas background to clear it.
+              // gm-sfbh: focus camera on the clicked node, then pop
+              // the RHP workitem detail tab. The two surfaces are
+              // independent — the tab can be closed via the rail ×;
+              // the focus persists until the operator clicks the canvas
+              // background to clear it.
               // gm-e12.20: route through moveFocus so the click also
               // appends to the back-history that ArrowLeft consults.
               moveFocus(node.id);
-              setOpenId(node.id);
+              popDetail({ kind: 'workitem', id: node.id });
             }}
             onPaneClick={() => {
               // gm-sfbh: clearing the selection re-fits the camera
@@ -562,17 +563,6 @@ export function GraphPage() {
         )}
       </div>
 
-      <WorkItemDrawer
-        openId={openId}
-        onClose={() => {
-          // gm-sfbh: closing the drawer also clears the focused node
-          // and re-fits the camera. Single Escape press → operator
-          // returns to the at-a-glance view of the graph.
-          setOpenId(null);
-          setFocusedId(null);
-          fitAll();
-        }}
-      />
     </div>
   );
 }

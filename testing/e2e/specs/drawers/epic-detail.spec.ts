@@ -1,27 +1,38 @@
-// specs/drawers/epic-drawer.spec.ts — gm-5v8v.8
+// specs/drawers/epic-detail.spec.ts — gm-root.22.6
 //
-// Covers EpicDrawer header (id / copy / close), action buttons
+// Covers EpicDetail header (id / copy), action buttons
 // (Stage / Start / Dispatch / New child), state section, children
-// section bucketed by state. Mutations + inline state-change on
-// member rows are tagged @deep — they need real backend writes.
+// section bucketed by state, RHP URL codec, and per-route scoping.
+// Replaces epic-drawer.spec.ts (gm-5v8v.8).
 
 import { test, expect } from '../../fixtures/server';
-import { EpicDrawerPO } from '../../pages/EpicDrawer';
+import { EpicDetailPO } from '../../pages/EpicDetail';
 import * as build from '../../builders/workitem';
 
-test.describe('EpicDrawer @route', () => {
+test.describe('EpicDetail @route', () => {
   test('opens via /board/:epicId and renders header + state', async ({ page, workPlane }) => {
     const epicId = 'gm-test-epic';
     workPlane.seed([
       build.epic({ id: epicId, title: 'Test epic', state_category: 'staged', status: 'staged' }),
     ]);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
 
-    await drawer.expectOpenWith(epicId);
+    await detail.expectOpenWith(epicId);
     // The state pill renders status + state_category.
-    await expect(drawer.stateSection).toContainText('staged');
+    await expect(detail.stateSection).toContainText('staged');
+  });
+
+  test('URL grows ?rhp=epic:<id> when /board/:epicId is visited', async ({ page, workPlane }) => {
+    const epicId = 'gm-test-epic-url';
+    workPlane.seed([build.epic({ id: epicId })]);
+
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
+
+    // The RHP codec adds ?rhp=epic:<epicId> to the URL.
+    await expect(page).toHaveURL(new RegExp(`rhp=epic(?::|%3A)${encodeURIComponent(epicId)}`));
   });
 
   test('renders the four action buttons', async ({ page, workPlane }) => {
@@ -35,15 +46,13 @@ test.describe('EpicDrawer @route', () => {
       }),
     ]);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
 
-    // The four buttons described by ui-spec §5.6 — render and have
-    // testids regardless of enabled-ness.
-    await expect(drawer.stage).toBeVisible();
-    await expect(drawer.start).toBeVisible();
-    await expect(drawer.dispatch).toBeVisible();
-    await expect(drawer.newChild).toBeVisible();
+    await expect(detail.stage).toBeVisible();
+    await expect(detail.start).toBeVisible();
+    await expect(detail.dispatch).toBeVisible();
+    await expect(detail.newChild).toBeVisible();
   });
 
   test('Stage is disabled when not agent_claimable', async ({ page, workPlane }) => {
@@ -55,17 +64,15 @@ test.describe('EpicDrawer @route', () => {
       }),
     ]);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
 
-    await expect(drawer.stage).toHaveAttribute('data-disabled', 'true');
-    await expect(drawer.start).toHaveAttribute('data-disabled', 'true');
+    await expect(detail.stage).toHaveAttribute('data-disabled', 'true');
+    await expect(detail.start).toHaveAttribute('data-disabled', 'true');
   });
 
   test('renders children bucketed by state when present', async ({ page, workPlane }) => {
     const epicId = 'gm-test-epic-with-children';
-    // epicChildren() reads the parent_child edge from each child's
-    // relationships array — the edge lives on the child, not the parent.
     const childA = build.workItem({
       id: 'gm-c-1',
       title: 'Done child',
@@ -82,32 +89,36 @@ test.describe('EpicDrawer @route', () => {
     });
     workPlane.seed([build.epic({ id: epicId }), childA, childB]);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
 
-    await expect(drawer.childrenSection).toContainText('Children (2)');
+    await expect(detail.childrenSection).toContainText('Children (2)');
     await expect(page.getByTestId('epic-children-completed')).toBeVisible();
     await expect(page.getByTestId('epic-children-started')).toBeVisible();
   });
 
-  test('closes via close button', async ({ page, workPlane }) => {
-    const epicId = 'gm-test-epic-close-x';
+  test('navigating away clears the epic detail tab (per-route scoping)', async ({
+    page,
+    workPlane,
+  }) => {
+    const epicId = 'gm-test-epic-scope';
     workPlane.seed([build.epic({ id: epicId })]);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
+    const detail = new EpicDetailPO(page);
+    await detail.openByDeepLink(epicId);
 
-    await drawer.closeViaButton();
-  });
+    // Confirm the tab opened.
+    await expect(detail.idLabel).toBeVisible();
+    await expect(page).toHaveURL(/rhp=epic/);
 
-  test('closes via Escape', async ({ page, workPlane }) => {
-    const epicId = 'gm-test-epic-close-esc';
-    workPlane.seed([build.epic({ id: epicId })]);
+    // Navigate away — per-current-route scoping should clear the tab.
+    await page.goto('/escalations');
+    await expect(page).not.toHaveURL(/[?&]rhp=/);
 
-    const drawer = new EpicDrawerPO(page);
-    await drawer.openByDeepLink(epicId);
-
-    await drawer.closeViaEscape();
+    // Navigate back — the detail tab is NOT reinstated (state is route-scoped,
+    // not per-history-entry).
+    await page.goto('/board');
+    await expect(detail.idLabel).toHaveCount(0);
   });
 
   test.fixme('inline state-change on member rows uses popover with valid transitions @deep', async () => {
@@ -116,7 +127,7 @@ test.describe('EpicDrawer @route', () => {
   });
 
   test.fixme('Open in graph navigates to /graph with epic context @deep', async () => {
-    // Tracked under gm-qoio (SPA) — EpicDrawer's actions toolbar
+    // Tracked under gm-qoio (SPA) — EpicDetail's actions toolbar
     // doesn't expose an Open-in-graph button yet. Lifts when that
     // bead closes.
   });

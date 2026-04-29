@@ -30,6 +30,10 @@ import { RhpShell } from '@/components/rhp/RhpShell';
 // two without touching the public RhpAPI.
 import { HelpTab } from '@/components/rhp/HelpTab';
 import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
+// gm-root.22.5: WorkItem detail-tab kind registration. WorkItemDetailRegistration
+// registers the 'workitem' kind with the RHP detail-content registry so
+// popDetail({kind: 'workitem', id}) renders WorkItemDetail inside the tab.
+import { WorkItemDetailRegistration } from '@/components/rhp/details/WorkItemDetailRegistration';
 
 export function AppShell() {
   return (
@@ -62,6 +66,7 @@ export function AppShell() {
             </div>
             <RhpShell />
             <HelpTab />
+            <WorkItemDetailRegistration />
             <AppHotkeys />
             <Palette />
             <PmPanel />

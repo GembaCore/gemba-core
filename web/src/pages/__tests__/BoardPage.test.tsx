@@ -11,6 +11,10 @@ import { HotkeyRegistry, HotkeysContext } from '@/hotkeys';
 import { STATE_CATEGORIES, type WorkItem } from '@/types/core.gen';
 import type { EscalationRequest } from '@/api/escalations';
 import type { ApiError } from '@/api/client';
+import { RhpProvider } from '@/components/rhp/RhpContext';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
+import { WorkItemDetailRegistration } from '@/components/rhp/details/WorkItemDetailRegistration';
+import { RhpShell } from '@/components/rhp/RhpShell';
 
 // gm-e11.3: BoardPage now reads escalations to power the banner +
 // per-card badges. Mock it out so existing fetch-driven tests don't
@@ -48,7 +52,7 @@ function emptyEscalationsResult(): UseQueryResult<EscalationRequest[], ApiError>
   } as unknown as UseQueryResult<EscalationRequest[], ApiError>;
 }
 
-// Seed a CapabilitiesProvider so WorkItemDrawer / EpicDrawer's
+// Seed a CapabilitiesProvider so WorkItemDrawer / EpicDetail's
 // useCapabilities() resolves. The board itself doesn't consult the
 // manifest, but the drawers (rendered inside BoardPage) do.
 const caps: CapabilitiesResponse = {
@@ -70,16 +74,23 @@ function wrap(ui: ReactNode, initialEntry = '/board') {
   const registry = new HotkeyRegistry();
   return (
     <MemoryRouter initialEntries={[initialEntry]}>
-      <QueryClientProvider client={client}>
-        <CapabilitiesProvider initial={caps}>
-          <HotkeysContext.Provider value={registry}>
-            <Routes>
-              <Route path="/board" element={ui} />
-              <Route path="/board/*" element={ui} />
-            </Routes>
-          </HotkeysContext.Provider>
-        </CapabilitiesProvider>
-      </QueryClientProvider>
+      <RhpProvider>
+        <RhpPinnedContentProvider>
+          <QueryClientProvider client={client}>
+            <CapabilitiesProvider initial={caps}>
+              <HotkeysContext.Provider value={registry}>
+                <Routes>
+                  <Route path="/board" element={ui} />
+                  <Route path="/board/*" element={ui} />
+                </Routes>
+                {/* Register the workitem detail kind + shell so RHP content renders */}
+                <WorkItemDetailRegistration />
+                <RhpShell />
+              </HotkeysContext.Provider>
+            </CapabilitiesProvider>
+          </QueryClientProvider>
+        </RhpPinnedContentProvider>
+      </RhpProvider>
     </MemoryRouter>
   );
 }
@@ -211,8 +222,8 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
   });
 
-  // /board/:epicId deep-link auto-opens the Epic drawer (ui-spec L116).
-  it('/board/:epicId mounts the EpicDrawer for that epic', async () => {
+  // /board/:epicId deep-link auto-opens the RHP epic detail tab (gm-root.22.6).
+  it('/board/:epicId pops the RHP epic detail tab for that epic', async () => {
     const data: WorkItem[] = [
       epic('root'),
       epic('e1', 'root', { description: 'Epic e1 detail.' }),
@@ -238,15 +249,15 @@ describe('BoardPage', () => {
     });
 
     render(wrap(<BoardPage />, '/board/e1'));
-    await waitFor(() => expect(screen.getByTestId('epic-drawer-content')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('epic-detail-id')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Epic e1 detail.')).toBeTruthy());
   });
 
   // Regression: bd ids carry slashes ("gemba/gemba/gm-e1"). The route
   // must match the entire suffix, not just the first segment, otherwise
-  // the drawer never mounts and the URL bar shows but the panel doesn't
+  // the detail tab never pops and the URL bar shows but the panel doesn't
   // appear.
-  it('/board/<workspace-prefixed-id> opens the EpicDrawer', async () => {
+  it('/board/<workspace-prefixed-id> pops the RHP epic detail tab', async () => {
     const data: WorkItem[] = [
       epic('gemba/gemba/gm-root'),
       epic('gemba/gemba/gm-e1', 'gemba/gemba/gm-root', { description: 'Prefixed.' }),
@@ -272,11 +283,11 @@ describe('BoardPage', () => {
     });
 
     render(wrap(<BoardPage />, '/board/gemba/gemba/gm-e1'));
-    await waitFor(() => expect(screen.getByTestId('epic-drawer-content')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('epic-detail-id')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Prefixed.')).toBeTruthy());
   });
 
-  it('?view=workitem still opens the WorkItem drawer on card click', async () => {
+  it('?view=workitem still opens the WorkItem detail (RHP) on card click', async () => {
     const listed = bead('gm-a', 'started');
     const detail: WorkItem = { ...listed, description: 'Deep dive into gm-a.' };
     fetchSpy.mockImplementation((url: string) => {
@@ -302,15 +313,13 @@ describe('BoardPage', () => {
     render(wrap(<BoardPage />, '/board?view=workitem'));
     const card = await waitFor(() => screen.getByRole('button', { name: /open bead gm-a/i }));
     fireEvent.click(card);
-    await waitFor(() => expect(screen.getByTestId('work-item-drawer-content')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('workitem-detail-id')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Deep dive into gm-a.')).toBeTruthy());
   });
 
-  // gm-e12.5 DoD: "Opens from grid, board, palette, deep link". Deep
-  // link is ?bead=X — rendering the page with that query param alone
-  // should mount the WorkItemDrawer and fetch the detail. Closing the
-  // drawer strips ?bead from the URL so the Back button is coherent.
-  it('?bead=X deep-links straight into the WorkItemDrawer', async () => {
+  // gm-root.22.5 regression: legacy ?bead=X deep-link shim translates to
+  // ?rhp=workitem:X and opens the RHP WorkItemDetail tab.
+  it('?bead=X deep-links into the WorkItemDetail (RHP) via migration shim', async () => {
     const listed = bead('gm-a', 'started');
     const detail: WorkItem = { ...listed, description: 'Deep dive into gm-a.' };
     fetchSpy.mockImplementation((url: string) => {
@@ -334,12 +343,11 @@ describe('BoardPage', () => {
     });
 
     render(wrap(<BoardPage />, '/board?bead=gm-a'));
-    await waitFor(() => expect(screen.getByTestId('work-item-drawer-content')).toBeTruthy());
+    // Shim fires on first mount: ?bead=gm-a → ?rhp=workitem:gm-a.
+    // WorkItemDetailRegistration registers the 'workitem' kind; the
+    // RHP body renders WorkItemDetail. Wait for the id label to appear.
+    await waitFor(() => expect(screen.getByTestId('workitem-detail-id')).toBeTruthy());
     await waitFor(() => expect(screen.getByText('Deep dive into gm-a.')).toBeTruthy());
-
-    // Close → drawer unmounts (?bead removed).
-    fireEvent.click(screen.getByTestId('work-item-drawer-close'));
-    await waitFor(() => expect(screen.queryByTestId('work-item-drawer-content')).toBeNull());
   });
 
   // The in-page view toggle flips ?view=workitem|list on/off without

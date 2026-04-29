@@ -1,4 +1,4 @@
-// /sprints — sprint planning surface (gm-e11.5, gm-szz0.1).
+// /sprints — sprint planning surface (gm-e11.5, gm-szz0.1, gm-root.22.7).
 //
 // gm-e11.5 shipped the entity-only roster: every sprint the bound
 // WorkPlane adaptor declares, with a "X / Y beads done" progress
@@ -6,16 +6,18 @@
 // list — the page renders an explanatory empty state.
 //
 // gm-szz0.1 made /sprints the home of sprint *planning*: the PM
-// persona's epic_order skill (RecommendOrderDrawer) used to mount
-// on /coach, conflating dispatch with planning. It now surfaces
-// here as the page's primary action — operators land on /sprints
-// to ask the PM to compose the next sprint, then scan the roster
-// underneath.
+// persona's epic_order skill used to mount on /coach, conflating
+// dispatch with planning. It now surfaces here as the page's primary
+// action — operators land on /sprints to ask the PM to compose the
+// next sprint, then scan the roster underneath.
+//
+// gm-root.22.7 replaced the RecommendOrderDrawer overlay with an RHP
+// detail tab (kind: 'consult:recommend_order'). The button now calls
+// popDetail instead of setting local open state; the drawer is gone.
 //
 // Token-budget rollups, gauges, and three-tier enforcement are
 // deferred to a follow-up under gm-root.14.
 
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { CalendarRange, Sparkles } from 'lucide-react';
@@ -23,7 +25,11 @@ import { CalendarRange, Sparkles } from 'lucide-react';
 import { useSprints } from '@/hooks/useAgents';
 import { useWorkItems } from '@/hooks/useWorkItems';
 import { getCoach, type PlannerCoachResponse } from '@/api/planner';
-import { RecommendOrderDrawer } from '@/components/persona/RecommendOrderDrawer';
+import {
+  RecommendOrderDetailRegistration,
+  RECOMMEND_ORDER_KIND,
+} from '@/components/rhp/details/RecommendOrderDetail';
+import { useRhp } from '@/components/rhp/RhpContext';
 import type { Sprint, WorkItem } from '@/types/core.gen';
 
 const PLANNER_POLL_MS = 30_000;
@@ -50,14 +56,14 @@ function fmtRange(starts: string, ends: string): string {
   return `${s.toLocaleDateString(undefined, opts)} – ${e.toLocaleDateString(undefined, opts)}`;
 }
 
-// PlannerHeader (gm-szz0.1) — the planning entrypoint that used
-// to live on /coach. Fetches /api/planner/coach so the drawer has
-// the same ready_beads payload the dispatch grid does. The
-// planner data is independent of the sprint roster fetches; if
-// the planner endpoint is unavailable the button surfaces an
-// inline notice but the sprint roster underneath still renders.
+// PlannerHeader (gm-szz0.1, gm-root.22.7) — the planning entrypoint
+// that used to live on /coach. The button now calls popDetail to open
+// the RHP detail tab instead of mounting a drawer overlay.
+// RecommendOrderDetailRegistration mounts alongside to wire the kind
+// into the registry; the planner query here only drives the disabled
+// state and the inline status notices.
 function PlannerHeader(): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const { popDetail } = useRhp();
   const planner = useQuery<PlannerCoachResponse>({
     queryKey: ['planner', 'coach'],
     queryFn: getCoach,
@@ -74,6 +80,9 @@ function PlannerHeader(): JSX.Element {
       data-testid="sprints-planner-header"
       className="mb-6 rounded-md border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900"
     >
+      {/* Register the kind once while this header is mounted. */}
+      <RecommendOrderDetailRegistration />
+
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
@@ -92,7 +101,7 @@ function PlannerHeader(): JSX.Element {
         </div>
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => popDetail({ kind: RECOMMEND_ORDER_KIND, id: workspace })}
           disabled={!canRecommend}
           data-testid="sprints-recommend-order"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-sky-600 bg-white px-3 py-1.5 text-sm font-medium text-sky-700 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-neutral-950 dark:text-sky-400 dark:hover:bg-sky-950/30"
@@ -122,15 +131,9 @@ function PlannerHeader(): JSX.Element {
           data-testid="sprints-planner-empty"
         >
           No ready beads in the planner snapshot. Add a candidate or clear a
-          soft-block, then re-open the drawer.
+          soft-block, then re-open this panel.
         </p>
       )}
-      <RecommendOrderDrawer
-        open={open}
-        onClose={() => setOpen(false)}
-        workspace={workspace}
-        readyBeads={readyBeads}
-      />
     </section>
   );
 }

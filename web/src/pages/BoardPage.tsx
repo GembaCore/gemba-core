@@ -16,9 +16,10 @@
 //   /board?layout=workitem              → flat WorkItem kanban
 //   /board?layout=list                  → flat WorkItem list
 //   /board?layout=list&view=backlog     → list + Backlog named view
-//   /board?bead=X                       → any layout + WorkItemDrawer on X
-//   /board/:epicId                      → Epic kanban + EpicDrawer auto-open
-//   /board/:epicId?bead=X               → Epic drawer + WorkItemDrawer stacked
+//   /board?bead=X                       → RHP workitem detail (migration shim; clears ?bead=)
+//   /board?rhp=workitem:X               → RHP workitem detail tab
+//   /board/:epicId                      → Epic kanban + RHP epic detail tab
+//   /board/:epicId?rhp=workitem:X       → RHP epic + workitem detail tabs stacked
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -38,9 +39,9 @@ import {
 } from '@dnd-kit/core';
 import { BoardColumn } from '@/components/board/BoardColumn';
 import { BoardListView } from '@/components/board/BoardListView';
-import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
-import { EpicDrawer } from '@/components/board/EpicDrawer';
 import { EpicView } from '@/components/board/EpicView';
+import { EpicDetailRegistration } from '@/components/rhp/details/EpicDetail';
+import { useRhp } from '@/components/rhp/RhpContext';
 import { NewWorkItemDialog } from '@/components/board/NewWorkItemDialog';
 import { ScopePicker } from '@/components/board/ScopePicker';
 import { SCOPE_ALL, filterByScope, lineageIDs, type ScopeID } from '@/components/board/scope';
@@ -265,55 +266,43 @@ export function BoardPage() {
   const epicId = splatRaw.length > 0 ? splatRaw : null;
   const navigate = useNavigate();
 
-  // gm-root.22.4 RHP migration shim — runs once on first paint of the
-  // BoardPage. Translates legacy URL conventions into the new `?rhp=`
-  // codec so the Right-Hand Panel picks up deep-links that were
-  // historically routed through the drawer-specific params:
-  //
-  //   /board?bead=X     → also pop ?rhp=workitem:X
-  //   /board/:epicId    → also pop ?rhp=epic:<epicId>
-  //
-  // We DO NOT clear `?bead=X` or change the path. In Wave 1 the legacy
-  // WorkItemDrawer / EpicDrawer are still wired up and need their
-  // original inputs. Wave-2 migrations (gm-root.22.5 / .6) will sweep
-  // both when the drawer code is replaced. Until kind owners register
-  // 'workitem' / 'epic' content, the RHP renders a placeholder tab
-  // body for the popped tab — that's expected and harmless.
-  //
-  // Guard with a ref so the effect runs once per mount; a setSearchParams
-  // call inside this effect bumps rawParams and would otherwise loop.
-  const rhpShimRanRef = useRef(false);
+  // gm-root.22.6: pop the RHP epic detail tab on mount when the path
+  // carries an epicId. popDetail handles both deep-links and
+  // card-click navigations: same-kind replaces, different-kind stacks.
+  // Guard with a ref so the effect runs once per mount; popDetail
+  // calls setSearchParams and would otherwise loop on each render.
+  const { popDetail } = useRhp();
+  const epicPopRanRef = useRef(false);
   useEffect(() => {
-    if (rhpShimRanRef.current) return;
-    rhpShimRanRef.current = true;
-    // Operator already used the new codec — don't double-pop.
-    if (rawParams.get('rhp')) return;
-    const beadParam = rawParams.get('bead');
-    const segments: string[] = [];
-    if (epicId) segments.push(`epic:${epicId}`);
-    if (beadParam) segments.push(`workitem:${beadParam}`);
-    if (segments.length === 0) return;
-    const next = new URLSearchParams(rawParams);
-    next.set('rhp', segments.join(','));
-    setParams(next, { replace: true });
+    if (epicPopRanRef.current) return;
+    epicPopRanRef.current = true;
+    if (!epicId) return;
+    popDetail({ kind: 'epic', id: epicId });
     // Intentionally a one-shot effect — see ref guard above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Both drawers are URL-routed now (gm-e12.5 DoD: "Opens from grid,
-  // board, palette, deep link"). Epic id lives in the path; work-item
-  // id lives in ?bead=X so an Epic + WorkItem drawer can both be open
-  // (drill-down from an Epic card → child) and the pair is deep-linkable.
-  const openWorkItemId = params.get('bead');
-  const setOpenWorkItemId = useCallback(
-    (id: string | null) => {
-      const p = new URLSearchParams(params);
-      if (id) p.set('bead', id);
-      else p.delete('bead');
-      setParams(p, { replace: true });
-    },
-    [params, setParams]
-  );
+  // gm-root.22.5: ?bead=X migration shim. On first paint, if a legacy
+  // ?bead=X param is present and no ?rhp= param already exists, translate
+  // it to ?rhp=workitem:X so the RHP detail tab opens. The ?bead= param
+  // is then cleared so the URL stays clean. This runs once per mount.
+  const rhpShimRanRef = useRef(false);
+  useEffect(() => {
+    if (rhpShimRanRef.current) return;
+    rhpShimRanRef.current = true;
+    const beadParam = rawParams.get('bead');
+    if (!beadParam) return;
+    const next = new URLSearchParams(rawParams);
+    next.delete('bead');
+    // Only set ?rhp= if not already present (operator may have navigated
+    // directly with a ?rhp= codec deep-link that includes workitem).
+    if (!next.get('rhp')) {
+      next.set('rhp', `workitem:${beadParam}`);
+    }
+    setParams(next, { replace: true });
+    // Intentionally a one-shot effect — see ref guard above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const setLayout = useCallback(
     (next: LayoutMode) => {
@@ -440,11 +429,6 @@ export function BoardPage() {
     },
     [navigate, params]
   );
-  const closeEpic = useCallback(() => {
-    const search = params.toString();
-    navigate({ pathname: '/board', search: search ? `?${search}` : '' });
-  }, [navigate, params]);
-
   const [newItemOpen, setNewItemOpen] = useState(false);
 
   // gm-75u + gm-935r: a single DndContext spans both the BoardHeader
@@ -555,7 +539,7 @@ export function BoardPage() {
         onChangeScope={setScope}
         milestone={milestone}
         onChangeMilestone={setMilestone}
-        onShowMilestone={(id) => setOpenWorkItemId(id)}
+        onShowMilestone={(id) => popDetail({ kind: 'workitem', id })}
         view={view}
         onChangeView={setView}
         power={power}
@@ -574,7 +558,7 @@ export function BoardPage() {
           onChangeStateCategories={setListStates}
           onChangeKinds={setListKinds}
           onChangeSearch={setListSearch}
-          onSelectWorkItem={setOpenWorkItemId}
+          onSelectWorkItem={(id) => popDetail({ kind: 'workitem', id })}
           power={power}
           scope={scope}
         />
@@ -590,21 +574,16 @@ export function BoardPage() {
       ) : (
         <WorkItemBoard
           data={scopedData}
-          onSelectWorkItem={setOpenWorkItemId}
+          onSelectWorkItem={(id) => { if (id) popDetail({ kind: 'workitem', id }); }}
           showBacklog={showBacklog}
           escalationCounts={escalationCounts}
         />
       )}
-      <EpicDrawer
-        openId={epicId ?? null}
-        onClose={closeEpic}
-        onOpenChild={(id) => setOpenWorkItemId(id)}
-      />
-      <WorkItemDrawer openId={openWorkItemId} onClose={() => setOpenWorkItemId(null)} />
+      <EpicDetailRegistration />
       <NewWorkItemDialog
         open={newItemOpen}
         onClose={() => setNewItemOpen(false)}
-        onCreated={(item) => setOpenWorkItemId(item.id)}
+        onCreated={(item) => popDetail({ kind: 'workitem', id: item.id })}
       />
     </DndContext>
   );

@@ -15,7 +15,7 @@ import { BulkEditDialog } from '@/components/grid/BulkEditDialog';
 import { EpicPickerDialog } from '@/components/refine/EpicPickerDialog';
 import { useFilteredWorkItems, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import type { WorkItemPatch } from '@/api/workItems';
-import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
+import { useRhp } from '@/components/rhp/RhpContext';
 import { useSearchParams } from 'react-router-dom';
 import type { WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
@@ -70,16 +70,7 @@ export function RefinePage() {
     [params, setParams]
   );
 
-  const openId = params.get('bead');
-  const setOpenId = useCallback(
-    (next: string | null) => {
-      const p = new URLSearchParams(params);
-      if (next) p.set('bead', next);
-      else p.delete('bead');
-      setParams(p, { replace: true });
-    },
-    [params, setParams]
-  );
+  const { popDetail } = useRhp();
 
   const { data = [], isLoading, error } = useFilteredWorkItems({
     state_category: ['backlog'],
@@ -192,7 +183,7 @@ export function RefinePage() {
         ) : (
           <WorkItemGrid
             rows={rows}
-            onSelect={setOpenId}
+            onSelect={(id) => popDetail({ kind: 'workitem', id })}
             onBulkAction={handleBulkAction}
             presets={{ storageKey: REFINE_PRESETS_STORAGE_KEY }}
             visibilityOverride={REFINE_VISIBILITY}
@@ -246,7 +237,6 @@ export function RefinePage() {
         />
       )}
 
-      <WorkItemDrawer openId={openId} onClose={() => setOpenId(null)} />
     </div>
   );
 }

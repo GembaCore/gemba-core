@@ -28,6 +28,9 @@ import { workItemsKeys } from '@/hooks/useWorkItems';
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import { HotkeyRegistry, HotkeysContext } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
+import { RhpProvider } from '@/components/rhp/RhpContext';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
+import { RhpShell } from '@/components/rhp/RhpShell';
 
 const FIXTURE_PATH = path.resolve(
   __dirname,
@@ -68,26 +71,31 @@ const caps: CapabilitiesResponse = {
 function mountBoard(items: WorkItem[], initialEntry = '/board') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(workItemsKeys.list(), items);
-  // Preload the per-id detail cache too — the EpicDrawer's useWorkItem(id)
+  // Preload the per-id detail cache too — EpicDetail's useWorkItem(id)
   // fetches /api/work-items/{id} otherwise and the test harness has no
   // backing server. Populating it from the same fixture keeps the
-  // drawer test hermetic.
+  // detail test hermetic.
   for (const it of items) {
     client.setQueryData(workItemsKeys.detail(it.id), it);
   }
   const registry = new HotkeyRegistry();
   const ui: ReactNode = (
     <MemoryRouter initialEntries={[initialEntry]}>
-      <QueryClientProvider client={client}>
-        <CapabilitiesProvider initial={caps}>
-          <HotkeysContext.Provider value={registry}>
-            <Routes>
-              <Route path="/board" element={<BoardPage />} />
-              <Route path="/board/*" element={<BoardPage />} />
-            </Routes>
-          </HotkeysContext.Provider>
-        </CapabilitiesProvider>
-      </QueryClientProvider>
+      <RhpProvider>
+        <RhpPinnedContentProvider>
+          <QueryClientProvider client={client}>
+            <CapabilitiesProvider initial={caps}>
+              <HotkeysContext.Provider value={registry}>
+                <Routes>
+                  <Route path="/board" element={<BoardPage />} />
+                  <Route path="/board/*" element={<BoardPage />} />
+                </Routes>
+                <RhpShell />
+              </HotkeysContext.Provider>
+            </CapabilitiesProvider>
+          </QueryClientProvider>
+        </RhpPinnedContentProvider>
+      </RhpProvider>
     </MemoryRouter>
   );
   return render(ui);
@@ -209,18 +217,19 @@ describe('Board regression — project-canonical fixture', () => {
     }
   });
 
-  it('deep-link /board/:epicId opens the drawer for a representative fixture bead', async () => {
+  it('deep-link /board/:epicId opens the RHP epic detail for a representative fixture bead', async () => {
     const items = loadFixture();
     mountBoard(items, '/board/demo/pc-e3');
-    await waitFor(() => expect(screen.getByTestId('epic-drawer-content')).toBeTruthy());
-    // The drawer exposes the epic id, title, state, child list, and the
+    await waitFor(() => expect(screen.getByTestId('epic-detail-id')).toBeTruthy());
+    // The detail tab exposes the epic id, title, state, child list, and the
     // description block. Every one of these axes must be present or we
-    // lost a drawer field somewhere along the way.
-    expect(screen.getByTestId('epic-drawer-id').textContent).toBe('demo/pc-e3');
-    // Title appears both on the root-epic banner chip and in the
-    // drawer header — scope the assertion to the drawer.
-    const drawer = screen.getByTestId('epic-drawer-content');
-    expect(drawer.textContent).toContain('Phase 3: Closed epic');
+    // lost a field somewhere along the way.
+    expect(screen.getByTestId('epic-detail-id').textContent).toBe('demo/pc-e3');
+    // Title appears in both the board's EpicCard and the RHP detail
+    // header — assert it shows up at least once via getAllByText.
+    await waitFor(() =>
+      expect(screen.getAllByText('Phase 3: Closed epic').length).toBeGreaterThan(0)
+    );
     expect(screen.getByTestId('epic-section-state')).toBeTruthy();
     expect(screen.getByTestId('epic-section-description')).toBeTruthy();
     expect(screen.getByTestId('epic-section-children')).toBeTruthy();
@@ -265,15 +274,19 @@ describe('Board regression — degraded adaptor', () => {
       const registry = new HotkeyRegistry();
       render(
         <MemoryRouter initialEntries={['/board']}>
-          <QueryClientProvider client={client}>
-            <CapabilitiesProvider initial={caps}>
-              <HotkeysContext.Provider value={registry}>
-                <Routes>
-                  <Route path="/board" element={<BoardPage />} />
-                </Routes>
-              </HotkeysContext.Provider>
-            </CapabilitiesProvider>
-          </QueryClientProvider>
+          <RhpProvider>
+            <RhpPinnedContentProvider>
+              <QueryClientProvider client={client}>
+                <CapabilitiesProvider initial={caps}>
+                  <HotkeysContext.Provider value={registry}>
+                    <Routes>
+                      <Route path="/board" element={<BoardPage />} />
+                    </Routes>
+                  </HotkeysContext.Provider>
+                </CapabilitiesProvider>
+              </QueryClientProvider>
+            </RhpPinnedContentProvider>
+          </RhpProvider>
         </MemoryRouter>
       );
       // Board ends up in its error state (isError=true) and the body

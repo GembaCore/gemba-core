@@ -60,6 +60,8 @@ vi.mock('reactflow', async () => {
 import { GraphPage } from '../GraphPage';
 import { CapabilitiesProvider } from '@/capabilities';
 import { HotkeysProvider } from '@/hotkeys';
+import { RhpProvider } from '@/components/rhp/RhpContext';
+import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 import type { CapabilitiesResponse } from '@/capabilities';
 
 function caps(): CapabilitiesResponse {
@@ -84,13 +86,17 @@ function wrapper(): (p: { children: ReactNode }) => JSX.Element {
   });
   return function Wrapper({ children }: { children: ReactNode }): JSX.Element {
     return (
-      <QueryClientProvider client={client}>
-        <CapabilitiesProvider initial={caps()}>
-          <HotkeysProvider>
-            <MemoryRouter>{children}</MemoryRouter>
-          </HotkeysProvider>
-        </CapabilitiesProvider>
-      </QueryClientProvider>
+      <MemoryRouter>
+        <RhpProvider>
+          <RhpPinnedContentProvider>
+            <QueryClientProvider client={client}>
+              <CapabilitiesProvider initial={caps()}>
+                <HotkeysProvider>{children}</HotkeysProvider>
+              </CapabilitiesProvider>
+            </QueryClientProvider>
+          </RhpPinnedContentProvider>
+        </RhpProvider>
+      </MemoryRouter>
     );
   };
 }

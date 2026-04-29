@@ -28,7 +28,7 @@
 //     register the sentinel fallback icon, so the rail always has a
 //     valid icon for unregistered kinds.
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Square } from 'lucide-react';
 import {
   RHP_FALLBACK_KIND,
@@ -58,15 +58,25 @@ export function registerDetailContent(
 
 /**
  * Hook variant: register a detail-content kind for the lifetime of the
- * calling component. Re-registers if any field of `reg` changes.
+ * calling component. The registration is keyed by `reg.kind` only — the
+ * `render`/`icon`/`label` fields are read through a ref each time the
+ * registered render fn is invoked, so callers can safely pass an inline
+ * `reg` object with a fresh closure on every render. (Depending on
+ * `reg.render` would re-register every render and trigger a
+ * bumpDetailReg loop.)
  */
 export function useRegisterDetailContent(reg: RhpDetailContentRegistration): void {
   const registry = useRhpDetailRegistry();
+  const regRef = useRef(reg);
+  regRef.current = reg;
   useEffect(() => {
-    return registry.register(reg);
-    // We deliberately depend on the structural fields rather than the
-    // reg object identity, so callers can pass an inline object.
-  }, [registry, reg.kind, reg.render, reg.icon, reg.label]);
+    return registry.register({
+      kind: reg.kind,
+      icon: regRef.current.icon,
+      label: regRef.current.label,
+      render: (id) => regRef.current.render(id),
+    });
+  }, [registry, reg.kind]);
 }
 
 /**
