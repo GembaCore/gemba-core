@@ -12,6 +12,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { WorkItemGrid, type BulkAction } from '@/components/grid/WorkItemGrid';
 import { BulkEditDialog } from '@/components/grid/BulkEditDialog';
+import { EpicPickerDialog } from '@/components/refine/EpicPickerDialog';
 import { useFilteredWorkItems, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import type { WorkItemPatch } from '@/api/workItems';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
@@ -68,6 +69,7 @@ export function RefinePage() {
 
   const updateWorkItem = useUpdateWorkItem();
   const [bulkEdit, setBulkEdit] = useState<{ ids: string[] } | null>(null);
+  const [epicPick, setEpicPick] = useState<{ ids: string[] } | null>(null);
 
   const applyBulkPatch = useCallback(
     (ids: string[], patch: WorkItemPatch) => {
@@ -88,6 +90,8 @@ export function RefinePage() {
         // follow-up child.
       } else if (action === 'delete') {
         applyBulkPatch(ids, { state_category: 'canceled' });
+      } else if (action === 'drop-into-epic') {
+        setEpicPick({ ids });
       }
     },
     [applyBulkPatch]
@@ -153,6 +157,18 @@ export function RefinePage() {
           onApply={(patch) => {
             applyBulkPatch(bulkEdit.ids, patch);
             setBulkEdit(null);
+          }}
+        />
+      )}
+
+      {epicPick && (
+        <EpicPickerDialog
+          open
+          ids={epicPick.ids}
+          onClose={() => setEpicPick(null)}
+          onPick={(epicId) => {
+            applyBulkPatch(epicPick.ids, { parent_id: epicId });
+            setEpicPick(null);
           }}
         />
       )}

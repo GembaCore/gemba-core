@@ -144,3 +144,168 @@ describe('RefinePage', () => {
     expect(screen.getByText(/fix login/)).toBeTruthy();
   });
 });
+
+// Drop-into-epic action (gm-ju5o). Single-row + bulk paths share the
+// same EpicPickerDialog. The fetch spy routes by URL: backlog GET,
+// epics GET (kind=epic), PATCH writes.
+describe('RefinePage drop-into-epic (gm-ju5o)', () => {
+  const fetchSpy = vi.fn();
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    fetchSpy.mockReset();
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  // routeFetch returns { backlog, epics } payloads + records PATCHes.
+  // Tests pass a backlog set and an epic set; PATCH ids are inferred
+  // from the URL.
+  function routeFetch(opts: { backlog: WorkItem[]; epics: WorkItem[] }) {
+    fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse({}));
+      }
+      if (u.includes('kind=epic')) {
+        return Promise.resolve(
+          jsonResponse({ items: opts.epics, total: opts.epics.length }),
+        );
+      }
+      // default = backlog list
+      return Promise.resolve(
+        jsonResponse({ items: opts.backlog, total: opts.backlog.length }),
+      );
+    });
+  }
+
+  function patchCalls(): Array<{ url: string; body: Record<string, unknown> }> {
+    return fetchSpy.mock.calls
+      .filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH')
+      .map(([url, init]) => ({
+        url: String(url),
+        body: JSON.parse(String((init as RequestInit).body)),
+      }));
+  }
+
+  it('opens the epic picker from the bulk-action button and re-parents every selected row', async () => {
+    const backlog = [
+      wi('gm-a', { title: 'first task' }),
+      wi('gm-b', { title: 'second task' }),
+      wi('gm-c', { title: 'third task' }),
+    ];
+    const epics = [
+      wi('gm-epic-x', { kind: 'epic', title: 'Epic X', state_category: 'unstarted' }),
+      wi('gm-epic-y', { kind: 'epic', title: 'Epic Y', state_category: 'unstarted' }),
+    ];
+    routeFetch({ backlog, epics });
+
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByTestId('grid-row-gm-a')).toBeTruthy());
+
+    // Multi-select two rows via the leading checkbox column.
+    fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-a'));
+    fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-b'));
+    await waitFor(() =>
+      expect(screen.getByTestId('grid-selection-count').textContent).toContain('2'),
+    );
+
+    fireEvent.click(screen.getByTestId('grid-bulk-drop-into-epic'));
+    await waitFor(() => expect(screen.getByTestId('epic-picker-dialog')).toBeTruthy());
+
+    // Picker lists both epics, none of the backlog tasks.
+    await waitFor(() =>
+      expect(screen.getByTestId('epic-picker-option-gm-epic-x')).toBeTruthy(),
+    );
+    expect(screen.getByTestId('epic-picker-option-gm-epic-y')).toBeTruthy();
+    expect(screen.queryByTestId('epic-picker-option-gm-a')).toBeNull();
+    expect(screen.queryByTestId('epic-picker-option-gm-b')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('epic-picker-option-gm-epic-x'));
+
+    // Two PATCHes — one per selected row — both setting parent_id to the picked epic.
+    await waitFor(() => expect(patchCalls().length).toBe(2));
+    const patches = patchCalls();
+    const ids = patches.map((p) => p.url.split('/').pop()).sort();
+    expect(ids).toEqual(['gm-a', 'gm-b']);
+    for (const p of patches) {
+      expect(p.body).toEqual({ parent_id: 'gm-epic-x' });
+    }
+    // Dialog closes after pick.
+    await waitFor(() =>
+      expect(screen.queryByTestId('epic-picker-dialog')).toBeNull(),
+    );
+  });
+
+  it('right-click on a single row opens the picker and re-parents that one id', async () => {
+    const backlog = [wi('gm-only', { title: 'only task' })];
+    const epics = [wi('gm-epic-x', { kind: 'epic', title: 'Epic X', state_category: 'unstarted' })];
+    routeFetch({ backlog, epics });
+
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByTestId('grid-row-gm-only')).toBeTruthy());
+
+    // Right-click the row → grid auto-selects-only and opens its menu.
+    fireEvent.contextMenu(screen.getByTestId('grid-row-gm-only'));
+    await waitFor(() => expect(screen.getByTestId('grid-context-menu')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('grid-context-drop-into-epic'));
+    await waitFor(() => expect(screen.getByTestId('epic-picker-dialog')).toBeTruthy());
+
+    await waitFor(() =>
+      expect(screen.getByTestId('epic-picker-option-gm-epic-x')).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByTestId('epic-picker-option-gm-epic-x'));
+    await waitFor(() => expect(patchCalls().length).toBe(1));
+    const [only] = patchCalls();
+    expect(only.url).toContain('/work-items/gm-only');
+    expect(only.body).toEqual({ parent_id: 'gm-epic-x' });
+  });
+
+  it('picker lists every epic in the dataset and excludes non-epics', async () => {
+    const backlog = [wi('gm-a')];
+    const epics = [
+      wi('gm-epic-1', { kind: 'epic', title: 'Alpha', state_category: 'unstarted' }),
+      wi('gm-epic-2', { kind: 'epic', title: 'Beta', state_category: 'unstarted' }),
+      wi('gm-epic-3', { kind: 'epic', title: 'Gamma', state_category: 'unstarted' }),
+    ];
+    routeFetch({ backlog, epics });
+
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByTestId('grid-row-gm-a')).toBeTruthy());
+
+    // Open the picker via right-click → context menu (the simplest path
+    // that doesn't require multi-select setup).
+    fireEvent.contextMenu(screen.getByTestId('grid-row-gm-a'));
+    fireEvent.click(screen.getByTestId('grid-context-drop-into-epic'));
+    await waitFor(() => expect(screen.getByTestId('epic-picker-dialog')).toBeTruthy());
+
+    await waitFor(() =>
+      expect(screen.getByTestId('epic-picker-option-gm-epic-1')).toBeTruthy(),
+    );
+    const opts = Array.from(
+      screen.getByTestId('epic-picker-options').querySelectorAll('[role="option"]'),
+    ).map((el) => el.getAttribute('data-testid'));
+    expect(opts).toEqual([
+      'epic-picker-option-gm-epic-1',
+      'epic-picker-option-gm-epic-2',
+      'epic-picker-option-gm-epic-3',
+    ]);
+    // Backlog (non-epic) row is NOT offered as a target.
+    expect(screen.queryByTestId('epic-picker-option-gm-a')).toBeNull();
+  });
+});

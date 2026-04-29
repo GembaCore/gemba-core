@@ -328,8 +328,10 @@ export interface WorkItemGridPresetOptions {
 // Bulk actions the grid surfaces via keyboard chord or context menu.
 // 'edit' / 'defer' are explicit AC items on gm-5v8v.6.2; 'delete' is
 // reserved for the matching `*-x` chord and rendered in the context
-// menu so the surface is symmetric.
-export type BulkAction = 'edit' | 'defer' | 'delete';
+// menu so the surface is symmetric. 'drop-into-epic' (gm-ju5o) raises
+// the selection upward so the host page can open an epic picker —
+// the grid itself stays unaware of work-item semantics.
+export type BulkAction = 'edit' | 'defer' | 'delete' | 'drop-into-epic';
 
 export interface WorkItemGridProps {
   rows: WorkItem[];
@@ -678,6 +680,14 @@ export function WorkItemGrid({
           </button>
           <button
             type="button"
+            onClick={() => fireBulk('drop-into-epic')}
+            className="rounded border border-sky-300 bg-white px-2 py-0.5 hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900 dark:hover:bg-sky-800"
+            data-testid="grid-bulk-drop-into-epic"
+          >
+            Drop into epic…
+          </button>
+          <button
+            type="button"
             onClick={clearSelection}
             className="ml-auto text-sky-700 hover:underline dark:text-sky-300"
             data-testid="grid-bulk-clear"
@@ -970,6 +980,11 @@ function ContextMenu({
         testid="grid-context-defer"
         label={`Defer ${selectionCount}`}
         onClick={() => onAction('defer')}
+      />
+      <ContextMenuItem
+        testid="grid-context-drop-into-epic"
+        label={`Drop ${selectionCount} into epic…`}
+        onClick={() => onAction('drop-into-epic')}
       />
       <ContextMenuItem
         testid="grid-context-delete"
