@@ -462,13 +462,13 @@ Similar right-side drawer. Tabs: **Summary / Description / DoD / Activity / Comm
 
 ### 5.15 Import from advanced source — Setup section (was: `/bootstrap`)
 
-> **Superseded by `docs/design/newproject.md` (ratified 2026-04-28).** The primary project-creation path is now the conversational `/new` route, reachable via the top-bar `+` affordance or via `gemba serve` cold-start. The four-source Bootstrap wizard has been retired as the primary entry point. The advanced import paths (Jira / Beads workspace / Source-code repo) remain accessible from Setup as the "Import from advanced source" section. The legacy `/bootstrap` route redirects to `/setup#import`. The "Fresh" source tile is removed — that use case is handled by `/new`.
+> **Superseded by `docs/design/newproject.md` (ratified 2026-04-28; amended 2026-04-28 by gm-e12.21.3 + gm-root.17.13).** The primary project-creation path is now the unified **Create-project modal** opened from `/board` (the `/new` route is a redirect that auto-opens the modal). The optional conversational planner lives at `/onboard` and is reachable from the board's empty-state CTA when an LLM client is configured. The four-source Bootstrap wizard has been retired as the primary entry point. The advanced import paths (Jira / Beads workspace / Source-code repo) remain accessible from Setup as the "Import from advanced source" section. The legacy `/bootstrap` route redirects to `/setup#import`. The "Fresh" source tile is removed — that use case is handled by the Create-project modal.
 
 **Import from advanced source** (Setup section `#import`):
 
 Steps (3): **Source → Analysis → Plan review → Ratify**
 
-- **Source tiles:** Jira / Beads workspace / Source-code repo (each with icon + 1-line description). "Fresh" source tile removed — use the `/new` conversational flow instead.
+- **Source tiles:** Jira / Beads workspace / Source-code repo (each with icon + 1-line description). "Fresh" source tile removed — use the Create-project modal (opened from `/new` or the top-bar `+`) for that case, and the optional `/onboard` conversational planner if an LLM is configured.
 - **Analysis:** loading state with live progress ("Scanning 247 issues…" / "Analyzing module structure…" / "Generating epic decomposition…")
 - **Plan review:** side-by-side — generated plan on left, consistency report on right. Report format: **summary-then-details** (top-line PASS/WARN/FAIL with drill-down per finding)
 - **Ratify:** nonce-confirmed commit of the project config
@@ -521,7 +521,7 @@ Workspace.kind-specific affordances (from template):
 | `#personas` | **Personas** | §5.5 Persona roster | grid of persona cards + TOML editor modal |
 | `#packs` | **Packs** | §5.17 Pack browser | marketplace-grid + install UX |
 | `#project-config` | **Project config** | §5.16 Project config | values / guardrails / goals / mode / subscriptions / workspace repos / advanced (the inner sticky-nav from §5.16 collapses into a single nested accordion within this Setup section) |
-| `#import` | **Import from advanced source** | §5.15 Import from advanced source | 3-step import wizard (Jira / Beads workspace / Source-code repo) renders inline in this section; `/bootstrap` redirects here. New project creation uses `/new` instead. |
+| `#import` | **Import from advanced source** | §5.15 Import from advanced source | 3-step import wizard (Jira / Beads workspace / Source-code repo) renders inline in this section; `/bootstrap` redirects here. New project creation goes through the Create-project modal opened from `/board` via the `/new` redirect or the top-bar `+`. |
 | `#workspace` | **Workspace + repos** | (new) | repository registry, surface allow-lists (gm-v8vr), workspace mode |
 
 **Behavior:**
@@ -555,7 +555,7 @@ Retakes lane, session history, lease dashboard: v1.1 unless a Gemba walk promote
 
 ### 6.1 Modal vs drawer vs page
 
-- **Modal** = destructive confirmations (restore checkpoint, force-close convoy, hard-override gate), nonce-gated persona output-apply, import wizard step boundaries (§5.15), new project ratification confirm (§5.20 `/new`), value-edit forms, TOML editor on persona config.
+- **Modal** = destructive confirmations (restore checkpoint, force-close convoy, hard-override gate), nonce-gated persona output-apply, import wizard step boundaries (§5.15), Create-project modal (opened from `/board` via the `/new` redirect or the top-bar `+`), Onboarder ratification confirm at `/onboard`, project picker `BindDialog` (gm-root.17.14), value-edit forms, TOML editor on persona config.
 - **Drawer** = Epic detail, WorkItem detail, persona config read-only view, quick persona-consult, Gemba walk agenda-item detail. Drawers are dismissible with Escape and overlay (don't navigate).
 - **Page** = top-level navigation surfaces (Board / Backlog / Grid / Gemba walks / Escalations / Project Config / Settings / all deep-linked surfaces). Changing pages changes the URL and updates history.
 

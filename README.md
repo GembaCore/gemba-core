@@ -162,8 +162,9 @@ live in [Adaptors](https://mikebengtson.github.io/gemba/adaptors/).
 ### New project (starting from scratch)
 
 The primary path for operators starting a new project. Install Gemba,
-run the server, and open a browser — Gemba redirects to `/new`
-automatically when no projects exist:
+run the server, and open a browser — Gemba redirects to `/new` on
+first run, which lands on `/board` and opens the unified
+**Create-project** modal:
 
 ```bash
 make build                                               # or: brew install MikeBengtson/tap/gemba (once taps ship)
@@ -171,16 +172,24 @@ make build                                               # or: brew install Mike
 # -> http://127.0.0.1:7666  (redirects to /new on first run)
 ```
 
-The `/new` surface opens a conversational **New project** flow. Gemba
-walks you through naming the project, describing its shape, and
-building out a Milestone → Epic → Bead plan in real time. When you're
-happy with the plan, click **Ratify** — Gemba creates the workspace,
-initializes the beads database, and drops you into a Gemba walk to
-start executing.
+The Create-project modal scaffolds a new project (directory + `git
+init` + `.gemba/workspace.toml` + beads database + initial commit) in
+one step — no LLM required. After ratify, the new project becomes the
+active workspace and you land on the empty board, ready to add work
+items by hand or via the optional **Plan with the Onboarder →** CTA
+(only shown when an LLM client is configured; see [Configuration](docs/getting-started/configuration.md)).
+The Onboarder is a conversational planner at `/onboard` that emits a
+fully-populated Milestone → Epic → Bead tree in one ratification.
 
 You can start a new project at any time — even from an existing
-workspace — using the **+** button next to the project picker in the
-top bar.
+workspace — using the **+** affordance next to the project picker in
+the top bar.
+
+**Existing beads databases.** If Gemba finds a beads database that
+isn't yet bound to a Gemba workspace (no `.gemba/workspace.toml`, or
+no git repo), the project picker labels it with a *needs setup* badge.
+Click it and choose either **Create a new git repo here** or **Move it
+into an existing git repo**.
 
 ### Advanced: importing existing work
 

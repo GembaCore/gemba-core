@@ -5,6 +5,22 @@
 **Author:** mike (captured by polecat)
 **Date:** 2026-04-28
 
+## Amendments since ratification
+
+The original design landed as written. The following amendments — all
+post-ratification — adjust the surfaces and APIs without changing the
+underlying intent. Read this section first; the body below is annotated
+where it diverges from current reality.
+
+| Amendment | Bead | Effect |
+| --- | --- | --- |
+| **Light-form vs conversational split** | `gm-root.17.13` | Project creation does NOT require an LLM. Added `POST /api/v1/newproject/create` (lightweight: `{project_name, description}` → atomic ratify with empty plan tree, no Onboarder spawn). Added `GET /api/v1/onboarder/probe`. The conversational planner moved to `/onboard`; the board's empty-state offers an opt-in **Plan with the Onboarder →** CTA gated behind the probe. |
+| **Unified Create-project modal** | `gm-e12.21.3` | The standalone `/new` page has been retired in favor of a single Create-project modal opened from `/board`. `/new` is now a redirect to `/board?createProject=…`. The modal is the canonical entry for every (DB, repo) combination — fresh create, adopt existing beads DB, clone from git URL. The lightweight `/create` endpoint (gm-root.17.13) backs the "fresh create" arm. |
+| **Project picker discovery + bind** | `gm-root.17.14` | `GET /api/v1/projects` now returns every reachable beads DB classified by `kind`: `complete` (DB + workspace.toml), `needs_workspace` (DB only, no workspace), `needs_repo` (DB + workspace, but no git repo). Picker entries with `kind !== "complete"` show a *needs setup* badge; clicking opens a **BindDialog** that runs `POST /api/v1/projects/bind` with `mode: "create"` (`git init` here) or `mode: "navigate"` (copy the beads DB into an existing repo). New `[projects].extra_roots` config lets operators register additional discovery roots. |
+| **Onboarder credential resolution** | `gm-root.17.10` (env var by `4f734f0`) | Implicit-anthropic via `ANTHROPIC_API_KEY` env var: if `[llm].provider` is unset but `ANTHROPIC_API_KEY` is exported, the Onboarder constructs an anthropic client with built-in defaults. Credentials never touch disk on this path. |
+| **Cold-start UI hygiene** | `gm-root.17.12` | On cold-start (no active project), the left sidebar's workspace-scoped panes render as muted spans instead of links. Settings stays interactive. |
+| **Sidebar consolidation** | `gm-e12.19.8` | Sidebar collapsed to six first-order panes — Plan / Review / Escalations / Insights / Agent Sessions / Settings. Secondary surfaces survive as deep-link routes and roll up under the panes' tabs as gm-e12.19.4-7 land. |
+
 ## Why this doc exists
 
 Project creation in Gemba is the user's first interaction with the
@@ -47,12 +63,19 @@ secondary "Import from advanced source…" surface accessible from Setup.
 
 ## Surfaces
 
+> **Amended (gm-e12.21.3, gm-root.17.13, gm-root.17.14).** The
+> original "/new SPA route" section described a full-page
+> conversational layout. The conversational layout still exists but
+> moved to `/onboard`; `/new` is now a redirect that opens the
+> unified Create-project modal on `/board`.
+
 ### Project picker "+" affordance
 
 A "+" button rendered immediately to the **left** of the top-bar
 project picker (`gm-root.18`). The picker is the visual anchor; the
 "+" sits adjacent to it as a sibling chrome element. Hover text:
-*"Create new project"*. Click → navigate to `/new`.
+*"Create new project"*. Click → navigate to `/new` (which auto-opens
+the Create-project modal on `/board`).
 
 The "+" is visible whenever the project picker is — which is always.
 The picker chrome renders even when no projects exist, so on a fresh
@@ -65,10 +88,29 @@ Visible regardless of:
 - whether a workspace is active,
 - how many projects exist on this machine.
 
-### `/new` SPA route
+### Create-project modal (gm-e12.21.3)
 
-Full-page conversational layout — not a modal, not a Setup section, not
-a wizard with discrete numbered steps. Two panes:
+The canonical project-creation surface. Opens on top of `/board` via
+`/new`, the top-bar `+`, or the project picker's *Adopt existing
+beads DB…* link. Three arms:
+
+- **Fresh create** — name + description → `POST /api/v1/newproject/create` (lightweight ratify, empty plan tree, no LLM, gm-root.17.13).
+- **Adopt existing beads DB** — pick a discovered beads DB; on
+  unmarked DBs the **Configure-project attach** flow runs (gm-xwa8)
+  and falls through to the `BindDialog` if the DB needs a workspace
+  or repo binding.
+- **Clone from git** — clone URL → `POST /api/v1/projects/clone`
+  (gm-e12.21.2).
+
+After ratify, the new project becomes the active workspace and the
+operator lands on `/board`. The board's empty-state offers an opt-in
+**Plan with the Onboarder →** CTA (only when an LLM client is
+configured per `GET /api/v1/onboarder/probe`).
+
+### `/onboard` — conversational planner (was: `/new`)
+
+The full-page conversational layout the original design ratified at
+`/new` lives here now (`gm-root.17.13`). Two panes:
 
 | Pane | Purpose |
 | --- | --- |
@@ -77,22 +119,39 @@ a wizard with discrete numbered steps. Two panes:
 
 A persistent **Ratify** button at the bottom-right opens the final
 nonce-confirmed commit modal showing the full tree + draft
-`docs/project.md` for review.
+`docs/project.md` for review. On nonce-confirm the SPA POSTs to
+`/api/v1/newproject/:id/ratify` and renders the post-ratify handoff
+screen (Start planning → `/walk`; Skip → `/gemba`).
+
+`/onboard` is reachable from the board's empty-state CTA when the
+Onboarder probe says the LLM is available, or by direct navigation.
+If no LLM is configured, the route surfaces the canonical diagnostic
+("Export `ANTHROPIC_API_KEY` …") and the operator can fall back to
+the lightweight Create-project modal.
+
+### `/new` route — redirect to the Create-project modal
+
+Today `/new` is a redirect to `/board?createProject=…` that auto-
+opens the unified Create-project modal. The route is preserved as a
+stable entry-point for cold-start, the top-bar `+`, and external
+links; the modal is the actual UI.
 
 ### `gemba serve` cold-start redirect
 
 If no `.gemba/` is detected in the configured projects dir at server
-startup, the SPA root redirects to `/new`. This makes `gemba serve`
-followed by opening a browser the canonical first-run experience for
-operators who installed Gemba and have nothing else.
+startup, the SPA root redirects to `/new` (which then opens the
+Create-project modal on `/board`). This makes `gemba serve` followed
+by opening a browser the canonical first-run experience for operators
+who installed Gemba and have nothing else.
 
 ### Terminal interactive mode
 
 When `gemba serve` is launched headless (no SPA available) and no
 `.gemba/` is detected, the binary drops into a terminal interactive
-session that runs the same `newproject` skill against stdin/stdout. The
-output is the same atomic ratification transaction. This path exists so
-ssh-only operators can bootstrap without a browser.
+session that runs the `newproject` skill against stdin/stdout
+(`gemba newproject`). The output is the same atomic ratification
+transaction. This path exists so ssh-only operators can bootstrap
+without a browser.
 
 ## Conversation flow
 
@@ -411,11 +470,24 @@ discards everything; the operator restarts the conversation.
 
 ### API surface
 
+Conversational planner (Onboarder, `/onboard`):
+
 | Path | Verb | Purpose |
 | --- | --- | --- |
 | `POST /api/v1/newproject/start` | open a conversation, return a session ID |
 | `POST /api/v1/newproject/:id/turn` | submit an operator message, return the updated state + skill reply |
 | `POST /api/v1/newproject/:id/ratify` | nonce-confirmed atomic commit |
+| `GET /api/v1/onboarder/probe` | reports `{available, reason?}` so the SPA can gate the optional planning CTA |
+
+Lightweight create + project discovery (no LLM required):
+
+| Path | Verb | Purpose |
+| --- | --- | --- |
+| `POST /api/v1/newproject/create` | nonce-gated `{project_name, description}` → atomic ratify with empty plan tree (`gm-root.17.13`) |
+| `GET /api/v1/projects` | enumerate every reachable beads DB; each entry carries `kind: "complete" \| "needs_workspace" \| "needs_repo"` (`gm-root.17.14`) |
+| `POST /api/v1/projects/bind` | nonce-gated `{beads_db_path, target_repo_path, mode: "create" \| "navigate"}` → bind a partially-set-up beads DB to a git repo (`gm-root.17.14`; `mode: "navigate"` is copy-only today, `gm-kw6a` tracks move) |
+| `POST /api/v1/projects/clone` | clone a git URL into the projects dir (`gm-e12.21.2`) |
+| `POST /api/v1/projects/switch` | switch the active workspace (`gm-root.18`) |
 
 ## Beads install gate
 
