@@ -49,6 +49,8 @@ skills = [
   "artifact_inventory",
   "narrative_pass",
   "walk_summary",
+  # gm-e11.8.7: opt in to the operator-driven hand-off entry point.
+  "escalation_handoff",
 ]
 
 # Narrow Manager authority: Documentarian may directly mutate docs under the

@@ -36,6 +36,7 @@ import (
 	"github.com/MikeBengtson/gemba/internal/shader"
 	"github.com/MikeBengtson/gemba/internal/shader/gastown"
 	"github.com/MikeBengtson/gemba/internal/skills/epic_order"
+	"github.com/MikeBengtson/gemba/internal/skills/escalation_handoff"
 	"github.com/MikeBengtson/gemba/internal/transport/api"
 	"github.com/MikeBengtson/gemba/internal/walk"
 	walksources "github.com/MikeBengtson/gemba/internal/walk/sources"
@@ -323,6 +324,15 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		// continue — the read endpoints will simply not surface the
 		// affected skill.
 		slog.Warn("personas: epic_order.Register failed; skill not exposed",
+			"err", err)
+	}
+	// gm-e11.8.7: register the EscalationsPage Hand-off dispatcher
+	// skill. Personas that should be hand-off targets must list
+	// `escalation_handoff` in their TOML `skills` block — the
+	// PersonaCanInvoke gate in the dispatcher checks for it before
+	// resolving the skill.
+	if err := escalation_handoff.Register(skillRegistry); err != nil {
+		slog.Warn("personas: escalation_handoff.Register failed; skill not exposed",
 			"err", err)
 	}
 	personaDispatcher := persona.NewDispatcher(persona.NewAuditLog(""))

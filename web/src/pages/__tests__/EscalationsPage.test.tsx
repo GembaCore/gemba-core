@@ -86,6 +86,59 @@ function esc(over: Partial<EscalationRequest>): EscalationRequest {
   };
 }
 
+// canned roster for the Hand-off modal's persona dropdown
+// (gm-e11.8.7). Tests that drive the modal need /api/v1/personas to
+// return at least one entry, otherwise the dropdown shows the empty
+// state and Confirm stays disabled.
+function personasResponse(): Response {
+  return jsonResponse({
+    personas: [
+      {
+        id: 'project-manager',
+        name: 'Project Manager',
+        role: 'PM',
+        variety: 'coach',
+        scope: { kind: 'project' },
+        skills: ['epic_order', 'escalation_handoff'],
+      },
+    ],
+    total: 1,
+  });
+}
+
+// makeHandoffFetch returns a fetchSpy implementation that resolves
+// /api/v1/personas with a canned roster, /api/consults POSTs with a
+// canned ConsultSummary, and every other path with the supplied
+// escalations envelope. Centralized so the four Hand-off tests stay
+// terse.
+function makeHandoffFetch(
+  escalations: EscalationRequest[],
+  consultBody?: Record<string, unknown>
+): (url: string, init?: RequestInit) => Promise<Response> {
+  return (url, init) => {
+    if (String(url).includes('/api/v1/personas')) {
+      return Promise.resolve(personasResponse());
+    }
+    if (init?.method === 'POST' && String(url).includes('/consults')) {
+      return Promise.resolve(
+        jsonResponse(
+          consultBody ?? {
+            id: 'consult-1',
+            persona_id: 'project-manager',
+            skill_id: 'escalation_handoff',
+            workspace: 'default',
+            status: 'running',
+            started_at: new Date().toISOString(),
+            line_count: 0,
+            line_error_count: 0,
+          }
+        )
+      );
+    }
+    return Promise.resolve(jsonResponse({ escalations, total: escalations.length }));
+  };
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('EscalationsPage', () => {
@@ -517,9 +570,7 @@ describe('EscalationsPage', () => {
     const escalations: EscalationRequest[] = [
       esc({ id: 'esc-H', title: 'Should I proceed?' }),
     ];
-    fetchSpy.mockImplementation(() =>
-      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
-    );
+    fetchSpy.mockImplementation(makeHandoffFetch(escalations));
     const Wrapper = wrapper();
     render(<Wrapper><EscalationsPage /></Wrapper>);
 
@@ -529,8 +580,29 @@ describe('EscalationsPage', () => {
     expect(screen.getByTestId('escalation-handoff-modal')).toBeTruthy();
     // Modal has the escalation title
     expect(screen.getByTestId('escalation-handoff-modal').textContent).toContain('Should I proceed?');
-    // Persona picker is rendered
-    expect(screen.getByTestId('escalation-handoff-persona')).toBeTruthy();
+    // Persona picker is rendered (after /api/v1/personas resolves)
+    await screen.findByTestId('escalation-handoff-persona', undefined, { timeout: 3000 });
+  });
+
+  it('hand-off: empty persona registry shows the empty-state message and disables Confirm', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-empty', title: 'No personas' }),
+    ];
+    fetchSpy.mockImplementation((url) => {
+      if (String(url).includes('/api/v1/personas')) {
+        return Promise.resolve(jsonResponse({ personas: [], total: 0 }));
+      }
+      return Promise.resolve(jsonResponse({ escalations, total: escalations.length }));
+    });
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-empty-handoff', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByTestId('escalation-card-esc-empty-handoff'));
+
+    await screen.findByTestId('escalation-handoff-personas-empty', undefined, { timeout: 3000 });
+    const confirm = screen.getByTestId('escalation-handoff-confirm') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
   });
 
   it('hand-off: pick persona + confirm → POSTs /api/consults with correct body; escalation NOT resolved', async () => {
@@ -543,23 +615,7 @@ describe('EscalationsPage', () => {
       }),
     ];
 
-    fetchSpy.mockImplementation((_url: string, init?: RequestInit) => {
-      if (init?.method === 'POST' && String(_url).includes('/consults')) {
-        return Promise.resolve(
-          jsonResponse({
-            id: 'consult-1',
-            persona_id: 'coach',
-            skill_id: 'escalation_handoff',
-            workspace: 'default',
-            status: 'running',
-            started_at: new Date().toISOString(),
-            line_count: 0,
-            line_error_count: 0,
-          })
-        );
-      }
-      return Promise.resolve(jsonResponse({ escalations, total: escalations.length }));
-    });
+    fetchSpy.mockImplementation(makeHandoffFetch(escalations));
 
     const Wrapper = wrapper();
     render(<Wrapper><EscalationsPage /></Wrapper>);
@@ -567,6 +623,9 @@ describe('EscalationsPage', () => {
     await screen.findByTestId('escalation-card-esc-HH-handoff', undefined, { timeout: 3000 });
     fireEvent.click(screen.getByTestId('escalation-card-esc-HH-handoff'));
     expect(screen.getByTestId('escalation-handoff-modal')).toBeTruthy();
+    // Wait for the persona dropdown so personaId has been defaulted
+    // before we click Confirm; otherwise the button is disabled.
+    await screen.findByTestId('escalation-handoff-persona', undefined, { timeout: 3000 });
 
     fireEvent.click(screen.getByTestId('escalation-handoff-confirm'));
 
@@ -604,29 +663,25 @@ describe('EscalationsPage', () => {
     const escalations: EscalationRequest[] = [
       esc({ id: 'esc-S', title: 'Should we proceed?' }),
     ];
-    fetchSpy.mockImplementation((_url: string, init?: RequestInit) => {
-      if (init?.method === 'POST' && String(_url).includes('/consults')) {
-        return Promise.resolve(
-          jsonResponse({
-            id: 'consult-ok',
-            persona_id: 'coach',
-            skill_id: 'escalation_handoff',
-            workspace: 'default',
-            status: 'running',
-            started_at: new Date().toISOString(),
-            line_count: 0,
-            line_error_count: 0,
-          })
-        );
-      }
-      return Promise.resolve(jsonResponse({ escalations, total: escalations.length }));
-    });
+    fetchSpy.mockImplementation(
+      makeHandoffFetch(escalations, {
+        id: 'consult-ok',
+        persona_id: 'project-manager',
+        skill_id: 'escalation_handoff',
+        workspace: 'default',
+        status: 'running',
+        started_at: new Date().toISOString(),
+        line_count: 0,
+        line_error_count: 0,
+      })
+    );
 
     const Wrapper = wrapper();
     render(<Wrapper><EscalationsPage /></Wrapper>);
 
     await screen.findByTestId('escalation-card-esc-S-handoff', undefined, { timeout: 3000 });
     fireEvent.click(screen.getByTestId('escalation-card-esc-S-handoff'));
+    await screen.findByTestId('escalation-handoff-persona', undefined, { timeout: 3000 });
     fireEvent.click(screen.getByTestId('escalation-handoff-confirm'));
 
     await screen.findByTestId('escalation-handoff-success', undefined, { timeout: 3000 });
@@ -640,9 +695,7 @@ describe('EscalationsPage', () => {
     const escalations: EscalationRequest[] = [
       esc({ id: 'esc-C', title: 'Cancel me' }),
     ];
-    fetchSpy.mockImplementation(() =>
-      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
-    );
+    fetchSpy.mockImplementation(makeHandoffFetch(escalations));
     const Wrapper = wrapper();
     render(<Wrapper><EscalationsPage /></Wrapper>);
 

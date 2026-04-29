@@ -1,4 +1,4 @@
-// EscalationsPage (gm-e11.8.1 / gm-e11.8.3 / gm-e11.8.4 / gm-e11.8.5).
+// EscalationsPage (gm-e11.8.1 / gm-e11.8.3 / gm-e11.8.4 / gm-e11.8.5 / gm-e11.8.7).
 //
 // gm-e11.8.1 shipped the severity-grouped inbox with per-card Resolve CTA.
 // gm-e11.8.3 adds multi-select + bulk triage:
@@ -10,7 +10,7 @@
 //     agenda via WalkContext.addItem; hidden when no walk is active.
 //   - Section-level select-all / select-none toggle above each severity header.
 // gm-e11.8.4 adds per-card Hand-off secondary action:
-//   - Opens a mini-modal with a persona picker (sourced from DEFAULT_PERSONAS).
+//   - Opens a mini-modal with a persona picker.
 //   - On Confirm: POST /api/consults with the selected persona + escalation ctx.
 //   - Hand-off does NOT resolve the escalation — it stays open in the inbox.
 //   - Modal closes on success with a transient confirmation banner.
@@ -20,11 +20,11 @@
 //   - Free-text search input, searches title + prompt (case-insensitive).
 //   - Categories AND together; within each multi-select category values OR.
 //   - Filtered-empty state with "Clear filters" CTA.
-//
-// NOTE: /api/personas does not exist yet (follow-up: gm-uipx parent epic).
-// NOTE: skill_id 'escalation_handoff' is a stub — the dispatcher skill does
-//       not exist yet. Filed as gm-e11.8.4-stubs. Update HANDOFF_SKILL_ID
-//       when the skill lands.
+// gm-e11.8.7 retires the gm-e11.8.4 stubs:
+//   - HandoffModal pulls personas from /api/v1/personas via usePersonas()
+//     instead of the DEFAULT_PERSONAS constants.
+//   - HANDOFF_SKILL_ID points at a real dispatcher skill registered under
+//     internal/skills/escalation_handoff/.
 //
 // Sidebar badge is gm-e11.8.2.
 
@@ -49,6 +49,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useEscalations, useRespondEscalation } from '@/hooks/useEscalations';
+import { usePersonas } from '@/hooks/usePersonas';
 import type {
   EscalationKind,
   EscalationRequest,
@@ -56,12 +57,14 @@ import type {
 } from '@/api/escalations';
 import { createConsult, freshNonce } from '@/api/consults';
 import type { ConsultSummary } from '@/api/consults';
-import { DEFAULT_PERSONAS } from '@/components/pm/PmPanelContext';
+import type { PersonaSummary } from '@/api/personas';
 import { relativeTime } from '@/components/board/relativeTime';
 import { useWalk } from '@/components/walk/WalkContext';
 
-// TODO(gm-e11.8.4-stubs): replace with the real skill id once the
-// escalation_handoff dispatcher skill is registered on the server.
+// HANDOFF_SKILL_ID maps to internal/skills/escalation_handoff/. The
+// skill is registered with the dispatcher at server startup; the
+// persona's TOML must declare it in `skills` for PersonaCanInvoke to
+// authorize the consult.
 const HANDOFF_SKILL_ID = 'escalation_handoff';
 // Workspace default mirrors SprintsPage.tsx: when the escalation carries
 // no repository context we fall back to 'default'.
@@ -1172,9 +1175,27 @@ interface HandoffModalProps {
 }
 
 function HandoffModal({ escalation, onClose }: HandoffModalProps): JSX.Element {
-  const personas = DEFAULT_PERSONAS;
-  const [personaId, setPersonaId] = useState(personas[0]?.id ?? '');
+  const personasQuery = usePersonas();
+  // Memoize so the useEffect dep below has a stable reference across
+  // renders that don't actually change the registry — TanStack Query
+  // hands back a new array on every refetch even when the underlying
+  // data is identical.
+  const personas: PersonaSummary[] = useMemo(
+    () => personasQuery.data ?? [],
+    [personasQuery.data]
+  );
+  const [personaId, setPersonaId] = useState('');
   const [succeeded, setSucceeded] = useState(false);
+
+  // Default the dropdown to the first registered persona once the
+  // query lands. Useful both on first render and when the registry
+  // grows post-mount (a persona TOML reload). Don't override an
+  // operator-picked id.
+  useEffect(() => {
+    if (personaId === '' && personas.length > 0) {
+      setPersonaId(personas[0]!.id);
+    }
+  }, [personaId, personas]);
 
   const handoff = useMutation<ConsultSummary, Error, string>({
     mutationFn: (pid) => {
@@ -1269,20 +1290,37 @@ function HandoffModal({ escalation, onClose }: HandoffModalProps): JSX.Element {
               >
                 Persona
               </label>
-              <select
-                id="escalation-handoff-persona"
-                data-testid="escalation-handoff-persona"
-                value={personaId}
-                onChange={(e) => setPersonaId(e.target.value)}
-                disabled={handoff.isPending}
-                className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-900"
-              >
-                {personas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+              {personasQuery.isLoading ? (
+                <p
+                  data-testid="escalation-handoff-personas-loading"
+                  className="text-[11px] italic text-neutral-500 dark:text-neutral-400"
+                >
+                  Loading personas&hellip;
+                </p>
+              ) : personas.length === 0 ? (
+                <p
+                  data-testid="escalation-handoff-personas-empty"
+                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200"
+                >
+                  No personas registered. Add a persona TOML to
+                  .gemba/personas/ to enable hand-off.
+                </p>
+              ) : (
+                <select
+                  id="escalation-handoff-persona"
+                  data-testid="escalation-handoff-persona"
+                  value={personaId}
+                  onChange={(e) => setPersonaId(e.target.value)}
+                  disabled={handoff.isPending}
+                  className="w-full rounded-md border border-neutral-300 px-2 py-1.5 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+                >
+                  {personas.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
 
             {handoff.error && (
@@ -1308,7 +1346,7 @@ function HandoffModal({ escalation, onClose }: HandoffModalProps): JSX.Element {
                 type="button"
                 data-testid="escalation-handoff-confirm"
                 onClick={submit}
-                disabled={handoff.isPending || !personaId}
+                disabled={handoff.isPending || !personaId || personas.length === 0}
                 className="rounded bg-sky-600 px-3 py-1 text-xs font-semibold text-white hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {handoff.isPending ? 'Handing off\u2026' : 'Confirm'}

@@ -3,9 +3,15 @@ package persona
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
+
+// containsString — local helper used by the seed-file test.
+func containsString(haystack []string, needle string) bool {
+	return slices.Contains(haystack, needle)
+}
 
 const minimalTOML = `
 id = "tester"
@@ -337,8 +343,15 @@ func TestLoadRegistry_SeedFiles(t *testing.T) {
 	if got := pm.Model.Vendor; got != "anthropic" {
 		t.Errorf("project-manager model.vendor = %q, want anthropic", got)
 	}
-	if len(pm.Skills) != 1 || pm.Skills[0] != "epic_order" {
-		t.Errorf("project-manager skills = %v, want [epic_order]", pm.Skills)
+	// epic_order is the v1 skill. gm-e11.8.7 added escalation_handoff
+	// so the persona is selectable from the EscalationsPage Hand-off
+	// modal. The test only enforces that both skills are present;
+	// later beads can add more without rewriting this assertion.
+	if !containsString(pm.Skills, "epic_order") {
+		t.Errorf("project-manager skills = %v, want includes epic_order", pm.Skills)
+	}
+	if !containsString(pm.Skills, "escalation_handoff") {
+		t.Errorf("project-manager skills = %v, want includes escalation_handoff", pm.Skills)
 	}
 }
 

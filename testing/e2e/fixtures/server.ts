@@ -638,6 +638,36 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   // GET /api/consults — return empty list.
   if (isPath(path, '/api/consults')) return json({ consults: [], total: 0 });
 
+  // GET /api/v1/personas (gm-e11.8.7) — canned roster so the
+  // EscalationsPage Hand-off modal renders a populated dropdown in
+  // fake mode. Mirrors the personaSummary wire shape from
+  // internal/server/personas.go.
+  if (isPath(path, '/api/v1/personas')) {
+    return json({
+      personas: [
+        {
+          id: 'project-manager',
+          name: 'Project Manager',
+          role: 'Project Manager',
+          variety: 'coach',
+          scope: { kind: 'project' },
+          description: 'Default fake-mode PM persona for hand-off tests.',
+          skills: ['epic_order', 'escalation_handoff'],
+        },
+        {
+          id: 'documentarian',
+          name: 'Documentarian',
+          role: 'Docs',
+          variety: 'coach',
+          scope: { kind: 'project' },
+          description: 'Default fake-mode Docs persona for hand-off tests.',
+          skills: ['escalation_handoff'],
+        },
+      ],
+      total: 2,
+    });
+  }
+
   if (isPath(path, '/api/sprints')) return json({ items: [] });
   if (isPath(path, '/api/repositories')) {
     // gm-uipx.8: project-config Workspace-repos section. Fake mode

@@ -276,6 +276,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/personas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the workspace's registered personas (gm-8qr / gm-e11.8.7).
+         * @description Returns every persona declared under `.gemba/personas/*.toml`, projected to the operator-facing axes (id, name, role, variety, scope). Optional gm-9rv blocks (Personality / Perspective / Purview) are emitted only when the persona TOML declared a non-zero value. Returns 503 when AttachPersonaDispatcher hasn't bound a registry yet.
+         */
+        get: operations["listPersonasV1"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/walks:start": {
         parameters: {
             query?: never;
@@ -804,6 +824,51 @@ export interface components {
             /** @enum {string} */
             mode: "create" | "navigate";
         };
+        /** @description Persona scope (gm-k2jn). `kind` is one of project / repository / any. `repository` is set iff kind=repository. */
+        PersonaScopeView: {
+            /** @enum {string} */
+            kind: "project" | "repository" | "any";
+            repository?: string;
+        };
+        /** @description gm-9rv §1 — decorative voice/tone qualifier. Optional. */
+        PersonaPersonality: {
+            id?: string;
+            description?: string;
+            examples?: string[];
+        };
+        /** @description gm-9rv §2 — deterministic lens. Optional. */
+        PersonaPerspective: {
+            statement?: string;
+            triggers?: string[];
+            volunteer_mode?: string;
+            cost_tier?: string;
+        };
+        /** @description gm-9rv §3 — gate authority by phase. Optional. */
+        PersonaPurview: {
+            domain?: string;
+            active_phases?: string[];
+            blocking_authority?: string;
+        };
+        /** @description Operator-facing persona projection (internal/server/personas.go personaSummary). Heavy fields (system_prompt, model config, budget) are intentionally omitted. */
+        PersonaSummary: {
+            id: string;
+            name: string;
+            role: string;
+            /** @enum {string} */
+            variety: "coach" | "manager";
+            scope: components["schemas"]["PersonaScopeView"];
+            description?: string;
+            icon?: string;
+            skills?: string[];
+            personality?: components["schemas"]["PersonaPersonality"];
+            perspective?: components["schemas"]["PersonaPerspective"];
+            purview?: components["schemas"]["PersonaPurview"];
+        };
+        /** @description Body of `GET /api/v1/personas`. Sorted by id ascending. */
+        ListPersonasResponse: {
+            personas: components["schemas"]["PersonaSummary"][];
+            total: number;
+        };
     };
     responses: {
         /** @description Malformed request — invalid query parameters or body. */
@@ -1174,6 +1239,27 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    listPersonasV1: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persona roster. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListPersonasResponse"];
+                };
+            };
+            503: components["responses"]["AdaptorUnavailable"];
         };
     };
     startWalk: {

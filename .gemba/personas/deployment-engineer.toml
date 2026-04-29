@@ -28,6 +28,8 @@ skills = [
   "ci_pipeline_review",
   "semver_compatibility_check",
   "build_reproducibility_audit",
+  # gm-e11.8.7: opt in to the operator-driven hand-off entry point.
+  "escalation_handoff",
 ]
 
 system_prompt = """

@@ -320,6 +320,25 @@
         }
       }
     },
+    "/api/v1/personas": {
+      "get": {
+        "tags": ["agents"],
+        "summary": "List the workspace's registered personas (gm-8qr / gm-e11.8.7).",
+        "description": "Returns every persona declared under `.gemba/personas/*.toml`, projected to the operator-facing axes (id, name, role, variety, scope). Optional gm-9rv blocks (Personality / Perspective / Purview) are emitted only when the persona TOML declared a non-zero value. Returns 503 when AttachPersonaDispatcher hasn't bound a registry yet.",
+        "operationId": "listPersonasV1",
+        "responses": {
+          "200": {
+            "description": "Persona roster.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ListPersonasResponse" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
     "/api/v1/walks:start": {
       "post": {
         "tags": ["stub"],
@@ -1204,6 +1223,73 @@
             "type": "string",
             "enum": ["create", "navigate"]
           }
+        }
+      },
+      "PersonaScopeView": {
+        "type": "object",
+        "description": "Persona scope (gm-k2jn). `kind` is one of project / repository / any. `repository` is set iff kind=repository.",
+        "required": ["kind"],
+        "properties": {
+          "kind": { "type": "string", "enum": ["project", "repository", "any"] },
+          "repository": { "type": "string" }
+        }
+      },
+      "PersonaPersonality": {
+        "type": "object",
+        "description": "gm-9rv §1 — decorative voice/tone qualifier. Optional.",
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "examples": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "PersonaPerspective": {
+        "type": "object",
+        "description": "gm-9rv §2 — deterministic lens. Optional.",
+        "properties": {
+          "statement": { "type": "string" },
+          "triggers": { "type": "array", "items": { "type": "string" } },
+          "volunteer_mode": { "type": "string" },
+          "cost_tier": { "type": "string" }
+        }
+      },
+      "PersonaPurview": {
+        "type": "object",
+        "description": "gm-9rv §3 — gate authority by phase. Optional.",
+        "properties": {
+          "domain": { "type": "string" },
+          "active_phases": { "type": "array", "items": { "type": "string" } },
+          "blocking_authority": { "type": "string" }
+        }
+      },
+      "PersonaSummary": {
+        "type": "object",
+        "description": "Operator-facing persona projection (internal/server/personas.go personaSummary). Heavy fields (system_prompt, model config, budget) are intentionally omitted.",
+        "required": ["id", "name", "role", "variety", "scope"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "role": { "type": "string" },
+          "variety": { "type": "string", "enum": ["coach", "manager"] },
+          "scope": { "$ref": "#/components/schemas/PersonaScopeView" },
+          "description": { "type": "string" },
+          "icon": { "type": "string" },
+          "skills": { "type": "array", "items": { "type": "string" } },
+          "personality": { "$ref": "#/components/schemas/PersonaPersonality" },
+          "perspective": { "$ref": "#/components/schemas/PersonaPerspective" },
+          "purview": { "$ref": "#/components/schemas/PersonaPurview" }
+        }
+      },
+      "ListPersonasResponse": {
+        "type": "object",
+        "description": "Body of `GET /api/v1/personas`. Sorted by id ascending.",
+        "required": ["personas", "total"],
+        "properties": {
+          "personas": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/PersonaSummary" }
+          },
+          "total": { "type": "integer" }
         }
       }
     },
