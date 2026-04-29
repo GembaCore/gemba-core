@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from '@/layouts/AppShell';
 import { BoardPage } from '@/pages/BoardPage';
+import { RefinePage } from '@/pages/RefinePage';
 import { SessionsPage } from '@/pages/SessionsPage';
 import { GraphPage } from '@/pages/GraphPage';
 import CapabilitiesPage from '@/pages/CapabilitiesPage';
@@ -46,13 +47,12 @@ export default function App() {
             segment and the dolt adaptor canonically prefixes ids with
             "<workspace>/<repo>/". useParams()['*'] surfaces the rest. */}
         <Route path="/board/*" element={<BoardPage />} />
-        {/* /backlog folded into Board (gm-e12.19.1). Permanent
-            redirect so existing links and bookmarks resolve to the
-            Board's list mode + Backlog preset. */}
-        <Route
-          path="/backlog"
-          element={<Navigate to="/board?layout=list&view=backlog" replace />}
-        />
+        {/* /refine — dedicated triage + refinement surface (gm-3ofd).
+            Reclaims the /backlog path; existing /backlog links land
+            here. The Board's list mode is still reachable via
+            ?layout=list for non-refinement browsing. */}
+        <Route path="/refine" element={<RefinePage />} />
+        <Route path="/backlog" element={<Navigate to="/refine" replace />} />
         {/* /grid folded into /board's list layout + power mode
             (gm-uipx.17). Permanent redirect so existing bookmarks
             land on the equivalent power-list URL. */}
