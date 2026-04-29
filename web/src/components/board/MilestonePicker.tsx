@@ -1,6 +1,6 @@
 // MilestonePicker (gm-l7hy) — separate pill from ScopePicker. Single-
 // select: All / M1 / M2 / ... A "Show" button next to the trigger
-// opens the active milestone's bead in the WorkItemDrawer. Mirrors
+// pops the active milestone's bead as a RHP detail tab. Mirrors
 // ScopePicker's layout and outside-click handling.
 //
 // gm-935r: option rows are also drop targets — dragging an epic card

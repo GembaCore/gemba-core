@@ -11,8 +11,8 @@
 // operator can toggle it inside list mode without losing their view /
 // chip selections.
 //
-// Selection — ?bead=<id> — is owned by BoardPage so the WorkItemDrawer
-// stays a single instance regardless of layout.
+// Selection drives popDetail({kind: 'workitem', id}) at the BoardPage
+// level so the RHP detail tab is owned in one place regardless of layout.
 
 import { useCallback, useMemo, useState } from 'react';
 import { Search, Upload } from 'lucide-react';

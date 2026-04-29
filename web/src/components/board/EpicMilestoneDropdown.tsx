@@ -1,6 +1,6 @@
-// EpicMilestoneDropdown (gm-o2k9) — edit path c. Sits in the
-// EpicDrawer's Overview area: shows the epic's current milestone parent
-// (or "None") and lets the operator re-parent or clear via
+// EpicMilestoneDropdown (gm-o2k9) — edit path c. Sits in the RHP
+// EpicDetail tab's Overview area: shows the epic's current milestone
+// parent (or "None") and lets the operator re-parent or clear via
 // updateWorkItem({ parent_id }). Mirrors MilestonePicker's pill+listbox
 // styling so the two dropdowns feel like the same control.
 

@@ -1,6 +1,6 @@
 // Editability matrix (gm-root.8 → gm-root.8.1). Single source of truth
-// for "should this drawer field render an edit affordance?" so the
-// WorkItemDrawer doesn't sprinkle ad-hoc rules across components and
+// for "should this detail-tab field render an edit affordance?" so the
+// WorkItemDetail panel doesn't sprinkle ad-hoc rules across components and
 // the test suite can pin every cell of the matrix in one place.
 //
 // Rule:

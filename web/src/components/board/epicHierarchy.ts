@@ -162,7 +162,7 @@ function syntheticOrphanRoot(): WorkItem {
 }
 
 // epicChildren returns the WorkItems whose parent_child edge points to
-// the given epic id. Used by the EpicDrawer to list child WorkItems
+// the given epic id. Used by the EpicDetail tab to list child WorkItems
 // without re-fetching.
 export function epicChildren(items: WorkItem[], epicID: WorkItemID): WorkItem[] {
   const out: WorkItem[] = [];

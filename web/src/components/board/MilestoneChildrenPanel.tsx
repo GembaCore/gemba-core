@@ -1,6 +1,6 @@
 // MilestoneChildrenPanel (gm-98sq) — milestone-specific section in
-// WorkItemDrawer. Lists epics already parented under this milestone
-// (with Remove) and offers an unparented-epic picker (with Add).
+// the RHP WorkItemDetail tab. Lists epics already parented under this
+// milestone (with Remove) and offers an unparented-epic picker (with Add).
 //
 // Mutations go through useUpdateWorkItem so we inherit optimistic
 // cache writes + nonce-gated PATCH + cache invalidation. The

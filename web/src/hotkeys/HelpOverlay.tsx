@@ -20,7 +20,7 @@ const CATEGORY_LABEL: Record<HotkeyCategory, string> = {
   bulk: 'Bulk',
   creation: 'Create',
   views: 'Views',
-  drawer: 'Drawer & panel',
+  drawer: 'Panel',
   walk: 'Gemba walk',
   help: 'Help',
 };

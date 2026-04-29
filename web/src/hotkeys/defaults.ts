@@ -126,12 +126,11 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
   { id: 'graph-back', keys: ['ArrowUp'], description: 'Graph: step up to previous node', category: 'navigation', scope: 'graph' },
   { id: 'graph-open', keys: ['Enter'], description: 'Graph: open focused node detail', category: 'drawer', scope: 'graph' },
 
-  // Drawer / panel
-  { id: 'drawer-open', keys: ['o'], description: 'Open detail drawer', category: 'drawer' },
+  // Panel / overlay
   {
     id: 'drawer-close',
     keys: ['Escape'],
-    description: 'Close drawer / overlay',
+    description: 'Close panel / overlay',
     category: 'drawer',
   },
   { id: 'fold', keys: ['f'], description: 'Fold / collapse pane', category: 'drawer' },
