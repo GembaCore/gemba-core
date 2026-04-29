@@ -77,8 +77,8 @@ describe('SettingsPage', () => {
       initial: { work_plane: workManifest(), orchestration_plane: null },
     });
     render(<SettingsPage />, { wrapper: Wrapper });
-    expect(screen.getByTestId('settings-tab-organization')).toBeTruthy();
-    expect(screen.getByTestId('settings-tab-execution')).toBeTruthy();
+    expect(screen.getByTestId('settings-tabs-organization')).toBeTruthy();
+    expect(screen.getByTestId('settings-tabs-execution')).toBeTruthy();
   });
 
   it('shows the organization subtitle on the organization panel', () => {
@@ -104,7 +104,7 @@ describe('SettingsPage', () => {
       },
     });
     render(<SettingsPage />, { wrapper: Wrapper });
-    fireEvent.click(screen.getByTestId('settings-tab-execution'));
+    fireEvent.click(screen.getByTestId('settings-tabs-execution'));
     const panel = screen.getByTestId('settings-panel-execution');
     expect(panel.textContent ?? '').toContain(
       'Execution surface: what happens in this workspace.'

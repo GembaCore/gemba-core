@@ -12,6 +12,8 @@
 // /api/capabilities data the rest of the SPA uses. There are no
 // mutation affordances — wiring up "Add integration" / "Disconnect"
 // is a follow-up.
+//
+// gm-e12.19.7: tab chrome moved to the shared <TabBar> component.
 
 import { useMemo, useState } from 'react';
 import { useCapabilities } from '@/capabilities/context-internal';
@@ -20,7 +22,7 @@ import {
   type OrchestrationManifest,
 } from '@/capabilities/types';
 import { classifyAdaptor, type SurfaceKind } from '@/lib/surfaceKind';
-import { cn } from '@/lib/utils';
+import { TabBar } from '@/components/ui/TabBar';
 
 type Tab = SurfaceKind;
 
@@ -72,26 +74,15 @@ export default function SettingsPage() {
         </p>
       </header>
 
-      <nav
-        className="flex gap-2 border-b border-neutral-200 px-6 dark:border-neutral-800"
-        data-testid="settings-tabs"
-        role="tablist"
-      >
-        <TabButton
-          active={tab === 'organization'}
-          onClick={() => setTab('organization')}
-          testid="settings-tab-organization"
-        >
-          Organization
-        </TabButton>
-        <TabButton
-          active={tab === 'execution'}
-          onClick={() => setTab('execution')}
-          testid="settings-tab-execution"
-        >
-          Execution
-        </TabButton>
-      </nav>
+      <TabBar
+        value={tab}
+        onChange={(id) => setTab(id as Tab)}
+        tabs={[
+          { id: 'organization', label: 'Organization' },
+          { id: 'execution', label: 'Execution' },
+        ]}
+        testid="settings-tabs"
+      />
 
       <div className="min-h-0 flex-1 overflow-auto p-6">
         {error ? (
@@ -110,33 +101,6 @@ export default function SettingsPage() {
         )}
       </div>
     </div>
-  );
-}
-
-interface TabButtonProps {
-  active: boolean;
-  testid: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}
-
-function TabButton({ active, testid, onClick, children }: TabButtonProps) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      data-testid={testid}
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors',
-        active
-          ? 'border-neutral-900 text-neutral-900 dark:border-neutral-100 dark:text-neutral-100'
-          : 'border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
-      )}
-    >
-      {children}
-    </button>
   );
 }
 
