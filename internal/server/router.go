@@ -26,6 +26,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
 	"github.com/GembaCore/gemba-core/internal/transport/api"
 	"github.com/GembaCore/gemba-core/internal/walk"
+	"github.com/GembaCore/gemba-core/internal/workflow"
 )
 
 // healthBusInterval is the ticker cadence for the registry HealthBus
@@ -157,6 +158,11 @@ type Router struct {
 	// Nil falls back to execRunner. Tests inject a stub so they
 	// don't shell out to git.
 	cloneRunner CommandRunner
+
+	// workflowClient backs the /api/workflows/* surface (gm-e12.22.2).
+	// Nil → every workflow handler returns 503 adaptor_not_configured;
+	// cmd/gemba serve attaches a real client via AttachWorkflowClient.
+	workflowClient *workflow.Client
 
 	mux http.Handler
 }
@@ -346,6 +352,20 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// right answer when the workspace has no .gemba/repositories/
 		// dir — never an error.
 		api.Get("/repositories", r.listRepositories)
+
+		// gm-e12.22.2: /api/workflows/* — Library + Active runs surface
+		// the SPA's Workflow tab consumes. Thin proxy over bd formula
+		// + bd mol; the workflow client is lazy-attached via
+		// AttachWorkflowClient so a Router built without it returns
+		// 503 from every workflow handler instead of panicking.
+		api.Get("/workflows/formulas", r.listWorkflowFormulas)
+		api.Get("/workflows/formulas/{name}", r.getWorkflowFormula)
+		api.Get("/workflows/runs", r.listWorkflowRuns)
+		api.Get("/workflows/runs/{id}", r.getWorkflowRun)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/workflows/runs", r.startWorkflowRun)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/workflows/runs/{id}/burn", r.burnWorkflowRun)
 		api.Get("/packs", notImplemented)
 		api.Get("/desired-state", notImplemented)
 		api.Get("/drift", notImplemented)
@@ -636,6 +656,13 @@ func (r *Router) StartHealthBus() {
 // router was built without one — test paths that don't exercise
 // adaptor health.
 func (r *Router) HealthBus() *registry.HealthBus { return r.healthBus }
+
+// AttachWorkflowClient binds the workflow.Client the /api/workflows/*
+// surface dispatches to (gm-e12.22.2). Until called, every workflow
+// handler returns 503 adaptor_not_configured. cmd/gemba serve calls
+// this once at boot with a client backed by the bd CLI on PATH; tests
+// inject a stub Runner via NewClientWithRunner.
+func (r *Router) AttachWorkflowClient(c *workflow.Client) { r.workflowClient = c }
 
 // AttachMetricsHandler binds an http.Handler to GET /metrics. Calling
 // with nil leaves the route returning 503 — useful for tests that
