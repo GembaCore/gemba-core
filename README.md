@@ -30,6 +30,7 @@ In lean manufacturing, gemba (/ˈɡem.bə/ 現場) is "the actual place" — the
 
 - [🚀 About](#-about)
 - [🧱 Architecture](#-architecture)
+- [🎯 Two-Axis Work Planning and Dispatch](#-two-axis-work-planning-and-dispatch)
 - [🚦 Status](#-status)
 - [✨ What's New](#-whats-new)
 - [📸 Screenshots](#-screenshots)
@@ -110,6 +111,53 @@ every dispatch loop and powers the `/coach` affinity grid. **epic_order**
 candidate epics for sprint composition; it lives at `/sprints` and
 produces narrative recommendations with confidence scores. See
 [Dispatch vs Planning](https://mikebengtson.github.io/gemba/concepts/dispatch-vs-planning/).
+
+[⬆ back to top](#top)
+
+## 🎯 Two-Axis Work Planning and Dispatch
+
+Meet the **Two-Axis Work Planning and Dispatch** system. Instead of
+just mindlessly handing out tasks round-robin style, think of this
+subsystem as Gemba's digital project manager for our AI agents. Its
+whole job is to figure out the smartest way to route tasks (which we
+call "beads") through the fleet. It does this by balancing two
+opposite goals: keeping incompatible work far apart so agents don't
+overwrite each other, and clustering related work together so we can
+reuse the expensive "warm context" an agent has already built up.
+
+To pull this off, the system scores available work along two main
+axes. First up is the **Target Axis**, which is basically our
+conflict-prevention layer. It pessimistically asks, "Are these tasks
+going to step on each other's toes?" by looking for file overlaps,
+semantic dependencies, and workspace collisions. If tasks conflict,
+they get flagged so they aren't run at the same time. On the flip
+side is the **Concept Axis**, our optimistic layer. It asks, "Who is
+already primed to do this cheaply?" by comparing a task's tags
+against what an agent has recently been working on. This generates
+an "affinity score" so we can hand a task to an agent that already
+has that specific part of the codebase loaded in its "brain."
+
+These two axes power a dispatcher that cleanly separates the pure
+math of *Scoring* (what's cheapest and safest to do) from the
+practical reality of *Selection* (what an agent should actually do
+next based on remaining runway, human intent, and what blocks the
+most downstream work). You can use this logic in **Coach mode**,
+where you review the system's reasoning on a dashboard and manually
+assign the work, or you can turn on **Auto-dispatch** to let a
+background daemon automatically route the best tasks to idle agents.
+Plus, a built-in "turn retrospective" constantly grades the system's
+predictions against real-world outcomes to keep it honest.
+
+Ultimately, this dual-axis setup gives us massive operational wins.
+By holding conflict-avoidance and context-reuse in tension, we stop
+burning agent lifetimes on merge conflicts and silent regressions.
+At the same time, we dodge the massive "cold-start" tax of forcing
+a brand-new agent to read and orient itself for every single task.
+It guarantees that our parallel work is actually safe to run, while
+letting agents build and compound their conceptual momentum to get
+work done way cheaper and faster.
+
+![two-axis work planning and dispatch — Target Axis (conflict avoidance) × Concept Axis (context reuse)](docs/img/two%20axis%20work%20planning.png)
 
 [⬆ back to top](#top)
 
