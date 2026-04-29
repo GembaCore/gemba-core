@@ -121,6 +121,16 @@ type ServeConfig struct {
 	// NewRouter is called; not a CLI flag.
 	ColdStartRedirect bool
 
+	// PromURL is the base URL of an upstream Prometheus instance the
+	// /api/v1/metrics/series proxy queries (gm-e9m0; D4 — gm-sf51).
+	// Resolution order is CLI flag > PROM_URL env > [metrics].prom_url
+	// in ~/.gemba/config.toml > "" (unconfigured). An empty value is
+	// a legitimate run mode: the time-series endpoint returns a
+	// 503 KindAdaptorDegraded telling the SPA to render the
+	// "awaiting Prometheus" stub. Resolution happens once at boot,
+	// inside applyPromURLDefault, so handlers see the final value.
+	PromURL string
+
 	// CORSAllowedOrigins enables CORS on /api/* and /events when
 	// non-empty. CORS is OFF BY DEFAULT (gm-e4.1) — same-origin SPA
 	// requests don't need it, and a public CORS surface is a footgun

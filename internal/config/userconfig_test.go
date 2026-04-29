@@ -22,6 +22,44 @@ func TestLoadUserConfig_MissingFile(t *testing.T) {
 	}
 }
 
+// TestResolvePromURL covers the gm-e9m0 / gm-sf51 resolution chain:
+// CLI > PROM_URL env > [metrics].prom_url > "" (unconfigured).
+func TestResolvePromURL(t *testing.T) {
+	cfg := UserConfig{Metrics: MetricsConfig{PromURL: "http://from-config:9090"}}
+
+	if got := ResolvePromURL("http://cli:9090", "http://env:9090", cfg); got != "http://cli:9090" {
+		t.Errorf("CLI should win; got %q", got)
+	}
+	if got := ResolvePromURL("", "http://env:9090", cfg); got != "http://env:9090" {
+		t.Errorf("env should win over config; got %q", got)
+	}
+	if got := ResolvePromURL("", "", cfg); got != "http://from-config:9090" {
+		t.Errorf("config should be the last resort; got %q", got)
+	}
+	if got := ResolvePromURL("", "", UserConfig{}); got != "" {
+		t.Errorf("unconfigured should return empty string, not a default; got %q", got)
+	}
+}
+
+// TestLoadUserConfig_ParsesMetricsBlock confirms the new [metrics]
+// table is round-trippable.
+func TestLoadUserConfig_ParsesMetricsBlock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte(`[metrics]
+prom_url = "http://prometheus.example:9090"
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadUserConfig(path)
+	if err != nil {
+		t.Fatalf("unexpected: %v", err)
+	}
+	if got, want := cfg.Metrics.PromURL, "http://prometheus.example:9090"; got != want {
+		t.Errorf("Metrics.PromURL = %q, want %q", got, want)
+	}
+}
+
 // TestLoadUserConfig_ParsesDefaultDir parses a valid TOML file and
 // returns the [projects].default_dir value.
 func TestLoadUserConfig_ParsesDefaultDir(t *testing.T) {
