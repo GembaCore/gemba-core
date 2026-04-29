@@ -82,7 +82,7 @@ const WORKSPACE_SCOPED = [
   'Plan',
   'Review',
   'Escalations',
-  'Agent Sessions',
+  'Sessions',
 ];
 
 const ALWAYS_OPERATIONAL = ['Settings'];

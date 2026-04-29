@@ -19,15 +19,15 @@ import { useEscalations } from '@/hooks/useEscalations';
 //
 // Order goes high-leverage planning → reflective review → operator-
 // attention surfaces → live runtime, with Settings bottom-anchored.
-// Agent Sessions sits last because operators drop into it less often
-// than Plan / Review / Escalations once the dispatcher is humming.
+// Sessions sits last because operators drop into it less often than
+// Plan / Review / Escalations once the dispatcher is humming.
 //
 // Initial route map (until pane consolidation lands):
-//   Plan            → /board       (gm-e12.19.4 grows tabs Board/List/Sprints/Graph)
-//   Review          → /walk        (Gemba walk surface)
-//   Escalations     → /escalations (gm-e12.19.6 grows a Drift tab)
-//   Agent Sessions  → /sessions    (gm-e12.19.5 grows tabs Sessions/Groups/Coach)
-//   Settings        → /settings    (gm-e12.19.2 grows tabs for Adaptors/Agents/Mail)
+//   Plan         → /board       (gm-e12.19.4 grows tabs Board/List/Sprints/Graph)
+//   Review       → /walk        (Gemba walk surface)
+//   Escalations  → /escalations (gm-e12.19.6 grows a Drift tab)
+//   Sessions     → /sessions    (gm-e12.19.5 grows tabs Sessions/Groups/Coach)
+//   Settings     → /settings    (gm-e12.19.2 grows tabs for Adaptors/Agents/Mail)
 //
 // Insights pane was removed 2026-04-29 pending the Prometheus-proxy
 // chain (gm-sf51 ratified Path A; gm-e9m0 backend + gm-e12.17.1
@@ -52,7 +52,7 @@ const items: Item[] = [
   { to: '/board', label: 'Plan', Icon: LayoutGrid, workspaceScoped: true },
   { to: '/walk', label: 'Review', Icon: Footprints, workspaceScoped: true },
   { to: '/escalations', label: 'Escalations', Icon: AlertTriangle, workspaceScoped: true },
-  { to: '/sessions', label: 'Agent Sessions', Icon: Terminal, workspaceScoped: true },
+  { to: '/sessions', label: 'Sessions', Icon: Terminal, workspaceScoped: true },
 ];
 
 const settingsItem: Item = { to: '/settings', label: 'Settings', Icon: SettingsIcon };

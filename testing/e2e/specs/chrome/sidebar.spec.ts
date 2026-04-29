@@ -27,7 +27,7 @@ const NAV_LINKS = [
   // Review is rendered but click-nav-excluded — see comment above.
   { label: 'Review', path: '/walk', clickNav: false },
   { label: 'Escalations', path: '/escalations' },
-  { label: 'Agent Sessions', path: '/sessions' },
+  { label: 'Sessions', path: '/sessions' },
   { label: 'Settings', path: '/settings' },
 ] as const;
 
@@ -70,7 +70,7 @@ test.describe('Sidebar @chrome', () => {
 
   test('the active link reflects the current route', async ({ page }) => {
     await page.goto('/sessions');
-    const sessions = page.locator('aside').first().getByRole('link', { name: 'Agent Sessions' });
+    const sessions = page.locator('aside').first().getByRole('link', { name: 'Sessions' });
     // NavLink stamps an `active` className when the route matches; we
     // assert the visual cue (bg-neutral-200 dark variant) only via
     // attribute, not the class string itself which churns with Tailwind.
@@ -105,7 +105,7 @@ test.describe('Sidebar cold-start @chrome', () => {
       'Plan',
       'Review',
       'Escalations',
-      'Agent Sessions',
+      'Sessions',
     ];
     for (const label of workspaceScoped) {
       const item = sidebar.getByText(label, { exact: true });
