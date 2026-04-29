@@ -70,7 +70,7 @@ high level planning, review, and course correction - while allowing fully
 automated agentic software development to take care of the execution.
 
 Here's a peek:
-![Gemba board (default view)](docs/img/board.png)
+![Gemba board (default view)](docs/img/board2.png)
 
 The only hard requirement is a **data plane**. [![Beads](https://github.com/gastownhall/beads) fullfills that out
 of the box, so the minimum working deployment is `gemba serve` and a browser pointed at it — 
