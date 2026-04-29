@@ -1,8 +1,10 @@
-// pages/EscalationsPage.ts — POM for /escalations (gm-e11.8.1).
+// pages/EscalationsPage.ts — POM for /escalations (gm-e11.8.1 / gm-e11.8.4).
 //
 // Composes AppShell so chrome assertions come for free. Testids come
 // from web/src/pages/EscalationsPage.tsx; per-card actions key off the
-// escalation id (escalation-card-${id}-resolve / -agent / -workitem).
+// escalation id (escalation-card-${id}-resolve / -handoff / -agent / -workitem).
+// gm-e11.8.4 adds handoffButton(), handoffModal(), handoffPersonaSelect(),
+// handoffConfirmButton(), handoffCancelButton(), handoffSuccess().
 
 import type { Locator, Page } from '@playwright/test';
 import { AppShell } from './AppShell';
@@ -54,5 +56,57 @@ export class EscalationsPage extends AppShell {
 
   cancelButton(): Locator {
     return this.page.getByTestId('escalation-resolve-cancel');
+  }
+
+  // ── gm-e11.8.3: multi-select / bulk-triage ────────────────────────────────
+
+  checkbox(id: string): Locator {
+    return this.page.getByTestId(`escalation-card-${id}-checkbox`);
+  }
+
+  bulkToolbar(): Locator {
+    return this.page.getByTestId('escalations-bulk-toolbar');
+  }
+
+  bulkDismissButton(): Locator {
+    return this.page.getByTestId('escalations-bulk-dismiss');
+  }
+
+  bulkMoveToWalkButton(): Locator {
+    return this.page.getByTestId('escalations-bulk-move-to-walk');
+  }
+
+  bulkClearButton(): Locator {
+    return this.page.getByTestId('escalations-bulk-clear');
+  }
+
+  sectionSelectToggle(severity: 'critical' | 'high' | 'medium' | 'low' | 'info'): Locator {
+    return this.page.getByTestId(`escalations-section-${severity}-select-toggle`);
+  }
+
+  // ── gm-e11.8.4: hand-off ──────────────────────────────────────────────────
+
+  handoffButton(id: string): Locator {
+    return this.page.getByTestId(`escalation-card-${id}-handoff`);
+  }
+
+  handoffModal(): Locator {
+    return this.page.getByTestId('escalation-handoff-modal');
+  }
+
+  handoffPersonaSelect(): Locator {
+    return this.page.getByTestId('escalation-handoff-persona');
+  }
+
+  handoffConfirmButton(): Locator {
+    return this.page.getByTestId('escalation-handoff-confirm');
+  }
+
+  handoffCancelButton(): Locator {
+    return this.page.getByTestId('escalation-handoff-cancel');
+  }
+
+  handoffSuccess(): Locator {
+    return this.page.getByTestId('escalation-handoff-success');
   }
 }

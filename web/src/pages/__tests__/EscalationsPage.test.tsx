@@ -1,4 +1,4 @@
-// EscalationsPage tests (gm-e11.8.1).
+// EscalationsPage tests (gm-e11.8.1 / gm-e11.8.3 / gm-e11.8.4).
 //
 // Covers:
 //   - severity grouping and within-section ordering
@@ -8,6 +8,21 @@
 //   - loading skeleton during pending state
 //   - originating-link rendering: agent + workitem chips when present,
 //     hidden when absent
+//
+// gm-e11.8.3 additions:
+//   - selecting a card shows the toolbar with the right count
+//   - clicking Dismiss with N selected calls useRespondEscalation N times
+//     with kind: 'defer'
+//   - toolbar disappears when selection is cleared
+//   - Move-to-walk hidden when no walk active; visible when one is
+//   - section-level select-all toggles only that section
+//
+// gm-e11.8.4 additions:
+//   - clicking Hand-off opens the handoff modal
+//   - pick persona, confirm → POST /api/consults with the right body
+//   - escalation is NOT resolved after hand-off (no respond call)
+//   - Cancel closes modal without mutation
+//   - success banner shown after confirm; escalation card remains
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -16,6 +31,20 @@ import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { EscalationsPage } from '../EscalationsPage';
 import type { EscalationRequest } from '@/api/escalations';
+
+// ── Walk context stub ─────────────────────────────────────────────────────────
+// We stub the walk context module to control `active` and spy on `addItem`.
+// The real WalkProvider requires a QueryClient and a localStorage walk ID, so
+// we replace the hook with a controllable stub here.
+
+type WalkStub = { active: boolean; addItem: ReturnType<typeof vi.fn> };
+const walkStub: WalkStub = { active: false, addItem: vi.fn() };
+
+vi.mock('@/components/walk/WalkContext', () => ({
+  useWalk: () => walkStub,
+}));
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -50,11 +79,15 @@ function esc(over: Partial<EscalationRequest>): EscalationRequest {
   };
 }
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
 describe('EscalationsPage', () => {
   const fetchSpy = vi.fn();
 
   beforeEach(() => {
     vi.stubGlobal('fetch', fetchSpy);
+    walkStub.active = false;
+    walkStub.addItem.mockReset();
   });
 
   afterEach(() => {
@@ -149,9 +182,12 @@ describe('EscalationsPage', () => {
     // Resolved escalations are excluded.
     expect(screen.queryByTestId('escalation-card-esc-resolved')).toBeNull();
 
-    // Section order: critical → high → medium (low absent — no items)
+    // Section order: critical → high → medium (low absent — no items).
+    // Narrowed to <section> elements so the select-toggle buttons
+    // (data-testid="escalations-section-{sev}-select-toggle") don't
+    // pollute the result.
     const sections = [
-      ...document.querySelectorAll('[data-testid^="escalations-section-"]'),
+      ...document.querySelectorAll('section[data-testid^="escalations-section-"]'),
     ] as HTMLElement[];
     const sectionIds = sections.map((s) => s.getAttribute('data-testid'));
     expect(sectionIds).toEqual([
@@ -309,5 +345,311 @@ describe('EscalationsPage', () => {
       const init = postCall?.[1] as RequestInit;
       expect(JSON.parse(String(init.body))).toEqual({ kind: 'modify', value: '42' });
     });
+  });
+
+  // ── gm-e11.8.3: multi-select + bulk triage ──────────────────────────────
+
+  it('selecting a card shows the bulk toolbar with the correct count', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-1', title: 'First' }),
+      esc({ id: 'esc-2', title: 'Second' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-1', undefined, { timeout: 3000 });
+
+    // Toolbar absent before any selection.
+    expect(screen.queryByTestId('escalations-bulk-toolbar')).toBeNull();
+
+    // Select first card.
+    fireEvent.click(screen.getByTestId('escalation-card-esc-1-checkbox'));
+    expect(screen.getByTestId('escalations-bulk-toolbar')).toBeTruthy();
+    expect(screen.getByTestId('escalations-bulk-count').textContent).toContain('1');
+
+    // Select second card.
+    fireEvent.click(screen.getByTestId('escalation-card-esc-2-checkbox'));
+    expect(screen.getByTestId('escalations-bulk-count').textContent).toContain('2');
+  });
+
+  it('clicking Clear in the toolbar removes the toolbar', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-1', title: 'First' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-1', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByTestId('escalation-card-esc-1-checkbox'));
+    expect(screen.getByTestId('escalations-bulk-toolbar')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('escalations-bulk-clear'));
+    expect(screen.queryByTestId('escalations-bulk-toolbar')).toBeNull();
+  });
+
+  it('bulk Dismiss calls useRespondEscalation with kind=defer for each selected id', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-1', title: 'First' }),
+      esc({ id: 'esc-2', title: 'Second' }),
+    ];
+
+    // First GET returns the two open escalations; POST /respond returns resolved.
+    fetchSpy.mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        const url = String(_url);
+        const id = url.includes('esc-1') ? 'esc-1' : 'esc-2';
+        return Promise.resolve(
+          jsonResponse({
+            id,
+            source: 'permission_prompt',
+            urgency: 'blocking',
+            title: id === 'esc-1' ? 'First' : 'Second',
+            prompt: '',
+            state: 'resolved',
+            created_at: '2026-04-25T12:00:00Z',
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({ escalations, total: escalations.length }));
+    });
+
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-1', undefined, { timeout: 3000 });
+
+    fireEvent.click(screen.getByTestId('escalation-card-esc-1-checkbox'));
+    fireEvent.click(screen.getByTestId('escalation-card-esc-2-checkbox'));
+    fireEvent.click(screen.getByTestId('escalations-bulk-dismiss'));
+
+    await waitFor(() => {
+      const postCalls = fetchSpy.mock.calls.filter(
+        (c) => (c[1] as RequestInit | undefined)?.method === 'POST'
+      );
+      expect(postCalls.length).toBe(2);
+      for (const call of postCalls) {
+        const body = JSON.parse(String((call[1] as RequestInit).body));
+        expect(body).toEqual({ kind: 'defer' });
+      }
+    }, { timeout: 5000 });
+  });
+
+  it('Move-to-walk button is absent when no walk is active', async () => {
+    walkStub.active = false;
+    const escalations: EscalationRequest[] = [esc({ id: 'esc-1', title: 'First' })];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-1', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByTestId('escalation-card-esc-1-checkbox'));
+
+    // Button exists but should be disabled when no walk is active.
+    const moveBtn = screen.getByTestId('escalations-bulk-move-to-walk');
+    expect((moveBtn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('Move-to-walk button is enabled when a walk is active', async () => {
+    walkStub.active = true;
+    const escalations: EscalationRequest[] = [esc({ id: 'esc-1', title: 'First' })];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-1', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByTestId('escalation-card-esc-1-checkbox'));
+
+    const moveBtn = screen.getByTestId('escalations-bulk-move-to-walk');
+    expect((moveBtn as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('section-level select-all toggles only that section', async () => {
+    const escalations: EscalationRequest[] = [
+      // critical
+      esc({ id: 'esc-crit', source: 'permission_prompt', urgency: 'blocking', title: 'Critical' }),
+      // high
+      esc({ id: 'esc-high', source: 'witness_finding', urgency: 'advisory', title: 'High' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-crit', undefined, { timeout: 3000 });
+
+    // Click select-all for critical section only.
+    fireEvent.click(screen.getByTestId('escalations-section-critical-select-toggle'));
+
+    // Critical card is checked; high card is not.
+    expect((screen.getByTestId('escalation-card-esc-crit-checkbox') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId('escalation-card-esc-high-checkbox') as HTMLInputElement).checked).toBe(false);
+
+    // Count = 1 (only critical section).
+    expect(screen.getByTestId('escalations-bulk-count').textContent).toContain('1');
+
+    // Toggle again = select-none for that section.
+    fireEvent.click(screen.getByTestId('escalations-section-critical-select-toggle'));
+    expect((screen.getByTestId('escalation-card-esc-crit-checkbox') as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByTestId('escalations-bulk-toolbar')).toBeNull();
+  });
+
+  // ── gm-e11.8.4: per-card Hand-off ─────────────────────────────────────────
+
+  it('hand-off: clicking Hand-off opens the handoff modal', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-H', title: 'Should I proceed?' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-H-handoff', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByTestId('escalation-card-esc-H-handoff'));
+
+    expect(screen.getByTestId('escalation-handoff-modal')).toBeTruthy();
+    // Modal has the escalation title
+    expect(screen.getByTestId('escalation-handoff-modal').textContent).toContain('Should I proceed?');
+    // Persona picker is rendered
+    expect(screen.getByTestId('escalation-handoff-persona')).toBeTruthy();
+  });
+
+  it('hand-off: pick persona + confirm → POSTs /api/consults with correct body; escalation NOT resolved', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({
+        id: 'esc-HH',
+        title: 'Approve risky write',
+        prompt: 'The agent wants to delete all logs.',
+        assignment_id: 'sess-XY',
+      }),
+    ];
+
+    fetchSpy.mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && String(_url).includes('/consults')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'consult-1',
+            persona_id: 'coach',
+            skill_id: 'escalation_handoff',
+            workspace: 'default',
+            status: 'running',
+            started_at: new Date().toISOString(),
+            line_count: 0,
+            line_error_count: 0,
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({ escalations, total: escalations.length }));
+    });
+
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-HH-handoff', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByTestId('escalation-card-esc-HH-handoff'));
+    expect(screen.getByTestId('escalation-handoff-modal')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('escalation-handoff-confirm'));
+
+    await waitFor(() => {
+      const consultPost = fetchSpy.mock.calls.find(
+        (c) =>
+          (c[1] as RequestInit | undefined)?.method === 'POST' &&
+          String(c[0]).includes('/consults')
+      );
+      expect(consultPost).toBeTruthy();
+      expect(String(consultPost?.[0])).toMatch(/\/api\/consults$/);
+      const body = JSON.parse(String((consultPost?.[1] as RequestInit).body)) as Record<string, unknown>;
+      expect(body.persona_id).toBeTruthy();
+      expect(body.skill_id).toBe('escalation_handoff');
+      expect(body.workspace).toBe('default');
+      expect(body.raw_input).toMatchObject({
+        title: 'Approve risky write',
+        assignment_id: 'sess-XY',
+        escalation_id: 'esc-HH',
+      });
+      const headers = (consultPost?.[1] as RequestInit).headers as Record<string, string>;
+      expect(headers['X-GEMBA-Confirm']).toBeTruthy();
+    });
+
+    // Escalation is NOT resolved — no POST to /api/escalations/*/respond.
+    const respondCalls = fetchSpy.mock.calls.filter(
+      (c) =>
+        (c[1] as RequestInit | undefined)?.method === 'POST' &&
+        String(c[0]).includes('/respond')
+    );
+    expect(respondCalls).toHaveLength(0);
+  });
+
+  it('hand-off: success shows confirmation banner; escalation card remains in DOM', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-S', title: 'Should we proceed?' }),
+    ];
+    fetchSpy.mockImplementation((_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && String(_url).includes('/consults')) {
+        return Promise.resolve(
+          jsonResponse({
+            id: 'consult-ok',
+            persona_id: 'coach',
+            skill_id: 'escalation_handoff',
+            workspace: 'default',
+            status: 'running',
+            started_at: new Date().toISOString(),
+            line_count: 0,
+            line_error_count: 0,
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({ escalations, total: escalations.length }));
+    });
+
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-S-handoff', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByTestId('escalation-card-esc-S-handoff'));
+    fireEvent.click(screen.getByTestId('escalation-handoff-confirm'));
+
+    await screen.findByTestId('escalation-handoff-success', undefined, { timeout: 3000 });
+    expect(screen.getByTestId('escalation-handoff-success').textContent).toContain('Handed off');
+
+    // Escalation card is still in the DOM (not removed by a resolve).
+    expect(screen.getByTestId('escalation-card-esc-S')).toBeTruthy();
+  });
+
+  it('hand-off: Cancel closes modal without POSTing', async () => {
+    const escalations: EscalationRequest[] = [
+      esc({ id: 'esc-C', title: 'Cancel me' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ escalations, total: escalations.length }))
+    );
+    const Wrapper = wrapper();
+    render(<Wrapper><EscalationsPage /></Wrapper>);
+
+    await screen.findByTestId('escalation-card-esc-C-handoff', undefined, { timeout: 3000 });
+    fireEvent.click(screen.getByTestId('escalation-card-esc-C-handoff'));
+    expect(screen.getByTestId('escalation-handoff-modal')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('escalation-handoff-cancel'));
+    expect(screen.queryByTestId('escalation-handoff-modal')).toBeNull();
+
+    // No POST should have been made.
+    const postCalls = fetchSpy.mock.calls.filter(
+      (c) => (c[1] as RequestInit | undefined)?.method === 'POST'
+    );
+    expect(postCalls).toHaveLength(0);
   });
 });

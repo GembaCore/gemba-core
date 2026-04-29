@@ -614,6 +614,25 @@ function dispatch(route: Route, stores: FakeStores): unknown {
     const items = agentPlane.list();
     return json({ agents: items, total: items.length });
   }
+
+  // /api/consults — POST creates a consult (gm-e11.8.4 hand-off). Return a
+  // canned ConsultSummary so the SPA's mutation resolves successfully.
+  if (isPath(path, '/api/consults') && method === 'POST') {
+    const body = parseBody(route.request().postData());
+    return json({
+      id: `consult-fake-${Date.now()}`,
+      persona_id: typeof body.persona_id === 'string' ? body.persona_id : 'coach',
+      skill_id: typeof body.skill_id === 'string' ? body.skill_id : 'escalation_handoff',
+      workspace: typeof body.workspace === 'string' ? body.workspace : 'default',
+      status: 'running',
+      started_at: new Date().toISOString(),
+      line_count: 0,
+      line_error_count: 0,
+    });
+  }
+  // GET /api/consults — return empty list.
+  if (isPath(path, '/api/consults')) return json({ consults: [], total: 0 });
+
   if (isPath(path, '/api/sprints')) return json({ items: [] });
   if (isPath(path, '/api/repositories')) {
     // gm-uipx.8: project-config Workspace-repos section. Fake mode
