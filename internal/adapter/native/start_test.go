@@ -270,3 +270,80 @@ func TestStartSessionZeroConfigStillUnsupported(t *testing.T) {
 		t.Errorf("want KindUnsupported, got %T: %v", err, err)
 	}
 }
+
+// gm-hmqj: manual sessions have no bead — they carry gemba:kind="manual"
+// + gemba:repository_id, run in the chosen repo's canonical worktree
+// (no per-bead branch), and deliver SessionPrompt.Text as the first
+// message verbatim.
+func TestStartSessionManualMode(t *testing.T) {
+	repo := initRepo(t)
+	fb := newFakeBackend()
+	p := NewWithConfig(Config{
+		Backend:  fb,
+		Registry: defaultRegistry(),
+		RepoRoot: repo,
+	})
+
+	sess, err := p.StartSession(context.Background(), "manual-1730000000000-abcd",
+		core.SessionPrompt{
+			Text: "say hello",
+			Extension: map[string]any{
+				"gemba:kind":          "manual",
+				"gemba:agent_type":    "claude",
+				"gemba:repository_id": "gemba",
+				"gemba:persona_id":    "coach",
+			},
+		})
+	if err != nil {
+		t.Fatalf("manual StartSession: %v", err)
+	}
+	if sess.AssignmentID != "manual-1730000000000-abcd" {
+		t.Errorf("AssignmentID: got %q", sess.AssignmentID)
+	}
+	if sess.ProviderMetadata["kind"] != "manual" {
+		t.Errorf("metadata.kind: got %v", sess.ProviderMetadata["kind"])
+	}
+	if sess.ProviderMetadata["repository_id"] != "gemba" {
+		t.Errorf("metadata.repository_id: got %v", sess.ProviderMetadata["repository_id"])
+	}
+	if sess.ProviderMetadata["persona_id"] != "coach" {
+		t.Errorf("metadata.persona_id: got %v", sess.ProviderMetadata["persona_id"])
+	}
+	if got, _ := sess.ProviderMetadata["bead_id"].(string); got != "" {
+		t.Errorf("metadata.bead_id should be empty in manual mode; got %q", got)
+	}
+	if sess.ProviderMetadata["worktree"] != repo {
+		t.Errorf("manual workspace should fall back to RepoRoot; got %v",
+			sess.ProviderMetadata["worktree"])
+	}
+	if title, _ := sess.ProviderMetadata["pane_title"].(string); !strings.Contains(title, "manual") {
+		t.Errorf("pane title should mention manual mode; got %q", title)
+	}
+}
+
+func TestStartSessionManualModeRequiresRepository(t *testing.T) {
+	p := NewWithConfig(Config{
+		Backend:  newFakeBackend(),
+		Registry: defaultRegistry(),
+		RepoRoot: initRepo(t),
+	})
+	_, err := p.StartSession(context.Background(), "manual-1",
+		core.SessionPrompt{
+			Text: "hello",
+			Extension: map[string]any{
+				"gemba:kind":       "manual",
+				"gemba:agent_type": "claude",
+				// repository_id deliberately missing
+			},
+		})
+	if err == nil {
+		t.Fatal("manual mode without repository_id should be rejected")
+	}
+	var aerr *core.AdaptorError
+	if !errors.As(err, &aerr) || aerr.Kind != core.KindValidation {
+		t.Errorf("want KindValidation, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "repository_id") {
+		t.Errorf("error should mention repository_id; got %v", err)
+	}
+}

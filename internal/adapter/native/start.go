@@ -47,7 +47,26 @@ const (
 	// (the common case for bead dispatch), the auto-generated
 	// "<backend>:<bead>:<nanos>" id is used unchanged.
 	extKeySessionIDOverride = "gemba:session_id_override"
+	// extKeyKind picks between bead-driven and manual session shapes
+	// (gm-hmqj). Empty or "bead" → the historical bead-driven path
+	// (requires extKeyBeadID). "manual" → free-form prompt against a
+	// chosen repository, no work-item required.
+	extKeyKind = "gemba:kind"
+	// extKeyRepositoryID names the repository the manual session
+	// works in. Carried for audit/UI; today the adaptor uses it as a
+	// label and falls back to o.cfg.RepoRoot when no explicit
+	// gemba:workspace path is set.
+	extKeyRepositoryID = "gemba:repository_id"
+	// extKeyPersonaID names an optional persona ride-along for manual
+	// sessions ("coach" / "manager" / etc.). Surfaced into the pane
+	// title and ProviderMetadata; preamble composition stays prompt-
+	// text-driven for now.
+	extKeyPersonaID = "gemba:persona_id"
 )
+
+// kindManual is the value of extKeyKind that selects manual-mode
+// dispatch — no work-item, free-form prompt against a repository.
+const kindManual = "manual"
 
 // StartSession implements core.OrchestrationPlaneAdaptor for the
 // native adaptor. gm-native.9.
@@ -71,10 +90,23 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 			"native: StartSession requires assignment id")
 	}
 
+	// gm-hmqj: two dispatch shapes share this entry point. "bead" is
+	// the historical path — every session anchors on a work-item the
+	// caller names via extKeyBeadID. "manual" lets the operator dispatch
+	// against a chosen repository without first filing a bead.
+	kind, _ := prompt.Extension[extKeyKind].(string)
+	manualMode := kind == kindManual
+
 	beadID, _ := prompt.Extension[extKeyBeadID].(string)
-	if beadID == "" {
+	if !manualMode && beadID == "" {
 		return core.Session{}, core.NewAdaptorError(core.KindValidation,
-			"native: SessionPrompt.Extension[%q] is required", extKeyBeadID)
+			"native: SessionPrompt.Extension[%q] is required (or set %q=%q)",
+			extKeyBeadID, extKeyKind, kindManual)
+	}
+	repositoryID, _ := prompt.Extension[extKeyRepositoryID].(string)
+	if manualMode && repositoryID == "" {
+		return core.Session{}, core.NewAdaptorError(core.KindValidation,
+			"native: manual sessions require %q", extKeyRepositoryID)
 	}
 	agentType, _ := prompt.Extension[extKeyAgentType].(string)
 	if agentType == "" {
@@ -107,14 +139,30 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	reusePaneID, _ := prompt.Extension[extKeyReusePaneID].(string)
 	maxParallel := agent.ResolvedMaxParallel()
 
-	sessionID := fmt.Sprintf("%s:%s:%d", o.cfg.Backend.Name(), beadID, time.Now().UnixNano())
+	// Session id keys off the bead in bead-mode and the assignment id in
+	// manual-mode. Both are operator-visible so the dispatcher's
+	// /sessions list reads cleanly either way.
+	sessionAnchor := beadID
+	if manualMode {
+		sessionAnchor = assignmentID
+	}
+	sessionID := fmt.Sprintf("%s:%s:%d", o.cfg.Backend.Name(), sessionAnchor, time.Now().UnixNano())
 	if override, _ := prompt.Extension[extKeySessionIDOverride].(string); override != "" {
 		sessionID = override
 	}
 
 	title, _ := prompt.Extension[extKeyTitle].(string)
 	if title == "" {
-		title = "gemba: " + beadID
+		if manualMode {
+			personaID, _ := prompt.Extension[extKeyPersonaID].(string)
+			if personaID != "" {
+				title = fmt.Sprintf("gemba: manual (%s · %s)", personaID, repositoryID)
+			} else {
+				title = fmt.Sprintf("gemba: manual (%s)", repositoryID)
+			}
+		} else {
+			title = "gemba: " + beadID
+		}
 	}
 	surface, _ := prompt.Extension[extKeySurface].(*persona.Surface)
 
@@ -156,17 +204,24 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	} else {
 		// Provision worktree. If a workspace was pre-resolved by the
 		// caller (operator pre-selected an existing worktree), honor it
-		// instead of auto-creating.
+		// instead of auto-creating. Manual sessions (gm-hmqj) don't
+		// branch off a bead — they run in the chosen repository's
+		// canonical worktree; fall back to o.cfg.RepoRoot when the
+		// caller didn't pin a path.
 		workspace, _ = prompt.Extension[extKeyWorkspace].(string)
 		if workspace == "" {
-			var err error
-			workspace, err = worktrees.Resolve(ctx, worktrees.Config{
-				RepoRoot:     o.cfg.RepoRoot,
-				WorktreesDir: o.cfg.WorktreesDir,
-			}, beadID)
-			if err != nil {
-				return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
-					"native: provision worktree for %s", beadID)
+			if manualMode {
+				workspace = o.cfg.RepoRoot
+			} else {
+				var err error
+				workspace, err = worktrees.Resolve(ctx, worktrees.Config{
+					RepoRoot:     o.cfg.RepoRoot,
+					WorktreesDir: o.cfg.WorktreesDir,
+				}, beadID)
+				if err != nil {
+					return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
+						"native: provision worktree for %s", beadID)
+				}
 			}
 		}
 
@@ -177,7 +232,7 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		spec, err := buildSpawnSpec(agent, workspace, sessionID, agentType, title, surface)
 		if err != nil {
 			return core.Session{}, core.WrapAdaptorError(core.KindValidation, err,
-				"native: build spawn spec for %s", beadID)
+				"native: build spawn spec for %s", sessionAnchor)
 		}
 
 		// Layer 2 producer (gm-v8vr.1): persist the resolved surface so
@@ -193,7 +248,7 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		if err != nil {
 			return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
 				"native: spawn pane for %s (agent=%s, backend=%s)",
-				beadID, agentType, o.cfg.Backend.Name())
+				sessionAnchor, agentType, o.cfg.Backend.Name())
 		}
 	}
 
@@ -219,6 +274,13 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 			"started_at": now.Format(time.RFC3339Nano),
 			"reuse_pane": reusePaneID != "",
 		},
+	}
+	if manualMode {
+		sess.ProviderMetadata["kind"] = kindManual
+		sess.ProviderMetadata["repository_id"] = repositoryID
+		if personaID, _ := prompt.Extension[extKeyPersonaID].(string); personaID != "" {
+			sess.ProviderMetadata["persona_id"] = personaID
+		}
 	}
 
 	// Record session + pane + nonce under the lock.
@@ -261,13 +323,21 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		_ = err // TODO surface via slog when structured logger lands here
 	}
 
-	// Preamble injection (gm-native.10): fetch the bead, compose
-	// project + workspace + bead context, apply per agent type's
-	// strategy (CLAUDE.md, first-message, or stdout banner).
-	// Everything is best-effort — a failed preamble must not abort
-	// a live session. If WorkPlane is nil (tests, degraded mode) we
-	// skip entirely.
-	if o.cfg.WorkPlane != nil {
+	// Preamble injection. Two shapes:
+	//   - Bead mode (gm-native.10): fetch the bead via WorkPlane, compose
+	//     project + workspace + bead context, apply per agent type's
+	//     strategy (CLAUDE.md, first-message, or stdout banner).
+	//   - Manual mode (gm-hmqj): no work-item exists — deliver
+	//     prompt.Text directly as the first message. Skip the
+	//     WorkItem-shaped preamble composer entirely.
+	// Everything is best-effort — a failed preamble must not abort a
+	// live session. If WorkPlane is nil (tests, degraded mode) we skip
+	// the bead-mode branch.
+	if manualMode {
+		if prompt.Text != "" {
+			go o.deliverFirstMessage(ctx, pane.ID, prompt.Text)
+		}
+	} else if o.cfg.WorkPlane != nil {
 		if item, err := o.cfg.WorkPlane.GetWorkItem(ctx, core.WorkItemID(beadID)); err == nil {
 			composed := preamble.Build(preamble.Sources{
 				RepoRoot:               o.cfg.RepoRoot,
