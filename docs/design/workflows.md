@@ -157,6 +157,135 @@ Two additional contextual surfaces piggyback on existing chrome:
 - **Bead drawer → "Workflow" section.** Shows the molecule attached to this bead (if any), with progress and step state. "Attach workflow…" button opens a picker over the Library.
 - **PM panel quick action: "Run workflow."** Operator says "run TDD on this epic" → PM panel surfaces the matching formula, asks for variable confirmation, pours.
 
+#### 3.1.1 Layout — three-column split with a graph centerpiece
+
+The Library and Active-runs tabs share a three-column layout, with the formula DAG rendered on a React Flow canvas (reusing the engine that already powers `/graph`):
+
+```
+┌─────────────────┬───────────────────────────────────────┬──────────────────┐
+│ Library         │ shiny-enterprise · workflow · v1      │ Variables        │
+│ ─────────────   │ Source: ~/.beads/formulas/            │  feature *       │
+│ 🔍 search…      │ Extends: shiny  +  rule-of-five       │  assignee        │
+│                 │                                       │                  │
+│ 📋 Workflows    │ ┌─────────────────────────────────┐   │ Composition      │
+│   ▸ shiny       │ │   ◯ design                      │   │  ↳ extends shiny │
+│   ▶ shiny-ent.  │ │       │                         │   │  ↳ ▣ rule-of-5   │
+│   ▸ shiny-sec.  │ │       ▼                         │   │     on implement │
+│   ▸ polecat-work│ │   ▣ implement (×5 perspectives) │   │                  │
+│   …             │ │       │                         │   │ Recent runs (3)  │
+│ 🚐 Convoys      │ │       ▼                         │   │  • mol-…  done   │
+│   ▸ code-review │ │   ◯ review                      │   │  • mol-…  in-fl. │
+│   ▸ design      │ │       │                         │   │                  │
+│ 🎯 Aspects      │ │       ▼                         │   │ ─────────────    │
+│   ▸ security-…  │ │   ◯ test                        │   │ [ Run            ]│
+│ 📐 Expansions   │ │       │                         │   │ [ Run as temp    ]│
+│   ▸ rule-of-5   │ │       ▼                         │   │ [ Edit           ]│
+│   ▸ tdd-cycle   │ │   ◯ submit                      │   │                  │
+│                 │ └─────────────────────────────────┘   │                  │
+└─────────────────┴───────────────────────────────────────┴──────────────────┘
+```
+
+#### 3.1.2 The graph canvas — load-bearing
+
+- **Nodes** are steps. Title + 1-line description; click expands the right rail to show the full step body.
+- **Edges** are `needs:` deps, directional, top-down. No edge labels by default — the topology is the message.
+- **Glyphs** declare provenance:
+  - `◯` ordinary step
+  - `✶` aspect-injected step (e.g. `security-prescan` from the `security-audit` aspect)
+  - `▣` expansion-replacement (the original `implement` is gone; the five rule-of-five steps are in its place)
+  - `║` convoy leg (parallel; renders as hub-and-spoke around a synthesizer node)
+- **Parallel groups** render as faint background bands so operators see "these can run together" without reading edges.
+- **State color** (Run mode only): ready=blue, in-progress=animated stroke, done=green, blocked=grey, skipped=hollow.
+
+#### 3.1.3 Three view modes for the same graph
+
+A small toggle at the top of the canvas:
+
+| Mode | What changes |
+|---|---|
+| **Template** | Pure proto DAG. No state, no agents. The "shape" view. |
+| **Composition** | Aspects expand inline as `✶` satellites; expansions show their replacement; convoys render hub-and-spoke. The "what cooks into" view. |
+| **Run** | A specific live mol/wisp overlaid: per-step status, assigned agent, time-on-step, click-to-evidence. |
+
+Defaults per surface: Library detail → **Composition**, Active-run drawer → **Run**, Authoring preview → **Composition** (re-rendered on edit).
+
+#### 3.1.4 The right rail — three context states
+
+The rail's content flips based on selection without changing the page:
+
+1. **Formula selected, no step focused** — variables table, composition stack, recent runs, primary actions (Run / Run as temp / Edit).
+2. **Step focused** — full step body (markdown), entry/exit criteria, command excerpts. Operators read exactly what `gt prime` shows the agent inline.
+3. **Run focused, step focused** — adds: assigned session (chip jumps to Agent Sessions), evidence captured at this step, decisions made, escalations raised.
+
+#### 3.1.5 Authoring split
+
+```
+┌────────────────────────────────────┬─────────────────────────────┐
+│ formulas/my-feature.formula.toml   │ Live preview                │
+│ ─────────────────────────────────  │ ┌─────────────────────────┐ │
+│ formula = "my-feature"             │ │   ◯ design              │ │
+│ type = "workflow"                  │ │       │                 │ │
+│                                    │ │       ▼                 │ │
+│ [[steps]]                          │ │   ◯ implement           │ │
+│ id = "design"                      │ └─────────────────────────┘ │
+│ title = "Design {{feature}}"       │                             │
+│                                    │ Validation: ✓ cook clean    │
+│ [[steps]]                          │ Variables: feature *        │
+│ id = "implement"                   │                             │
+│ needs = ["design"]                 │ [Validate]  [Save]          │
+│ …                                  │                             │
+└────────────────────────────────────┴─────────────────────────────┘
+```
+
+Monaco / CodeMirror editor with schema-aware completions; right pane re-cooks on debounce; **Validate** runs `bd cook --dry-run`; **Save** writes back to the project's `formulas/` directory and bumps `version`. Behind a feature flag in v1 — the validation story (§5.7) deserves to land before Authoring goes wide.
+
+#### 3.1.6 Active runs — same graph, Run mode
+
+```
+mol-shiny-feature/auth · 3 of 5 · 12m elapsed · ETA ~8m
+[Pause] [Burn] [Resume from step]
+```
+
+Steps that need an agent show the assigned session as a small chip on the node; clicking the chip jumps to that session in the Agent Sessions pane. Convoy runs render the legs around a center synthesizer node and animate the synthesis arrow when the verdict lands.
+
+#### 3.1.7 Promotion to a first-order rail item — three criteria
+
+The Workflow surface earns a sidebar slot (between **Insights** and **Agent Sessions** — it's reflective + reference, not live runtime) when these three things hit:
+
+1. **Daily click rate.** Today's flow is "set up workflows once, auto-attach handles the rest." That's not a daily destination. Once the **distill** path gets traction (operators extracting formulas from finished epics on a regular cadence), the surface earns daily traffic.
+2. **Authoring adoption.** When operators are writing formulas, not just running them, the editor needs more breathing room than a Settings sub-tab.
+3. **Convoy verdict surface.** The synthesized output of convoys (10-leg `code-review` with prioritized findings) is gnarly enough to want its own page. When that lands, Workflow has the gravitas for a rail slot.
+
+The cost of promotion later is one entry in `Sidebar.tsx`'s items array; nothing else moves.
+
+### 3.2 Current state — what Gemba touches today
+
+The Workflow proposal is largely additive. An audit of the existing tree turns up only **four real touchpoints** + **two passive interactions** + **three small leaks** that should be cleaned up before the Workflow surface lands.
+
+**Real touchpoints (active code):**
+
+| File / Line | What it does |
+|---|---|
+| `internal/adapter/bd/workplane.go:162` | Manifest declares `beads:issue_type` field extension; the value list includes `molecule`. Display-only — the SPA renders it as a chip. |
+| `internal/adapter/dolt/workplane.go:185` | Same declaration on the dolt-direct adaptor. |
+| `internal/shader/gastown/shader.go:109,147,161` | `isWisp(id)` short-circuit (4 lines): the title-prefix shader passes wisps through unencoded so prefix-stacking doesn't corrupt their titles. |
+| `internal/adapter/bd/doc.go:6` | Comment-only mention of `molecule` as one of the bd subcommands the adaptor wraps. The adaptor does NOT actually shell `bd mol *`. |
+
+**Passive interactions (the boundary leaks):**
+
+1. **Templates render as ordinary beads.** A formula's cooked proto carries the `template` label and shows up in `bd list` output. The board, the backlog, the agent cards, the planner — every consumer of the WorkPlane sees them. No filter today.
+2. **Wisps appear in lists.** `bd list` returns wisps when they exist. The bd adaptor passes them through unchanged. They show up in Plan / Sessions / Insights as ordinary beads.
+
+**No code in Gemba calls `bd mol`, `bd formula`, or `bd cook`.** The Workflow proposal will be the first surface that does.
+
+**Three small leaks to clean up before Workflow ships (file as gm-flow-design.0):**
+
+- **`L1`. Filter templates out of the board / planner.** Beads with the `template` label belong on the Workflow surface, not on Plan. The bd adaptor's `ListWorkItems` should accept a "hide templates" filter that the SPA's board query sets by default; only the Workflow Library should opt in.
+- **`L2`. Filter wisps out of the board / planner.** Same logic — wisps are operational scaffolding, not work the operator is tracking. They belong only in Active runs.
+- **`L3`. Step beads from poured molecules need a "this is a workflow step" badge.** When a molecule like `mol-polecat-work` pours, its 8 steps become real beads. The dispatcher might assign one to a session that doesn't realize it's part of a workflow run. The board should render workflow-step beads with a small `▢ workflow` chip linking back to the parent run, so the operator can navigate to the run from the bead and back.
+
+These leaks aren't blocking the design — they're the v1 prerequisites for the Library and Active runs tabs to feel clean. Each is a small change in the `bd` adaptor + a filter at the board query layer.
+
 ### 3.2 Vocabulary translation
 
 The chemistry metaphor is delightful and load-bearing for the underlying engine, but it's optional cognitive overhead for the operator. Gemba's UI uses these translations:
