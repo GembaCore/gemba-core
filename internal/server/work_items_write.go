@@ -12,6 +12,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -47,6 +48,15 @@ func (r *Router) createWorkItem(w http.ResponseWriter, req *http.Request) {
 	if err != nil {
 		httperr.WriteError(w, err)
 		return
+	}
+
+	// gm-lw6h: auto-prefix milestone titles with `M<n>` (per-project
+	// monotonic numbering) unless the operator already supplied one.
+	if wi.Kind == core.KindMilestone {
+		if !milestonePrefixRe.MatchString(strings.TrimSpace(wi.Title)) {
+			n := nextMilestoneNumber(existingMilestoneTitles(req.Context(), wp))
+			wi.Title = applyMilestonePrefix(wi.Title, n)
+		}
 	}
 
 	out, err := wp.CreateWorkItem(req.Context(), wi)
@@ -113,6 +123,9 @@ func (r *Router) patchWorkItem(w http.ResponseWriter, req *http.Request) {
 		httperr.WriteError(w, err)
 		return
 	}
+	// gm-mqiz: when this patch closed a milestone child, roll the
+	// milestone closed and notify. Best-effort — see milestone_autoclose.go.
+	r.maybeAutoCloseMilestone(req.Context(), wp, out)
 	writeJSON(w, http.StatusOK, out)
 }
 

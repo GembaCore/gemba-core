@@ -564,6 +564,19 @@ func (w *WorkPlane) UpdateWorkItem(
 	if patch.Assignee != nil && patch.Assignee.ID != "" {
 		args = append(args, "--assignee", string(patch.Assignee.ID))
 	}
+	// Parent is a three-state pointer (gm-gsbj): nil = no change;
+	// pointer to "" = clear (bd accepts `--parent ""` to detach);
+	// pointer to a non-empty id = reparent. nativeID strips the
+	// rig-prefix the same way the create path does, so callers can pass
+	// either "gemba/gemba/gm-x" or "gm-x" and end up invoking
+	// `--parent gm-x`.
+	if patch.Parent != nil {
+		if *patch.Parent == "" {
+			args = append(args, "--parent", "")
+		} else {
+			args = append(args, "--parent", nativeID(w.prefix, core.WorkItemID(*patch.Parent)))
+		}
+	}
 	// Agent-federation labels on the patched assignee (gm-e6.3). If the
 	// caller also supplied Labels we merge into that --set-labels value
 	// so a single bd update writes the full federated view atomically —

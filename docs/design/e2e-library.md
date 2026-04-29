@@ -1,3 +1,8 @@
+---
+title: "Playwright e2e library \u2014 design"
+decision: none
+---
+
 # Playwright e2e library — design
 
 Companion to epic **gm-5v8v**. Records the architecture decisions made

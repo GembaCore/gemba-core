@@ -70,6 +70,14 @@ type Sources struct {
 	// Optional; rendered as "no branch — read-only consult" when
 	// empty per the bead spec.
 	Branch string
+
+	// Milestone is the resolved milestone ancestor for the bead being
+	// worked, or nil when the bead is not transitively parented under
+	// a milestone (gm-yyo8 / gm-b11z). The walker lives in
+	// internal/milestones — preamble stays WorkPlane-free by accepting
+	// the resolved value rather than fetching it. Nil = no section
+	// emitted; preamble is byte-identical to pre-yyo8.
+	Milestone *core.WorkItem
 }
 
 // Build reads the sources + work item and returns a composed prompt
@@ -82,7 +90,7 @@ func Build(s Sources, item core.WorkItem) prompt.Composed {
 		ProjectGuardrails: readLines(filepath.Join(s.RepoRoot, ".gemba", "guardrails.md")),
 		WorkspaceValues:   readLines(filepath.Join(s.WorkspaceDir, ".gemba", "workspace.md")),
 		PersonaSystem:     SelectProfileSection(s.InteractionProfilePath, s.InteractionMode),
-		UserInput:         renderWorkItem(item) + renderSurface(s.Surface, s.SurfaceEnv, s.Repository, s.Branch),
+		UserInput:         renderWorkItem(item) + renderMilestone(s.Milestone) + renderSurface(s.Surface, s.SurfaceEnv, s.Repository, s.Branch),
 	}
 	return env.Compose(prompt.ComposeOptions{})
 }
@@ -125,6 +133,48 @@ func renderWorkItem(item core.WorkItem) string {
 	b.WriteString("## Your task\n\nWork this bead. Push when the DoD is met. Escalate (permission prompt) if blocked.\n")
 	return b.String()
 }
+
+// renderMilestone emits the "## Milestone context" section so the model
+// knows which broader release the bead it's working sits under (gm-yyo8
+// / gm-b11z). Returns "" when no ancestor was resolved — selective
+// injection per the design's Q9: a bead unbound from any milestone gets
+// the pre-yyo8 preamble verbatim.
+//
+// The block is intentionally small: title (already carries its M<n>
+// prefix from gm-lw6h), id, current state, and the description. We
+// cap the description at milestoneDescCap so a long milestone brief
+// can't crowd out the bead's own DoD; the bead itself remains the
+// primary surface.
+func renderMilestone(m *core.WorkItem) string {
+	if m == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n## Milestone context\n\n")
+	if m.Title != "" {
+		fmt.Fprintf(&b, "**Milestone**: %s (`%s`)\n\n", m.Title, m.ID)
+	} else {
+		fmt.Fprintf(&b, "**Milestone**: `%s`\n\n", m.ID)
+	}
+	if m.Status != "" {
+		fmt.Fprintf(&b, "**State**: %s\n\n", m.Status)
+	}
+	if desc := strings.TrimSpace(m.Description); desc != "" {
+		if len(desc) > milestoneDescCap {
+			desc = desc[:milestoneDescCap] + "…"
+		}
+		b.WriteString(desc)
+		b.WriteString("\n\n")
+	}
+	b.WriteString("This bead rolls up to the milestone above. Keep your work consistent with that goal.\n")
+	return b.String()
+}
+
+// milestoneDescCap caps the milestone description embedded in the
+// preamble so a 10-page brief can't dwarf the bead's own DoD. Picked
+// to be roomy enough for a real milestone summary (a paragraph or two)
+// without being a load-bearing constraint.
+const milestoneDescCap = 1200
 
 // renderSurface emits the "## Working surface" section the model
 // reads to learn its filesystem allow-lists (gm-r5vz). Returns "" if

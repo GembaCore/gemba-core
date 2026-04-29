@@ -78,6 +78,10 @@ lint: dist-sentinel frontend-install ## run golangci-lint and frontend lint
 	golangci-lint run ./...
 	cd web && pnpm lint
 
+lint-decisions: ## verify docs/design ↔ decision-bead linkage (D6 / gm-d1m1)
+	@command -v bd >/dev/null 2>&1 || { echo "install bd: https://github.com/steveyegge/beads"; exit 1; }
+	go run ./cmd/check-decisions
+
 fmt: ## format Go + frontend
 	gofmt -s -w .
 	cd web && pnpm format

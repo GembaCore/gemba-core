@@ -38,6 +38,24 @@ type UserConfig struct {
 	Projects ProjectsConfig `toml:"projects"`
 	LLM      LLMConfig      `toml:"llm"`
 	Beads    BeadsConfig    `toml:"beads"`
+	Metrics  MetricsConfig  `toml:"metrics"`
+}
+
+// MetricsConfig holds the [metrics] table from config.toml — the
+// upstream Prometheus URL the /api/v1/metrics/series proxy queries
+// (gm-e9m0; ratified under gm-sf51, "Path A" — Prometheus proxy).
+//
+// When PromURL is empty the time-series endpoint returns a
+// 503 KindAdaptorDegraded explaining that the operator must either
+// set PROM_URL in the environment or [metrics].prom_url in this
+// config file. The Insights panel renders an "awaiting Prometheus"
+// stub off that response.
+type MetricsConfig struct {
+	// PromURL is the base URL of a Prometheus instance scraping
+	// gemba's /metrics endpoint, e.g. "http://prometheus:9090".
+	// The proxy appends /api/v1/query_range to this base. Empty
+	// string means "no Prometheus configured."
+	PromURL string `toml:"prom_url"`
 }
 
 // BeadsConfig holds the [beads] table from config.toml — the Beads
@@ -121,6 +139,33 @@ func LoadUserConfig(override string) (UserConfig, error) {
 		return UserConfig{}, err
 	}
 	return cfg, nil
+}
+
+// ResolvePromURL returns the Prometheus base URL the
+// /api/v1/metrics/series proxy should query, applying the resolution
+// order ratified under gm-sf51:
+//
+//  1. cliFlag — the --prom-url CLI flag if the operator set it
+//     explicitly.
+//  2. envVar — the PROM_URL environment variable (callers pass
+//     os.Getenv("PROM_URL")).
+//  3. cfg.Metrics.PromURL — the [metrics].prom_url entry from
+//     ~/.gemba/config.toml.
+//  4. "" — no Prometheus configured. The handler surfaces this as
+//     a 503 KindAdaptorDegraded so the SPA can render the
+//     "awaiting Prometheus" stub.
+//
+// Unlike ResolveBeadsURL there is no built-in default: an unconfigured
+// Prometheus is a legitimate mode (the operator may not have one),
+// not a startup error.
+func ResolvePromURL(cliFlag, envVar string, cfg UserConfig) string {
+	if cliFlag != "" {
+		return cliFlag
+	}
+	if envVar != "" {
+		return envVar
+	}
+	return cfg.Metrics.PromURL
 }
 
 // ResolveBeadsURL returns the Beads server URL to use, applying the

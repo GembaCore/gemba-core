@@ -40,6 +40,22 @@ The PM ships with concrete `[personality]` and `[perspective]` blocks per the [g
 
 Full TOML lives in the workspace; this doc captures intent. When the persona file changes restart `gemba serve` — the registry loads once at boot.
 
+## Milestone creation (gm-yjst)
+
+During a refinement consult the PM may propose minting a new milestone via a
+`suggested_action` whose `verb=POST`, `path=/api/work-items`, and `body` is
+`{"item": {"kind": "milestone", "title": "<short label>", "description":
+"<one sentence>"}}`. The server's POST handler auto-prefixes the title with
+`M<n>` (per-project, monotonic — see `internal/server/milestone_naming.go`),
+so the persona MUST NOT include the prefix itself. The operator clicks Apply
+to mint it; the PM never POSTs (Coach variety, gm-2yg).
+
+The dedicated `/refine` slash-command surface (gm-b11z parent) is not yet
+wired — guidance lives on the persona's `system_prompt` so any consult that
+loads the PM (currently `epic_order`, `escalation_handoff`, and free-form
+`Ask PM`) can produce a milestone-creation `suggested_action` when the
+operator's intent clearly calls for one.
+
 ## Skill: `epic_order`
 
 Rank a set of candidate Epics for staging. Takes pre-computed signals (deps, file-space, budget cost) and returns a JSONL stream of ranked recommendations with rationales, plus warnings + deferrals.

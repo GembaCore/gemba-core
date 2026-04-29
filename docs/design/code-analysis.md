@@ -1,3 +1,8 @@
+---
+title: "Agentic Code Analysis: `CodeAnalysisProvider` as a first-class capability"
+decision: none
+---
+
 # Agentic Code Analysis: `CodeAnalysisProvider` as a first-class capability
 
 **Status:** design · tracked in `gm-l1i`

@@ -465,9 +465,14 @@ The full docsite is published at **<https://gembacore.github.io/gemba-core/>**.
 | [UI spec](https://gembacore.github.io/gemba-core/ui-spec/) | The SPA spec — every surface, every affordance, every test-id |
 
 > [!NOTE]
-> Architecture decisions live in beads (`bd list type:decision`) and
-> are referenced from design docs. Don't read the design docs as
-> stand-alone — read the bead they point to for the decision context.
+> Gemba captures decisions as `decision`-type beads with a `D#:`
+> numbered prefix (matching the milestone convention `M1` / `M2`).
+> Every decision is paired with a design doc that captures the
+> ratified contract; the linkage is CI-enforced via
+> `make lint-decisions` and a `--docs-only` check on every PR. See
+> [Decision process](https://gembacore.github.io/gemba-core/design/decision-process/)
+> for the lifecycle (draft → in_review → ratified | rejected) and
+> worked examples.
 
 [⬆ back to top](#top)
 

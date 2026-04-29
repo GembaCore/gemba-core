@@ -19,6 +19,8 @@ import type { KeyboardEvent } from 'react';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 import { relativeTime } from './relativeTime';
+import { milestoneNumber } from './milestone';
+import { milestoneTone } from './milestoneBadge';
 
 // Stripe colors live as static Tailwind class strings so the JIT picks
 // them up. Keep in sync with PRIORITY_STYLES in WorkItemCard so
@@ -112,6 +114,13 @@ export interface EpicCardProps {
   draggable?: boolean;
   tokenBudget?: EpicCardTokenBudget;
   badges?: EpicCardBadges;
+  // milestone is the parent_child ancestor of this epic whose kind
+  // is `milestone`, when one exists. When set the card paints a
+  // milestone-tinted top stripe (left edge already carries the
+  // priority stripe, gm-4se1) and renders an M<n> pill in the
+  // header. Resolved by the parent (EpicView) so each card render
+  // stays O(1).
+  milestone?: WorkItem;
 }
 
 function priorityLabel(priority: number | null | undefined): string | null {
@@ -137,8 +146,11 @@ export function EpicCard({
   draggable,
   tokenBudget,
   badges,
+  milestone,
 }: EpicCardProps) {
   const pri = priorityLabel(item.priority);
+  const mNum = milestone ? milestoneNumber(milestone.title) : 0;
+  const mTone = milestone ? milestoneTone(milestone.id) : null;
   const interactive = !!onSelect;
   const handleClick = !draggable && onSelect ? () => onSelect(item.id) : undefined;
   const handleDoubleClick = onSelect ? () => onSelect(item.id) : undefined;
@@ -172,11 +184,16 @@ export function EpicCard({
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
+      data-milestone-id={milestone?.id}
       className={cn(
         'group relative rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm',
         // §4.2: 3px priority stripe along the left edge.
         'border-l-[3px]',
         pri ? PRIORITY_STRIPE[pri] : '',
+        // gm-4se1: 3px milestone stripe along the top edge when the
+        // epic belongs to a milestone. Top + left don't fight; the
+        // two signals read independently.
+        mTone ? cn('border-t-[3px]', mTone.stripe) : '',
         'hover:border-neutral-300 hover:shadow',
         'dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700',
         interactive &&
@@ -199,6 +216,18 @@ export function EpicCard({
         <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950 dark:text-violet-300">
           epic
         </span>
+        {milestone && mTone && (
+          <span
+            className={cn(
+              'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+              mTone.pill
+            )}
+            title={milestone.title || milestone.id}
+            data-testid="epic-milestone-pill"
+          >
+            {mNum > 0 ? `M${mNum}` : 'M?'}
+          </span>
+        )}
       </header>
 
       {/* §4.2: title is bold and clamps at 3 lines. */}

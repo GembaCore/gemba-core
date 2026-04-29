@@ -605,7 +605,12 @@ type WorkItemPatch struct {
 	Labels        []string          `json:"labels,omitempty"`
 	DoD           *DefinitionOfDone `json:"dod,omitempty"`
 	SprintID      *string           `json:"sprint_id,omitempty"`
-	Custom        map[string]any    `json:"custom,omitempty"`
+	// Parent re-parents the work item via its parent_child edge. Three-
+	// state sentinel: nil = no change; pointer to "" = clear (orphan);
+	// pointer to a non-empty id = re-parent under that work item.
+	// Surfaced for milestone membership management (gm-98sq, gm-gsbj).
+	Parent *string        `json:"parent_id,omitempty"`
+	Custom map[string]any `json:"custom,omitempty"`
 }
 
 // BudgetRollup is the aggregated token consumption for a sprint,

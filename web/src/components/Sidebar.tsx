@@ -4,6 +4,7 @@ import {
   Terminal,
   Footprints,
   AlertTriangle,
+  Filter,
   Settings as SettingsIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -53,9 +54,12 @@ type Item = {
   workspaceScoped?: boolean;
 };
 
-// Core panes — the operator's daily verbs.
+// Core panes — the operator's daily verbs. Refine sits between Plan
+// and Review (gm-3ofd) — it's the upstream triage surface for backlog
+// work, distinct from Plan's execution kanban.
 const items: Item[] = [
   { to: '/board', label: 'Plan', Icon: LayoutGrid, workspaceScoped: true },
+  { to: '/refine', label: 'Refine', Icon: Filter, workspaceScoped: true },
   { to: '/walk', label: 'Review', Icon: Footprints, workspaceScoped: true },
   { to: '/escalations', label: 'Triage', Icon: AlertTriangle, workspaceScoped: true },
 ];

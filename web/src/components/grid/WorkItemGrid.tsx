@@ -11,16 +11,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   flexRender,
   getCoreRowModel,
+  getSortedRowModel,
   useReactTable,
   type ColumnDef,
   type RowData,
+  type SortingState,
   type VisibilityState,
 } from '@tanstack/react-table';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { Bookmark, SlidersHorizontal, Trash2 } from 'lucide-react';
+import { Bookmark, ChevronDown, ChevronUp, SlidersHorizontal, Trash2 } from 'lucide-react';
 import { useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+import { refineColumns } from './refineColumns';
 
 // EditableColumnId is the closed set of columns that participate in
 // inline editing (gm-5v8v.6.1). Other columns stay read-only — id
@@ -243,9 +246,12 @@ const coreColumns: ColumnDef<WorkItem>[] = [
       <span className="text-xs text-neutral-500">{row.original.updated_at}</span>
     ),
   },
+  ...refineColumns,
 ];
 
-// DEFAULT_VISIBILITY hides nothing; mirrors the column ids above.
+// DEFAULT_VISIBILITY hides the refine-only columns globally; /refine
+// flips them on via the visibilityOverride prop. Core columns stay
+// visible.
 const DEFAULT_VISIBILITY: VisibilityState = {
   id: true,
   title: true,
@@ -256,6 +262,10 @@ const DEFAULT_VISIBILITY: VisibilityState = {
   sprint: true,
   labels: true,
   updated: true,
+  age: false,
+  suggested_epic: false,
+  blockers: false,
+  dispatch_status: false,
 };
 
 // COMPACT_VISIBILITY — power-user preset hiding the chattier columns
@@ -271,6 +281,10 @@ const COMPACT_VISIBILITY: VisibilityState = {
   sprint: false,
   labels: false,
   updated: true,
+  age: false,
+  suggested_epic: false,
+  blockers: false,
+  dispatch_status: false,
 };
 
 export interface GridPreset {
@@ -328,8 +342,11 @@ export interface WorkItemGridPresetOptions {
 // Bulk actions the grid surfaces via keyboard chord or context menu.
 // 'edit' / 'defer' are explicit AC items on gm-5v8v.6.2; 'delete' is
 // reserved for the matching `*-x` chord and rendered in the context
-// menu so the surface is symmetric.
-export type BulkAction = 'edit' | 'defer' | 'delete';
+// menu so the surface is symmetric. 'drop-into-epic' (gm-ju5o) raises
+// the selection upward so the host page can open an epic picker.
+// 'dismiss' (gm-mw5n) is a softer canceled-state action surfaced for
+// triage flows that want a reason note before flipping state.
+export type BulkAction = 'edit' | 'defer' | 'delete' | 'drop-into-epic' | 'dismiss';
 
 export interface WorkItemGridProps {
   rows: WorkItem[];
@@ -340,6 +357,12 @@ export interface WorkItemGridProps {
   // ids the grid currently has selected (the grid owns the
   // selection state — callers don't need to track it).
   onBulkAction?: (action: BulkAction, ids: string[]) => void;
+  // Per-surface override of column visibility. /refine uses this to
+  // surface the refine-only columns (age, suggested_epic, blockers,
+  // dispatch_status) which DEFAULT_VISIBILITY hides everywhere else.
+  // Merged on top of the active preset so operator-saved presets still
+  // win for non-overridden columns.
+  visibilityOverride?: VisibilityState;
 }
 
 interface ContextMenuState {
@@ -357,8 +380,18 @@ export function WorkItemGrid({
   onSelect,
   presets,
   onBulkAction,
+  visibilityOverride,
 }: WorkItemGridProps) {
-  const [visibility, setVisibility] = useState<VisibilityState>(DEFAULT_VISIBILITY);
+  const [visibility, setVisibility] = useState<VisibilityState>(() => ({
+    ...DEFAULT_VISIBILITY,
+    ...(visibilityOverride ?? {}),
+  }));
+  // Re-apply override when it changes (caller switched surfaces).
+  useEffect(() => {
+    if (!visibilityOverride) return;
+    setVisibility((prev) => ({ ...prev, ...visibilityOverride }));
+  }, [visibilityOverride]);
+  const [sorting, setSorting] = useState<SortingState>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [presetMenuOpen, setPresetMenuOpen] = useState(false);
   const [userPresets, setUserPresets] = useState<GridPreset[]>(() =>
@@ -618,9 +651,11 @@ export function WorkItemGrid({
   const table = useReactTable({
     data: rows,
     columns,
-    state: { columnVisibility: visibility },
+    state: { columnVisibility: visibility, sorting },
     onColumnVisibilityChange: setVisibility,
+    onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
     meta,
   });
 
@@ -675,6 +710,22 @@ export function WorkItemGrid({
             data-testid="grid-bulk-defer"
           >
             Defer
+          </button>
+          <button
+            type="button"
+            onClick={() => fireBulk('drop-into-epic')}
+            className="rounded border border-sky-300 bg-white px-2 py-0.5 hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-900 dark:hover:bg-sky-800"
+            data-testid="grid-bulk-drop-into-epic"
+          >
+            Drop into epic…
+          </button>
+          <button
+            type="button"
+            onClick={() => fireBulk('dismiss')}
+            className="rounded border border-rose-300 bg-white px-2 py-0.5 text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200 dark:hover:bg-rose-900"
+            data-testid="grid-bulk-dismiss"
+          >
+            Dismiss
           </button>
           <button
             type="button"
@@ -782,31 +833,49 @@ export function WorkItemGrid({
           <thead className="sticky top-0 z-10 bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500 dark:bg-neutral-950">
             {table.getHeaderGroups().map((hg) => (
               <tr key={hg.id}>
-                {hg.headers.map((header) => (
-                  <th
-                    key={header.id}
-                    style={{ width: header.getSize() }}
-                    className="border-b border-neutral-200 px-4 py-2 font-medium dark:border-neutral-800"
-                  >
-                    {header.column.id === 'select' ? (
-                      <input
-                        type="checkbox"
-                        aria-label="Select all visible rows"
-                        checked={allVisibleSelected}
-                        ref={(el) => {
-                          if (el) el.indeterminate = someVisibleSelected;
-                        }}
-                        onChange={() => {
-                          if (allVisibleSelected) clearSelection();
-                          else selectAllVisible();
-                        }}
-                        data-testid="grid-select-all"
-                      />
-                    ) : header.isPlaceholder ? null : (
-                      flexRender(header.column.columnDef.header, header.getContext())
-                    )}
-                  </th>
-                ))}
+                {hg.headers.map((header) => {
+                  const canSort = header.column.id !== 'select' && header.column.getCanSort();
+                  const sortDir = header.column.getIsSorted();
+                  return (
+                    <th
+                      key={header.id}
+                      style={{ width: header.getSize() }}
+                      className="border-b border-neutral-200 px-4 py-2 font-medium dark:border-neutral-800"
+                    >
+                      {header.column.id === 'select' ? (
+                        <input
+                          type="checkbox"
+                          aria-label="Select all visible rows"
+                          checked={allVisibleSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = someVisibleSelected;
+                          }}
+                          onChange={() => {
+                            if (allVisibleSelected) clearSelection();
+                            else selectAllVisible();
+                          }}
+                          data-testid="grid-select-all"
+                        />
+                      ) : header.isPlaceholder ? null : canSort ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          data-testid={`grid-sort-${header.column.id}`}
+                          className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-neutral-900 dark:hover:text-neutral-100"
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {sortDir === 'asc' ? (
+                            <ChevronUp className="h-3 w-3" />
+                          ) : sortDir === 'desc' ? (
+                            <ChevronDown className="h-3 w-3" />
+                          ) : null}
+                        </button>
+                      ) : (
+                        flexRender(header.column.columnDef.header, header.getContext())
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             ))}
           </thead>
@@ -970,6 +1039,17 @@ function ContextMenu({
         testid="grid-context-defer"
         label={`Defer ${selectionCount}`}
         onClick={() => onAction('defer')}
+      />
+      <ContextMenuItem
+        testid="grid-context-drop-into-epic"
+        label={`Drop ${selectionCount} into epic…`}
+        onClick={() => onAction('drop-into-epic')}
+      />
+      <ContextMenuItem
+        testid="grid-context-dismiss"
+        label={`Dismiss ${selectionCount}`}
+        onClick={() => onAction('dismiss')}
+        danger
       />
       <ContextMenuItem
         testid="grid-context-delete"

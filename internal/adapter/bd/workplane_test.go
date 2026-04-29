@@ -30,13 +30,19 @@ type fakeBd struct {
 	t      *testing.T
 	beads  map[string]*bd.Bead
 	nextID int
+	// updateArgs records the args the adaptor passed on the most recent
+	// `bd update` call so tests can assert on the emitted flag set
+	// directly (gm-gsbj `--parent` round-trip). Indexed by bd id; older
+	// entries are overwritten on re-update.
+	updateArgs map[string][]string
 }
 
 func newFakeBd(t *testing.T) *fakeBd {
 	t.Helper()
 	return &fakeBd{
-		t:     t,
-		beads: map[string]*bd.Bead{},
+		t:          t,
+		beads:      map[string]*bd.Bead{},
+		updateArgs: map[string][]string{},
 	}
 }
 
@@ -179,6 +185,13 @@ func (f *fakeBd) handleUpdate(args []string) ([]byte, error) {
 	if !ok {
 		return nil, &fakeExitError{stderr: []byte("bd: issue not found: " + id + "\n")}
 	}
+	// Snapshot the args verbatim so tests can assert on the exact
+	// flag set the adaptor emitted (e.g. `--parent gm-x` or absence
+	// thereof). Snapshot before parse so retry idioms see the same
+	// shape twice.
+	snap := make([]string, len(args))
+	copy(snap, args)
+	f.updateArgs[id] = snap
 	for i := 1; i < len(args); i++ {
 		switch args[i] {
 		case "--title":
@@ -196,6 +209,9 @@ func (f *fakeBd) handleUpdate(args []string) ([]byte, error) {
 			i++
 		case "--assignee":
 			b.Assignee = args[i+1]
+			i++
+		case "--parent":
+			b.Parent = args[i+1]
 			i++
 		case "--set-labels":
 			b.Labels = strings.Split(args[i+1], ",")
@@ -1198,4 +1214,101 @@ func TestBeadsSubscribeEmitsOnMutations(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for workitem_closed event")
 	}
+}
+
+// gm-gsbj — Parent is a three-state pointer on WorkItemPatch; the bd
+// adaptor must translate it to `--parent <native>` (set), `--parent ""`
+// (clear), or omit the flag entirely (no change).
+func TestUpdateWorkItem_ParentSet(t *testing.T) {
+	fake := newFakeBd(t)
+	fake.beads["gm-child"] = &bd.Bead{
+		ID: "gm-child", Title: "child", Status: "open", IssueType: "task",
+	}
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	// Caller passes the prefixed id; adaptor strips to the bd-native
+	// form before forwarding to bd.
+	parent := "gemba/gemba/gm-epic-a"
+	if _, err := impl.UpdateWorkItem(
+		context.Background(),
+		core.WorkItemID("gemba/gemba/gm-child"),
+		core.WorkItemPatch{Parent: &parent},
+	); err != nil {
+		t.Fatalf("UpdateWorkItem: %v", err)
+	}
+	args := fake.updateArgs["gm-child"]
+	if !argFlagEquals(args, "--parent", "gm-epic-a") {
+		t.Fatalf("expected --parent gm-epic-a, got args=%v", args)
+	}
+	if fake.beads["gm-child"].Parent != "gm-epic-a" {
+		t.Errorf("bead.Parent=%q want gm-epic-a", fake.beads["gm-child"].Parent)
+	}
+}
+
+func TestUpdateWorkItem_ParentClear(t *testing.T) {
+	fake := newFakeBd(t)
+	fake.beads["gm-child"] = &bd.Bead{
+		ID: "gm-child", Title: "child", Status: "open", IssueType: "task",
+		Parent: "gm-old-parent",
+	}
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	// Pointer to "" is the clear sentinel — bd accepts `--parent ""`
+	// to detach the parent_child edge.
+	clear := ""
+	if _, err := impl.UpdateWorkItem(
+		context.Background(),
+		core.WorkItemID("gemba/gemba/gm-child"),
+		core.WorkItemPatch{Parent: &clear},
+	); err != nil {
+		t.Fatalf("UpdateWorkItem: %v", err)
+	}
+	args := fake.updateArgs["gm-child"]
+	if !argFlagEquals(args, "--parent", "") {
+		t.Fatalf("expected --parent \"\", got args=%v", args)
+	}
+}
+
+func TestUpdateWorkItem_ParentOmittedNoFlag(t *testing.T) {
+	fake := newFakeBd(t)
+	fake.beads["gm-child"] = &bd.Bead{
+		ID: "gm-child", Title: "child", Status: "open", IssueType: "task",
+		Parent: "gm-existing",
+	}
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	// Patch with Parent==nil must not emit `--parent` at all so an
+	// unrelated update doesn't accidentally re-parent the bead.
+	newTitle := "renamed"
+	if _, err := impl.UpdateWorkItem(
+		context.Background(),
+		core.WorkItemID("gemba/gemba/gm-child"),
+		core.WorkItemPatch{Title: &newTitle},
+	); err != nil {
+		t.Fatalf("UpdateWorkItem: %v", err)
+	}
+	args := fake.updateArgs["gm-child"]
+	for _, a := range args {
+		if a == "--parent" {
+			t.Fatalf("expected no --parent flag, got args=%v", args)
+		}
+	}
+	if fake.beads["gm-child"].Parent != "gm-existing" {
+		t.Errorf("Parent mutated by unrelated update: %q", fake.beads["gm-child"].Parent)
+	}
+}
+
+// argFlagEquals reports whether args contains `flag` followed by a
+// value equal to want. Returns false when the flag is missing or
+// trails off the end of the slice.
+func argFlagEquals(args []string, flag, want string) bool {
+	for i, a := range args {
+		if a == flag {
+			if i+1 >= len(args) {
+				return false
+			}
+			return args[i+1] == want
+		}
+	}
+	return false
 }

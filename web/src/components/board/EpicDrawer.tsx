@@ -23,6 +23,7 @@ import {
 } from '@/types/core.gen';
 import { rendererFor } from './descriptionRenderers';
 import { epicChildren } from './epicHierarchy';
+import { EpicMilestoneDropdown } from './EpicMilestoneDropdown';
 
 const STATE_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
@@ -107,7 +108,12 @@ function EpicDrawerBody({ id, onOpenChild }: EpicDrawerBodyProps) {
             {error.message}
           </div>
         ) : epicItem ? (
-          <Body epic={epicItem} children={children} onOpenChild={onOpenChild} />
+          <Body
+            epic={epicItem}
+            children={children}
+            items={allItems ?? []}
+            onOpenChild={onOpenChild}
+          />
         ) : null}
       </div>
     </>
@@ -319,10 +325,11 @@ function ActionButton({
 interface BodyProps {
   epic: WorkItem;
   children: WorkItem[];
+  items: WorkItem[];
   onOpenChild?: (id: string) => void;
 }
 
-function Body({ epic, children, onOpenChild }: BodyProps) {
+function Body({ epic, children, items, onOpenChild }: BodyProps) {
   const { workPlane } = useCapabilities();
   const DescriptionRenderer = rendererFor(workPlane?.description_format);
 
@@ -344,6 +351,11 @@ function Body({ epic, children, onOpenChild }: BodyProps) {
         <div className="mt-1 text-sm">
           {epic.status} · <span className="font-mono">{epic.state_category}</span>
         </div>
+      </section>
+
+      <section data-testid="epic-section-milestone">
+        <div className="mb-1 text-xs uppercase tracking-wide text-neutral-500">Milestone</div>
+        <EpicMilestoneDropdown epic={epic} items={items} />
       </section>
 
       {epic.description ? (

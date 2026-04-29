@@ -1,3 +1,8 @@
+---
+title: "PM Skill: `change_this` \u2014 analyze impact, consult, apply, roll back"
+decision: none
+---
+
 # PM Skill: `change_this` — analyze impact, consult, apply, roll back
 
 **Status:** design · tracked in `gm-d0e`

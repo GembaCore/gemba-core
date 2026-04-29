@@ -9,35 +9,28 @@
 // useUpdateWorkItem which carries the X-GEMBA-Confirm nonce
 // (gm-root.8 slice 2). Reorder-within-column isn't wired — needs a
 // UserOrder backend field (separate follow-up).
+//
+// gm-935r: the DndContext now lives in BoardPage so the same drag
+// gesture can target both column cells (restage) and milestone option
+// rows in MilestonePicker (re-parent). EpicView only contributes
+// droppable cells + draggable cards.
 
-import { useCallback, useMemo } from 'react';
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
+import { useMemo } from 'react';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import {
   STATE_CATEGORIES,
   type StateCategory,
   type WorkItem,
 } from '@/types/core.gen';
-import { useUpdateWorkItem } from '@/hooks/useWorkItems';
-import { useAgents } from '@/hooks/useAgents';
-import { useStartSession } from '@/hooks/useSessions';
 import { EpicCard, type EpicChildCounts } from './EpicCard';
 import {
   groupEpicsByRoot,
   ORPHAN_ROOT_ID,
   type EpicSwimlane,
 } from './epicHierarchy';
-import { cellId, resolveRestage, shouldAutoStartSession } from './dragToRestage';
+import { cellId } from './dragToRestage';
+import { buildMilestoneByEpic } from './milestoneBadge';
 
 // Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
 // Progress → Done → Canceled). The STATE_CATEGORIES order from
@@ -64,57 +57,9 @@ export function EpicView({ items, onSelectEpic }: EpicViewProps) {
     return groupEpicsByRoot(items);
   }, [items]);
   const childCountsByEpic = useMemo(() => buildChildCounts(items), [items]);
-
-  // PointerSensor requires a 4px move before starting a drag so a plain
-  // double-click doesn't accidentally begin a drag gesture. KeyboardSensor
-  // keeps the card navigable + draggable for operators without a pointer.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor)
-  );
-
-  const updateWorkItem = useUpdateWorkItem();
-  const startSession = useStartSession();
-  const { data: agents = [] } = useAgents();
-  // Pick a default agent dialect for auto-dispatch on drag-to-started.
-  // Mirrors NewSessionDialog's fallback so operators see consistent
-  // behavior whether they drag or use the manual dialog.
-  const defaultAgentType = useMemo(() => {
-    for (const a of agents) {
-      if (a.dialect) return a.dialect;
-    }
-    return 'claude';
-  }, [agents]);
-  // Index items by id so the drag handler can read the source
-  // state_category without re-walking the list.
-  const itemById = useMemo(() => {
-    const m = new Map<string, WorkItem>();
-    for (const it of items) m.set(it.id, it);
-    return m;
-  }, [items]);
-
-  const onDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const patch = resolveRestage({
-        activeID: event.active.id,
-        overID: event.over?.id,
-        itemById,
-      });
-      if (!patch) return;
-      updateWorkItem.mutate(patch, {
-        onSuccess: (updated) => {
-          // Drag-to-In-Progress on an epic means "go do this work" —
-          // dispatch a session. Backend dedups by nonce.
-          if (!shouldAutoStartSession(updated)) return;
-          startSession.mutate({
-            bead_id: updated.id,
-            agent_type: defaultAgentType,
-          });
-        },
-      });
-    },
-    [itemById, updateWorkItem, startSession, defaultAgentType]
-  );
+  // gm-4se1: resolve each epic's milestone ancestor once per render so
+  // the cards don't re-walk the relationship graph individually.
+  const milestoneByEpic = useMemo(() => buildMilestoneByEpic(items), [items]);
 
   if (swimlanes.length === 0) {
     return (
@@ -131,24 +76,23 @@ export function EpicView({ items, onSelectEpic }: EpicViewProps) {
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-      <div
-        data-testid="board-epic"
-        className="flex h-full flex-col overflow-y-auto"
-      >
-        <ColumnHeader />
-        <div className="flex flex-col">
-          {swimlanes.map((s) => (
-            <SwimlaneRow
-              key={s.root.id}
-              swimlane={s}
-              childCountsByEpic={childCountsByEpic}
-              onSelectEpic={onSelectEpic}
-            />
-          ))}
-        </div>
+    <div
+      data-testid="board-epic"
+      className="flex h-full flex-col overflow-y-auto"
+    >
+      <ColumnHeader />
+      <div className="flex flex-col">
+        {swimlanes.map((s) => (
+          <SwimlaneRow
+            key={s.root.id}
+            swimlane={s}
+            childCountsByEpic={childCountsByEpic}
+            milestoneByEpic={milestoneByEpic}
+            onSelectEpic={onSelectEpic}
+          />
+        ))}
       </div>
-    </DndContext>
+    </div>
   );
 }
 
@@ -175,10 +119,16 @@ function ColumnHeader() {
 interface SwimlaneRowProps {
   swimlane: EpicSwimlane;
   childCountsByEpic: Map<string, EpicChildCounts>;
+  milestoneByEpic: Map<string, WorkItem>;
   onSelectEpic: (id: string) => void;
 }
 
-function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowProps) {
+function SwimlaneRow({
+  swimlane,
+  childCountsByEpic,
+  milestoneByEpic,
+  onSelectEpic,
+}: SwimlaneRowProps) {
   const isOrphan = swimlane.root.id === ORPHAN_ROOT_ID;
   // gm-uekk: scope-driven filtering may leave only one swimlane —
   // suppress its label since it would just repeat the scope pill.
@@ -225,6 +175,7 @@ function SwimlaneRow({ swimlane, childCountsByEpic, onSelectEpic }: SwimlaneRowP
                 key={epicItem.id}
                 item={epicItem}
                 childCounts={childCountsByEpic.get(epicItem.id) ?? emptyCounts()}
+                milestone={milestoneByEpic.get(epicItem.id)}
                 onSelect={onSelectEpic}
               />
             ))}
@@ -268,9 +219,15 @@ function DroppableCell({ rootID, cat, children }: DroppableCellProps) {
 interface DraggableEpicCardProps {
   item: WorkItem;
   childCounts: EpicChildCounts;
+  milestone?: WorkItem;
   onSelect: (id: string) => void;
 }
-function DraggableEpicCard({ item, childCounts, onSelect }: DraggableEpicCardProps) {
+function DraggableEpicCard({
+  item,
+  childCounts,
+  milestone,
+  onSelect,
+}: DraggableEpicCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
@@ -281,7 +238,13 @@ function DraggableEpicCard({ item, childCounts, onSelect }: DraggableEpicCardPro
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <EpicCard item={item} childCounts={childCounts} onSelect={onSelect} draggable />
+      <EpicCard
+        item={item}
+        childCounts={childCounts}
+        milestone={milestone}
+        onSelect={onSelect}
+        draggable
+      />
     </div>
   );
 }

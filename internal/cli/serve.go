@@ -120,6 +120,15 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 			"(dev/demo; mutually exclusive with --beads-dir / --dolt-url; "+
 			"forces --orchestration=noop)")
 
+	// gm-e9m0: upstream Prometheus URL for the
+	// /api/v1/metrics/series proxy. Empty (the default) means
+	// "fall back to PROM_URL env, then [metrics].prom_url in
+	// ~/.gemba/config.toml, then return 503 from the endpoint."
+	cmd.Flags().StringVar(&cfg.PromURL, "prom-url", "",
+		"base URL of an upstream Prometheus instance for the "+
+			"/api/v1/metrics/series Insights proxy "+
+			"(default: PROM_URL env, then [metrics].prom_url in ~/.gemba/config.toml)")
+
 	// Flag name copied verbatim from Claude Code. Do not rename or soften.
 	cmd.Flags().BoolVar(&cfg.DangerouslySkipPermissions,
 		"dangerously-skip-permissions", false,
@@ -143,6 +152,13 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// order (CLI > config.toml > built-in default) is applied once, in
 	// one place, before any validation that requires a flag to be set.
 	if err := applyBeadsURLDefault(&cfg); err != nil {
+		return err
+	}
+
+	// gm-e9m0: resolve the upstream Prometheus URL the
+	// /api/v1/metrics/series proxy queries. CLI > PROM_URL env >
+	// [metrics].prom_url > "" (unconfigured; handler returns 503).
+	if err := applyPromURLDefault(&cfg); err != nil {
 		return err
 	}
 

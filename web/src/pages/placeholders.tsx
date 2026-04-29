@@ -13,9 +13,7 @@ function Page({ title, children }: { title: string; children?: ReactNode }) {
   );
 }
 
-export function InsightsPage() {
-  return <Page title="Insights" />;
-}
+// InsightsPage moved to web/src/pages/InsightsPage.tsx (gm-e12.17.1).
 // EscalationsPage moved to web/src/pages/EscalationsPage.tsx (gm-e11.8.1).
 export function MailPage() {
   return <Page title="Mail" />;

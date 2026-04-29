@@ -1,3 +1,8 @@
+---
+title: "New project \u2014 conversational creation flow"
+decision: none
+---
+
 # New project — conversational creation flow
 
 **Status:** accepted (gm-root.17.1, ratified 2026-04-28 by mike)

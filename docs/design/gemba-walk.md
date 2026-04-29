@@ -1,3 +1,10 @@
+---
+title: "Gemba walk \u2014 interactive multi-topic decisioning conversation"
+decision: gm-ivyu
+d: D13
+ratified_at: 2026-04-24
+---
+
 # Gemba walk — interactive multi-topic decisioning conversation
 
 **Status:** design · tracked in `gm-3nk`

@@ -9,6 +9,63 @@ import (
 	"github.com/GembaCore/gemba-core/internal/config"
 )
 
+// TestApplyPromURLDefault covers the gm-e9m0 resolver: CLI > env >
+// [metrics].prom_url > "" (unconfigured is allowed).
+func TestApplyPromURLDefault(t *testing.T) {
+	t.Setenv("PROM_URL", "")
+
+	t.Run("CLI wins outright", func(t *testing.T) {
+		t.Setenv("PROM_URL", "http://env:9090")
+		cfg := config.ServeConfig{PromURL: "http://cli:9090"}
+		if err := applyPromURLDefault(&cfg); err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+		if cfg.PromURL != "http://cli:9090" {
+			t.Errorf("CLI should win; got %q", cfg.PromURL)
+		}
+	})
+
+	t.Run("env wins when CLI empty", func(t *testing.T) {
+		t.Setenv("PROM_URL", "http://env:9090")
+		cfg := config.ServeConfig{ConfigPath: "/no/such/file"}
+		if err := applyPromURLDefault(&cfg); err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+		if cfg.PromURL != "http://env:9090" {
+			t.Errorf("env should populate; got %q", cfg.PromURL)
+		}
+	})
+
+	t.Run("config file wins when CLI and env empty", func(t *testing.T) {
+		t.Setenv("PROM_URL", "")
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.toml")
+		if err := os.WriteFile(path, []byte(`[metrics]
+prom_url = "http://from-config:9090"
+`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cfg := config.ServeConfig{ConfigPath: path}
+		if err := applyPromURLDefault(&cfg); err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+		if cfg.PromURL != "http://from-config:9090" {
+			t.Errorf("config should populate; got %q", cfg.PromURL)
+		}
+	})
+
+	t.Run("unconfigured leaves empty without error", func(t *testing.T) {
+		t.Setenv("PROM_URL", "")
+		cfg := config.ServeConfig{ConfigPath: "/no/such/file"}
+		if err := applyPromURLDefault(&cfg); err != nil {
+			t.Fatalf("unexpected: %v", err)
+		}
+		if cfg.PromURL != "" {
+			t.Errorf("expected empty PromURL, got %q", cfg.PromURL)
+		}
+	})
+}
+
 // probeBd tests — the real `bd` binary may or may not be on PATH in
 // the test environment, so we test the path-not-found branch only (we
 // cannot force bd --version to fail without a fake binary, but we can

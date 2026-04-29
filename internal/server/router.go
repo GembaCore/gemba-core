@@ -77,6 +77,13 @@ type Router struct {
 	// of panicking on a nil deref. gm-e3.6.2.
 	metricsHandler http.Handler
 
+	// metricsHTTPClient is the http.Client the /api/v1/metrics/series
+	// proxy uses to call upstream Prometheus (gm-e9m0). Nil falls
+	// back to a default 15s-timeout client at request time. Tests
+	// inject a stub via AttachMetricsHTTPClient so they don't need
+	// a live Prometheus instance.
+	metricsHTTPClient *http.Client
+
 	// notifyDeduper coalesces same-id same-UpdatedAt POSTs to
 	// /api/workitems/notify so a misbehaving git hook or a
 	// double-fire of `bd update` doesn't double-publish events
@@ -536,6 +543,14 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// "Plan with the Onboarder →". Always 200; the body's
 		// `available` flag is the operative signal.
 		api.Get("/v1/onboarder/probe", r.onboarderProbe)
+
+		// gm-e9m0: Insights time-series query proxy. Translates
+		// /api/v1/metrics/series requests into upstream Prometheus
+		// /api/v1/query_range calls (D4 — gm-sf51, "Path A"). When
+		// PromURL is empty the handler returns 503
+		// KindAdaptorDegraded so the SPA's Insights panel can render
+		// an "awaiting Prometheus" stub. Read-only — no nonce gate.
+		api.Get("/v1/metrics/series", r.metricsSeries)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {
@@ -627,6 +642,13 @@ func (r *Router) HealthBus() *registry.HealthBus { return r.healthBus }
 // want to skip the metrics surface entirely. cmd/gemba serve calls
 // this with a metrics.Collector.Handler() once at boot.
 func (r *Router) AttachMetricsHandler(h http.Handler) { r.metricsHandler = h }
+
+// AttachMetricsHTTPClient overrides the http.Client the
+// /api/v1/metrics/series proxy uses to call upstream Prometheus
+// (gm-e9m0). Tests pass a client wired to httptest.Server so they
+// don't depend on a real Prometheus instance. cmd/gemba serve does
+// not call this — production runs use the default 15s-timeout client.
+func (r *Router) AttachMetricsHTTPClient(c *http.Client) { r.metricsHTTPClient = c }
 
 // metricsAdapter dereferences the Router's metrics handler at request
 // time, so the route can be registered before the handler is set.

@@ -1,3 +1,8 @@
+---
+title: "Two-axis work planning and dispatch"
+decision: none
+---
+
 # Two-axis work planning and dispatch
 
 > Status: **draft / for review** — 2026-04-26

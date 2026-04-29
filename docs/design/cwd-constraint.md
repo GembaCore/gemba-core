@@ -1,3 +1,10 @@
+---
+title: "cwd-constraint: agent filesystem trust boundary"
+decision: gm-f9jt
+d: D8
+ratified_at: 2026-04-25
+---
+
 # cwd-constraint: agent filesystem trust boundary
 
 > Owning epic: **gm-v8vr** (Agent cwd-constraint: scoped surface +

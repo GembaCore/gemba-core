@@ -75,6 +75,13 @@ jobs:
       - name: make lint
         run: make lint
 
+      # Decision-doc frontmatter linkage check (D6 / gm-d1m1). Runs
+      # in --docs-only mode because the runner has no bd/Dolt access;
+      # the bead-side cross-check is exercised locally via
+      # `make lint-decisions`.
+      - name: check decision linkage (frontmatter)
+        run: go run ./cmd/check-decisions --docs-only
+
       - name: make test
         run: make test
 

@@ -156,6 +156,49 @@ func applyBeadsURLDefault(cfg *config.ServeConfig) error {
 	return nil
 }
 
+// applyPromURLDefault resolves the upstream Prometheus URL the
+// /api/v1/metrics/series proxy queries (gm-e9m0; D4 — gm-sf51).
+// Resolution order:
+//
+//  1. cfg.PromURL already set on the CLI flag — wins outright.
+//  2. PROM_URL environment variable — populates cfg.PromURL.
+//  3. [metrics].prom_url in ~/.gemba/config.toml — populates cfg.PromURL.
+//  4. "" — leave empty. The handler returns 503 KindAdaptorDegraded
+//     so the SPA's Insights panel renders an "awaiting Prometheus"
+//     stub.
+//
+// Unlike applyBeadsURLDefault there is no built-in default: an
+// unconfigured Prometheus is a legitimate run mode (the operator may
+// not have one), not a startup error. A malformed config file IS
+// returned as an error so the operator sees it before any port
+// binding happens.
+func applyPromURLDefault(cfg *config.ServeConfig) error {
+	if cfg.PromURL != "" {
+		// CLI wins outright.
+		return nil
+	}
+	envURL := os.Getenv("PROM_URL")
+	ucfg, err := config.LoadUserConfig(cfg.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("load user config for prom URL resolution: %w", err)
+	}
+	resolved := config.ResolvePromURL("", envURL, ucfg)
+	if resolved == "" {
+		slog.Info("metrics: no upstream Prometheus configured; " +
+			"/api/v1/metrics/series will return 503 until set " +
+			"(PROM_URL env or [metrics].prom_url in ~/.gemba/config.toml)")
+		return nil
+	}
+	cfg.PromURL = resolved
+	source := "[metrics].prom_url"
+	if envURL != "" {
+		source = "PROM_URL env"
+	}
+	slog.Info("metrics: upstream Prometheus URL resolved",
+		"url", resolved, "source", source)
+	return nil
+}
+
 // coldStartShouldSkipBind decides whether the WorkPlane registration
 // must be skipped to protect a fresh operator from silently binding a
 // stray local Dolt "gemba" database (gm-ygwe). The answer is yes when

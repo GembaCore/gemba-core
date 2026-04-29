@@ -16,6 +16,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/adapter/native/install"
 	"github.com/GembaCore/gemba-core/internal/adapter/native/preamble"
 	"github.com/GembaCore/gemba-core/internal/adapter/native/worktrees"
+	"github.com/GembaCore/gemba-core/internal/milestones"
 	"github.com/GembaCore/gemba-core/internal/persona"
 )
 
@@ -339,6 +340,12 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		}
 	} else if o.cfg.WorkPlane != nil {
 		if item, err := o.cfg.WorkPlane.GetWorkItem(ctx, core.WorkItemID(beadID)); err == nil {
+			// Selective milestone context (gm-yyo8): walk parent_child
+			// up looking for a milestone ancestor. Errors degrade to
+			// "no milestone block" — we'd rather ship an unbound
+			// preamble than fail the session start over a transport
+			// hiccup.
+			milestone, _ := milestones.FindMilestoneAncestor(ctx, o.cfg.WorkPlane, item)
 			composed := preamble.Build(preamble.Sources{
 				RepoRoot:               o.cfg.RepoRoot,
 				WorkspaceDir:           workspace,
@@ -354,6 +361,7 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 				SurfaceEnv: persona.EnvFromOS(os.Getenv),
 				Repository: surfaceRepoLabel(item),
 				Branch:     surfaceBranchLabel(item),
+				Milestone:  milestone,
 			}, item)
 			if strat, err := preamble.Apply(workspace, agent, composed); err == nil && strat.FirstMessage != "" {
 				go o.deliverFirstMessage(ctx, pane.ID, strat.FirstMessage)

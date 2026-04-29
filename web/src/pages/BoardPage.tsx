@@ -27,6 +27,15 @@ import {
   useSearchParams,
 } from 'react-router-dom';
 import { LayoutGrid, List, ListChecks, Plus, RotateCcw, Zap } from 'lucide-react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
 import { BoardColumn } from '@/components/board/BoardColumn';
 import { BoardListView } from '@/components/board/BoardListView';
 import { WorkItemDrawer } from '@/components/board/WorkItemDrawer';
@@ -35,6 +44,19 @@ import { EpicView } from '@/components/board/EpicView';
 import { NewWorkItemDialog } from '@/components/board/NewWorkItemDialog';
 import { ScopePicker } from '@/components/board/ScopePicker';
 import { SCOPE_ALL, filterByScope, type ScopeID } from '@/components/board/scope';
+import { MilestonePicker } from '@/components/board/MilestonePicker';
+import {
+  MILESTONE_ALL,
+  filterByMilestone,
+  type MilestoneID,
+} from '@/components/board/milestone';
+import { resolveRestage, shouldAutoStartSession } from '@/components/board/dragToRestage';
+import { resolveReparent } from '@/components/board/dragToReparent';
+import { useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { useStartSession } from '@/hooks/useSessions';
+import { agentsKeys } from '@/hooks/useAgents';
+import { useQueryClient } from '@tanstack/react-query';
+import type { AgentRef } from '@/types/core.gen';
 import {
   findView,
   LAYOUT_PARAM,
@@ -282,6 +304,21 @@ export function BoardPage() {
     },
     [params, setParams]
   );
+
+  // Milestone (gm-l7hy). Independent axis from scope: scope narrows to
+  // a single epic's lineage, milestone narrows to a milestone's child
+  // epics + their descendants. Both can be active at once and are
+  // composed (milestone filter first, then scope).
+  const milestone: MilestoneID = params.get('milestone') ?? MILESTONE_ALL;
+  const setMilestone = useCallback(
+    (next: MilestoneID) => {
+      const p = new URLSearchParams(params);
+      if (next === MILESTONE_ALL) p.delete('milestone');
+      else p.set('milestone', next);
+      setParams(p, { replace: true });
+    },
+    [params, setParams]
+  );
   // Cmd-W toggles the kanban granularity (epic ↔ workitem). It does
   // not pivot through list — the list/kanban swap is its own hotkey
   // (Cmd-Shift-L) so the two axes stay independent.
@@ -316,26 +353,93 @@ export function BoardPage() {
 
   const [newItemOpen, setNewItemOpen] = useState(false);
 
+  // gm-75u + gm-935r: a single DndContext spans both the BoardHeader
+  // (so milestone-option rows can be drop targets) and the EpicView
+  // (so column cells can be drop targets). The handler routes by the
+  // over-id encoding: cell|... → restage; milestone-option|... →
+  // re-parent. PointerSensor's 4px threshold prevents accidental drags
+  // from a normal click; KeyboardSensor keeps the cards usable without
+  // a pointer.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor)
+  );
+  const updateWorkItem = useUpdateWorkItem();
+  const startSession = useStartSession();
+  // Read the agents roster lazily from the query cache when auto-start
+  // fires; we don't useAgents() here because mounting BoardPage in
+  // error/loading states shouldn't trigger an agents fetch.
+  const queryClient = useQueryClient();
+  // Index by id so the drag handler can read source state without
+  // re-walking the list. Keyed off the unfiltered dataset so a
+  // milestone-narrowed view still resolves cards correctly when their
+  // drag target lives outside the current filter.
+  const itemById = useMemo(() => {
+    const m = new Map<string, WorkItem>();
+    for (const it of data ?? []) m.set(it.id, it);
+    return m;
+  }, [data]);
+  const onDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const reparent = resolveReparent({
+        activeID: event.active.id,
+        overID: event.over?.id,
+        itemById,
+      });
+      if (reparent) {
+        updateWorkItem.mutate(reparent);
+        return;
+      }
+      const restage = resolveRestage({
+        activeID: event.active.id,
+        overID: event.over?.id,
+        itemById,
+      });
+      if (!restage) return;
+      updateWorkItem.mutate(restage, {
+        onSuccess: (updated) => {
+          if (!shouldAutoStartSession(updated)) return;
+          const agents = queryClient.getQueryData<AgentRef[]>(agentsKeys.list()) ?? [];
+          let agent = 'claude';
+          for (const a of agents) {
+            if (a.dialect) {
+              agent = a.dialect;
+              break;
+            }
+          }
+          startSession.mutate({ bead_id: updated.id, agent_type: agent });
+        },
+      });
+    },
+    [itemById, updateWorkItem, startSession, queryClient]
+  );
+
   // List layout runs its own filtered query; the kanban-level
   // loading and error gates only apply to the kanban renderers.
   if (layout !== 'list' && isLoading) return <SkeletonBoard />;
   if (layout !== 'list' && isError)
     return <ErrorState message={error?.message ?? 'Unknown error.'} onRetry={() => void refetch()} />;
 
-  // gm-uekk: filter the dataset to the active scope's lineage. The
-  // unfiltered `data` is still passed to ScopePicker so its dropdown
-  // can enumerate every root + child epic regardless of which one
-  // is currently selected.
-  const scopedData = data ? filterByScope(data, scope) : data;
+  // gm-uekk + gm-l7hy: compose milestone → scope filtering. The
+  // unfiltered `data` is still passed to the pickers so their
+  // dropdowns can enumerate every option regardless of the active
+  // selection. Order: milestone narrows first (drops other milestones'
+  // subtrees), then scope narrows within that.
+  const scopedData = data
+    ? filterByScope(filterByMilestone(data, milestone), scope)
+    : data;
 
   return (
-    <>
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <BoardHeader
         layout={layout}
         onChangeLayout={setLayout}
         items={data ?? []}
         scope={scope}
         onChangeScope={setScope}
+        milestone={milestone}
+        onChangeMilestone={setMilestone}
+        onShowMilestone={(id) => setOpenWorkItemId(id)}
         view={view}
         onChangeView={setView}
         power={power}
@@ -373,7 +477,7 @@ export function BoardPage() {
         onClose={() => setNewItemOpen(false)}
         onCreated={(item) => setOpenWorkItemId(item.id)}
       />
-    </>
+    </DndContext>
   );
 }
 
@@ -390,6 +494,9 @@ interface BoardHeaderProps {
   items: WorkItem[];
   scope: ScopeID;
   onChangeScope: (s: ScopeID) => void;
+  milestone: MilestoneID;
+  onChangeMilestone: (m: MilestoneID) => void;
+  onShowMilestone: (id: string) => void;
   view: WorkItemView | null;
   onChangeView: (id: string | null) => void;
   power: boolean;
@@ -402,6 +509,9 @@ function BoardHeader({
   items,
   scope,
   onChangeScope,
+  milestone,
+  onChangeMilestone,
+  onShowMilestone,
   view,
   onChangeView,
   power,
@@ -414,6 +524,12 @@ function BoardHeader({
       className="flex flex-wrap items-center gap-3 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
     >
       <ScopePicker items={items} value={scope} onChange={onChangeScope} />
+      <MilestonePicker
+        items={items}
+        value={milestone}
+        onChange={onChangeMilestone}
+        onShow={onShowMilestone}
+      />
       <ViewSwitcher value={view} onChange={onChangeView} />
       <div className="ml-auto flex items-center gap-1">
         <button

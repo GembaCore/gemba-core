@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { EpicCard, type EpicChildCounts } from '../EpicCard';
-import type { WorkItem } from '@/types/core.gen';
+import { KIND_MILESTONE, type WorkItem } from '@/types/core.gen';
 
 function emptyCounts(total = 0): EpicChildCounts {
   return {
@@ -247,6 +247,54 @@ describe('EpicCard — anatomy (gm-pd2 / ui-spec §4.2)', () => {
     );
     fireEvent.click(screen.getByRole('button'));
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('renders the M-pill when a milestone is supplied', () => {
+    const m: WorkItem = {
+      id: 'm-7',
+      kind: KIND_MILESTONE,
+      title: 'M7 Q4 push',
+      status: 'open',
+      state_category: 'unstarted',
+      created_at: '',
+      updated_at: '',
+    };
+    const { container } = render(
+      <EpicCard item={baseEpic} childCounts={emptyCounts()} milestone={m} />
+    );
+    const pill = screen.getByTestId('epic-milestone-pill');
+    expect(pill.textContent).toBe('M7');
+    expect(pill.getAttribute('title')).toBe('M7 Q4 push');
+    // The card carries a milestone-id data attr for keyboard / styling
+    // integration tests downstream.
+    const article = container.querySelector('[data-epic-card="true"]');
+    expect(article!.getAttribute('data-milestone-id')).toBe('m-7');
+    // Top stripe class is present.
+    expect(article!.className).toContain('border-t-[3px]');
+  });
+
+  it('omits the M-pill when no milestone is supplied', () => {
+    const { container } = render(
+      <EpicCard item={baseEpic} childCounts={emptyCounts()} />
+    );
+    expect(screen.queryByTestId('epic-milestone-pill')).toBeNull();
+    const article = container.querySelector('[data-epic-card="true"]');
+    expect(article!.hasAttribute('data-milestone-id')).toBe(false);
+    expect(article!.className).not.toContain('border-t-[3px]');
+  });
+
+  it('falls back to "M?" when the milestone title carries no M-prefix', () => {
+    const m: WorkItem = {
+      id: 'm-legacy',
+      kind: KIND_MILESTONE,
+      title: 'Legacy unnumbered',
+      status: 'open',
+      state_category: 'unstarted',
+      created_at: '',
+      updated_at: '',
+    };
+    render(<EpicCard item={baseEpic} childCounts={emptyCounts()} milestone={m} />);
+    expect(screen.getByTestId('epic-milestone-pill').textContent).toBe('M?');
   });
 
   it('opens drawer on "o" keypress (matches WorkItemCard convention)', () => {

@@ -23,15 +23,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { ArrowDown, ArrowLeft, ArrowUp, Check, Copy, Pencil, Plus, Terminal, Trash2, X } from 'lucide-react';
-import { useWorkItem, useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { useWorkItem, useUpdateWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useAgents, useSprints } from '@/hooks/useAgents';
 import { useNavigate } from 'react-router-dom';
 import { useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
+import { KIND_MILESTONE } from '@/types/core.gen';
 import type { AgentRef, DefinitionOfDone, StateCategory, WorkItem } from '@/types/core.gen';
 import type { Evidence } from '@/types/core.gen';
 import { rendererFor } from './descriptionRenderers';
 import { canEdit } from './canEdit';
+import { MilestoneChildrenPanel } from './MilestoneChildrenPanel';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
 
 export interface WorkItemDrawerProps {
@@ -390,6 +392,8 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
           />
         </DefRow>
       </Section>
+
+      {item.kind === KIND_MILESTONE ? <MilestoneChildrenPanelMount milestone={item} /> : null}
 
       <DrawerTabBar tab={tab} onChange={setTab} hasExtensions={hasExtensions} />
 
@@ -1065,6 +1069,14 @@ function DescriptionEditor({
       ) : null}
     </div>
   );
+}
+
+// MilestoneChildrenPanelMount fetches the project list only when a
+// milestone bead is open, so non-milestone drawer renders don't pay
+// the extra round-trip.
+function MilestoneChildrenPanelMount({ milestone }: { milestone: WorkItem }) {
+  const { data: allItems = [] } = useWorkItems();
+  return <MilestoneChildrenPanel milestone={milestone} allItems={allItems} />;
 }
 
 function Section({

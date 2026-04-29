@@ -1,3 +1,10 @@
+---
+title: "Milestone convention"
+decision: gm-bnbj
+d: D11
+ratified_at: 2026-04-24
+---
+
 # Milestone convention
 
 **Status:** accepted (gm-root.3.1)
