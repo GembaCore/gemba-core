@@ -32,14 +32,17 @@ export function AppShell() {
               <Topbar />
               <AdaptorBanner />
               <ActiveWalkBanner />
-              {/* tabIndex={-1} keeps the scrollable <main> keyboard-
-                  accessible (axe scrollable-region-focusable, gm-root.17.12)
-                  without dropping a stray tab stop into the natural focus
-                  order — the route's content owns the focus order, not the
-                  outer scroll container. -1 satisfies the rule because axe
-                  accepts any focusable region; programmatic focus + native
-                  arrow-key scroll still work. */}
-              <main className="min-h-0 flex-1 overflow-auto" tabIndex={-1}>
+              {/* tabIndex={0} keeps the scrollable <main> keyboard-
+                  accessible per axe scrollable-region-focusable: keyboard-
+                  only users need to be able to focus the scroll region so
+                  they can arrow-key through it. axe specifically rejects
+                  tabindex=-1 here because that makes the region only
+                  programmatically focusable, not reachable via Tab —
+                  which doesn't help a keyboard-only user. The cost is one
+                  extra Tab stop before route content; the benefit is WCAG
+                  compliance for any loading skeleton (or otherwise empty
+                  page) where there's no inner focusable content yet. */}
+              <main className="min-h-0 flex-1 overflow-auto" tabIndex={0}>
                 <Outlet />
               </main>
             </div>
