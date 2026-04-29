@@ -1,3 +1,9 @@
+---
+title: "Milestone convention"
+decision: none
+backfill: pending
+---
+
 # Milestone convention
 
 **Status:** accepted (gm-root.3.1)

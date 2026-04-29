@@ -1,3 +1,9 @@
+---
+title: "Gemba walk \u2014 interactive multi-topic decisioning conversation"
+decision: none
+backfill: pending
+---
+
 # Gemba walk — interactive multi-topic decisioning conversation
 
 **Status:** design · tracked in `gm-3nk`

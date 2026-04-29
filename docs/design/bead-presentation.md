@@ -1,3 +1,9 @@
+---
+title: "Bead entity presentation \u2014 card / tooltip / drawer"
+decision: none
+backfill: pending
+---
+
 # Bead entity presentation — card / tooltip / drawer
 
 **Bead:** gm-c7q (M1.7d) · **Resolves DD:** bead-entity-visual-vocabulary

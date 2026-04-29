@@ -61,6 +61,7 @@ export default defineConfig({
             { label: 'CWD constraint', link: '/design/cwd-constraint/' },
             { label: 'Parallelism boundary', link: '/design/parallelism-boundary/' },
             { label: 'Milestone convention', link: '/design/milestone-convention/' },
+            { label: 'Decision process', link: '/design/decision-process/' },
           ],
         },
         {

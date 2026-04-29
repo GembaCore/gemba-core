@@ -1,3 +1,9 @@
+---
+title: "Persona PPPP: Personality + Perspective + Purview (phase-gated)"
+decision: none
+backfill: pending
+---
+
 # Persona PPPP: Personality + Perspective + Purview (phase-gated)
 
 **Status:** design · tracked in `gm-9rv`

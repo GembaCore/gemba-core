@@ -1,3 +1,9 @@
+---
+title: "Parallelism boundary \u2014 deconfliction precedes dispatch"
+decision: none
+backfill: pending
+---
+
 # Parallelism boundary — deconfliction precedes dispatch
 
 Source: gm-root.16 / gm-root.16.1.

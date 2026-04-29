@@ -1,3 +1,9 @@
+---
+title: "Design"
+decision: none
+backfill: pending
+---
+
 # Design
 
 Durable architectural decisions and design contracts. Each page
@@ -42,6 +48,13 @@ alternatives, and the invariants downstream code can rely on.
   (smoke / chrome / route / realtime / modes / deep).
 - **[Skill authoring contract](skill-authoring-contract)** — how
   persona Skills declare inputs / outputs / capability gates.
+
+## Process
+
+- **[Decision process](decision-process)** — how Gemba captures,
+  ratifies, and supersedes design + implementation decisions. The
+  `D#` numbering convention, the doc ↔ bead linkage, and the
+  draft → in_review → ratified ceremony.
 
 ## Where next
 

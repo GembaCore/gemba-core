@@ -1,3 +1,9 @@
+---
+title: "Workflow \u2014 Beads molecules as Gemba's first-class motion primitive"
+decision: none
+backfill: pending
+---
+
 # Workflow — Beads molecules as Gemba's first-class motion primitive
 
 > **Status:** Design proposal. Locks the vocabulary, the operator-facing UI surfaces, and the integration shape; defers the slice-by-slice bead breakdown until ratification.

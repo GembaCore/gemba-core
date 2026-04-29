@@ -1,3 +1,9 @@
+---
+title: "Containerized sessions \u2014 architecture + threat model"
+decision: none
+backfill: pending
+---
+
 # Containerized sessions — architecture + threat model
 
 > Reference for epic [gm-root.15]. Every implementation bead in the epic

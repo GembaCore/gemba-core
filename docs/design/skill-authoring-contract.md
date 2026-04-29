@@ -1,3 +1,9 @@
+---
+title: "Skill authoring contract (Coach / Manager)"
+decision: none
+backfill: pending
+---
+
 # Skill authoring contract (Coach / Manager)
 
 **Status:** accepted (gm-97w7.1)

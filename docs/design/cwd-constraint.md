@@ -1,3 +1,9 @@
+---
+title: "cwd-constraint: agent filesystem trust boundary"
+decision: none
+backfill: pending
+---
+
 # cwd-constraint: agent filesystem trust boundary
 
 > Owning epic: **gm-v8vr** (Agent cwd-constraint: scoped surface +
