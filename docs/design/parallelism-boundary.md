@@ -1,7 +1,8 @@
 ---
 title: "Parallelism boundary \u2014 deconfliction precedes dispatch"
-decision: none
-backfill: pending
+decision: gm-vgyp
+d: D7
+ratified_at: 2026-04-27
 ---
 
 # Parallelism boundary — deconfliction precedes dispatch

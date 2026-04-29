@@ -1,7 +1,8 @@
 ---
 title: "Bead entity presentation \u2014 card / tooltip / drawer"
-decision: none
-backfill: pending
+decision: gm-uf4r
+d: D12
+ratified_at: 2026-04-24
 ---
 
 # Bead entity presentation — card / tooltip / drawer

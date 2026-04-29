@@ -1,7 +1,8 @@
 ---
 title: "Milestone convention"
-decision: none
-backfill: pending
+decision: gm-bnbj
+d: D11
+ratified_at: 2026-04-24
 ---
 
 # Milestone convention

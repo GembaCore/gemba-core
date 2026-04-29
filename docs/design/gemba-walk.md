@@ -1,7 +1,8 @@
 ---
 title: "Gemba walk \u2014 interactive multi-topic decisioning conversation"
-decision: none
-backfill: pending
+decision: gm-ivyu
+d: D13
+ratified_at: 2026-04-24
 ---
 
 # Gemba walk — interactive multi-topic decisioning conversation

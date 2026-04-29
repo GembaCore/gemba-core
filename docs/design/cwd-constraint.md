@@ -1,7 +1,8 @@
 ---
 title: "cwd-constraint: agent filesystem trust boundary"
-decision: none
-backfill: pending
+decision: gm-f9jt
+d: D8
+ratified_at: 2026-04-25
 ---
 
 # cwd-constraint: agent filesystem trust boundary

@@ -1,7 +1,8 @@
 ---
 title: "Containerized sessions \u2014 architecture + threat model"
-decision: none
-backfill: pending
+decision: gm-nsdl
+d: D9
+ratified_at: 2026-04-24
 ---
 
 # Containerized sessions — architecture + threat model

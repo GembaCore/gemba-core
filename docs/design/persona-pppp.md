@@ -1,7 +1,8 @@
 ---
 title: "Persona PPPP: Personality + Perspective + Purview (phase-gated)"
-decision: none
-backfill: pending
+decision: gm-1iht
+d: D10
+ratified_at: 2026-04-24
 ---
 
 # Persona PPPP: Personality + Perspective + Purview (phase-gated)
