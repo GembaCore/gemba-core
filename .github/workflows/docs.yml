@@ -55,8 +55,8 @@ jobs:
       - name: Build site
         working-directory: docs-site
         env:
-          SITE: https://mikebengtson.github.io
-          BASE: /gemba/
+          SITE: https://gembacore.github.io
+          BASE: /gemba-core/
         run: pnpm build
 
       - name: Upload Pages artifact
