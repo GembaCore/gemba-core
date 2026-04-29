@@ -35,6 +35,12 @@ import { EpicView } from '@/components/board/EpicView';
 import { NewWorkItemDialog } from '@/components/board/NewWorkItemDialog';
 import { ScopePicker } from '@/components/board/ScopePicker';
 import { SCOPE_ALL, filterByScope, type ScopeID } from '@/components/board/scope';
+import { MilestonePicker } from '@/components/board/MilestonePicker';
+import {
+  MILESTONE_ALL,
+  filterByMilestone,
+  type MilestoneID,
+} from '@/components/board/milestone';
 import {
   findView,
   LAYOUT_PARAM,
@@ -282,6 +288,21 @@ export function BoardPage() {
     },
     [params, setParams]
   );
+
+  // Milestone (gm-l7hy). Independent axis from scope: scope narrows to
+  // a single epic's lineage, milestone narrows to a milestone's child
+  // epics + their descendants. Both can be active at once and are
+  // composed (milestone filter first, then scope).
+  const milestone: MilestoneID = params.get('milestone') ?? MILESTONE_ALL;
+  const setMilestone = useCallback(
+    (next: MilestoneID) => {
+      const p = new URLSearchParams(params);
+      if (next === MILESTONE_ALL) p.delete('milestone');
+      else p.set('milestone', next);
+      setParams(p, { replace: true });
+    },
+    [params, setParams]
+  );
   // Cmd-W toggles the kanban granularity (epic ↔ workitem). It does
   // not pivot through list — the list/kanban swap is its own hotkey
   // (Cmd-Shift-L) so the two axes stay independent.
@@ -322,11 +343,14 @@ export function BoardPage() {
   if (layout !== 'list' && isError)
     return <ErrorState message={error?.message ?? 'Unknown error.'} onRetry={() => void refetch()} />;
 
-  // gm-uekk: filter the dataset to the active scope's lineage. The
-  // unfiltered `data` is still passed to ScopePicker so its dropdown
-  // can enumerate every root + child epic regardless of which one
-  // is currently selected.
-  const scopedData = data ? filterByScope(data, scope) : data;
+  // gm-uekk + gm-l7hy: compose milestone → scope filtering. The
+  // unfiltered `data` is still passed to the pickers so their
+  // dropdowns can enumerate every option regardless of the active
+  // selection. Order: milestone narrows first (drops other milestones'
+  // subtrees), then scope narrows within that.
+  const scopedData = data
+    ? filterByScope(filterByMilestone(data, milestone), scope)
+    : data;
 
   return (
     <>
@@ -336,6 +360,9 @@ export function BoardPage() {
         items={data ?? []}
         scope={scope}
         onChangeScope={setScope}
+        milestone={milestone}
+        onChangeMilestone={setMilestone}
+        onShowMilestone={(id) => setOpenWorkItemId(id)}
         view={view}
         onChangeView={setView}
         power={power}
@@ -390,6 +417,9 @@ interface BoardHeaderProps {
   items: WorkItem[];
   scope: ScopeID;
   onChangeScope: (s: ScopeID) => void;
+  milestone: MilestoneID;
+  onChangeMilestone: (m: MilestoneID) => void;
+  onShowMilestone: (id: string) => void;
   view: WorkItemView | null;
   onChangeView: (id: string | null) => void;
   power: boolean;
@@ -402,6 +432,9 @@ function BoardHeader({
   items,
   scope,
   onChangeScope,
+  milestone,
+  onChangeMilestone,
+  onShowMilestone,
   view,
   onChangeView,
   power,
@@ -414,6 +447,12 @@ function BoardHeader({
       className="flex flex-wrap items-center gap-3 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
     >
       <ScopePicker items={items} value={scope} onChange={onChangeScope} />
+      <MilestonePicker
+        items={items}
+        value={milestone}
+        onChange={onChangeMilestone}
+        onShow={onShowMilestone}
+      />
       <ViewSwitcher value={view} onChange={onChangeView} />
       <div className="ml-auto flex items-center gap-1">
         <button
