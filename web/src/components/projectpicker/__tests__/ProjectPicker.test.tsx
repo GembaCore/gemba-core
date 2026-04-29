@@ -55,15 +55,26 @@ describe('ProjectPicker', () => {
   // for the switch call). All other URLs delegate to fetchSpy in
   // FIFO order.
   const fetchSpy = vi.fn();
-  const routedFetch = vi.fn(async (url: string | Request, init?: RequestInit) => {
+  const routedFetch = vi.fn();
+  // Default routing: /v1/projects/adoptable → empty list; everything
+  // else delegates to fetchSpy. Tests that override routedFetch via
+  // mockImplementation MUST get the default restored before the next
+  // test runs (mockClear preserves implementation), so we re-install
+  // the default in beforeEach below.
+  const defaultRoutedFetchImpl = async (
+    url: string | Request,
+    init?: RequestInit
+  ) => {
     const u = typeof url === 'string' ? url : url.url;
     if (u.includes('/v1/projects/adoptable')) {
       return jsonResponse({ dbs: [], total: 0 });
     }
     return fetchSpy(url, init);
-  });
+  };
 
   beforeEach(() => {
+    routedFetch.mockReset();
+    routedFetch.mockImplementation(defaultRoutedFetchImpl);
     vi.stubGlobal('fetch', routedFetch);
   });
 
@@ -321,6 +332,90 @@ describe('ProjectPicker', () => {
     fireEvent.click(screen.getByTestId('workspace-label'));
     await waitFor(() => screen.getByTestId('project-picker-dropdown'));
     expect(screen.queryByTestId('project-picker-adoptable-section')).toBeNull();
+  });
+
+  // gm-root.17.14: incomplete entry → "needs setup" badge renders.
+  it('renders a "needs setup" badge for entries whose kind != complete', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({
+        projects: [
+          { name: 'alpha', path: '/p/alpha', kind: 'complete' },
+          { name: 'orphan', path: '/p/orphan', kind: 'needs_workspace' },
+          { name: 'looseworkspace', path: '/p/loose', kind: 'needs_repo' },
+        ],
+        total: 3,
+      })
+    );
+    renderPicker();
+    await waitFor(() => screen.getByTestId('workspace-label'));
+    fireEvent.click(screen.getByTestId('workspace-label'));
+    await waitFor(() => screen.getByTestId('project-picker-item-orphan'));
+
+    expect(screen.getByTestId('picker-needs-setup-orphan')).toBeTruthy();
+    expect(screen.getByTestId('picker-needs-setup-looseworkspace')).toBeTruthy();
+    // The complete entry has no badge.
+    expect(screen.queryByTestId('picker-needs-setup-alpha')).toBeNull();
+  });
+
+  // gm-root.17.14: clicking a complete entry switches workspace.
+  it('clicking a complete entry calls switchProject', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        jsonResponse({
+          projects: [{ name: 'alpha', path: '/p/alpha', kind: 'complete' }],
+          total: 1,
+        })
+      )
+      .mockResolvedValue(
+        jsonResponse({ active: { name: 'alpha', path: '/p/alpha', active: true, kind: 'complete' } })
+      );
+
+    renderPicker();
+    await waitFor(() => screen.getByTestId('workspace-label'));
+    fireEvent.click(screen.getByTestId('workspace-label'));
+    await waitFor(() => screen.getByTestId('project-picker-item-alpha'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('project-picker-item-alpha'));
+    });
+
+    const switchCall = fetchSpy.mock.calls.find(
+      ([url]) => typeof url === 'string' && url.includes('/v1/projects/switch')
+    );
+    expect(switchCall).toBeTruthy();
+    // No bind dialog opens for a complete entry.
+    expect(screen.queryByTestId('bind-dialog')).toBeNull();
+  });
+
+  // gm-root.17.14: clicking a needs-setup entry opens BindDialog
+  // instead of switching workspace.
+  it('clicking a needs-setup entry opens BindDialog and does NOT switch', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({
+        projects: [
+          { name: 'orphan', path: '/p/orphan', kind: 'needs_workspace' },
+        ],
+        total: 1,
+      })
+    );
+
+    renderPicker();
+    await waitFor(() => screen.getByTestId('workspace-label'));
+    fireEvent.click(screen.getByTestId('workspace-label'));
+    await waitFor(() => screen.getByTestId('project-picker-item-orphan'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('project-picker-item-orphan'));
+    });
+
+    // BindDialog opened.
+    await waitFor(() => screen.getByTestId('bind-dialog'));
+    expect(screen.getByTestId('bind-dialog')).toBeTruthy();
+    // No switch call was issued.
+    const switchCall = fetchSpy.mock.calls.find(
+      ([url]) => typeof url === 'string' && url.includes('/v1/projects/switch')
+    );
+    expect(switchCall).toBeFalsy();
   });
 
   // gm-gmyl: lister returns a notice (server unreachable) → notice

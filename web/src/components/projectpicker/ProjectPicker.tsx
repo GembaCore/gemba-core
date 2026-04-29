@@ -19,7 +19,8 @@ import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useProjectPicker } from './ProjectPickerContext';
 import { useCreateProjectModal } from '@/components/projects/CreateProjectModalContext';
-import { listAdoptableDBs, type AdoptableDB } from '@/api/projects';
+import { BindDialog } from './BindDialog';
+import { listAdoptableDBs, type AdoptableDB, type ProjectEntry } from '@/api/projects';
 
 export function ProjectPicker() {
   const { projects, activeProject, isLoading, error, switchProject } = useProjectPicker();
@@ -33,6 +34,10 @@ export function ProjectPicker() {
   // is the common case — most operators have a one-project rig.
   const [adoptable, setAdoptable] = useState<AdoptableDB[]>([]);
   const [adoptableNotice, setAdoptableNotice] = useState<string | null>(null);
+  // gm-root.17.14: BindDialog state. Opens when the operator clicks
+  // an entry whose kind != "complete". The dialog handles the bind
+  // call + post-bind switch so the picker stays a thin dispatcher.
+  const [bindEntry, setBindEntry] = useState<ProjectEntry | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // gm-gmyl: refresh the adoptable list each time the dropdown opens.
@@ -81,10 +86,21 @@ export function ProjectPicker() {
   }, [open]);
 
   const handleSelect = useCallback(
-    async (name: string) => {
+    async (entry: ProjectEntry) => {
+      // gm-root.17.14: incomplete entries route to BindDialog instead
+      // of switching workspace. The server emits kind on every entry;
+      // missing/undefined kind is treated as "complete" so legacy
+      // fixtures and pre-rebase fakes don't accidentally trip the
+      // bind flow.
+      const kind = entry.kind ?? 'complete';
+      if (kind !== 'complete') {
+        setOpen(false);
+        setBindEntry(entry);
+        return;
+      }
       setOpen(false);
       try {
-        await switchProject(name);
+        await switchProject(entry.name);
         // Navigate to the board — the active workspace changed.
         navigate('/board');
       } catch {
@@ -158,39 +174,54 @@ export function ProjectPicker() {
             </div>
           ) : (
             <ul className="py-1" role="presentation">
-              {(projects ?? []).map((p) => (
-                <li key={p.name} role="presentation">
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={p.active ?? p.name === activeProject?.name}
-                    data-testid={`project-picker-item-${p.name}`}
-                    onClick={() => handleSelect(p.name)}
-                    className={cn(
-                      'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
-                      'hover:bg-neutral-100 dark:hover:bg-neutral-800',
-                      (p.active ?? p.name === activeProject?.name)
-                        ? 'font-medium text-neutral-900 dark:text-neutral-100'
-                        : 'text-neutral-700 dark:text-neutral-300'
-                    )}
-                  >
-                    <FolderOpen
+              {(projects ?? []).map((p) => {
+                const kind = p.kind ?? 'complete';
+                const needsSetup = kind !== 'complete';
+                const isActive = p.active ?? p.name === activeProject?.name;
+                return (
+                  <li key={p.name} role="presentation">
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={isActive}
+                      data-testid={`project-picker-item-${p.name}`}
+                      onClick={() => handleSelect(p)}
                       className={cn(
-                        'h-3.5 w-3.5 shrink-0',
-                        (p.active ?? p.name === activeProject?.name)
-                          ? 'text-sky-600 dark:text-sky-400'
-                          : 'text-neutral-400 dark:text-neutral-500'
+                        'flex w-full items-center gap-2 px-3 py-2 text-left text-sm',
+                        'hover:bg-neutral-100 dark:hover:bg-neutral-800',
+                        isActive
+                          ? 'font-medium text-neutral-900 dark:text-neutral-100'
+                          : 'text-neutral-700 dark:text-neutral-300'
                       )}
-                    />
-                    <span className="truncate font-mono">{p.name}</span>
-                    {(p.active ?? p.name === activeProject?.name) && (
-                      <span className="ml-auto shrink-0 text-xs text-sky-600 dark:text-sky-400">
-                        active
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
+                    >
+                      <FolderOpen
+                        className={cn(
+                          'h-3.5 w-3.5 shrink-0',
+                          isActive
+                            ? 'text-sky-600 dark:text-sky-400'
+                            : needsSetup
+                              ? 'text-amber-500 dark:text-amber-400'
+                              : 'text-neutral-400 dark:text-neutral-500'
+                        )}
+                      />
+                      <span className="truncate font-mono">{p.name}</span>
+                      {needsSetup && (
+                        <span
+                          data-testid={`picker-needs-setup-${p.name}`}
+                          className="ml-auto shrink-0 rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                        >
+                          needs setup
+                        </span>
+                      )}
+                      {!needsSetup && isActive && (
+                        <span className="ml-auto shrink-0 text-xs text-sky-600 dark:text-sky-400">
+                          active
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
           {/* gm-gmyl: "Adoptable beads DBs" section — schemas the
@@ -262,6 +293,15 @@ export function ProjectPicker() {
           </div>
         </div>
       )}
+
+      {/* gm-root.17.14: BindDialog for projects whose kind != "complete".
+          The dialog handles the bind call + post-bind switch
+          internally; the picker just dispatches based on the click. */}
+      <BindDialog
+        open={bindEntry !== null}
+        entry={bindEntry}
+        onClose={() => setBindEntry(null)}
+      />
     </div>
   );
 }

@@ -16,14 +16,36 @@ import { apiFetch } from './client';
 import { CONFIRM_HEADER } from './workItems';
 import { freshNonce } from './newproject';
 
+// ProjectKind classifies a project's setup state (gm-root.17.14).
+//
+//   "complete"         — has both a beads DB and a .gemba/workspace.toml
+//                        inside a git repo. Selecting it switches the
+//                        active workspace.
+//   "needs_workspace"  — beads DB exists but the directory has no
+//                        .gemba/workspace.toml marker. The picker
+//                        renders a "needs setup" badge and routes the
+//                        click to BindDialog rather than switching.
+//   "needs_repo"       — workspace marker exists but the directory is
+//                        not inside a git worktree. Same picker
+//                        treatment as needs_workspace; BindDialog
+//                        offers `git init` here or "move into existing
+//                        repo".
+//
+// Open string at the wire so future kinds don't break the SPA.
+export type ProjectKind = 'complete' | 'needs_workspace' | 'needs_repo';
+
 // ProjectEntry mirrors the server-side projectEntry shape from
 // internal/server/projects.go. Name is the directory basename; Path
 // is the absolute disk path; Active is true for the currently-selected
-// project (in-process server state; resets on server restart).
+// project (in-process server state; resets on server restart). Kind
+// classifies the project's setup state (gm-root.17.14) — entries
+// whose kind != "complete" need to be bound via BindDialog before
+// they can be selected as the active workspace.
 export interface ProjectEntry {
   name: string;
   path: string;
   active?: boolean;
+  kind: ProjectKind;
 }
 
 // ProjectsEnvelope is the response body of GET /api/v1/projects.
@@ -156,5 +178,50 @@ export async function cloneProject(
       [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
     },
     body: JSON.stringify(req),
+  });
+}
+
+// BindProjectRequest is the request body for POST /api/v1/projects/bind
+// (gm-root.17.14). The picker calls bindProject when an operator
+// selects a project entry whose kind != "complete":
+//
+//   - mode: "create"   — `git init` a fresh repo at target_repo_path
+//                        (which equals beads_db_path for the simple
+//                        "create here" path) and write
+//                        .gemba/workspace.toml.
+//   - mode: "navigate" — the operator pasted an existing repo path;
+//                        the server moves the beads DB into that repo
+//                        and writes .gemba/workspace.toml.
+//
+// Both paths return the resolved entry with kind = "complete" so the
+// SPA can switch the active workspace immediately on success.
+export interface BindProjectRequest {
+  beads_db_path: string;
+  target_repo_path: string;
+  mode: 'create' | 'navigate';
+}
+
+// BindProjectResponse mirrors the server's projectEntry shape so the
+// picker can re-render with the now-complete entry without an extra
+// round-trip.
+export type BindProjectResponse = ProjectEntry;
+
+// bindProject posts to POST /api/v1/projects/bind. Nonce-gated so a
+// double-click on the confirm button can't double-write the workspace
+// marker. Returns the now-complete project entry on success; throws
+// ApiError with the server's error message on failure (target dir
+// not a git repo, dest already exists, etc.) so the dialog can
+// surface the message verbatim.
+export async function bindProject(
+  body: BindProjectRequest,
+  opts: { nonce?: string } = {}
+): Promise<BindProjectResponse> {
+  return apiFetch<BindProjectResponse>('/v1/projects/bind', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+    },
+    body: JSON.stringify(body),
   });
 }

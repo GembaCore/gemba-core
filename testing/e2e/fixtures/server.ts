@@ -360,10 +360,16 @@ export type AdaptorStatus = {
 // Drives /api/v1/projects (GET) and /api/v1/projects/switch (POST).
 // Specs seed the project list before navigating; the picker renders
 // against it without needing a real ~/.gemba directory.
+// gm-root.17.14: FakeProject carries a `kind` classifier mirroring
+// the server's ProjectKind type. Unset entries default to "complete"
+// in the dispatcher so legacy seeds (no kind) keep working.
+export type FakeProjectKind = 'complete' | 'needs_workspace' | 'needs_repo';
+
 export type FakeProject = {
   name: string;
   path: string;
   active?: boolean;
+  kind?: FakeProjectKind;
 };
 
 export type ProjectsStore = {
@@ -371,6 +377,9 @@ export type ProjectsStore = {
   list(): FakeProject[];
   setActive(name: string): void;
   getActive(): FakeProject | undefined;
+  // gm-root.17.14: mark an entry complete after a successful bind.
+  // Looks the entry up by beads_db_path (== entry.path in the seed).
+  markCompleteByPath(path: string): FakeProject | undefined;
 };
 
 function createProjectsStore(): ProjectsStore {
@@ -384,6 +393,18 @@ function createProjectsStore(): ProjectsStore {
       projects = projects.map((p) => ({ ...p, active: p.name === name }));
     },
     getActive: () => projects.find((p) => p.active),
+    markCompleteByPath: (path) => {
+      let updated: FakeProject | undefined;
+      projects = projects.map((p) => {
+        if (p.path === path) {
+          const next = { ...p, kind: 'complete' as const };
+          updated = next;
+          return next;
+        }
+        return p;
+      });
+      return updated;
+    },
   };
 }
 
@@ -742,10 +763,36 @@ function dispatch(route: Route, stores: FakeStores): unknown {
       return route.fulfill({ status: 404, json: { error: 'project_not_found', message: 'not found' } });
     }
     projectsStore.setActive(target.name);
-    return json({ active: { ...target, active: true } });
+    return json({
+      active: { ...target, active: true, kind: target.kind ?? 'complete' },
+    });
+  }
+  // gm-root.17.14: POST /api/v1/projects/bind. Echoes the contract's
+  // request body shape, marks the seeded entry complete, and returns
+  // the now-complete ProjectEntry so the SPA can switch to it.
+  if (path === '/api/v1/projects/bind' && method === 'POST') {
+    const body = parseBody(route.request().postData());
+    const beadsDBPath =
+      typeof body.beads_db_path === 'string' ? body.beads_db_path : '';
+    if (!beadsDBPath) {
+      return route.fulfill({
+        status: 400,
+        json: { error: 'validation', message: 'beads_db_path is required' },
+      });
+    }
+    const updated = projectsStore.markCompleteByPath(beadsDBPath);
+    if (!updated) {
+      return route.fulfill({
+        status: 404,
+        json: { error: 'project_not_found', message: 'project not found' },
+      });
+    }
+    return json({ ...updated, kind: 'complete' });
   }
   if (isPath(path, '/api/v1/projects')) {
-    const list = projectsStore.list();
+    const list = projectsStore
+      .list()
+      .map((p) => ({ ...p, kind: p.kind ?? 'complete' }));
     return json({ projects: list, total: list.length });
   }
 
