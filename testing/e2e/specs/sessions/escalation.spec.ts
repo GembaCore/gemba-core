@@ -23,6 +23,9 @@ test('clicking the escalation badge opens EscalationPanel @sessions', async ({
   escalationPlane.seed([
     escalation({
       id: 'esc-A',
+      // session_id must match the session's id so the fake filter
+      // mirrors ListPendingRequests (gm-e11.8.6).
+      session_id: 'sess-A',
       assignment_id: 'gm-99',
       title: 'Approve write?',
       prompt: 'Agent wants to commit',
@@ -44,7 +47,7 @@ test('Approve POSTs respond with kind=approve @sessions', async ({
 }) => {
   sessionPlane.seed([session({ id: 'sess-A', assignment_id: 'gm-99', status: 'working' })]);
   escalationPlane.seed([
-    escalation({ id: 'esc-A', assignment_id: 'gm-99', state: 'open' }),
+    escalation({ id: 'esc-A', session_id: 'sess-A', assignment_id: 'gm-99', state: 'open' }),
   ]);
   const sp = new SessionsPage(page);
   await sp.goto();
@@ -81,7 +84,7 @@ test('Deny POSTs respond with kind=deny @sessions', async ({
 }) => {
   sessionPlane.seed([session({ id: 'sess-A', assignment_id: 'gm-99', status: 'working' })]);
   escalationPlane.seed([
-    escalation({ id: 'esc-A', assignment_id: 'gm-99', state: 'open' }),
+    escalation({ id: 'esc-A', session_id: 'sess-A', assignment_id: 'gm-99', state: 'open' }),
   ]);
   const sp = new SessionsPage(page);
   await sp.goto();
@@ -96,4 +99,54 @@ test('Deny POSTs respond with kind=deny @sessions', async ({
     page.getByTestId('escalation-row-esc-A-deny').click(),
   ]);
   expect(postReq.postDataJSON()).toMatchObject({ kind: 'deny' });
+});
+
+// gm-e11.8.6: per-session filter. The fake dispatcher must read
+// ?session_id= (not ?assignment_id=) to match the real Go server. Seed
+// escalations belonging to two different sessions; opening the panel
+// for sess-B should show only that session's escalation.
+test('EscalationPanel shows only escalations belonging to the opened session @sessions', async ({
+  page,
+  sessionPlane,
+  escalationPlane,
+}) => {
+  sessionPlane.seed([
+    session({ id: 'sess-B', assignment_id: 'gm-100', status: 'working' }),
+    session({ id: 'sess-C', assignment_id: 'gm-101', status: 'working' }),
+  ]);
+  escalationPlane.seed([
+    // Belongs to sess-B / gm-100. session_id must match the session's
+    // id so the fake's ?session_id= filter mirrors ListPendingRequests.
+    escalation({ id: 'esc-B1', session_id: 'sess-B', assignment_id: 'gm-100', title: 'Session B question', state: 'open' }),
+    escalation({ id: 'esc-B2', session_id: 'sess-B', assignment_id: 'gm-100', title: 'Session B blocker', state: 'open' }),
+    // Belongs to sess-C / gm-101 — must NOT appear in sess-B's panel.
+    escalation({ id: 'esc-C1', session_id: 'sess-C', assignment_id: 'gm-101', title: 'Session C question', state: 'open' }),
+  ]);
+
+  const sp = new SessionsPage(page);
+  await sp.goto();
+
+  // Capture the per-session escalation fetch BEFORE clicking the badge
+  // so waitForRequest sees the request when it fires.
+  const escalationFetchPromise = page.waitForRequest(
+    (req) =>
+      req.method() === 'GET' &&
+      /\/api\/escalations/.test(req.url()) &&
+      new URL(req.url()).searchParams.has('session_id'),
+    { timeout: 10_000 },
+  );
+
+  // Open the escalation panel for sess-B and assert only B's rows are shown.
+  await sp.escalationsBadge('sess-B').click();
+  await expect(page.getByTestId('escalation-panel')).toBeVisible();
+  await expect(page.getByTestId('escalation-row-esc-B1')).toBeVisible();
+  await expect(page.getByTestId('escalation-row-esc-B2')).toBeVisible();
+  // sess-C's escalation must not appear.
+  await expect(page.getByTestId('escalation-row-esc-C1')).toHaveCount(0);
+
+  // Verify the GET request carried ?session_id=sess-B (not ?assignment_id=).
+  const escalationFetch = await escalationFetchPromise;
+  const fetchURL = new URL(escalationFetch.url());
+  expect(fetchURL.searchParams.get('session_id')).toBe('sess-B');
+  expect(fetchURL.searchParams.get('assignment_id')).toBeNull();
 });

@@ -40,7 +40,15 @@ export interface EscalationRequest {
   id: string;
   source: EscalationKind;
   channel?: 'notification' | 'tool_call';
+  // assignment_id is the bead/work-item the escalation belongs to
+  // (core.EscalationRequest.AssignmentID). Used by the global inbox
+  // badge count (keyed on session.assignment_id).
   assignment_id?: string;
+  // session_id is the session whose ID the fake-backend filter receives
+  // (?session_id= query param). The real server indexes by session ID
+  // (native escalationIndex.bySession[ev.SessionID]); the fake mirrors
+  // that by filtering on this field (gm-e11.8.6).
+  session_id?: string;
   work_item_id?: string;
   agent_id?: string;
   urgency: EscalationUrgency;
@@ -93,13 +101,15 @@ export function createEscalationStore(): EscalationStore {
       };
     },
     // sessionId filter mirrors the gm-native.13 server-side semantics:
-    // when the SPA scopes the fetch (assignment_id query param), the
-    // canonical filter happens server-side. The fake mirrors that —
-    // a sessionId arg restricts the list to escalations whose
-    // assignment_id matches.
+    // when the SPA scopes the fetch (?session_id= query param), the
+    // canonical filter happens server-side via ListPendingRequests
+    // which indexes by session ID (native escalationIndex.bySession).
+    // The fake mirrors that by matching on the escalation's session_id
+    // field. Specs that seed per-session escalations must set
+    // session_id to the owning session's id (gm-e11.8.6).
     list(sessionId) {
       if (sessionId == null) return items.slice();
-      return items.filter((e) => e.assignment_id === sessionId);
+      return items.filter((e) => e.session_id === sessionId);
     },
     responses() {
       return responses.slice();

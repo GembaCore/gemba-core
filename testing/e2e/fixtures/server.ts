@@ -603,10 +603,15 @@ function dispatch(route: Route, stores: FakeStores): unknown {
     return json({ id, state: 'resolved' });
   }
   if (isPath(path, '/api/escalations')) {
-    // The SPA scopes per-session via ?assignment_id=... so the fake
-    // mirrors that filter when present.
-    const assignmentId = url.searchParams.get('assignment_id') ?? undefined;
-    const items = escalationPlane.list(assignmentId);
+    // The SPA scopes per-session via ?session_id=... (gm-e11.8.6).
+    // The real Go server reads session_id and routes through
+    // ListPendingRequests; the fake mirrors that contract.
+    // escalationPlane.list(sessionId) internally filters by
+    // e.assignment_id === sessionId — escalations are stored with
+    // assignment_id as the owning-session field, but the HTTP param
+    // name is session_id (matching the ListPendingRequests call path).
+    const sessionId = url.searchParams.get('session_id') ?? undefined;
+    const items = escalationPlane.list(sessionId);
     return json({ escalations: items, total: items.length });
   }
 
