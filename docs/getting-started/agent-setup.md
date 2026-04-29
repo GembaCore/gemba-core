@@ -1,9 +1,17 @@
 # Agent setup
 
+> **Quick vocabulary** — this page configures **agent types** (the
+> dialect / binary, e.g. Claude or Codex). That's distinct from
+> **agents** (the persistent identity, like `polecat-onyx`) and
+> **sessions** (the runtime tmux pane). See
+> [Agents, sessions & agent types](../concepts/agents-and-sessions)
+> for the full mental model — TL;DR: an agent identity runs a
+> session of an agent type.
+
 Gemba spawns sessions as panes inside a terminal multiplexer
 (tmux / iTerm2 / Terminal.app). Each pane runs a CLI binary the
 operator has installed; Gemba doesn't ship any agent runtime itself.
-You list the agents you want available in `.gemba/agents.toml` —
+You list the agent **types** available in `.gemba/agents.toml` —
 one `[[agent]]` stanza per dialect — and the SPA's "Start session"
 picker reads that file at boot.
 
