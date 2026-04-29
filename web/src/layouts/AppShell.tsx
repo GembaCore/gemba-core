@@ -32,7 +32,14 @@ export function AppShell() {
               <Topbar />
               <AdaptorBanner />
               <ActiveWalkBanner />
-              <main className="min-h-0 flex-1 overflow-auto">
+              {/* tabIndex={-1} keeps the scrollable <main> keyboard-
+                  accessible (axe scrollable-region-focusable, gm-root.17.12)
+                  without dropping a stray tab stop into the natural focus
+                  order — the route's content owns the focus order, not the
+                  outer scroll container. -1 satisfies the rule because axe
+                  accepts any focusable region; programmatic focus + native
+                  arrow-key scroll still work. */}
+              <main className="min-h-0 flex-1 overflow-auto" tabIndex={-1}>
                 <Outlet />
               </main>
             </div>
