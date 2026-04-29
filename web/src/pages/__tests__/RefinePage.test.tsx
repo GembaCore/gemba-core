@@ -309,3 +309,142 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
     expect(screen.queryByTestId('epic-picker-option-gm-a')).toBeNull();
   });
 });
+describe('RefinePage defer / dismiss actions', () => {
+  const fetchSpy = vi.fn();
+  beforeEach(() => {
+    window.localStorage.clear();
+    fetchSpy.mockReset();
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  // installRoutes wires fetchSpy to return the supplied list payload on
+  // GET /work-items and a stub WorkItem on PATCH; PATCH calls are
+  // recorded for assertions on payload shape.
+  function installRoutes(items: WorkItem[]) {
+    fetchSpy.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (init?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse(items[0] ?? wi('gm-x')));
+      }
+      if (url.includes('/work-items')) {
+        return Promise.resolve(jsonResponse({ items, total: items.length }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+  }
+
+  function patchCalls(): Array<{ id: string; body: Record<string, unknown> }> {
+    return fetchSpy.mock.calls
+      .filter(([, init]) => (init as RequestInit | undefined)?.method === 'PATCH')
+      .map(([url, init]) => {
+        const u = String(url);
+        const id = u.slice(u.lastIndexOf('/') + 1);
+        const body = JSON.parse((init as RequestInit).body as string);
+        return { id, body };
+      });
+  }
+
+  it('defer popover writes defer-until:<iso> label and strips prior defer-until labels', async () => {
+    const items = [
+      wi('gm-1', {
+        labels: ['area:web', 'defer-until:2026-01-01', 'priority-band:next'],
+      }),
+    ];
+    installRoutes(items);
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByText('title-gm-1')).toBeTruthy());
+    // Check the row to drive selection through the grid.
+    fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-1'));
+    // Bulk Defer button → opens popover.
+    fireEvent.click(screen.getByTestId('grid-bulk-defer'));
+    fireEvent.change(screen.getByTestId('refine-defer-date'), {
+      target: { value: '2026-05-15' },
+    });
+    fireEvent.click(screen.getByTestId('refine-defer-confirm'));
+    await waitFor(() => expect(patchCalls().length).toBe(1));
+    const [{ id, body }] = patchCalls();
+    expect(id).toBe('gm-1');
+    // Existing defer-until:* stripped, every other label preserved,
+    // new defer-until:<iso> appended.
+    expect(body).toEqual({
+      labels: ['area:web', 'priority-band:next', 'defer-until:2026-05-15'],
+    });
+  });
+
+  it('defer with empty date is a no-op (no PATCH fires)', async () => {
+    const items = [wi('gm-1', { labels: [] })];
+    installRoutes(items);
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByText('title-gm-1')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-1'));
+    fireEvent.click(screen.getByTestId('grid-bulk-defer'));
+    // Confirm with empty date.
+    fireEvent.click(screen.getByTestId('refine-defer-confirm'));
+    // Settle event loop, then assert no PATCH fired.
+    await new Promise((r) => setTimeout(r, 10));
+    expect(patchCalls().length).toBe(0);
+  });
+
+  it('dismiss popover patches state_category=canceled (reason TODO)', async () => {
+    const items = [wi('gm-1', { state_category: 'backlog' })];
+    installRoutes(items);
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByText('title-gm-1')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-1'));
+    fireEvent.click(screen.getByTestId('grid-bulk-dismiss'));
+    fireEvent.change(screen.getByTestId('refine-dismiss-reason'), {
+      target: { value: 'duplicate of gm-2' },
+    });
+    fireEvent.click(screen.getByTestId('refine-dismiss-confirm'));
+    await waitFor(() => expect(patchCalls().length).toBe(1));
+    const [{ id, body }] = patchCalls();
+    expect(id).toBe('gm-1');
+    // WorkItemPatch has no notes-append field today; we ship the
+    // state-change without the reason. Adjust this assertion when an
+    // append-notes path lands on the patch surface.
+    expect(body).toEqual({ state_category: 'canceled' });
+  });
+
+  it('bulk defer applies the same defer-until label across every selected id', async () => {
+    const items = [
+      wi('gm-1', { labels: ['x'] }),
+      wi('gm-2', { labels: ['defer-until:2026-01-01', 'y'] }),
+    ];
+    installRoutes(items);
+    const W = wrap('/refine');
+    render(
+      <W>
+        <RefinePage />
+      </W>,
+    );
+    await waitFor(() => expect(screen.getByText('title-gm-1')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-1'));
+    fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-2'));
+    fireEvent.click(screen.getByTestId('grid-bulk-defer'));
+    fireEvent.change(screen.getByTestId('refine-defer-date'), {
+      target: { value: '2026-06-01' },
+    });
+    fireEvent.click(screen.getByTestId('refine-defer-confirm'));
+    await waitFor(() => expect(patchCalls().length).toBe(2));
+    const calls = patchCalls();
+    const byId = Object.fromEntries(calls.map((c) => [c.id, c.body]));
+    expect(byId['gm-1']).toEqual({ labels: ['x', 'defer-until:2026-06-01'] });
+    expect(byId['gm-2']).toEqual({ labels: ['y', 'defer-until:2026-06-01'] });
+  });
+});

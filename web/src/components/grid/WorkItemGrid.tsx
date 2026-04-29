@@ -329,9 +329,10 @@ export interface WorkItemGridPresetOptions {
 // 'edit' / 'defer' are explicit AC items on gm-5v8v.6.2; 'delete' is
 // reserved for the matching `*-x` chord and rendered in the context
 // menu so the surface is symmetric. 'drop-into-epic' (gm-ju5o) raises
-// the selection upward so the host page can open an epic picker —
-// the grid itself stays unaware of work-item semantics.
-export type BulkAction = 'edit' | 'defer' | 'delete' | 'drop-into-epic';
+// the selection upward so the host page can open an epic picker.
+// 'dismiss' (gm-mw5n) is a softer canceled-state action surfaced for
+// triage flows that want a reason note before flipping state.
+export type BulkAction = 'edit' | 'defer' | 'delete' | 'drop-into-epic' | 'dismiss';
 
 export interface WorkItemGridProps {
   rows: WorkItem[];
@@ -688,6 +689,14 @@ export function WorkItemGrid({
           </button>
           <button
             type="button"
+            onClick={() => fireBulk('dismiss')}
+            className="rounded border border-rose-300 bg-white px-2 py-0.5 text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200 dark:hover:bg-rose-900"
+            data-testid="grid-bulk-dismiss"
+          >
+            Dismiss
+          </button>
+          <button
+            type="button"
             onClick={clearSelection}
             className="ml-auto text-sky-700 hover:underline dark:text-sky-300"
             data-testid="grid-bulk-clear"
@@ -985,6 +994,12 @@ function ContextMenu({
         testid="grid-context-drop-into-epic"
         label={`Drop ${selectionCount} into epic…`}
         onClick={() => onAction('drop-into-epic')}
+      />
+      <ContextMenuItem
+        testid="grid-context-dismiss"
+        label={`Dismiss ${selectionCount}`}
+        onClick={() => onAction('dismiss')}
+        danger
       />
       <ContextMenuItem
         testid="grid-context-delete"
