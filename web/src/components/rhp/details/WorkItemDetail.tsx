@@ -29,7 +29,7 @@ import {
 import { useWorkItem, useUpdateWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useAgents, useSprints } from '@/hooks/useAgents';
 import { useNavigate } from 'react-router-dom';
-import { useCapabilities } from '@/capabilities';
+import { Capability, useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
 import { KIND_MILESTONE } from '@/types/core.gen';
 import type { AgentRef, DefinitionOfDone, StateCategory, WorkItem } from '@/types/core.gen';
@@ -343,17 +343,27 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
               </pre>
             </Section>
           ) : null}
-          <Section title="Evidence" testid="section-evidence">
-            {item.evidence && item.evidence.length > 0 ? (
-              <ul className="space-y-2">
-                {item.evidence.map((e) => (
-                  <EvidenceRow key={e.id} evidence={e} />
-                ))}
-              </ul>
-            ) : (
-              <Muted>No evidence attached.</Muted>
-            )}
-          </Section>
+          <Capability has="has_evidence">
+            <Section title="Evidence" testid="section-evidence">
+              {item.evidence && item.evidence.length > 0 ? (
+                <ul className="space-y-2">
+                  {item.evidence.map((e) => (
+                    <EvidenceRow key={e.id} evidence={e} />
+                  ))}
+                </ul>
+              ) : item.state_category === 'completed' ? (
+                <div
+                  className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+                  data-testid="evidence-missing-banner"
+                  role="status"
+                >
+                  Evidence required for closed items, but none is attached.
+                </div>
+              ) : (
+                <Muted>No evidence attached.</Muted>
+              )}
+            </Section>
+          </Capability>
         </>
       ) : null}
 
@@ -1508,6 +1518,10 @@ function RelGroup({
 }
 
 function EvidenceRow({ evidence }: { evidence: Evidence }) {
+  // gm-t4af / DD-13: synthesized entries are auto-derived from
+  // git/PRs/work-history; operator-curated entries are not. Show a
+  // small "auto" pill so the operator can tell them apart.
+  const synthesized = evidence.payload?.synthesized === true;
   return (
     <li
       className="rounded border border-neutral-200 p-2 text-sm dark:border-neutral-800"
@@ -1517,6 +1531,15 @@ function EvidenceRow({ evidence }: { evidence: Evidence }) {
         <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono dark:bg-neutral-800">
           {evidence.kind}
         </span>
+        {synthesized ? (
+          <span
+            className="rounded bg-sky-100 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wide text-sky-700 dark:bg-sky-950 dark:text-sky-300"
+            title="Auto-derived from git / PRs / work-history"
+            data-testid="evidence-synth-marker"
+          >
+            auto
+          </span>
+        ) : null}
         <span className="font-mono">{evidence.source}</span>
         {evidence.ref ? <EvidenceRef evidence={evidence} /> : null}
         <span className="ml-auto font-mono">{formatTs(evidence.captured_at)}</span>

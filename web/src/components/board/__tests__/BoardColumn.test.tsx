@@ -1,7 +1,44 @@
 import { describe, expect, it } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
+import type { ReactElement, ReactNode } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BoardColumn } from '../BoardColumn';
 import type { WorkItem } from '@/types/core.gen';
+import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
+
+// gm-t4af: BoardColumn renders WorkItemCard, which now reads
+// `<Capability has="has_evidence">`. Wrap in a CapabilitiesProvider
+// (which itself needs a QueryClient) so the cards render their
+// gated glyphs without crashing.
+function caps(): CapabilitiesResponse {
+  return {
+    work_plane: {
+      adaptor_name: 'fake',
+      adaptor_version: '0.1.0',
+      protocol_version: '0.1.0',
+      transport: 'api',
+      state_map: { open: 'unstarted', closed: 'completed' },
+      sprint_native: false,
+      token_budget_enforced: false,
+      evidence_synthesis_required: true,
+    },
+    orchestration_plane: null,
+  };
+}
+
+function renderColumn(ui: ReactElement) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={client}>
+        <CapabilitiesProvider initial={caps()}>{children}</CapabilitiesProvider>
+      </QueryClientProvider>
+    );
+  }
+  return render(ui, { wrapper: Wrapper });
+}
 
 function item(overrides: Partial<WorkItem> & Pick<WorkItem, 'id'>): WorkItem {
   return {
@@ -17,7 +54,7 @@ function item(overrides: Partial<WorkItem> & Pick<WorkItem, 'id'>): WorkItem {
 
 describe('BoardColumn', () => {
   it('renders header label and count', () => {
-    render(
+    renderColumn(
       <BoardColumn
         category="started"
         label="In progress"
@@ -35,7 +72,7 @@ describe('BoardColumn', () => {
       item({ id: 'gm-p0', priority: 0, updated_at: '2026-04-21T00:00:00Z' }),
       item({ id: 'gm-p0-fresh', priority: 0, updated_at: '2026-04-22T12:00:00Z' }),
     ];
-    const { container } = render(
+    const { container } = renderColumn(
       <BoardColumn category="started" label="Started" items={items} />
     );
     const list = container.querySelector('ol') as HTMLElement;
@@ -45,7 +82,7 @@ describe('BoardColumn', () => {
   });
 
   it('renders zero items without crashing', () => {
-    render(<BoardColumn category="completed" label="Completed" items={[]} />);
+    renderColumn(<BoardColumn category="completed" label="Completed" items={[]} />);
     expect(screen.getByText('0')).toBeTruthy();
   });
 });

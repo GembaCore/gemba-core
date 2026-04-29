@@ -1,7 +1,8 @@
 import type { KeyboardEvent } from 'react';
-import { AlertTriangle, FileText, GitBranch, Paperclip, Workflow } from 'lucide-react';
+import { AlertCircle, AlertTriangle, FileText, GitBranch, Paperclip, Workflow } from 'lucide-react';
 import type { StateCategory, WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+import { Capability } from '@/capabilities';
 import { relativeTime } from './relativeTime';
 
 export interface WorkItemCardProps {
@@ -52,6 +53,15 @@ function hasNotes(item: WorkItem): boolean {
 
 function hasEvidence(item: WorkItem): boolean {
   return !!item.evidence && item.evidence.length > 0;
+}
+
+// gm-t4af: a closed item with no synthesized evidence on a manifest
+// that requires evidence (has_evidence) is a workflow gap — surface a
+// glyph so the operator notices before the bead drifts further.
+// "Closed" here is `state_category === 'completed'` only; canceled
+// items were abandoned and don't owe evidence.
+function isMissingRequiredEvidence(item: WorkItem): boolean {
+  return item.state_category === 'completed' && !hasEvidence(item);
 }
 
 // workflowParentID returns the parent run id when this bead is a step
@@ -193,13 +203,21 @@ export function WorkItemCard({ item, onSelect, escalationCount = 0 }: WorkItemCa
               data-testid="glyph-notes"
             />
           )}
-          {hasEvidence(item) && (
-            <Paperclip
-              className="h-3 w-3"
-              aria-label="has evidence"
-              data-testid="glyph-evidence"
-            />
-          )}
+          <Capability has="has_evidence">
+            {hasEvidence(item) ? (
+              <Paperclip
+                className="h-3 w-3"
+                aria-label="has evidence"
+                data-testid="glyph-evidence"
+              />
+            ) : isMissingRequiredEvidence(item) ? (
+              <AlertCircle
+                className="h-3 w-3 text-amber-600 dark:text-amber-400"
+                aria-label="evidence required but missing"
+                data-testid="glyph-evidence-missing"
+              />
+            ) : null}
+          </Capability>
           {hasParent(item) && (
             <GitBranch
               className="h-3 w-3"

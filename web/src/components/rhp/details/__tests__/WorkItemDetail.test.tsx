@@ -24,7 +24,14 @@ import { RhpPinnedContentProvider } from '../../RhpPinnedContent';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
-function capsWith(format?: string): CapabilitiesResponse {
+function capsWith(
+  format?: string,
+  opts: { evidence?: boolean } = {}
+): CapabilitiesResponse {
+  // Default the evidence capability ON so tests that exercise the
+  // Evidence section don't have to pass it explicitly. The card +
+  // detail Evidence affordances are gated on `has_evidence` which
+  // mirrors `evidence_synthesis_required` (gm-t4af).
   return {
     work_plane: {
       adaptor_name: 'fake',
@@ -34,7 +41,7 @@ function capsWith(format?: string): CapabilitiesResponse {
       state_map: { open: 'unstarted', closed: 'completed' },
       sprint_native: false,
       token_budget_enforced: false,
-      evidence_synthesis_required: false,
+      evidence_synthesis_required: opts.evidence ?? true,
       description_format: format,
     },
     orchestration_plane: null,
@@ -376,5 +383,77 @@ describe('WorkItemDetail', () => {
       expect(screen.getAllByTestId('description-plain').length).toBeGreaterThan(0)
     );
     expect(screen.getAllByTestId('description-plain')[0].textContent).toBe('# not-a-heading');
+  });
+
+  // gm-t4af: Evidence section is gated on `has_evidence`. On adaptors
+  // that don't synthesize evidence, hide the section entirely rather
+  // than show "No evidence attached" — that empty state misleads the
+  // operator into thinking they should attach something.
+  it('hides Evidence section when has_evidence capability is off', async () => {
+    fetchSpy.mockResolvedValueOnce(mockJSON(fixture));
+    render(<WorkItemDetail id="gm-foo" />, {
+      wrapper: wrapper(capsWith(undefined, { evidence: false })),
+    });
+    await waitFor(() => expect(screen.getByTestId('workitem-detail-id')).toBeTruthy());
+    expect(screen.queryByTestId('section-evidence')).toBeNull();
+  });
+
+  // gm-t4af: synthesized evidence (from git/PRs/work-history) renders
+  // an "auto" pill so operator-curated entries stay visually distinct
+  // (DD-13).
+  it('renders the synthesized marker for evidence rows tagged synthesized=true', async () => {
+    const withSynth: WorkItem = {
+      ...fixture,
+      evidence: [
+        {
+          id: 'ev-auto',
+          kind: 'commit',
+          source: 'git',
+          ref: 'abc123',
+          summary: 'auto-derived',
+          captured_at: '2026-04-22T10:00:00Z',
+          payload: { synthesized: true },
+        },
+        {
+          id: 'ev-manual',
+          kind: 'url',
+          source: 'operator',
+          ref: 'https://example.com',
+          captured_at: '2026-04-22T10:00:00Z',
+        },
+      ],
+    };
+    fetchSpy.mockResolvedValueOnce(mockJSON(withSynth));
+    render(<WorkItemDetail id="gm-foo" />, { wrapper: wrapper(capsWith()) });
+    await waitFor(() => expect(screen.getByTestId('section-evidence')).toBeTruthy());
+    // Exactly one auto marker — the operator-curated row stays plain.
+    expect(screen.getAllByTestId('evidence-synth-marker')).toHaveLength(1);
+  });
+
+  // gm-t4af: closed item + has_evidence + empty evidence array → the
+  // banner replaces the "No evidence attached." muted text so the
+  // workflow gap is visible.
+  it('shows missing-evidence banner when a completed item has no evidence', async () => {
+    const closedNoEvidence: WorkItem = {
+      ...fixture,
+      state_category: 'completed',
+      evidence: [],
+    };
+    fetchSpy.mockResolvedValueOnce(mockJSON(closedNoEvidence));
+    render(<WorkItemDetail id="gm-foo" />, { wrapper: wrapper(capsWith()) });
+    await waitFor(() => expect(screen.getByTestId('section-evidence')).toBeTruthy());
+    expect(screen.getByTestId('evidence-missing-banner')).toBeTruthy();
+  });
+
+  it('omits missing-evidence banner for non-completed states', async () => {
+    const openNoEvidence: WorkItem = {
+      ...fixture,
+      state_category: 'unstarted',
+      evidence: [],
+    };
+    fetchSpy.mockResolvedValueOnce(mockJSON(openNoEvidence));
+    render(<WorkItemDetail id="gm-foo" />, { wrapper: wrapper(capsWith()) });
+    await waitFor(() => expect(screen.getByTestId('section-evidence')).toBeTruthy());
+    expect(screen.queryByTestId('evidence-missing-banner')).toBeNull();
   });
 });
