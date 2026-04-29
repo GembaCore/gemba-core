@@ -26,7 +26,7 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom';
-import { LayoutGrid, List, ListChecks, Plus, RotateCcw, Zap } from 'lucide-react';
+import { Inbox, LayoutGrid, List, ListChecks, Plus, RotateCcw, Zap } from 'lucide-react';
 import {
   DndContext,
   KeyboardSensor,
@@ -104,6 +104,40 @@ function writeStoredPower(on: boolean): void {
   } catch {
     /* storage unavailable (private mode); URL param still works */
   }
+}
+
+// show_backlog persistence (gm-5ekd). The kanban hides the Backlog
+// column by default; ?show_backlog=1 brings it back. Triage now lives
+// on /refine (gm-3ofd), so the kanban is for in-flight work. Mirrors
+// the power-mode pattern: URL wins, localStorage is the fallback so
+// an operator's preference survives reloads.
+const SHOW_BACKLOG_PARAM = 'show_backlog';
+const SHOW_BACKLOG_STORAGE_KEY = 'gemba.board.show-backlog';
+
+function readStoredShowBacklog(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(SHOW_BACKLOG_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function writeStoredShowBacklog(on: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (on) window.localStorage.setItem(SHOW_BACKLOG_STORAGE_KEY, '1');
+    else window.localStorage.removeItem(SHOW_BACKLOG_STORAGE_KEY);
+  } catch {
+    /* storage unavailable; URL param still works */
+  }
+}
+
+// Filter the canonical STATE_CATEGORIES enum down to the columns the
+// kanban renders. Backlog is dropped unless show_backlog is on.
+function visibleColumns(showBacklog: boolean): readonly StateCategory[] {
+  if (showBacklog) return STATE_CATEGORIES;
+  return STATE_CATEGORIES.filter((c) => c !== 'backlog');
 }
 
 // Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
@@ -194,6 +228,24 @@ export function BoardPage() {
       if (next) p.set(POWER_PARAM, '1');
       else p.delete(POWER_PARAM);
       writeStoredPower(next);
+      setParams(p, { replace: true });
+    },
+    [params, setParams]
+  );
+  // show_backlog resolution mirrors power: URL wins; on absence we
+  // fall back to the last stored preference so a refresh sticks.
+  const showBacklog = useMemo(() => {
+    const raw = params.get(SHOW_BACKLOG_PARAM);
+    if (raw === '1') return true;
+    if (raw === '0') return false;
+    return readStoredShowBacklog();
+  }, [params]);
+  const setShowBacklog = useCallback(
+    (next: boolean) => {
+      const p = new URLSearchParams(params);
+      if (next) p.set(SHOW_BACKLOG_PARAM, '1');
+      else p.delete(SHOW_BACKLOG_PARAM);
+      writeStoredShowBacklog(next);
       setParams(p, { replace: true });
     },
     [params, setParams]
@@ -444,6 +496,8 @@ export function BoardPage() {
         onChangeView={setView}
         power={power}
         onChangePower={setPower}
+        showBacklog={showBacklog}
+        onChangeShowBacklog={setShowBacklog}
         onNewWorkItem={() => setNewItemOpen(true)}
       />
       {layout === 'list' ? (
@@ -462,9 +516,17 @@ export function BoardPage() {
       ) : !scopedData || scopedData.length === 0 ? (
         <EmptyState onCreate={() => setNewItemOpen(true)} />
       ) : layout === 'epic' ? (
-        <EpicView items={scopedData} onSelectEpic={openEpic} />
+        <EpicView
+          items={scopedData}
+          onSelectEpic={openEpic}
+          showBacklog={showBacklog}
+        />
       ) : (
-        <WorkItemBoard data={scopedData} onSelectWorkItem={setOpenWorkItemId} />
+        <WorkItemBoard
+          data={scopedData}
+          onSelectWorkItem={setOpenWorkItemId}
+          showBacklog={showBacklog}
+        />
       )}
       <EpicDrawer
         openId={epicId ?? null}
@@ -501,6 +563,8 @@ interface BoardHeaderProps {
   onChangeView: (id: string | null) => void;
   power: boolean;
   onChangePower: (next: boolean) => void;
+  showBacklog: boolean;
+  onChangeShowBacklog: (next: boolean) => void;
   onNewWorkItem: () => void;
 }
 function BoardHeader({
@@ -516,6 +580,8 @@ function BoardHeader({
   onChangeView,
   power,
   onChangePower,
+  showBacklog,
+  onChangeShowBacklog,
   onNewWorkItem,
 }: BoardHeaderProps) {
   return (
@@ -574,7 +640,18 @@ function BoardHeader({
               testid="board-power-toggle"
             />
           </>
-        ) : null}
+        ) : (
+          <>
+            <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
+            <ToggleButton
+              active={showBacklog}
+              onClick={() => onChangeShowBacklog(!showBacklog)}
+              label="Backlog"
+              icon={<Inbox className="h-3 w-3" />}
+              testid="board-show-backlog-toggle"
+            />
+          </>
+        )}
       </div>
     </div>
   );
@@ -644,12 +721,14 @@ function ToggleButton({ active, onClick, label, icon, testid }: ToggleButtonProp
 interface WorkItemBoardProps {
   data: WorkItem[];
   onSelectWorkItem: (id: string | null) => void;
+  showBacklog: boolean;
 }
-function WorkItemBoard({ data, onSelectWorkItem }: WorkItemBoardProps) {
+function WorkItemBoard({ data, onSelectWorkItem, showBacklog }: WorkItemBoardProps) {
   const groups = useMemo(() => groupByStateCategory(data), [data]);
+  const columns = visibleColumns(showBacklog);
   return (
     <div data-testid="board-workitem" className="flex h-full gap-3 overflow-x-auto p-4">
-      {STATE_CATEGORIES.map((cat) => (
+      {columns.map((cat) => (
         <BoardColumn
           key={cat}
           category={cat}

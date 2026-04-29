@@ -159,7 +159,7 @@ describe('EpicView — droppable cells + draggable cards smoke', () => {
       <MemoryRouter>
         <QueryClientProvider client={client}>
           <CapabilitiesProvider initial={caps}>
-            <EpicView items={items} onSelectEpic={() => {}} />
+            <EpicView items={items} onSelectEpic={() => {}} showBacklog />
           </CapabilitiesProvider>
         </QueryClientProvider>
       </MemoryRouter>

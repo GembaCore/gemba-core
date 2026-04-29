@@ -47,9 +47,13 @@ const COLUMN_LABELS: Record<StateCategory, string> = {
 export interface EpicViewProps {
   items: WorkItem[];
   onSelectEpic: (id: string) => void;
+  // gm-5ekd: when false (default), the Backlog column is dropped from
+  // the rendered column set. Filter is applied at the render site
+  // rather than in STATE_CATEGORIES, which is the canonical core enum.
+  showBacklog?: boolean;
 }
 
-export function EpicView({ items, onSelectEpic }: EpicViewProps) {
+export function EpicView({ items, onSelectEpic, showBacklog = false }: EpicViewProps) {
   // gm-uekk: scope filtering happens in the page; the view always
   // groups by-parent-epic. When scope is set, items is already
   // narrowed and naturally collapses to a single swimlane.
@@ -60,6 +64,11 @@ export function EpicView({ items, onSelectEpic }: EpicViewProps) {
   // gm-4se1: resolve each epic's milestone ancestor once per render so
   // the cards don't re-walk the relationship graph individually.
   const milestoneByEpic = useMemo(() => buildMilestoneByEpic(items), [items]);
+  // gm-5ekd: drop Backlog column unless toggled on.
+  const columns = useMemo<readonly StateCategory[]>(
+    () => (showBacklog ? STATE_CATEGORIES : STATE_CATEGORIES.filter((c) => c !== 'backlog')),
+    [showBacklog]
+  );
 
   if (swimlanes.length === 0) {
     return (
@@ -80,12 +89,13 @@ export function EpicView({ items, onSelectEpic }: EpicViewProps) {
       data-testid="board-epic"
       className="flex h-full flex-col overflow-y-auto"
     >
-      <ColumnHeader />
+      <ColumnHeader columns={columns} />
       <div className="flex flex-col">
         {swimlanes.map((s) => (
           <SwimlaneRow
             key={s.root.id}
             swimlane={s}
+            columns={columns}
             childCountsByEpic={childCountsByEpic}
             milestoneByEpic={milestoneByEpic}
             onSelectEpic={onSelectEpic}
@@ -96,14 +106,14 @@ export function EpicView({ items, onSelectEpic }: EpicViewProps) {
   );
 }
 
-function ColumnHeader() {
+function ColumnHeader({ columns }: { columns: readonly StateCategory[] }) {
   return (
     <div
       data-testid="board-epic-header"
       className="sticky top-0 z-10 flex border-b border-neutral-200 bg-white/95 px-4 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95"
     >
       <div className="flex flex-1 gap-3">
-        {STATE_CATEGORIES.map((cat) => (
+        {columns.map((cat) => (
           <div
             key={cat}
             className="min-w-[14rem] flex-1 text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-400"
@@ -118,6 +128,7 @@ function ColumnHeader() {
 
 interface SwimlaneRowProps {
   swimlane: EpicSwimlane;
+  columns: readonly StateCategory[];
   childCountsByEpic: Map<string, EpicChildCounts>;
   milestoneByEpic: Map<string, WorkItem>;
   onSelectEpic: (id: string) => void;
@@ -125,6 +136,7 @@ interface SwimlaneRowProps {
 
 function SwimlaneRow({
   swimlane,
+  columns,
   childCountsByEpic,
   milestoneByEpic,
   onSelectEpic,
@@ -168,7 +180,7 @@ function SwimlaneRow({
         </div>
       )}
       <div className="flex gap-3">
-        {STATE_CATEGORIES.map((cat) => (
+        {columns.map((cat) => (
           <DroppableCell key={cat} rootID={swimlane.root.id} cat={cat}>
             {byState[cat].map((epicItem) => (
               <DraggableEpicCard

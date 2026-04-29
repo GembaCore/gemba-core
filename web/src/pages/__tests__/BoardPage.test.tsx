@@ -144,8 +144,14 @@ describe('BoardPage', () => {
     render(wrap(<BoardPage />, '/board?view=workitem'));
     await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
 
+    // gm-5ekd: Backlog column is hidden by default; the kanban renders
+    // 5 columns (Next Up → Canceled).
     for (const cat of STATE_CATEGORIES) {
-      expect(screen.getByTestId(`board-column-${cat}`)).toBeTruthy();
+      if (cat === 'backlog') {
+        expect(screen.queryByTestId(`board-column-${cat}`)).toBeNull();
+      } else {
+        expect(screen.getByTestId(`board-column-${cat}`)).toBeTruthy();
+      }
     }
     const unstartedCol = screen.getByTestId('board-column-unstarted');
     expect(unstartedCol.querySelectorAll('[data-work-item-id]')).toHaveLength(2);
@@ -393,6 +399,126 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
     // Default scope=All means the e1 swimlane renders.
     expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
+  });
+
+  // gm-5ekd: Backlog column is hidden by default in the kanban; the
+  // Refine surface (gm-3ofd) is the new home for triage. ?show_backlog=1
+  // and a power-mode toggle bring the column back; localStorage
+  // persists the preference across reloads.
+  describe('show_backlog kanban toggle (gm-5ekd)', () => {
+    beforeEach(() => {
+      try {
+        window.localStorage.removeItem('gemba.board.show-backlog');
+      } catch {
+        /* private mode etc. */
+      }
+    });
+
+    function mockData() {
+      const data: WorkItem[] = [
+        bead('gm-bk', 'backlog'),
+        bead('gm-up', 'unstarted'),
+        bead('gm-st', 'staged'),
+        bead('gm-pr', 'started'),
+        bead('gm-dn', 'completed'),
+        bead('gm-cn', 'canceled'),
+      ];
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ items: data, total: data.length }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+    }
+
+    it('default WorkItem kanban renders 5 columns and no Backlog heading', async () => {
+      mockData();
+      render(wrap(<BoardPage />, '/board?view=workitem'));
+      await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+      expect(screen.queryByTestId('board-column-backlog')).toBeNull();
+      const columns = document.querySelectorAll('[data-testid^="board-column-"]');
+      // 5 column sections + their 5 count badges = 10 nodes match the prefix.
+      // Filter to the section nodes (those without -count suffix).
+      const sections = Array.from(columns).filter(
+        (n) => !n.getAttribute('data-testid')?.endsWith('-count')
+      );
+      expect(sections).toHaveLength(5);
+      // No Backlog column heading — the column heading is an h2 inside
+      // the missing board-column-backlog section.
+      const headings = Array.from(
+        document.querySelectorAll('[data-testid^="board-column-"] h2')
+      ).map((h) => h.textContent);
+      expect(headings).not.toContain('Backlog');
+    });
+
+    it('?show_backlog=1 renders 6 columns including Backlog', async () => {
+      mockData();
+      render(wrap(<BoardPage />, '/board?view=workitem&show_backlog=1'));
+      await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+      expect(screen.getByTestId('board-column-backlog')).toBeTruthy();
+      const columns = document.querySelectorAll('[data-testid^="board-column-"]');
+      const sections = Array.from(columns).filter(
+        (n) => !n.getAttribute('data-testid')?.endsWith('-count')
+      );
+      expect(sections).toHaveLength(6);
+    });
+
+    it('toggle click flips the URL param + persists to localStorage', async () => {
+      mockData();
+      render(wrap(<BoardPage />, '/board?view=workitem'));
+      await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+      // Default off.
+      expect(screen.queryByTestId('board-column-backlog')).toBeNull();
+      // Click toggle → backlog column appears + storage flips on.
+      fireEvent.click(screen.getByTestId('board-show-backlog-toggle'));
+      await waitFor(() =>
+        expect(screen.getByTestId('board-column-backlog')).toBeTruthy()
+      );
+      expect(window.localStorage.getItem('gemba.board.show-backlog')).toBe('1');
+      // Click again → backlog column hidden + storage cleared.
+      fireEvent.click(screen.getByTestId('board-show-backlog-toggle'));
+      await waitFor(() =>
+        expect(screen.queryByTestId('board-column-backlog')).toBeNull()
+      );
+      expect(window.localStorage.getItem('gemba.board.show-backlog')).toBeNull();
+    });
+
+    it('localStorage gemba.board.show-backlog=1 survives reload', async () => {
+      window.localStorage.setItem('gemba.board.show-backlog', '1');
+      mockData();
+      render(wrap(<BoardPage />, '/board?view=workitem'));
+      await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+      // No URL param, but storage hydrates the toggle on.
+      expect(screen.getByTestId('board-column-backlog')).toBeTruthy();
+      const toggle = screen.getByTestId('board-show-backlog-toggle');
+      expect(toggle.getAttribute('data-active')).toBe('true');
+    });
+
+    it('Epic kanban also drops Backlog by default and restores it on toggle', async () => {
+      const data: WorkItem[] = [
+        epic('root'),
+        epic('e1', 'root'),
+      ];
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ items: data, total: data.length }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+      render(wrap(<BoardPage />, '/board?show_backlog=1'));
+      await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+      // 6 cells per swimlane when toggle is on.
+      expect(screen.getByTestId('board-epic-cell-root-backlog')).toBeTruthy();
+    });
+
+    it('show_backlog toggle is hidden in list mode', async () => {
+      mockData();
+      render(wrap(<BoardPage />, '/board?layout=list'));
+      await waitFor(() => expect(screen.getByTestId('board-list')).toBeTruthy());
+      // List mode shows the Power toggle, not the show_backlog toggle.
+      expect(screen.queryByTestId('board-show-backlog-toggle')).toBeNull();
+      expect(screen.getByTestId('board-power-toggle')).toBeTruthy();
+    });
   });
 
   it('shows error state with a retry button that re-fetches', async () => {

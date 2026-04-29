@@ -188,7 +188,10 @@ describe('Board regression — project-canonical fixture', () => {
 
   it('board-epic-cell-* counts match the fixture per-state-category breakdown', () => {
     const items = loadFixture();
-    mountBoard(items);
+    // gm-5ekd: backlog column is hidden by default; this regression
+    // test asserts every state bucket including backlog, so render
+    // with the toggle on.
+    mountBoard(items, '/board?show_backlog=1');
     // Per-root expected counts of epics (kind==='epic') by state_category.
     const epicsByRoot: Record<string, Partial<Record<StateCategory, number>>> = {
       'demo/pc-root': { backlog: 1, started: 1, unstarted: 1, staged: 1, completed: 1 },
