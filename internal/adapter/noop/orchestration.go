@@ -100,6 +100,11 @@ var defaultOrchestrationManifest = core.OrchestrationCapabilityManifest{
 	EscalationKinds: []core.EscalationKind{core.EscalationHITLApproval},
 	PeekModes:       []core.PeekMode{core.PeekTranscript},
 	EventDelivery:   core.EventDeliveryPoll,
+	// ClaimModel: the noop adaptor mints sessions inline against an
+	// existing Assignment; there is no out-of-band reservation
+	// surface. Inline matches the production adaptors (gt, native)
+	// the harness exercises.
+	ClaimModel: core.ClaimModelInline,
 }
 
 // CreateAssignment registers an Assignment so a subsequent StartSession

@@ -5,6 +5,7 @@ package autodispatch
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -679,5 +680,252 @@ func TestTick_FloorAllowsHighAffinity(t *testing.T) {
 	r := d.Tick(context.Background())
 	if r.Actions[0].Outcome != OutcomeDispatched {
 		t.Errorf("high-affinity match should clear floor; got %+v", r.Actions[0])
+	}
+}
+
+// ── ClaimModel manifest gate (gm-e3.8) ──────────────────────────
+
+// fakeAlreadyClaimedDispatcher fails the first N Dispatch calls with the
+// already-claimed sentinel, then succeeds on the (N+1)th. Records every
+// (sessionID, beadID) it observes so tests can assert the daemon walked
+// past the right candidates.
+type fakeAlreadyClaimedDispatcher struct {
+	failFirstN int
+	calls      []dispatchCall
+	finalErr   error // when set, the (N+1)th call also errors
+}
+
+func (f *fakeAlreadyClaimedDispatcher) Dispatch(_ context.Context, sessionID string, beadID core.WorkItemID) error {
+	f.calls = append(f.calls, dispatchCall{sessionID: sessionID, beadID: beadID})
+	if len(f.calls) <= f.failFirstN {
+		return core.NewAlreadyClaimedError("bead %q already hooked", beadID)
+	}
+	return f.finalErr
+}
+
+// TestTick_InlineSoftSkipsAlreadyClaimedAndDispatchesNext is the
+// gm-e3.8 inline-claim soft-skip pin. The first candidate's Dispatch
+// returns ErrBeadAlreadyClaimed; the daemon must record the soft-skip
+// and dispatch the second candidate without bubbling an error.
+func TestTick_InlineSoftSkipsAlreadyClaimedAndDispatchesNext(t *testing.T) {
+	profile := &planner.SessionProfile{
+		Concepts: map[planner.ConceptTag]float64{"auth": 1.0},
+	}
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", profile, &planner.SessionHealth{}),
+	}
+	// Two candidates; the highest-affinity one will lose the inline race.
+	ready := []ReadyBead{
+		bead("gm-top", "gemba", "auth"),  // wins ranking
+		bead("gm-next", "gemba", "auth"), // dispatched after soft skip
+	}
+	dsp := &fakeAlreadyClaimedDispatcher{failFirstN: 1}
+	d := newDaemon(idle, nil, ready, enabledGate(), nil)
+	d.Dispatcher = dsp
+	d.Now = fixedClock(t)
+	// ClaimModel left empty — must default to inline (back-compat).
+
+	r := d.Tick(context.Background())
+	if r.Err != nil {
+		t.Fatalf("Tick: %v", r.Err)
+	}
+	if len(r.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1 (final action only)", len(r.Actions))
+	}
+	if r.Actions[0].Outcome != OutcomeDispatched {
+		t.Errorf("outcome = %q, want %q", r.Actions[0].Outcome, OutcomeDispatched)
+	}
+	if r.Actions[0].BeadID != "gm-next" {
+		t.Errorf("dispatched bead = %s, want gm-next", r.Actions[0].BeadID)
+	}
+	if len(dsp.calls) != 2 {
+		t.Errorf("dispatcher calls = %d, want 2 (skip + win)", len(dsp.calls))
+	}
+	if dsp.calls[0].beadID != "gm-top" || dsp.calls[1].beadID != "gm-next" {
+		t.Errorf("dispatch order = %+v, want [gm-top, gm-next]", dsp.calls)
+	}
+}
+
+// TestTick_InlineSoftSkipBoundExhausted confirms the
+// MaxSoftSkipRetriesPerTick bound holds: when every candidate returns
+// already-claimed, the daemon stops after the budget and surfaces an
+// OutcomeAlreadyClaimed action carrying the budget-exhausted reason.
+func TestTick_InlineSoftSkipBoundExhausted(t *testing.T) {
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", &planner.SessionProfile{}, &planner.SessionHealth{}),
+	}
+	ready := []ReadyBead{
+		bead("gm-1", "gemba"),
+		bead("gm-2", "gemba"),
+		bead("gm-3", "gemba"),
+		bead("gm-4", "gemba"),
+		bead("gm-5", "gemba"),
+	}
+	// All candidates collide.
+	dsp := &fakeAlreadyClaimedDispatcher{failFirstN: 100}
+	d := newDaemon(idle, nil, ready, enabledGate(), nil)
+	d.Dispatcher = dsp
+	d.Now = fixedClock(t)
+
+	r := d.Tick(context.Background())
+	if r.Err != nil {
+		t.Fatalf("Tick: %v", r.Err)
+	}
+	if len(r.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1", len(r.Actions))
+	}
+	if r.Actions[0].Outcome != OutcomeAlreadyClaimed {
+		t.Errorf("outcome = %q, want %q", r.Actions[0].Outcome, OutcomeAlreadyClaimed)
+	}
+	// Budget enforcement: the daemon attempts at most
+	// MaxSoftSkipRetriesPerTick candidates before giving up. The
+	// total dispatcher call count MUST be capped — it can not walk
+	// every bead.
+	if got := len(dsp.calls); got > MaxSoftSkipRetriesPerTick {
+		t.Errorf("dispatcher call count = %d, exceeds bound %d", got, MaxSoftSkipRetriesPerTick)
+	}
+	if got := len(dsp.calls); got < 1 {
+		t.Errorf("dispatcher must be called at least once; got %d", got)
+	}
+	if !strings.Contains(r.Actions[0].Reason, "retry budget exhausted") {
+		t.Errorf("reason = %q, expected 'retry budget exhausted'", r.Actions[0].Reason)
+	}
+}
+
+// TestTick_InlineNonClaimedErrorDoesNotSoftSkip pins a load-bearing
+// distinction: only ErrBeadAlreadyClaimed triggers the soft-skip path.
+// A generic dispatcher error still surfaces as OutcomeError (and the
+// daemon does NOT walk to the next candidate).
+func TestTick_InlineNonClaimedErrorDoesNotSoftSkip(t *testing.T) {
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", &planner.SessionProfile{}, &planner.SessionHealth{}),
+	}
+	ready := []ReadyBead{
+		bead("gm-1", "gemba"),
+		bead("gm-2", "gemba"),
+	}
+	// Generic error — NOT the sentinel. Should NOT soft-skip.
+	dsp := &fakeDispatcher{err: errors.New("provider down")}
+	d := newDaemon(idle, nil, ready, enabledGate(), dsp)
+	d.Now = fixedClock(t)
+
+	r := d.Tick(context.Background())
+	if r.Actions[0].Outcome != OutcomeError {
+		t.Errorf("outcome = %q, want %q", r.Actions[0].Outcome, OutcomeError)
+	}
+	if len(dsp.calls) != 1 {
+		t.Errorf("dispatcher calls = %d, want 1 (no soft-skip on non-sentinel error)", len(dsp.calls))
+	}
+}
+
+// fakeTwoPhaseDispatcher implements TwoPhaseDispatcher for the
+// dormant ClaimModelTwoPhase path. Records every method invocation
+// so tests can assert routing.
+type fakeTwoPhaseDispatcher struct {
+	claims    []core.WorkItemID
+	converts  []string
+	releases  []string
+	claimErr  error // returned by next Claim
+	failFirst int   // first N claims return already-claimed
+}
+
+func (f *fakeTwoPhaseDispatcher) ClaimReservation(_ context.Context, _ string, beadID core.WorkItemID) (*core.Reservation, error) {
+	f.claims = append(f.claims, beadID)
+	if len(f.claims) <= f.failFirst {
+		return nil, core.NewAlreadyClaimedError("bead %q already reserved", beadID)
+	}
+	if f.claimErr != nil {
+		return nil, f.claimErr
+	}
+	return &core.Reservation{ID: "res-" + string(beadID), WorkItemID: beadID}, nil
+}
+
+func (f *fakeTwoPhaseDispatcher) ConvertReservation(_ context.Context, _ string, r *core.Reservation) error {
+	f.converts = append(f.converts, r.ID)
+	return nil
+}
+
+func (f *fakeTwoPhaseDispatcher) ReleaseReservation(_ context.Context, id string) error {
+	f.releases = append(f.releases, id)
+	return nil
+}
+
+// TestTick_TwoPhaseRoutesThroughReservationChain confirms the
+// ClaimModelTwoPhase manifest gate routes through the
+// claim → convert chain. Even though no in-tree adaptor declares
+// two_phase, the daemon's branch must work end-to-end.
+func TestTick_TwoPhaseRoutesThroughReservationChain(t *testing.T) {
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", &planner.SessionProfile{}, &planner.SessionHealth{}),
+	}
+	ready := []ReadyBead{bead("gm-1", "gemba")}
+	// A regular SessionDispatcher is still required by validate(),
+	// even though dispatchTwoPhase ignores it.
+	tp := &fakeTwoPhaseDispatcher{}
+	d := newDaemon(idle, nil, ready, enabledGate(), &fakeDispatcher{})
+	d.ClaimModel = core.ClaimModelTwoPhase
+	d.TwoPhase = tp
+	d.Now = fixedClock(t)
+
+	r := d.Tick(context.Background())
+	if r.Err != nil {
+		t.Fatalf("Tick: %v", r.Err)
+	}
+	if r.Actions[0].Outcome != OutcomeDispatched {
+		t.Errorf("outcome = %q, want dispatched", r.Actions[0].Outcome)
+	}
+	if len(tp.claims) != 1 || tp.claims[0] != "gm-1" {
+		t.Errorf("claims = %+v, want [gm-1]", tp.claims)
+	}
+	if len(tp.converts) != 1 {
+		t.Errorf("converts = %+v, want 1 entry", tp.converts)
+	}
+	if len(tp.releases) != 0 {
+		t.Errorf("no release expected on success path; got %+v", tp.releases)
+	}
+}
+
+// TestTick_TwoPhaseSoftSkipsAlreadyClaimed mirrors the inline test on
+// the two-phase path: a reservation collision soft-skips to the next
+// candidate.
+func TestTick_TwoPhaseSoftSkipsAlreadyClaimed(t *testing.T) {
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", &planner.SessionProfile{}, &planner.SessionHealth{}),
+	}
+	ready := []ReadyBead{
+		bead("gm-top", "gemba"),
+		bead("gm-next", "gemba"),
+	}
+	tp := &fakeTwoPhaseDispatcher{failFirst: 1}
+	d := newDaemon(idle, nil, ready, enabledGate(), &fakeDispatcher{})
+	d.ClaimModel = core.ClaimModelTwoPhase
+	d.TwoPhase = tp
+	d.Now = fixedClock(t)
+
+	r := d.Tick(context.Background())
+	if r.Actions[0].Outcome != OutcomeDispatched {
+		t.Errorf("outcome = %q", r.Actions[0].Outcome)
+	}
+	if r.Actions[0].BeadID != "gm-next" {
+		t.Errorf("bead = %s, want gm-next", r.Actions[0].BeadID)
+	}
+}
+
+// TestTick_TwoPhaseMissingDispatcherErrors confirms an operator
+// misconfiguration (ClaimModel=two_phase + nil TwoPhase) surfaces as a
+// clean error action rather than a panic.
+func TestTick_TwoPhaseMissingDispatcherErrors(t *testing.T) {
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", &planner.SessionProfile{}, &planner.SessionHealth{}),
+	}
+	ready := []ReadyBead{bead("gm-1", "gemba")}
+	d := newDaemon(idle, nil, ready, enabledGate(), &fakeDispatcher{})
+	d.ClaimModel = core.ClaimModelTwoPhase
+	// d.TwoPhase intentionally nil
+	d.Now = fixedClock(t)
+
+	r := d.Tick(context.Background())
+	if r.Actions[0].Outcome != OutcomeError {
+		t.Errorf("outcome = %q, want error", r.Actions[0].Outcome)
 	}
 }

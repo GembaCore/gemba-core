@@ -259,6 +259,40 @@ func TestStartSessionRespectsPreResolvedWorkspace(t *testing.T) {
 	}
 }
 
+// TestStartSessionBeadAlreadyInFlightReturnsSentinel pins gm-e3.8 on
+// the native adaptor. A second StartSession call against a bead that's
+// already the AssignmentID of a non-terminal session must surface the
+// core.ErrBeadAlreadyClaimed sentinel — the auto-dispatch daemon's
+// inline-claim soft-skip path then picks the next candidate.
+func TestStartSessionBeadAlreadyInFlightReturnsSentinel(t *testing.T) {
+	repo := initRepo(t)
+	fb := newFakeBackend()
+	p := NewWithConfig(Config{Backend: fb, Registry: defaultRegistry(), RepoRoot: repo})
+
+	// Anchor session.
+	first, err := p.StartSession(context.Background(), "gm-foo", freshPrompt("gm-foo", nil))
+	if err != nil {
+		t.Fatalf("first StartSession: %v", err)
+	}
+	if first.ID == "" {
+		t.Fatal("first session id empty")
+	}
+
+	// Second call referencing the SAME bead from a different
+	// dispatcher (different assignmentID, fresh nonce) must lose
+	// the inline-claim race.
+	_, err = p.StartSession(context.Background(), "gm-foo-take2", freshPrompt("gm-foo", nil))
+	if err == nil {
+		t.Fatal("expected inline-claim race to reject the second StartSession")
+	}
+	if !core.IsAlreadyClaimedError(err) {
+		t.Errorf("want ErrBeadAlreadyClaimed sentinel; got %T (%v)", err, err)
+	}
+	if core.AsAdaptorError(err) == nil {
+		t.Errorf("error must be tagged AdaptorError; got %T", err)
+	}
+}
+
 func TestStartSessionZeroConfigStillUnsupported(t *testing.T) {
 	// Zero-config adaptor (no Backend) returns KindUnsupported so the
 	// server can mount it without a live terminal backend and users

@@ -270,6 +270,7 @@ func NewFakeOrchestrationPlane(transport core.Transport) *FakeOrchestrationPlane
 			CostAxes:                []core.CostAxis{core.CostWallclock},
 			EscalationKinds:         []core.EscalationKind{core.EscalationHITLApproval},
 			PeekModes:               []core.PeekMode{core.PeekStructured},
+			ClaimModel:              core.ClaimModelInline,
 		},
 	}
 }

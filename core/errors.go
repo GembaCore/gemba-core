@@ -294,6 +294,52 @@ func IsRetryable(err error) bool {
 	return ae != nil && ae.Retryable
 }
 
+// ErrBeadAlreadyClaimed is the sentinel adaptors return from
+// StartSession (or its inline-claim equivalent) when the bead the
+// caller asked for has already been claimed by another session
+// (gm-e3.8). The auto-dispatch daemon treats this error as a soft
+// skip on the inline-claim path: rather than failing the tick, the
+// daemon picks the next candidate from the ranked ready set.
+//
+// Adaptors MUST wrap this sentinel inside a tagged *AdaptorError so
+// the boundary-error contract (Conformance Group F) still holds.
+// The canonical wrapping is KindValidation with Cause=ErrBeadAlreadyClaimed
+// — KindValidation already names "the input failed a precondition,"
+// and "another session got there first" is exactly that. Callers
+// branch on the sentinel via IsAlreadyClaimedError, never on
+// kind/message text.
+//
+// gt's adaptor maps `gt sling`'s "bead-already-hooked" rejection to
+// this sentinel; native maps the bead-double-claim case from its
+// pane spawn path. Both paths are distinct from the cap-race retry
+// in internal/server/sessions.go (pane saturation), which keeps
+// surfacing as a plain KindValidation without the sentinel.
+var ErrBeadAlreadyClaimed = errors.New("core: bead already claimed by another session")
+
+// IsAlreadyClaimedError reports whether err is (or wraps) the
+// ErrBeadAlreadyClaimed sentinel. Use this at dispatch sites instead
+// of branching on AdaptorError.Kind — the kind is incidental to the
+// "soft skip and try next candidate" decision; the sentinel is the
+// stable signal.
+func IsAlreadyClaimedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, ErrBeadAlreadyClaimed)
+}
+
+// NewAlreadyClaimedError constructs a tagged AdaptorError carrying
+// ErrBeadAlreadyClaimed as Cause. Adaptors should use this helper at
+// the boundary so call sites can rely on errors.Is.
+func NewAlreadyClaimedError(format string, args ...any) *AdaptorError {
+	return &AdaptorError{
+		Kind:      KindValidation,
+		Retryable: false,
+		Message:   fmt.Sprintf(format, args...),
+		Cause:     ErrBeadAlreadyClaimed,
+	}
+}
+
 // ValidationIssue is the structured `issue` payload a transport layer
 // attaches to a KindValidation AdaptorError (gm-io4). The transport
 // decoder — chi handler, jsonl frame pump, MCP tool-call unmarshal —

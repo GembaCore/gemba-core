@@ -195,13 +195,62 @@ type OrchestrationCapabilityManifest struct {
 	PerKindIsolation        map[WorkspaceKind]IsolationCapabilities `json:"per_kind_isolation,omitempty"`
 	GroupModes              []GroupMode                             `json:"group_modes"`
 	AssignmentStrategies    []AssignmentStrategy                    `json:"assignment_strategies,omitempty"`
-	CostAxes                []CostAxis                              `json:"cost_axes"`
-	NativeCostUnit          string                                  `json:"native_cost_unit,omitempty"`
-	NativeCostToDollars     *float64                                `json:"native_cost_to_dollars,omitempty"`
-	EscalationKinds         []EscalationKind                        `json:"escalation_kinds"`
-	PeekModes               []PeekMode                              `json:"peek_modes"`
-	EventDelivery           EventDelivery                           `json:"event_delivery,omitempty"`
-	Extension               map[string]any                          `json:"extension,omitempty"`
+	// ClaimModel declares how the adaptor handles the atomic-claim
+	// race between sessions competing for the same ready bead
+	// (gm-e3.8). Empty/missing defaults to ClaimModelInline — every
+	// in-tree adaptor today (gt, native, noop) claims atomically
+	// inside its spawn primitive, so the default keeps pre-gm-e3.8
+	// behavior identical. Use ClaimModel.Resolved() at read sites
+	// to apply the default safely.
+	ClaimModel          ClaimModel       `json:"claim_model,omitempty"`
+	CostAxes            []CostAxis       `json:"cost_axes"`
+	NativeCostUnit      string           `json:"native_cost_unit,omitempty"`
+	NativeCostToDollars *float64         `json:"native_cost_to_dollars,omitempty"`
+	EscalationKinds     []EscalationKind `json:"escalation_kinds"`
+	PeekModes           []PeekMode       `json:"peek_modes"`
+	EventDelivery       EventDelivery    `json:"event_delivery,omitempty"`
+	Extension           map[string]any   `json:"extension,omitempty"`
+}
+
+// ClaimModel declares how the adaptor handles the atomic-claim race
+// between sessions competing for the same ready bead (gm-e3.8). Set on
+// the manifest at adaptor construction so the planner's auto-dispatch
+// daemon can branch its dispatch path accordingly.
+//
+// The empty value (zero ClaimModel) is treated as ClaimModelInline so
+// existing manifests that pre-date the field keep their pre-gm-e3.8
+// behavior — every adaptor in tree today claims atomically inside its
+// spawn primitive (gt sling, native pane spawn).
+type ClaimModel string
+
+const (
+	// ClaimModelInline: claim happens inside StartSession. The
+	// adaptor's spawn primitive is atomic with the hook (e.g. gt
+	// sling's bead-already-hooked rejection, native's pane-spawn
+	// path). The planner does NOT call ClaimNextReady; it picks a
+	// candidate, calls StartSession, and treats an "already claimed"
+	// error as a soft skip — pick the next candidate. ClaimNextReady
+	// / ReleaseReservation may legitimately return KindUnsupported
+	// for inline-claim adaptors.
+	ClaimModelInline ClaimModel = "inline"
+
+	// ClaimModelTwoPhase: separate reservation step. The planner
+	// calls ClaimNextReady to obtain a TTL'd Reservation, then
+	// StartSession to convert. Reservation auto-releases if the
+	// session never spawns. Reserved for adaptors with explicit
+	// hold-without-spawn semantics (none in tree today).
+	ClaimModelTwoPhase ClaimModel = "two_phase"
+)
+
+// Resolved returns the effective ClaimModel for this value. Empty
+// (zero) defaults to ClaimModelInline so legacy manifests round-trip
+// without explicit declarations and keep their prior behavior. Unknown
+// values surface as-is (callers can branch / log).
+func (c ClaimModel) Resolved() ClaimModel {
+	if c == "" {
+		return ClaimModelInline
+	}
+	return c
 }
 
 // AssignmentStrategy names one of the three observed ways an orchestrator

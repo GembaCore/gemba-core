@@ -61,6 +61,33 @@ func (o *OrchestrationPlane) paneInFlightLocked(paneID string) int {
 	return len(o.paneSessions[paneID])
 }
 
+// beadAlreadyInFlightLocked reports whether the given beadID is the
+// AssignmentID of a non-terminal session that ISN'T excludeSessionID
+// (gm-e3.8 inline-claim guard). Caller MUST hold o.mu. Used by
+// StartSession's bead-double-claim guard so the auto-dispatch
+// daemon's soft-skip path can pick the next candidate when two
+// sessions race on the same bead. Terminal sessions are ignored —
+// their bead is "released" in the inline-claim sense.
+func (o *OrchestrationPlane) beadAlreadyInFlightLocked(beadID, excludeSessionID string) bool {
+	if beadID == "" {
+		return false
+	}
+	for sid, s := range o.sessions {
+		if sid == excludeSessionID {
+			continue
+		}
+		if s == nil || s.AssignmentID != beadID {
+			continue
+		}
+		switch s.Status {
+		case core.SessionCompleted, core.SessionFailed:
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // addSessionToPaneLocked appends a session id to the pane's session
 // list. Caller MUST hold o.mu.
 func (o *OrchestrationPlane) addSessionToPaneLocked(paneID, sessionID string) {

@@ -33,6 +33,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -149,6 +150,16 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	}
 
 	if _, err := o.run(ctx, args...); err != nil {
+		// gt sling collisions on an already-hooked bead are a normal
+		// race outcome under the inline-claim model (gm-e3.8). Map
+		// them to the typed sentinel so the auto-dispatch daemon
+		// can soft-skip and pick the next candidate. Other shell
+		// failures fall through to the generic adaptor-degraded
+		// envelope.
+		if isAlreadyHookedError(err) {
+			return core.Session{}, core.NewAlreadyClaimedError(
+				"gastown: bead %q already hooked (gt sling collision)", beadID)
+		}
 		return core.Session{}, wrapGtError(err, "gt "+strings.Join(args, " "))
 	}
 
@@ -310,6 +321,40 @@ func (o *OrchestrationPlane) EndSession(ctx context.Context, sessionID string, m
 			"target":  target,
 		},
 	}, nil
+}
+
+// isAlreadyHookedError recognizes the gt CLI's "bead already hooked"
+// rejection — gt sling refuses idempotently when the named bead is
+// already attached to a polecat. Two-phase string-match rather than a
+// structured error: gt's stderr today is the only signal we have.
+// Adaptor-level only — call sites consume the typed
+// core.ErrBeadAlreadyClaimed sentinel via core.IsAlreadyClaimedError
+// instead of stringly-typing here.
+//
+// Match patterns are tolerant — we accept any of the variants gt has
+// shipped: "bead already hooked", "already hooked to <target>",
+// "bead is already hooked", … . When in doubt we err on NOT matching;
+// the wrapped error still surfaces normally.
+func isAlreadyHookedError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		stderr := strings.ToLower(strings.TrimSpace(string(exitErr.Stderr)))
+		if stderr != "" {
+			msg = stderr
+		}
+	}
+	switch {
+	case strings.Contains(msg, "already hooked"):
+		return true
+	case strings.Contains(msg, "bead already claimed"):
+		return true
+	case strings.Contains(msg, "already in flight"):
+		return true
+	}
+	return false
 }
 
 func closeReasonFromEndMode(mode core.SessionEndMode) core.SessionCloseReason {

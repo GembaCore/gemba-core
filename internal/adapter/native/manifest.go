@@ -52,7 +52,13 @@ var Manifest = core.OrchestrationCapabilityManifest{
 	},
 	GroupModes:           []core.GroupMode{core.GroupStatic},
 	AssignmentStrategies: []core.AssignmentStrategy{core.StrategyPush},
-	CostAxes:             []core.CostAxis{core.CostWallclock},
+	// ClaimModel: native's pane-spawn path is the atomic claim.
+	// StartSession either binds the bead to a fresh pane or
+	// surfaces the bead-double-claim case as ErrBeadAlreadyClaimed
+	// (gm-e3.8). The planner does not call ClaimNextReady against
+	// this adaptor.
+	ClaimModel: core.ClaimModelInline,
+	CostAxes:   []core.CostAxis{core.CostWallclock},
 	EscalationKinds: []core.EscalationKind{
 		core.EscalationPermissionPrompt,
 		core.EscalationHITLApproval,

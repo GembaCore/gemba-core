@@ -296,6 +296,26 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 
 	// Record session + pane + nonce under the lock.
 	o.mu.Lock()
+	// Bead-double-claim guard (gm-e3.8). A bead must not be the active
+	// AssignmentID of two non-terminal sessions at once — that's the
+	// inline-claim race the manifest's ClaimModelInline contract
+	// protects against. Surface the typed sentinel so the
+	// auto-dispatch daemon's soft-skip path picks the next candidate
+	// rather than failing the tick. Manual-mode sessions are exempt
+	// (no bead anchor; assignmentID names the manual ticket itself).
+	if !manualMode && beadID != "" && o.beadAlreadyInFlightLocked(beadID, sessionID) {
+		o.mu.Unlock()
+		// We have not yet recorded the new session, but we DID spawn
+		// (or reuse) a pane above. For a fresh-pane spawn, kill the
+		// dangling pane so we don't leak a hot agent on a bead it can
+		// never claim. Reuse-pane mode shares the pane already, so we
+		// leave it alone — the existing session continues unaffected.
+		if reusePaneID == "" {
+			_ = o.cfg.Backend.Kill(ctx, pane.ID)
+		}
+		return core.Session{}, core.NewAlreadyClaimedError(
+			"native: bead %q already in flight on another session", beadID)
+	}
 	if reusePaneID == "" && o.paneInFlightLocked(pane.ID) > 0 {
 		// Brand-new pane that already has sessions — backend bug. Clean
 		// up to avoid the leak.

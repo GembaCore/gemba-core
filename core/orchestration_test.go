@@ -22,6 +22,7 @@ func TestOrchestrationManifestRoundTrip(t *testing.T) {
 		},
 		GroupModes:           []GroupMode{GroupStatic, GroupPool},
 		AssignmentStrategies: []AssignmentStrategy{StrategyPull, StrategyHook},
+		ClaimModel:           ClaimModelInline,
 		CostAxes:             []CostAxis{CostTokens, CostWallclock},
 		NativeCostUnit:       "ACU",
 		NativeCostToDollars:  &rate,
@@ -76,6 +77,72 @@ func TestOrchestrationManifestRequiredAxesOnWire(t *testing.T) {
 		if _, ok := generic[k]; !ok {
 			t.Errorf("manifest key %q missing from wire form: %s", k, data)
 		}
+	}
+}
+
+// TestClaimModelRoundTrip exercises gm-e3.8: the manifest's ClaimModel
+// field round-trips through JSON in both the explicit and the empty-
+// default-to-inline shapes.
+func TestClaimModelRoundTrip(t *testing.T) {
+	cases := []struct {
+		name     string
+		set      ClaimModel
+		wantJSON bool // true if the field appears in JSON
+	}{
+		{name: "inline-explicit", set: ClaimModelInline, wantJSON: true},
+		{name: "two-phase-explicit", set: ClaimModelTwoPhase, wantJSON: true},
+		{name: "empty-omits", set: "", wantJSON: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := OrchestrationCapabilityManifest{
+				AdaptorID:               "test",
+				AdaptorVersion:          "0.0.1",
+				OrchestrationAPIVersion: "1.0",
+				Transport:               TransportAPI,
+				WorkspaceKinds:          []WorkspaceKind{},
+				GroupModes:              []GroupMode{},
+				CostAxes:                []CostAxis{},
+				EscalationKinds:         []EscalationKind{},
+				PeekModes:               []PeekMode{},
+				ClaimModel:              tc.set,
+			}
+			data, err := json.Marshal(m)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var generic map[string]any
+			if err := json.Unmarshal(data, &generic); err != nil {
+				t.Fatalf("decode generic: %v", err)
+			}
+			_, present := generic["claim_model"]
+			if present != tc.wantJSON {
+				t.Errorf("claim_model present=%v, want %v (json=%s)", present, tc.wantJSON, data)
+			}
+			var round OrchestrationCapabilityManifest
+			if err := json.Unmarshal(data, &round); err != nil {
+				t.Fatalf("decode manifest: %v", err)
+			}
+			if round.ClaimModel != tc.set {
+				t.Errorf("ClaimModel round-trip: got %q, want %q", round.ClaimModel, tc.set)
+			}
+		})
+	}
+}
+
+// TestClaimModelResolvedDefaultsInline pins the back-compat behavior:
+// an empty ClaimModel resolves to ClaimModelInline so legacy manifests
+// (and every adaptor in tree pre-gm-e3.8) keep their pre-existing
+// dispatch path.
+func TestClaimModelResolvedDefaultsInline(t *testing.T) {
+	if got := ClaimModel("").Resolved(); got != ClaimModelInline {
+		t.Errorf("empty ClaimModel.Resolved() = %q, want %q", got, ClaimModelInline)
+	}
+	if got := ClaimModelInline.Resolved(); got != ClaimModelInline {
+		t.Errorf("inline.Resolved() = %q", got)
+	}
+	if got := ClaimModelTwoPhase.Resolved(); got != ClaimModelTwoPhase {
+		t.Errorf("two_phase.Resolved() = %q", got)
 	}
 }
 
