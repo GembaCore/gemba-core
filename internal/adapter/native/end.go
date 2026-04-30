@@ -18,6 +18,20 @@ import (
 const graceBeforeKill = 3 * time.Second
 
 // EndSession implements the graceful teardown path (gm-native.12).
+//
+// Pool-lifecycle context (gm-s47n.11, session-pool.md §4.3): EndSession
+// is the *terminal* path — it tears the pool slot down. The graceful
+// "bead-done" boundary signal (§4.2) is handled in state_events.go
+// instead, transitioning the session to SessionReady WITHOUT calling
+// EndSession. So a pool member emitting `bead-done` retains its pane
+// + worktree naturally — no branch needed here.
+//
+// EndSession fires only on terminal events:
+//   - Operator-explicit End button (today's behavior, preserved).
+//   - Idle-ceiling reaper (§4.4) draining a stale Ready session.
+//   - Pane death detection / failure paths.
+//   - Manual close from the SPA's session card.
+//
 // Flow:
 //  1. Look up the session + its pane; unknown id → KindSessionNotFound.
 //  2. Same-nonce replay returns the cached terminal session verbatim.

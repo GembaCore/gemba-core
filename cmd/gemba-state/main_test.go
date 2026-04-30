@@ -62,6 +62,45 @@ func TestRun_writesFrame(t *testing.T) {
 	}
 }
 
+// TestRun_writesBeadDoneFrame ensures the new bead-done state token
+// (gm-s47n.11) is accepted and writes a frame the bridge translator
+// + native adaptor can consume.
+func TestRun_writesBeadDoneFrame(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("GEMBA_SESSION_ID", "sess-bd")
+	t.Setenv("GEMBA_AGENT_TYPE", "claude")
+	if err := run([]string{"--bead", "gm-99", "bead-done"}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("run bead-done: %v", err)
+	}
+	path := filepath.Join(home, ".gemba", "sessions", "sess-bd.jsonl")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	lines := bytes.Split(bytes.TrimRight(b, "\n"), []byte("\n"))
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 frame, got %d", len(lines))
+	}
+	var f Frame
+	if err := json.Unmarshal(lines[0], &f); err != nil {
+		t.Fatalf("unmarshal frame: %v", err)
+	}
+	if f.Hook != "GembaState" {
+		t.Errorf("hook: got %q want GembaState", f.Hook)
+	}
+	var p GembaStatePayload
+	if err := json.Unmarshal(f.Payload, &p); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if p.State != "bead-done" {
+		t.Errorf("state: got %q want bead-done", p.State)
+	}
+	if p.BeadID != "gm-99" {
+		t.Errorf("bead id: got %q want gm-99", p.BeadID)
+	}
+}
+
 func TestRun_appendsFrames(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

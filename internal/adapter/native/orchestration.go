@@ -35,6 +35,11 @@ type OrchestrationPlane struct {
 	// observer (gm-native.13). nil when Backend is nil (zero-config
 	// adaptor still has no escalation surface).
 	escalations *escalationIndex
+	// stopReaper / stopReconcile are returned by the goroutine
+	// launchers so Close() can shut them down cleanly. nil when the
+	// adaptor was constructed with reaper/reconcile disabled (tests).
+	stopReaper    func()
+	stopReconcile func()
 }
 
 // New constructs the native OrchestrationPlane with zero config.
@@ -68,7 +73,28 @@ func NewWithConfig(cfg Config) *OrchestrationPlane {
 		p.escalations.handleEvent(ev)
 		p.handleStateEvent(ev)
 	})
+	// Pool-lifecycle background loops (gm-s47n.11). Both are opt-in
+	// via Config — zero-config adaptors (no Backend) skip them so
+	// today's unit tests stay deterministic.
+	if cfg.Backend != nil && !cfg.DisableReaper {
+		p.stopReaper = p.startIdleReaper(cfg.Reaper)
+	}
+	if cfg.Backend != nil && cfg.WorkPlane != nil && !cfg.DisableReconcile {
+		p.stopReconcile = p.startReconcileLoop(cfg.Reconcile)
+	}
 	return p
+}
+
+// Close stops the background goroutines (reaper, reconcile loop)
+// the constructor launched. Call from the server's shutdown path.
+// Safe to call multiple times; safe on a zero-config adaptor.
+func (o *OrchestrationPlane) Close() {
+	if o.stopReaper != nil {
+		o.stopReaper()
+	}
+	if o.stopReconcile != nil {
+		o.stopReconcile()
+	}
 }
 
 // Fanout exposes the bridge fanout so the server can register new

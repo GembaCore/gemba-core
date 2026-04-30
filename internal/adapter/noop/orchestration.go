@@ -285,6 +285,15 @@ func (o *OrchestrationPlane) EndSession(
 	return *s, nil
 }
 
+// RecycleSession is the optional pool-lifecycle capability
+// (session-pool.md §5.2). The noop adaptor doesn't model pool
+// semantics — return KindUnsupported so the daemon's recycle gate
+// becomes a no-op against this backend.
+func (o *OrchestrationPlane) RecycleSession(_ context.Context, _ string) (core.Session, error) {
+	return core.Session{}, core.NewAdaptorError(core.KindUnsupported,
+		"noop: RecycleSession not supported")
+}
+
 func (o *OrchestrationPlane) PeekSession(_ context.Context, sessionID string) (core.SessionPeek, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()

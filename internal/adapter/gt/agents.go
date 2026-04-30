@@ -538,6 +538,15 @@ func (o *OrchestrationPlane) EndSession(context.Context, string, core.SessionEnd
 	return core.Session{}, unsupported("EndSession")
 }
 
+// RecycleSession is the optional pool-lifecycle capability
+// (session-pool.md §5.2). The gt adaptor does not yet implement
+// pool semantics — phase 3 (gm-e7.9) will add it; until then the
+// daemon's recycle gate becomes a no-op against gt-managed
+// sessions.
+func (o *OrchestrationPlane) RecycleSession(context.Context, string) (core.Session, error) {
+	return core.Session{}, unsupported("RecycleSession")
+}
+
 func (o *OrchestrationPlane) PeekSession(context.Context, string) (core.SessionPeek, error) {
 	return core.SessionPeek{}, unsupported("PeekSession")
 }

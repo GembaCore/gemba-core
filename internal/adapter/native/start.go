@@ -254,6 +254,7 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	}
 
 	now := time.Now()
+	personaID, _ := prompt.Extension[extKeyPersonaID].(string)
 	sess := &core.Session{
 		ID:           sessionID,
 		AssignmentID: assignmentID,
@@ -263,6 +264,12 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		// lands via the bridge (gm-cdph).
 		Status:    core.SessionInitializing,
 		StartedAt: now,
+		// Persona binds the session to its pool (session-pool.md §3.2).
+		// Empty when the dispatcher didn't pin one — manual flow falls
+		// back here. The daemon's IdleSessionLister filters by
+		// (rig, persona) so this field is load-bearing for pool
+		// membership.
+		Persona: personaID,
 		ProviderMetadata: map[string]any{
 			"pane_id":    pane.ID,
 			"backend":    o.cfg.Backend.Name(),
@@ -275,6 +282,9 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 			"started_at": now.Format(time.RFC3339Nano),
 			"reuse_pane": reusePaneID != "",
 		},
+	}
+	if personaID != "" {
+		sess.ProviderMetadata["persona_id"] = personaID
 	}
 	if manualMode {
 		sess.ProviderMetadata["kind"] = kindManual

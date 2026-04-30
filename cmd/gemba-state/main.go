@@ -36,12 +36,21 @@ import (
 // validStates mirrors core.SessionStatus observable values (gm-d044)
 // minus the terminal ones. Terminal transitions go through
 // EndSession, not gemba-state.
+//
+// "bead-done" is a special pseudo-state introduced for the session
+// pool lifecycle (gm-s47n.11, docs/design/session-pool.md §4.2). It
+// is NOT a SessionStatus; it is a bead-boundary signal that the
+// agent has finished a bead and is going idle as a pool member. The
+// bridge translates it to a session_state_reported event with
+// state="bead-done", which the native adaptor maps to SessionReady
+// (after running a worktree-cleanliness check, §5.4.2).
 var validStates = map[string]bool{
 	"initializing": true,
 	"ready":        true,
 	"working":      true,
 	"prompting":    true,
 	"stalled":      true,
+	"bead-done":    true,
 }
 
 // Frame is identical to bridge.Frame / cmd/gemba-bridge Frame. Kept
@@ -87,7 +96,7 @@ func run(args []string, stderr io.Writer) error {
 	}
 	state := rest[0]
 	if !validStates[state] {
-		return fmt.Errorf("unknown state %q; valid: initializing, ready, working, prompting, stalled", state)
+		return fmt.Errorf("unknown state %q; valid: initializing, ready, working, prompting, stalled, bead-done", state)
 	}
 
 	sessionID := os.Getenv("GEMBA_SESSION_ID")

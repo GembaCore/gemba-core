@@ -34,4 +34,18 @@ type Config struct {
 	RepoRoot string
 	// WorktreesDir overrides the default "../worktrees" sibling.
 	WorktreesDir string
+
+	// Reaper tunes the idle-pane reaper goroutine (gm-s47n.11,
+	// session-pool.md §4.4). Zero values get spec defaults
+	// (30-minute idle ceiling, 1-minute tick). DisableReaper turns
+	// the goroutine off entirely — used by unit tests that want
+	// deterministic lifecycles without a background ticker.
+	Reaper        ReaperConfig
+	DisableReaper bool
+
+	// Reconcile tunes the §9 reconcile loop. Off by default unless
+	// WorkPlane is non-nil (the loop reads bead status to detect
+	// the "agent crashed mid-bead-done" failure mode).
+	Reconcile        ReconcileConfig
+	DisableReconcile bool
 }

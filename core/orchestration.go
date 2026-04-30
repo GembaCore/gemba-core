@@ -116,6 +116,19 @@ const (
 	// of the degraded span (stable id) and disappears on the first
 	// healthy probe afterwards.
 	EscalationBeadsDegraded EscalationKind = "beads_degraded"
+	// EscalationBeadDoneWithDirtyWorktree — bridge cleanliness check
+	// (session-pool.md §5.4.2) refused a Working→Ready transition
+	// because the agent emitted `bead-done` while the worktree had
+	// uncommitted changes. The session stays in SessionWorking until
+	// the operator triages. Surfaces a contract violation rather than
+	// silently mask it.
+	EscalationBeadDoneWithDirtyWorktree EscalationKind = "bead_done_with_dirty_worktree"
+	// EscalationSessionStalledTurn — synthetic escalation raised by the
+	// reconcile loop (session-pool.md §9) when a session reports its
+	// bead is closed in beads but Session.ActiveTurnID remains set —
+	// the agent crashed mid-`bead-done` emit. Operators triage the
+	// stuck session.
+	EscalationSessionStalledTurn EscalationKind = "session_stalled_turn"
 )
 
 // EscalationChannel identifies how an EscalationRequest reached Gemba.
@@ -380,6 +393,15 @@ type Session struct {
 	CloseReason      *SessionCloseReason `json:"close_reason,omitempty"`
 	CostSamples      []CostSample        `json:"cost_samples,omitempty"`
 	ProviderMetadata map[string]any      `json:"provider_metadata,omitempty"`
+
+	// Persona names the persona the session is running (session-pool.md
+	// §3.2). Pool key is `(rig, persona)`, so daemons filter idle
+	// sessions by this field. Populated from the SessionPrompt
+	// extension key `gemba:persona_id` at StartSession; empty when
+	// the session has no persona binding (today's manual flow). The
+	// adaptor must persist this through recycle so a recycled session
+	// stays bound to its pool.
+	Persona string `json:"persona,omitempty"`
 }
 
 // SessionStatus is the observable lifecycle tag on a Session (gm-d044).
@@ -828,6 +850,23 @@ type OrchestrationPlaneAdaptor interface {
 	// *intent*; CloseReason is the *recorded cause* (which may
 	// disagree — e.g. mode=completed + reason=transport_error).
 	EndSession(ctx context.Context, sessionID string, mode SessionEndMode, nonce ConfirmNonce) (Session, error)
+	// RecycleSession resets a session's context window without tearing
+	// down its pane (session-pool.md §5.2). Same pool slot, new
+	// session id, fresh profile. Adaptors that don't support pool
+	// semantics return KindUnsupported. The adaptor MUST refuse on a
+	// dirty worktree (§5.2 step 2) — that path converts the request
+	// into an end-and-respawn rather than `git reset --hard`. On
+	// success the adaptor MUST emit a `session.recycled` event with
+	// the prior + new session ids and the trigger reason.
+	//
+	// The session must be in Status=Ready (idle pool member) for
+	// recycle to be valid. Mid-bead recycle is rejected with
+	// KindValidation. The pane id and worktree path remain stable
+	// across the recycle; only the logical session id changes.
+	//
+	// Returns the new core.Session record (post-recycle, freshly
+	// minted id, Status=SessionInitializing).
+	RecycleSession(ctx context.Context, sessionID string) (Session, error)
 	// PeekSession returns a snapshot of a live session. The populated
 	// fields are gated by manifest.peek_modes.
 	PeekSession(ctx context.Context, sessionID string) (SessionPeek, error)
