@@ -258,6 +258,41 @@ func (o *OrchestrationPlane) ListOpenEscalations(_ context.Context, f core.Escal
 	return o.escalations.all(f), nil
 }
 
+// InjectSyntheticEscalation inserts a pre-built EscalationRequest
+// directly into the index. This is the test-mode entry point used by
+// the headless acceptance harness (gm-root.27.22) to exercise the
+// triage UI path without requiring a real session to emit an
+// escalation event. It is NOT part of core.OrchestrationPlaneAdaptor;
+// callers in the server tier reach it via runtime type assertion and
+// gate it behind GEMBA_ENABLE_TEST_ESCALATIONS so production servers
+// never expose it.
+//
+// The request is stored under the special session id "test:synthetic"
+// so it is distinguishable in postmortems from organically-emitted
+// escalations.
+func (o *OrchestrationPlane) InjectSyntheticEscalation(req core.EscalationRequest) error {
+	if o.escalations == nil {
+		return fmt.Errorf("native: escalation index not initialised")
+	}
+	if req.ID == "" {
+		return fmt.Errorf("native: synthetic escalation requires non-empty ID")
+	}
+	if req.CreatedAt.IsZero() {
+		req.CreatedAt = time.Now().UTC()
+	}
+	const sessionID = "test:synthetic"
+	o.escalations.mu.Lock()
+	defer o.escalations.mu.Unlock()
+	m, ok := o.escalations.bySession[sessionID]
+	if !ok {
+		m = make(map[string]core.EscalationRequest)
+		o.escalations.bySession[sessionID] = m
+	}
+	m[req.ID] = req
+	o.escalations.byID[req.ID] = sessionID
+	return nil
+}
+
 // ResolveEscalation routes the operator's reply back to the
 // terminal session via Backend.SendKeys. The actual resolution
 // event lands when the agent's next UserPromptSubmit hook fires —
