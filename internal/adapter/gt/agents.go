@@ -111,6 +111,14 @@ var gastownManifest = core.OrchestrationCapabilityManifest{
 		core.WorkspaceWorktree: {FSScoped: true},
 	},
 	GroupModes: []core.GroupMode{core.GroupStatic, core.GroupPool},
+	// ClaimModel: gt's atomic-claim primitive is `gt sling` itself —
+	// the bead-already-hooked rejection inside the gt CLI is the
+	// race protection. The planner does not call ClaimNextReady
+	// against this adaptor (those methods deliberately return
+	// KindUnsupported per gm-e3.8); on a sling collision the
+	// adaptor surfaces ErrBeadAlreadyClaimed and the daemon's
+	// inline-path soft-skip moves to the next candidate.
+	ClaimModel: core.ClaimModelInline,
 	// CostAxes: gm-e7.4 added Tokens (synthesised from Claude Code
 	// transcripts via cost.go). Wallclock is wall-clock seconds
 	// from session StartedAt → EndedAt. DollarsEst rolls in when

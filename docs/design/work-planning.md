@@ -620,6 +620,46 @@ This matters for testing — selection can be exercised with a frozen
 input bundle and produce reproducible outputs. The planner's
 correctness can be debugged without time-travel.
 
+#### 5.4 Claim model — adaptor-declared atomicity boundary (gm-e3.8)
+
+Selection produces a sorted list of candidates; **claiming** a bead
+(committing the dispatch so no other session takes the same work) is
+an adaptor concern. Different orchestration adaptors solve the
+cross-session race differently, and the planner declines to layer a
+TTL'd reservation contract on top of an adaptor that already has its
+own atomic claim primitive. Each `OrchestrationCapabilityManifest`
+declares a `claim_model`:
+
+- **`inline`** (default for every adaptor in tree today). The claim
+  happens *inside* `StartSession`. The adaptor's spawn primitive is
+  atomic with the hook: `gt sling` rejects on the
+  bead-already-hooked branch; the native adaptor refuses a second
+  StartSession for a bead already in flight on another session. The
+  planner does NOT call `ClaimNextReady`; `ClaimNextReady` /
+  `ReleaseReservation` may legitimately return `KindUnsupported` for
+  an inline-claim adaptor — that's the deliberate adaptor shape, not
+  a gap to fix. On the inline path, the planner picks a candidate,
+  calls `StartSession`, and on a tagged `core.ErrBeadAlreadyClaimed`
+  error treats the loss as a **soft skip**: pick the next candidate
+  from the ranked list. The retry budget is bounded
+  (`MaxSoftSkipRetriesPerTick`, default 3) so a misbehaving cluster
+  of beads can't blow up a single tick.
+
+- **`two_phase`** (reserved for adaptors with explicit
+  hold-without-spawn semantics; none in tree today). The planner
+  calls `ClaimNextReady` to obtain a TTL'd `Reservation`, then
+  `StartSession` to convert. Reservations auto-release if the
+  session never spawns. This is the historical Gemba contract; it
+  remains reachable via the manifest gate so a future adaptor can
+  opt in without rewiring the daemon.
+
+The framing matters: `gt sling` IS the atomic claim. Filing
+`KindUnsupported` on Gas Town's `ClaimNextReady` is the *correct*
+adaptor shape, not a follow-up. Adaptors declaring the wrong claim
+model — e.g. an inline adaptor stamping `claim_model: two_phase` —
+fail conformance Group F at registration; the planner cannot rescue
+a manifest that lies about its claim semantics.
+
 ### Layer 6 — Surface (coach + auto-dispatch UX)
 
 Two modes share the same selection engine. The mode flag determines
@@ -669,9 +709,28 @@ A daemon loop. When a session becomes idle, the planner:
    (default 0.5), do nothing — wait for either new ready beads or
    for operator-set intent to bias the selection. Don't sling
    low-confidence picks.
-5. Otherwise sling the top bead. The selection's `Justification` is
+5. Otherwise dispatch the top bead via the path declared by the
+   adaptor's `claim_model` (§5.4). The selection's `Justification` is
    stamped on the dispatch event so the auto-dispatch decision is
    auditable post-hoc.
+
+Step 5 in pseudo-code:
+
+```
+candidates ← rank ready set
+top ← top above floor
+if manifest.claim_model == inline:
+  for cand in candidates (bounded by MaxSoftSkipRetriesPerTick):
+    err ← StartSession(cand.bead)
+    if IsAlreadyClaimed(err):
+      # another session won the inline race; record OutcomeAlreadyClaimed
+      # and walk to the next candidate
+      continue
+    return DispatchResult{cand, err}
+else:  # two_phase
+  reservation ← ClaimNextReady(top.bead)
+  StartSession(reservation)
+```
 
 Auto-dispatch is **opt-in per rig** with a kill-switch in rig
 settings. A bad scorer on a fast loop can do real damage; the

@@ -150,6 +150,61 @@ func TestStartSessionShellFailureSurfacesAdaptorDegraded(t *testing.T) {
 	}
 }
 
+// TestStartSessionAlreadyHookedSurfacesSentinel pins the gm-e3.8
+// inline-claim contract: when `gt sling` rejects with
+// "bead already hooked", the adaptor wraps the failure into the
+// core.ErrBeadAlreadyClaimed sentinel so the auto-dispatch daemon's
+// soft-skip path can pick the next candidate.
+func TestStartSessionAlreadyHookedSurfacesSentinel(t *testing.T) {
+	plane, _ := newPlaneWith(t, map[string]fakeResponse{
+		"rig list --json": {out: []byte(sampleRigsJSON)},
+		"sling gt-abc gemba --agent claude --create": {
+			err: errors.New("error: bead already hooked to gemba/topaz"),
+		},
+	})
+	_, err := plane.StartSession(context.Background(), "gt-abc", core.SessionPrompt{
+		Extension: map[string]any{
+			"gemba:bead_id":    "gt-abc",
+			"gemba:agent_type": "claude",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error from gt sling collision")
+	}
+	if !core.IsAlreadyClaimedError(err) {
+		t.Errorf("expected ErrBeadAlreadyClaimed sentinel, got %T (%v)", err, err)
+	}
+	// The error must still be a tagged AdaptorError (Conformance Group F).
+	if core.AsAdaptorError(err) == nil {
+		t.Errorf("expected wrapped *AdaptorError, got %T", err)
+	}
+}
+
+// TestStartSessionGenericShellErrorIsNotAlreadyClaimed verifies the
+// negative case: a non-collision shell failure (e.g. transport blip)
+// surfaces as KindAdaptorDegraded, NOT as the already-claimed
+// sentinel — the soft-skip path must NOT swallow real adaptor errors.
+func TestStartSessionGenericShellErrorIsNotAlreadyClaimed(t *testing.T) {
+	plane, _ := newPlaneWith(t, map[string]fakeResponse{
+		"rig list --json": {out: []byte(sampleRigsJSON)},
+		"sling gt-abc gemba --agent claude --create": {
+			err: errors.New("error: gt server unreachable"),
+		},
+	})
+	_, err := plane.StartSession(context.Background(), "gt-abc", core.SessionPrompt{
+		Extension: map[string]any{
+			"gemba:bead_id":    "gt-abc",
+			"gemba:agent_type": "claude",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if core.IsAlreadyClaimedError(err) {
+		t.Errorf("generic shell failure must NOT match already-claimed sentinel; got %v", err)
+	}
+}
+
 func TestStartSessionWithExplicitTargetRig(t *testing.T) {
 	plane, fake := newPlaneWith(t, map[string]fakeResponse{
 		"convoy list --json":                         {out: []byte("[]")},

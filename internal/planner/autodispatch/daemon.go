@@ -65,8 +65,30 @@ type ReadyBead struct {
 // implementation calls OrchestrationPlane.StartSession (or its
 // follow-up assignment hook); tests inject a fake that just records
 // the call.
+//
+// Inline claim model (the default — gm-e3.8): a Dispatch call IS the
+// atomic claim. When two sessions race on the same bead, the loser's
+// Dispatch returns an error matching core.IsAlreadyClaimedError. The
+// daemon treats that as a soft skip and picks the next candidate.
 type SessionDispatcher interface {
 	Dispatch(ctx context.Context, sessionID string, beadID core.WorkItemID) error
+}
+
+// TwoPhaseDispatcher is the optional dispatch shape adaptors with
+// ClaimModelTwoPhase satisfy: claim a TTL'd reservation, then
+// convert it into a session. No in-tree adaptor declares this model
+// today; the interface lives so a future adaptor can opt in without
+// rewriting the daemon's dispatch loop.
+//
+// Implementations MUST atomically reserve and return a
+// core.Reservation pointer. A nil reservation with no error means
+// "no work available right now" — the daemon records OutcomeNoEligibleBead
+// and moves on. ConvertReservation either turns the reservation into
+// a live session OR releases it (after a non-recoverable error).
+type TwoPhaseDispatcher interface {
+	ClaimReservation(ctx context.Context, sessionID string, beadID core.WorkItemID) (*core.Reservation, error)
+	ConvertReservation(ctx context.Context, sessionID string, reservation *core.Reservation) error
+	ReleaseReservation(ctx context.Context, reservationID string) error
 }
 
 // SessionRecycler triggers a handoff when ShouldRecycle votes
@@ -117,7 +139,22 @@ const (
 	// layers (bead extras → routing.<kind> → default_persona).
 	// The bead is left for manual drag.
 	OutcomeNoPersona Outcome = "no_persona"
+	// OutcomeAlreadyClaimed is the inline-claim soft-skip outcome
+	// (gm-e3.8 / spec §4 Layer 5 claim-model gate). Recorded on each
+	// candidate that loses the inline claim race; the daemon then
+	// tries the next candidate from the ranked list. A run that
+	// exhausts the per-tick retry budget without a successful claim
+	// emits the final OutcomeAlreadyClaimed action so the operator
+	// can observe the pile-up.
+	OutcomeAlreadyClaimed Outcome = "already_claimed"
 )
+
+// MaxSoftSkipRetriesPerTick caps how many "already claimed" candidates
+// the daemon will skip past before giving up on the current tick. Bound
+// keeps a misbehaving cluster of beads from blowing up a single tick
+// (gm-e3.8). A failing dispatch on a non-already-claimed error still
+// short-circuits — the bound only applies to soft-skip retries.
+const MaxSoftSkipRetriesPerTick = 3
 
 // FairnessConfig controls the age-in-ready-queue boost applied
 // when ranking beads for dispatch (gm-s47n.6.4, spec §4 Layer 5.2).
@@ -174,6 +211,18 @@ type Daemon struct {
 	Recycler   SessionRecycler
 	Gate       *planner.DispatchGate
 	Decisions  *dispatch.Store
+
+	// ClaimModel selects the dispatch path (gm-e3.8). Empty defaults
+	// to core.ClaimModelInline — every adaptor in tree today declares
+	// inline, so the default keeps pre-gm-e3.8 behavior identical.
+	// Set ClaimModel = core.ClaimModelTwoPhase to route through
+	// TwoPhase below; the wiring is dormant in tree but exercised by
+	// the conformance harness so future adaptors can opt in.
+	ClaimModel core.ClaimModel
+	// TwoPhase implements the ClaimNextReady → StartSession chain
+	// for adaptors that declare ClaimModelTwoPhase. Required when
+	// ClaimModel == core.ClaimModelTwoPhase; ignored otherwise.
+	TwoPhase TwoPhaseDispatcher
 
 	// Now defaults to time.Now in production; tests inject a
 	// fixed clock so per-session rate limits are deterministic.
@@ -312,6 +361,7 @@ func (d *Daemon) tickSession(
 		}
 	}
 	top := scoredEligible[0]
+	_ = top // retained for the recycle gate below
 
 	// Recycle gate. Run BEFORE the rate gate so a session over the
 	// recycle threshold is handed off even when the rate limit
@@ -359,55 +409,231 @@ func (d *Daemon) tickSession(
 		}
 	}
 
-	// Sling.
-	if err := d.Dispatcher.Dispatch(ctx, sessionID, top.bead.BeadID); err != nil {
+	// Branch on the manifest's claim model (gm-e3.8). Inline is the
+	// default and matches every in-tree adaptor (gt sling, native
+	// pane spawn, noop). TwoPhase is dormant in tree but reachable
+	// via the manifest gate so future adaptors can opt in.
+	switch d.ClaimModel.Resolved() {
+	case core.ClaimModelTwoPhase:
+		return d.dispatchTwoPhase(ctx, sessionID, sess, scoredEligible, scoredAll, conflicts, conflictBeads, now)
+	default:
+		return d.dispatchInline(ctx, sessionID, sess, scoredEligible, scoredAll, conflicts, conflictBeads, now)
+	}
+}
+
+// dispatchInline runs the inline-claim path: pick the top candidate,
+// call Dispatcher.Dispatch (which IS the atomic claim), and on
+// core.IsAlreadyClaimedError soft-skip to the next candidate. Bounded
+// by MaxSoftSkipRetriesPerTick so a misbehaving cluster of beads
+// can't blow up a single tick (gm-e3.8).
+func (d *Daemon) dispatchInline(
+	ctx context.Context,
+	sessionID string,
+	sess planner.OperationalContext,
+	scoredEligible []scoredBead,
+	scoredAll []scoredBead,
+	conflicts []planner.WorkspaceCollision,
+	conflictBeads map[string]bool,
+	now time.Time,
+) Action {
+	var lastClaimed Action
+	skips := 0
+	for i, cand := range scoredEligible {
+		if i > 0 && skips >= MaxSoftSkipRetriesPerTick {
+			// Exhausted the retry budget. Surface the most recent
+			// already-claimed action so the operator can observe
+			// the pile-up; the bead the daemon settled on is the
+			// last candidate it actually attempted to dispatch.
+			if lastClaimed.Outcome != "" {
+				lastClaimed.Reason = fmt.Sprintf("retry budget exhausted after %d soft skips", skips)
+				return lastClaimed
+			}
+			break
+		}
+		err := d.Dispatcher.Dispatch(ctx, sessionID, cand.bead.BeadID)
+		if err == nil {
+			d.Gate.RecordDispatch(sessionID, now)
+			decisionID := d.recordDecision(ctx, sessionID, sess, cand, scoredAll, conflicts, conflictBeads, now)
+			return Action{
+				SessionID:  sessionID,
+				BeadID:     cand.bead.BeadID,
+				Outcome:    OutcomeDispatched,
+				Affinity:   cand.scores,
+				DecisionID: decisionID,
+			}
+		}
+		if core.IsAlreadyClaimedError(err) {
+			skips++
+			lastClaimed = Action{
+				SessionID: sessionID,
+				BeadID:    cand.bead.BeadID,
+				Outcome:   OutcomeAlreadyClaimed,
+				Reason:    "another session won the inline claim race",
+				Affinity:  cand.scores,
+			}
+			if l := d.logger(); l != nil {
+				l.Info("autodispatch.soft_skip.already_claimed",
+					slog.String("session_id", sessionID),
+					slog.String("bead_id", string(cand.bead.BeadID)),
+					slog.Int("skip_index", skips),
+				)
+			}
+			continue
+		}
+		// Non-already-claimed error: treat as terminal for this tick.
 		return Action{
 			SessionID: sessionID,
-			BeadID:    top.bead.BeadID,
+			BeadID:    cand.bead.BeadID,
 			Outcome:   OutcomeError,
 			Reason:    fmt.Sprintf("dispatch: %v", err),
 		}
 	}
-	d.Gate.RecordDispatch(sessionID, now)
-
-	decisionID := ""
-	if d.Decisions != nil {
-		dec := dispatch.Decision{
-			BeadID:    top.bead.BeadID,
-			DecidedAt: now,
-			SessionID: sessionID,
-			Mode:      dispatch.ModeAuto,
-			Affinity:  top.scores,
-			Conflicts: dispatch.ConflictSnapshot{Workspace: conflicts},
-			ReadySet:  buildReadySetSnapshot(scoredAll, conflictBeads),
-			CreatedAt: now,
-		}
-		if sess.Agent != nil {
-			dec.AgentID = sess.Agent.ID
-		}
-		id, err := d.Decisions.Insert(ctx, dec)
-		if err != nil {
-			// The dispatch already happened — degrade to logging
-			// the persistence failure rather than rolling it back.
-			if l := d.logger(); l != nil {
-				l.Warn("autodispatch.decisions.insert_failed",
-					slog.String("session_id", sessionID),
-					slog.String("bead_id", string(top.bead.BeadID)),
-					slog.Any("err", err),
-				)
-			}
-		} else {
-			decisionID = id
-		}
+	// We walked the entire candidate list without a successful
+	// dispatch. If at least one already-claimed soft skip fired,
+	// surface that — it's the most informative outcome. Otherwise
+	// the candidate list was empty (we already returned NoEligibleBead
+	// upstream so this is unreachable in practice).
+	if lastClaimed.Outcome != "" {
+		return lastClaimed
 	}
-
 	return Action{
-		SessionID:  sessionID,
-		BeadID:     top.bead.BeadID,
-		Outcome:    OutcomeDispatched,
-		Affinity:   top.scores,
-		DecisionID: decisionID,
+		SessionID: sessionID,
+		Outcome:   OutcomeNoEligibleBead,
+		Reason:    "no candidate accepted dispatch",
 	}
+}
+
+// dispatchTwoPhase routes through the TwoPhaseDispatcher: claim a
+// reservation, then convert it. No in-tree adaptor declares
+// ClaimModelTwoPhase today; this path is here so the manifest gate
+// is wired end-to-end. The path is deliberately narrow — claim,
+// convert, done. A failed conversion releases the reservation so
+// a TTL doesn't leak. Soft-skip on already-claimed mirrors the
+// inline path; the bound is identical.
+func (d *Daemon) dispatchTwoPhase(
+	ctx context.Context,
+	sessionID string,
+	sess planner.OperationalContext,
+	scoredEligible []scoredBead,
+	scoredAll []scoredBead,
+	conflicts []planner.WorkspaceCollision,
+	conflictBeads map[string]bool,
+	now time.Time,
+) Action {
+	if d.TwoPhase == nil {
+		return Action{
+			SessionID: sessionID,
+			Outcome:   OutcomeError,
+			Reason:    "claim_model=two_phase but TwoPhase dispatcher not configured",
+		}
+	}
+	var lastClaimed Action
+	skips := 0
+	for i, cand := range scoredEligible {
+		if i > 0 && skips >= MaxSoftSkipRetriesPerTick {
+			if lastClaimed.Outcome != "" {
+				lastClaimed.Reason = fmt.Sprintf("retry budget exhausted after %d soft skips", skips)
+				return lastClaimed
+			}
+			break
+		}
+		reservation, err := d.TwoPhase.ClaimReservation(ctx, sessionID, cand.bead.BeadID)
+		if err != nil {
+			if core.IsAlreadyClaimedError(err) {
+				skips++
+				lastClaimed = Action{
+					SessionID: sessionID,
+					BeadID:    cand.bead.BeadID,
+					Outcome:   OutcomeAlreadyClaimed,
+					Reason:    "another session won the reservation race",
+					Affinity:  cand.scores,
+				}
+				continue
+			}
+			return Action{
+				SessionID: sessionID,
+				BeadID:    cand.bead.BeadID,
+				Outcome:   OutcomeError,
+				Reason:    fmt.Sprintf("claim_reservation: %v", err),
+			}
+		}
+		if reservation == nil {
+			// "No work right now" from the reservation surface — the
+			// adaptor declined to mint one. Skip ahead.
+			continue
+		}
+		if err := d.TwoPhase.ConvertReservation(ctx, sessionID, reservation); err != nil {
+			// Best-effort release so the TTL doesn't leak.
+			_ = d.TwoPhase.ReleaseReservation(ctx, reservation.ID)
+			return Action{
+				SessionID: sessionID,
+				BeadID:    cand.bead.BeadID,
+				Outcome:   OutcomeError,
+				Reason:    fmt.Sprintf("convert_reservation: %v", err),
+			}
+		}
+		d.Gate.RecordDispatch(sessionID, now)
+		decisionID := d.recordDecision(ctx, sessionID, sess, cand, scoredAll, conflicts, conflictBeads, now)
+		return Action{
+			SessionID:  sessionID,
+			BeadID:     cand.bead.BeadID,
+			Outcome:    OutcomeDispatched,
+			Affinity:   cand.scores,
+			DecisionID: decisionID,
+		}
+	}
+	if lastClaimed.Outcome != "" {
+		return lastClaimed
+	}
+	return Action{
+		SessionID: sessionID,
+		Outcome:   OutcomeNoEligibleBead,
+		Reason:    "no candidate accepted reservation",
+	}
+}
+
+// recordDecision persists the dispatch decision when a Decisions
+// store is bound. Best-effort: a persistence failure logs and
+// returns the empty id — the dispatch itself already happened, so
+// rolling it back would be worse than a missing audit row.
+func (d *Daemon) recordDecision(
+	ctx context.Context,
+	sessionID string,
+	sess planner.OperationalContext,
+	cand scoredBead,
+	scoredAll []scoredBead,
+	conflicts []planner.WorkspaceCollision,
+	conflictBeads map[string]bool,
+	now time.Time,
+) string {
+	if d.Decisions == nil {
+		return ""
+	}
+	dec := dispatch.Decision{
+		BeadID:    cand.bead.BeadID,
+		DecidedAt: now,
+		SessionID: sessionID,
+		Mode:      dispatch.ModeAuto,
+		Affinity:  cand.scores,
+		Conflicts: dispatch.ConflictSnapshot{Workspace: conflicts},
+		ReadySet:  buildReadySetSnapshot(scoredAll, conflictBeads),
+		CreatedAt: now,
+	}
+	if sess.Agent != nil {
+		dec.AgentID = sess.Agent.ID
+	}
+	id, err := d.Decisions.Insert(ctx, dec)
+	if err != nil {
+		if l := d.logger(); l != nil {
+			l.Warn("autodispatch.decisions.insert_failed",
+				slog.String("session_id", sessionID),
+				slog.String("bead_id", string(cand.bead.BeadID)),
+				slog.Any("err", err),
+			)
+		}
+		return ""
+	}
+	return id
 }
 
 // scoredBead pairs a bead with its computed affinity for the session

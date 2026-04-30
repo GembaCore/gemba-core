@@ -326,3 +326,48 @@ func TestAssertBoundaryValidation(t *testing.T) {
 		t.Errorf("Group F boundary: well-formed validation error should pass: %v", err)
 	}
 }
+
+// TestErrBeadAlreadyClaimedSentinel pins the gm-e3.8 contract: adaptors
+// surface ErrBeadAlreadyClaimed as the Cause of a tagged AdaptorError;
+// IsAlreadyClaimedError walks the unwrap chain to recognize it.
+func TestErrBeadAlreadyClaimedSentinel(t *testing.T) {
+	if !IsAlreadyClaimedError(ErrBeadAlreadyClaimed) {
+		t.Error("bare sentinel should match")
+	}
+	wrapped := NewAlreadyClaimedError("bead %q already claimed", "gm-1")
+	if !IsAlreadyClaimedError(wrapped) {
+		t.Error("NewAlreadyClaimedError should match")
+	}
+	if AsAdaptorError(wrapped) == nil {
+		t.Error("wrapped must carry a tagged AdaptorError")
+	}
+	if AsAdaptorError(wrapped).Kind != KindValidation {
+		t.Errorf("wrapped kind = %q, want validation", AsAdaptorError(wrapped).Kind)
+	}
+	// Conformance Group F still passes — boundary errors must wrap a
+	// tagged AdaptorError, not a bare sentinel.
+	if err := AssertAdaptorError(wrapped); err != nil {
+		t.Errorf("Group F: NewAlreadyClaimedError must satisfy AdaptorError contract: %v", err)
+	}
+	// Negative cases.
+	if IsAlreadyClaimedError(nil) {
+		t.Error("nil error should not match")
+	}
+	if IsAlreadyClaimedError(NewAdaptorError(KindValidation, "unrelated")) {
+		t.Error("plain validation error must not match")
+	}
+	other := errors.New("totally unrelated")
+	if IsAlreadyClaimedError(other) {
+		t.Error("unrelated bare error must not match")
+	}
+}
+
+// TestErrBeadAlreadyClaimedRetryable confirms the wrapped sentinel is
+// NOT marked retryable — the daemon's soft-skip routes via
+// IsAlreadyClaimedError, never via the Retryable bit.
+func TestErrBeadAlreadyClaimedRetryable(t *testing.T) {
+	wrapped := NewAlreadyClaimedError("collision")
+	if IsRetryable(wrapped) {
+		t.Error("already-claimed must not be marked Retryable; soft-skip routes via IsAlreadyClaimedError")
+	}
+}
