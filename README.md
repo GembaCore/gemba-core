@@ -26,9 +26,11 @@
   <a href="https://mastodonshare.com/?text=A%20single-binary%20Kanban%20that%20pairs%20any%20work%20tracker%20with%20any%20agent%20orchestrator&url=https%3A%2F%2Fgithub.com%2FGembaCore%2Fgemba-core"><img src="https://img.shields.io/badge/share-6364FF?logo=mastodon&logoColor=white" alt="Share on Mastodon" /></a>
 </p>
 
-Kanban like planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Start a new project with a guided conversation or import your existing work — see [Getting Started](#-getting-started) for a quick start. 
-
 In lean manufacturing, gemba (/ˈɡem.bə/ 現場) is "the actual place" — the factory floor, where real work happens. A gemba walk is when leadership observes the work directly, not through reports, and leaves actionable feedback as they go. Gemba is built around that metaphor. 
+
+![Gemba board (default view)](docs/img/board2.png)
+
+Gemba features Kanban like planning, execution, and management of complex vibe coding projects in a single pane of glass. Oganize, review, and dispatch large, parallel batches of work and monitor real progress towards milestones, all with built-in coaching and drift detection. Start a new project with a guided conversation or import your existing work — see [Getting Started](#-getting-started) for a quick start. 
 
 ## Table of Contents
 
@@ -49,12 +51,11 @@ In lean manufacturing, gemba (/ˈɡem.bə/ 現場) is "the actual place" — the
 
 Gemba was born out of frustration with the current state of vibe coding. 
 Massively parallel, "headless" agentic software development was technically
-possible but it was cumbersome. Before Gemba, a single app to manage the process using 
-concepts and terms familiar to developers did not exist - concepts like 
-milestones, epics, and Kanban planning to tie them together.  Systems like Beads made it possible 
-for agentic pipelines to discover, claim and report work progress but these systems 
-were not functionally integrated with **execution - ordering, dispatching, and monitoring 
-the work. 
+possible but it was cumbersome. Before Gemba, a single app to manage the 
+process using  concepts and terms familiar to developers did not exist - 
+concepts like milestones, epics, and Kanban planning to tie them together.  
+Systems like Beads made it possible for agentic pipelines to discover, claim 
+and report work progress but these systems were not functionally integrated with **execution - ordering, dispatching, and monitoring the work. 
 
 This left developers to face several obstacles in projects of any appreciable scale:
 
@@ -72,9 +73,6 @@ minimizing the cognitive load and freeing you up to keep the creative flow
 going. It keeps you in the driver's seat for what remains critical - 
 high level planning, review, and course correction - while allowing fully 
 automated agentic software development to take care of the execution.
-
-Here's a peek:
-![Gemba board (default view)](docs/img/board2.png)
 
 The only hard requirement is a **data plane**. [Beads](https://github.com/MikeBengtson/beads) fulfills that out
 of the box, so the minimum working deployment is `gemba serve` and a browser pointed at it — 
