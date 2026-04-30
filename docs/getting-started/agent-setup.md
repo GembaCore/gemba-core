@@ -15,6 +15,13 @@ You list the agent **types** available in `.gemba/agents.toml` —
 one `[[agent]]` stanza per dialect — and the SPA's "Start session"
 picker reads that file at boot.
 
+> **Auto-seeded.** Since `gm-root.24`, ratifying a project through
+> `/new` writes a default `.gemba/agents.toml` with `claude`
+> declared (intra-parallel, max 4). You only need to hand-edit the
+> file when adding a second agent type or tuning the parallelism
+> caps. The schema below is the contract; the seeded file is a
+> minimal version of it.
+
 This guide covers the most common agents people drop into Gemba.
 For the full schema (including the `[agent.container]` stanza for
 sandboxed runs), see

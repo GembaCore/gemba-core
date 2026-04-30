@@ -47,24 +47,25 @@ Internally the data model uses `scope` for both; the SPA editor at
 You'll need:
 
 - `gemba` built (`make build` produces `./bin/gemba`).
-- `.gemba/agents.toml` with at least one agent (default `claude`).
-- One or more persona TOML files under `.gemba/personas/` (the
-  shipped repo includes `project-manager.toml`,
-  `deployment-engineer.toml`, `documentarian.toml` as starting
-  points).
+- A ratified gemba project (`/new` flow). As of `gm-root.24`, ratify
+  auto-seeds `.gemba/agents.toml` with a default `claude` agent and
+  copies the three bundled personas into `.gemba/personas/`. If
+  you're on a project ratified before that landed, those files are
+  yours to write — examples below.
 
 ### 1. Pick a persona
 
-List them:
+The three bundled personas (auto-seeded into new projects):
 
 ```bash
 ls .gemba/personas/
 # deployment-engineer.toml  documentarian.toml  project-manager.toml
 ```
 
-The persona id is the filename stem — for the rest of this section
-we'll use `engineer-claude` as a placeholder; substitute the persona
-id you actually have.
+The persona id is the filename stem (no `.toml`). The rest of this
+section uses `deployment-engineer` as the worked example —
+substitute the persona id that matches the work shape you're
+dispatching.
 
 ### 2. Write `pool.toml`
 
@@ -73,17 +74,18 @@ The minimal opt-in config:
 ```toml
 # pool.toml — minimal native pool
 [pool]
-default_persona = "engineer-claude"
+default_persona = "deployment-engineer"
 default_floor = 0.5      # auto-dispatch score floor; below = wait
 reserved_for_manual = 1  # always keep one pane slot for human drag
 
 [pool.routing]
 # Bead kind → persona. Beads not in this map fall through to default_persona.
-epic = "engineer-claude"
-task = "engineer-claude"
-bug  = "engineer-claude"
+epic = "deployment-engineer"
+task = "deployment-engineer"
+bug  = "deployment-engineer"
+decision = "project-manager"
 
-[pool.local.engineer-claude]
+[pool.local.deployment-engineer]
 # `local` is the implicit scope on native; the editor hides this
 # axis but the data model uses it. Per-pool overrides below
 # cascade against the [pool] defaults above.
@@ -127,7 +129,7 @@ startup.
 Expected banner additions:
 
 ```
-pool: local/engineer-claude  size=2 (effective)  agent=claude  floor=0.40
+pool: local/deployment-engineer  size=2 (effective)  agent=claude  floor=0.40
 ```
 
 ### 5. Verify
@@ -151,7 +153,7 @@ Expected shape:
   "pools": [
     {
       "scope": "local",
-      "persona": "engineer-claude",
+      "persona": "deployment-engineer",
       "size_target_declared": 2,
       "size_target_effective": 2,
       "size_actual": 2,
@@ -177,13 +179,30 @@ follow-up (`gm-s47n.x`).
 
 You'll need:
 
-- `gt` CLI on `PATH` and at least one configured rig (`gt rig list`
-  shows the rigs you've created).
+- `gt` CLI on `PATH` (`brew install GembaCore/tap/gastown` or your
+  org's install path).
 - `gemba` built.
-- A working `gt agents` registry — the personas in this flow come
-  from gt, not from `.gemba/personas/`.
+- At least one Gas Town rig configured (next step bootstraps your
+  first one if you don't have any).
 
-### 1. List your rigs and personas
+### 1. Bootstrap your first rig (skip if `gt rig list` is non-empty)
+
+If `gt rig list --json | jq length` returns `0`, you have no rigs yet.
+Create one:
+
+```bash
+gt rig create gemba           # the rig name; pick anything
+```
+
+This stands up the rig's Dolt-backed beads database and registers
+the role topology (mayor / deacon / witness / refinery / crew /
+polecat pools). Confirm with `gt rig list`.
+
+You can also do this from the SPA's `/settings/pools` editor — the
+"+ New rig" button opens a confirmation modal that runs the same
+`gt rig create` command (gm-s47n.17).
+
+### 2. List your rigs and personas
 
 ```bash
 gt rig list --json | jq -r '.[].name'
@@ -200,7 +219,7 @@ gt agents --json | jq -r '.[] | "\(.rig)/\(.role)/\(.name)"' | sort -u
 The persona id in `pool.toml` matches gt's role/agent identifier.
 For this example we'll use `engineer` in the `gemba` rig.
 
-### 2. Write `pool.toml`
+### 3. Write `pool.toml`
 
 Notice the scope is the rig name (real, multi-rig case):
 
@@ -233,7 +252,7 @@ size = 1              # one engineer slot in the lume rig
 agent_type = "claude"
 ```
 
-### 3. Start the server
+### 4. Start the server
 
 ```bash
 ./bin/gemba serve \
@@ -250,7 +269,7 @@ pool: gemba/pm        size=1 (effective)  agent=claude  floor=0.50
 pool: lume/engineer   size=1 (effective)  agent=claude  floor=0.50
 ```
 
-### 4. Verify
+### 5. Verify
 
 Same `/api/pools` curl as native, plus:
 
@@ -262,7 +281,7 @@ gt polecat list --all --json | jq
 # All polecats; pool members appear here as gt polecats
 ```
 
-### 5. Edit via the UI (optional)
+### 6. Edit via the UI (optional)
 
 `/settings/pools` in the SPA. The Gas Town flow:
 
@@ -275,7 +294,7 @@ gt polecat list --all --json | jq
   `gm-s47n.17`; until then, run those `gt` commands in your
   shell and click **Refresh from gt**).
 
-### 6. Mind the agent skill contract (`bead-done` emit)
+### 7. Mind the agent skill contract (`bead-done` emit)
 
 The agent must emit `gemba-state bead-done` **after `gt done` (or
 the equivalent end-of-bead skill) reports success**. This is the

@@ -184,6 +184,27 @@ live in [Adaptors](https://gembacore.github.io/gemba-core/adaptors/).
 
 ### Recent (April 2026)
 
+- **First-time-user gap closures** (`gm-root.24`/`.25`/`.26`) —
+  ratify now seeds `.gemba/agents.toml`, three bundled personas
+  (`project-manager`, `deployment-engineer`, `documentarian`), and
+  a `CLAUDE.md` skeleton at the project root, so the first ratified
+  project can drag a bead into In Progress and see an agent spawn
+  without hand-writing TOML. Drag-to-spawn now fires for `epic`,
+  `task`, `bug`, and `feature` kinds (was `epic`-only). The SPA
+  gained an Onboarder-CTA capability gate (`/api/v1/onboarder/probe`),
+  a session-start toast + a topbar live-session badge that links to
+  `/sessions`, and a pool-editor empty-state helper for projects
+  without personas configured. New in-house `<ToastContext>` (~150
+  LOC, no external dep).
+- **`ClaimModel` manifest gate** (`gm-e3.8`; resolves `gm-e7.11`) —
+  adaptors declare whether their claim semantics are `inline` (claim
+  happens inside `StartSession`; native + gt + noop) or `two_phase`
+  (separate reservation step; reserved for future). The autodispatch
+  daemon's `Tick` branches on this and softly skips
+  `ErrBeadAlreadyClaimed` rejections, picking the next candidate up
+  to `MaxSoftSkipRetriesPerTick=3`. `KindUnsupported` on gt's
+  `ClaimNextReady` is now a deliberate adaptor shape, not a gap.
+  Documented as `docs/design/work-planning.md` §5.4.
 - **Autonomous dispatch (sticky session pools)** (`gm-s47n.10`/`.11`/
   `.12`/`.16`) — long-lived agent sessions per `(scope, persona)`
   with `SessionReady` idle state, in-place recycle (no respawn), an
@@ -382,8 +403,9 @@ kind/channel distinguished.
 ### Native, with parallelism
 
 Per-agent parallelism lets a single session of a capable agent type
-carry multiple concurrent beads (gm-root.16). Declare the cap in
-`.gemba/agents.toml`:
+carry multiple concurrent beads (gm-root.16). The default
+`.gemba/agents.toml` (auto-seeded by ratify since `gm-root.24`)
+already declares this for `claude`:
 
 ```toml
 [[agent]]
@@ -392,8 +414,11 @@ binary         = "claude"
 preamble       = "claude_md"
 hooks          = "claude_code"
 intra_parallel = true
-max_parallel   = 3
+max_parallel   = 4
 ```
+
+Tune the cap or add a second agent type by editing the file. The
+schema reference is in [Agent setup](https://gembacore.github.io/gemba-core/getting-started/agent-setup/).
 
 The dispatcher tries to reuse an existing capable session before
 spawning a new pane; the SPA renders an `n/max` pill per pane plus a
