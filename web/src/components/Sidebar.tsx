@@ -5,6 +5,7 @@ import {
   Footprints,
   AlertTriangle,
   Filter,
+  Clock,
   Settings as SettingsIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -60,6 +61,7 @@ type Item = {
 const items: Item[] = [
   { to: '/board', label: 'Plan', Icon: LayoutGrid, workspaceScoped: true },
   { to: '/refine', label: 'Refine', Icon: Filter, workspaceScoped: true },
+  { to: '/recent', label: 'Recent', Icon: Clock, workspaceScoped: true },
   { to: '/walk', label: 'Review', Icon: Footprints, workspaceScoped: true },
   { to: '/escalations', label: 'Triage', Icon: AlertTriangle, workspaceScoped: true },
 ];

@@ -53,6 +53,7 @@ export default defineConfig({
           items: [
             { label: 'Dispatch vs Planning', link: '/concepts/dispatch-vs-planning/' },
             { label: 'Agents, sessions & agent types', link: '/concepts/agents-and-sessions/' },
+            { label: 'Recent view', link: '/concepts/recent-view/' },
             { label: 'WorkPlane', link: '/adaptors/workplane/' },
             { label: 'OrchestrationPlane', link: '/adaptors/orchestration/' },
             { label: 'Gemba walk', link: '/design/gemba-walk/' },

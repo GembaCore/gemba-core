@@ -286,6 +286,14 @@ func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([
 	if f.AssigneeID != nil && *f.AssigneeID != "" {
 		args = append(args, "--assignee", string(*f.AssigneeID))
 	}
+	// CreatedSince — pushed to bd via --created-after; matchesFilter
+	// runs the same predicate as a safety net so callers see exactly
+	// the rows that satisfy the requested cutoff regardless of bd
+	// flag-parsing quirks at the boundary.
+	if f.CreatedSince != nil {
+		args = append(args, "--created-after",
+			f.CreatedSince.UTC().Format(time.RFC3339))
+	}
 
 	out, err := w.run(ctx, args...)
 	if err != nil {
@@ -360,6 +368,9 @@ func matchesFilter(wi core.WorkItem, f core.WorkItemFilter) bool {
 		}
 	}
 	if f.UpdatedSince != nil && wi.UpdatedAt.Before(*f.UpdatedSince) {
+		return false
+	}
+	if f.CreatedSince != nil && wi.CreatedAt.Before(*f.CreatedSince) {
 		return false
 	}
 	// gm-e12.22.1: hide template / wisp beads by default. The Workflow

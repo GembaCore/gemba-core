@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -94,6 +95,15 @@ func parseWorkItemFilter(q url.Values) (core.WorkItemFilter, error) {
 		s := v
 		f.SprintID = &s
 	}
+	if v := strings.TrimSpace(q.Get("created_since")); v != "" {
+		t, err := parseFilterTimestamp(v)
+		if err != nil {
+			return core.WorkItemFilter{}, &badRequestError{
+				msg: "created_since must be RFC3339 or YYYY-MM-DD",
+			}
+		}
+		f.CreatedSince = &t
+	}
 	if v := strings.TrimSpace(q.Get("limit")); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
@@ -122,6 +132,23 @@ func parseWorkItemFilter(q url.Values) (core.WorkItemFilter, error) {
 		f.IncludeWisps = true
 	}
 	return f, nil
+}
+
+// parseFilterTimestamp accepts RFC3339 (with or without nanos / TZ) or
+// the bd-flavored YYYY-MM-DD shorthand and returns a UTC time. Used by
+// the CreatedSince query param so the SPA's /recent view can pass an
+// ISO timestamp from `Date.toISOString()` without ceremony.
+func parseFilterTimestamp(v string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
+		return t.UTC(), nil
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t.UTC(), nil
+	}
+	if t, err := time.Parse("2006-01-02", v); err == nil {
+		return t.UTC(), nil
+	}
+	return time.Time{}, errors.New("unparseable timestamp")
 }
 
 // isTrue parses a permissive truth value off a query string. Anything

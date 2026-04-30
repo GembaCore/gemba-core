@@ -995,6 +995,8 @@ export interface operations {
                 state_category?: components["schemas"]["StateCategory"];
                 /** @description Filter by label (repeatable). */
                 label?: string;
+                /** @description Return only items created at or after this timestamp. Accepts RFC3339 (e.g. `2026-04-30T10:00:00Z`) or `YYYY-MM-DD`. Drives the `/recent` SPA view. */
+                created_since?: string;
             };
             header?: never;
             path?: never;

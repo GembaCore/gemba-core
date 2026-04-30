@@ -238,6 +238,10 @@ func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([
 		clauses = append(clauses, "updated_at >= ?")
 		args = append(args, f.UpdatedSince.UTC())
 	}
+	if f.CreatedSince != nil {
+		clauses = append(clauses, "created_at >= ?")
+		args = append(args, f.CreatedSince.UTC())
+	}
 	query := "SELECT " + listColumns + " FROM issues"
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")

@@ -354,6 +354,37 @@ Selecting a preset updates filter chips but doesn't lock them — users can laye
 - Inline-edit: **click-to-edit** (single click enters edit mode on supported fields; Escape cancels; Enter commits)
 - Selection: space-to-toggle; range-select with shift-click
 
+### 5.3.1 Recent view (`/recent`)
+
+> Added 2026-04-30 (`gm-g5xz`). User-facing guide:
+> [`docs/concepts/recent-view.md`](concepts/recent-view.md).
+
+Reading surface that lists beads created in a chosen window. Top-level
+sidebar slot between **Refine** and **Review** so the operator can scan
+fresh agent output without committing to triage.
+
+- **Cutoff control:** eight discrete preset stops (1h / 4h / 12h / 24h
+  default / 3d / 7d / 30d / All) plus an **Advance to now** button that
+  snaps to the 1h window. No free-form date picker — discrete stops
+  keep the chrome obvious and prevent picker fatigue.
+- **State:** per-browser `localStorage` (key `gemba.recent.watermark`).
+  No per-bead "reviewed" flag, no PATCH endpoint — the watermark is
+  the entire control surface.
+- **Layout:** rows grouped by parent epic / milestone when the parent
+  is also in the window; orphans under a **Standalone** group. Sort:
+  newest-first inside each group. Click row → standard work-item
+  drawer (same as Plan / Refine).
+- **Empty state:** `No new beads since {relative}. Try widening the
+  window or wait for agents to produce work.`
+- **Backend:** `GET /api/work-items?created_since=<ISO8601>` —
+  `parseFilterTimestamp` accepts RFC3339 or `YYYY-MM-DD`; the bd
+  adaptor pushes `--created-after` to bd CLI; the dolt adaptor adds
+  `created_at >= ?` to its WHERE.
+
+Why not a per-bead inbox: agents create faster than humans ack, so a
+queue that never empties stops feeling like a queue. The watermark
+gives "what's new since I last looked" without per-bead bookkeeping.
+
 ### 5.4 Gemba walk (`/walk` or takes over main content when active)
 
 Layout: **two-pane** — agenda left, chat right. PM panel pinned to bottom as usual (but the walk takeover shows the walk chat there).

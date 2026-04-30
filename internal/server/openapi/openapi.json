@@ -115,6 +115,12 @@
             "in": "query",
             "description": "Filter by label (repeatable).",
             "schema": { "type": "string" }
+          },
+          {
+            "name": "created_since",
+            "in": "query",
+            "description": "Return only items created at or after this timestamp. Accepts RFC3339 (e.g. `2026-04-30T10:00:00Z`) or `YYYY-MM-DD`. Drives the `/recent` SPA view.",
+            "schema": { "type": "string", "format": "date-time" }
           }
         ],
         "responses": {

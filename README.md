@@ -209,6 +209,16 @@ in [Adaptors](https://gembacore.github.io/gemba-core/adaptors/).
 
 ### Recent (April 2026)
 
+- **`/recent` view — agent-created beads at a glance** (`gm-g5xz`) —
+  new top-level pane between **Refine** and **Review** that lists
+  beads created in a chosen window (default last 24h). Eight preset
+  stops (`1h` / `4h` / `12h` / `24h` / `3d` / `7d` / `30d` / `All`) +
+  an **Advance to now** button let the operator scrub the watermark
+  forward (drain) or backward (see more). The cutoff persists in
+  `localStorage` per browser; no per-bead "reviewed" state — the
+  watermark is the entire control surface. Backed by a new
+  `?created_since=` query param on `GET /api/work-items` that pushes
+  down to `bd list --created-after` for cheap filtering.
 - **First-time-user gap closures** (`gm-root.24`/`.25`/`.26`) — ratify
   now seeds `.gemba/agents.toml`, three bundled personas
   (`project-manager`, `deployment-engineer`, `documentarian`), and a

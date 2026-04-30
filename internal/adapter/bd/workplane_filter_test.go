@@ -2,6 +2,7 @@ package bd
 
 import (
 	"testing"
+	"time"
 
 	"github.com/GembaCore/gemba-core/core"
 )
@@ -89,6 +90,38 @@ func TestHasTemplateLabel(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("labels=%v: got %v want %v", tc.labels, got, tc.want)
 		}
+	}
+}
+
+// gm-g5xz.1 — CreatedSince predicate.
+func TestMatchesFilter_CreatedSince(t *testing.T) {
+	cutoff := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	older := core.WorkItem{
+		ID:        "gemba/gemba/gm-old",
+		CreatedAt: time.Date(2026, 4, 29, 12, 0, 0, 0, time.UTC),
+	}
+	newer := core.WorkItem{
+		ID:        "gemba/gemba/gm-new",
+		CreatedAt: time.Date(2026, 4, 30, 18, 0, 0, 0, time.UTC),
+	}
+	exact := core.WorkItem{
+		ID:        "gemba/gemba/gm-exact",
+		CreatedAt: cutoff,
+	}
+
+	f := core.WorkItemFilter{CreatedSince: &cutoff}
+	if matchesFilter(older, f) {
+		t.Error("older bead should be filtered out")
+	}
+	if !matchesFilter(newer, f) {
+		t.Error("newer bead should pass")
+	}
+	if !matchesFilter(exact, f) {
+		t.Error("bead created at the exact cutoff should pass (>=, not >)")
+	}
+	// Unset CreatedSince passes everything.
+	if !matchesFilter(older, core.WorkItemFilter{}) {
+		t.Error("unset CreatedSince should pass older items")
 	}
 }
 

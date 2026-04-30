@@ -11,6 +11,7 @@ import SettingsPage from '@/pages/SettingsPage';
 // preference (§11 q1).
 import PoolsPage from '@/pages/PoolsPage';
 import { CoachPage } from '@/pages/CoachPage';
+import { RecentPage } from '@/pages/RecentPage';
 import { WalkPage } from '@/pages/WalkPage';
 import { WalkDetailPage } from '@/pages/WalkDetailPage';
 import { ProjectConfigPage } from '@/pages/ProjectConfigPage';
@@ -90,6 +91,11 @@ export default function App() {
         <Route path="/drift" element={<DriftPage />} />
         <Route path="/coach" element={<CoachPage />} />
         <Route path="/walk" element={<WalkPage />} />
+        {/* gm-g5xz.2: /recent — operator-facing view of beads created
+            in the selected time window (default 24h). Backed by
+            ?created_since= on GET /api/work-items. Watermark is
+            per-browser localStorage; no per-bead reviewed state. */}
+        <Route path="/recent" element={<RecentPage />} />
         <Route path="/walks/:id" element={<WalkDetailPage />} />
         <Route path="/project/config" element={<ProjectConfigPage />} />
         {/* gm-uipx.7: /bootstrap 4-step wizard. Each step has its own

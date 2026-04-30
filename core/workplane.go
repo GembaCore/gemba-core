@@ -570,6 +570,7 @@ type WorkItemFilter struct {
 	SprintID      *string         `json:"sprint_id,omitempty"`
 	Labels        []string        `json:"labels,omitempty"`
 	UpdatedSince  *time.Time      `json:"updated_since,omitempty"`
+	CreatedSince  *time.Time      `json:"created_since,omitempty"`
 	// Limit caps the returned set. 0 means "adaptor default".
 	Limit int `json:"limit,omitempty"`
 

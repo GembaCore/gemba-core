@@ -35,6 +35,10 @@ export interface WorkItemListFilter {
   // include_templates; the Active runs tab opts in via include_wisps.
   include_templates?: boolean;
   include_wisps?: boolean;
+  // gm-g5xz.1: ISO8601 cutoff for the /recent view. Items created
+  // before this timestamp are filtered out at the bd / dolt layer.
+  // Accepts RFC3339 (Date.prototype.toISOString output) or YYYY-MM-DD.
+  created_since?: string;
 }
 
 // buildListQuery turns the filter into a URLSearchParams. Multi-valued
@@ -54,6 +58,7 @@ function buildListQuery(filter?: WorkItemListFilter): string {
   if (filter.limit != null) p.set('limit', String(filter.limit));
   if (filter.include_templates) p.set('include_templates', 'true');
   if (filter.include_wisps) p.set('include_wisps', 'true');
+  if (filter.created_since) p.set('created_since', filter.created_since);
   const qs = p.toString();
   return qs ? `?${qs}` : '';
 }
