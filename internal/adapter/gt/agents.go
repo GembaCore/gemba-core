@@ -486,13 +486,17 @@ func firstLineErr(s string) string {
 	return s
 }
 
-// --- Stubs for the rest of the OrchestrationPlaneAdaptor interface ---
+// --- Remaining OrchestrationPlaneAdaptor methods ---
 //
 // Workspace lifecycle (AcquireWorkspace / ReleaseWorkspace /
-// InspectWorkspace) is implemented in workspace.go (gm-e7.2). The
-// remaining methods land incrementally: gm-e7.3 (sessions), gm-e7.4
-// (cost), gm-e7.5 (escalations), gm-e7.6 (transport). Until then they
-// return KindUnsupported so callers can branch on a tagged error.
+// InspectWorkspace) is implemented in workspace.go (gm-e7.2).
+// Cost synthesis ships in cost.go (gm-e7.4). Escalation listing ships
+// in escalations.go (gm-e7.5). Session lifecycle ships in sessions.go
+// (gm-e7.9). The remaining queue-claim methods (ClaimNextReady /
+// ReleaseReservation) stay tagged-unsupported: gt has its own claim
+// semantics (sling/hook/unsling) that don't map onto the
+// reservation/ttl shape Gemba's pull strategy needs. Adding a
+// reservation surface is filed as follow-up under gm-e7.
 
 func (o *OrchestrationPlane) DeclaredState(context.Context) (core.WorkspaceTopology, error) {
 	return core.WorkspaceTopology{CapturedAt: time.Now()}, nil
@@ -522,50 +526,13 @@ func (o *OrchestrationPlane) ReleaseReservation(context.Context, string) error {
 	return unsupported("ReleaseReservation")
 }
 
-func (o *OrchestrationPlane) StartSession(context.Context, string, core.SessionPrompt) (core.Session, error) {
-	return core.Session{}, unsupported("StartSession")
-}
-
-func (o *OrchestrationPlane) PauseSession(context.Context, string, core.ConfirmNonce) (core.Session, error) {
-	return core.Session{}, unsupported("PauseSession")
-}
-
-func (o *OrchestrationPlane) ResumeSession(context.Context, string, core.ConfirmNonce) (core.Session, error) {
-	return core.Session{}, unsupported("ResumeSession")
-}
-
-func (o *OrchestrationPlane) EndSession(context.Context, string, core.SessionEndMode, core.ConfirmNonce) (core.Session, error) {
-	return core.Session{}, unsupported("EndSession")
-}
-
-func (o *OrchestrationPlane) PeekSession(context.Context, string) (core.SessionPeek, error) {
-	return core.SessionPeek{}, unsupported("PeekSession")
-}
-
-func (o *OrchestrationPlane) ListPendingRequests(context.Context, string) ([]core.EscalationRequest, error) {
-	return nil, unsupported("ListPendingRequests")
-}
-
-func (o *OrchestrationPlane) ListSessions(context.Context, core.SessionFilter) ([]core.Session, error) {
-	return nil, unsupported("ListSessions")
-}
-
 // ListOpenEscalations is implemented in escalations.go (gm-e7.5).
-
-func (o *OrchestrationPlane) ResolveEscalation(context.Context, string, core.EscalationResolution, core.ConfirmNonce) (core.EscalationRequest, error) {
-	return core.EscalationRequest{}, unsupported("ResolveEscalation")
-}
-
-func (o *OrchestrationPlane) Subscribe(ctx context.Context, _ core.SubscribeFilter) (<-chan core.OrchestrationEvent, error) {
-	ch := make(chan core.OrchestrationEvent)
-	go func() {
-		defer close(ch)
-		<-ctx.Done()
-	}()
-	return ch, nil
-}
+// Session lifecycle (StartSession, PauseSession, ResumeSession,
+// EndSession, PeekSession, ListPendingRequests, ListSessions,
+// ResolveEscalation, Subscribe) is implemented in sessions.go
+// (gm-e7.9).
 
 func unsupported(method string) error {
 	return core.NewAdaptorError(core.KindUnsupported,
-		"gastown: %s not yet implemented (gm-e7.x)", method)
+		"gastown: %s not supported by gt CLI (filed under gm-e7 follow-up)", method)
 }
