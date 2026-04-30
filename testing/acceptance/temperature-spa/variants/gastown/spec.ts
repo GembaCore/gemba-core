@@ -44,7 +44,13 @@ test.describe('temperature-spa @gastown', () => {
     const rigName = `acceptance-${runId}`;
     const polecatName = `acceptance-pc-${runId}`;
 
-    const project = await bootstrapProject({ workerIndex: testInfo.workerIndex });
+    // gm-root.27.21 — orchestration mode passed at boot. Pool config
+    // for gastown is still saved through the UI (rig name is dynamic
+    // per-run; not knowable until after the gt rig create UI step).
+    const project = await bootstrapProject({
+      workerIndex: testInfo.workerIndex,
+      serveArgs: ['--orchestration=gastown'],
+    });
 
     const handle: GastownHandle = {
       project,

@@ -18,9 +18,8 @@
 // the project root picks it up. The fixture path is also attached to the
 // test report so a future flag-forwarding bootstrap can pass it directly.
 
-import { copyFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { test } from '@playwright/test';
 import { bootstrapProject } from '../../shared/helpers/bootstrap';
 import { runAcceptance } from '../../shared/spec';
@@ -33,15 +32,21 @@ const POOL_CONFIG = resolve(here, 'fixtures/pool.toml');
 
 test.describe('temperature-spa @native', () => {
   test('builds the SPA end-to-end via beads (native orchestration)', async ({ page }, testInfo) => {
-    const project = await bootstrapProject({ workerIndex: testInfo.workerIndex });
+    // gm-root.27.21 forwards serveArgs through bootstrap so gemba
+    // serve picks up --pool-config + --orchestration on first launch
+    // — no copyFileSync into projectDir, no in-place restart.
+    const project = await bootstrapProject({
+      workerIndex: testInfo.workerIndex,
+      serveArgs: [
+        '--orchestration=native',
+        '--pool-config', POOL_CONFIG,
+      ],
+    });
 
     testInfo.attach('native-pool-config', { path: POOL_CONFIG, contentType: 'text/plain' });
-
-    const projectPoolPath = join(project.projectDir, 'pool.toml');
-    copyFileSync(POOL_CONFIG, projectPoolPath);
     testInfo.annotations.push({
       type: 'pool-config',
-      description: `wrote ${POOL_CONFIG} to ${projectPoolPath}`,
+      description: `--pool-config ${POOL_CONFIG} forwarded to gemba serve via bootstrap`,
     });
 
     const agentFactory = makeAgentRunnerFactory({

@@ -77,6 +77,14 @@ export type BootstrapOptions = {
    * use distinct values to keep tempdir paths disambiguated.
    */
   workerIndex?: number;
+  /**
+   * gm-root.27.21 — extra argv forwarded to `gemba serve`. Used by
+   * the variant wrappers to pass `--orchestration=...` and
+   * `--pool-config <path>` so the autodispatch daemon picks up the
+   * test's pool configuration on first launch (no in-place restart
+   * needed). Appended verbatim after the fixture's own flags.
+   */
+  serveArgs?: string[];
 };
 
 /**
@@ -108,6 +116,7 @@ export async function bootstrapProject(
     workerIndex,
     mode: workspaceMode,
     auth: 'open',
+    serveArgs: opts.serveArgs,
   });
 
   // Create the project. POST /api/v1/newproject/create runs the same
