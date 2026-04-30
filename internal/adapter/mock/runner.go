@@ -1,39 +1,49 @@
-// runner.go (gm-root.28.6) — per-bead work for the mock plane.
+// runner.go (gm-root.28.6 + .11) — per-bead work for the mock plane.
 //
 // RunBead is what the mock OrchestrationPlane.StartSession calls
 // after minting a Session. It:
 //
-//   1. Fetches the bead's title + description via `bd show --json`.
+//   1. Fetches the bead via the bound WorkPlaneFetcher (in-process —
+//      shelling out to `bd show` would race the workplane adaptor's
+//      embedded-Dolt lock).
 //   2. Parses leading frontmatter (template / testid / files).
 //   3. Dispatches to the matching template handler (templates.go).
 //      Falls back to title-keyword matching if no frontmatter.
-//   4. Closes the bead via `bd close <id>`.
-//   5. Emits `gemba-state bead-done --bead <id>` so the bridge
-//      transitions the session to SessionReady (gm-s47n.11). Best-
-//      effort; missing gemba-state binary logs and continues.
-//
-// Failures at any step propagate as a non-zero error so the caller
-// (StartSession in start.go) can mark the session Failed.
+//   4. Closes the bead via the bound WorkPlaneFetcher (UpdateWorkItem
+//      with state_category=completed).
+//   5. Best-effort: emits gemba-state bead-done so a separately-running
+//      bridge transitions sessions to SessionReady. Mock-mode usually
+//      doesn't need this (we transition directly), but the emit is
+//      kept so external observers can correlate.
 
 package mock
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/GembaCore/gemba-core/core"
 )
 
-// RunBead is the per-bead work loop. Returns nil on success.
-func RunBead(_ context.Context, projectDir, beadID string, log func(string)) error {
+// RunBead executes the per-bead work loop. Returns nil on success.
+func RunBead(
+	ctx context.Context,
+	wp WorkPlaneFetcher,
+	projectDir, beadID string,
+	log func(string),
+) error {
 	if log == nil {
 		log = func(string) {}
 	}
-	bead, err := fetchBead(projectDir, beadID)
+	if wp == nil {
+		return fmt.Errorf("mock: WorkPlaneFetcher not configured (cli wiring missing in serve.go)")
+	}
+	bead, err := wp.GetWorkItem(ctx, core.WorkItemID(beadID))
 	if err != nil {
-		return fmt.Errorf("mock: fetch bead %s: %w", beadID, err)
+		return fmt.Errorf("mock: GetWorkItem %s: %w", beadID, err)
 	}
 	fm := ParseFrontmatter(bead.Description)
 	tplName := fm.Template
@@ -50,61 +60,43 @@ func RunBead(_ context.Context, projectDir, beadID string, log func(string)) err
 	if handler == nil {
 		return fmt.Errorf("mock: unknown template %q for bead %s", tplName, beadID)
 	}
-	ctx := TemplateContext{
+	tctx := TemplateContext{
 		ProjectDir: projectDir,
 		BeadID:     beadID,
 		Labels:     bead.Labels,
 		Log:        log,
 	}
-	if err := handler(ctx, fm); err != nil {
+	if err := handler(tctx, fm); err != nil {
 		return fmt.Errorf("mock: template %q for bead %s: %w", tplName, beadID, err)
 	}
-	if err := closeBead(projectDir, beadID); err != nil {
+	if err := closeBead(ctx, wp, beadID); err != nil {
 		return fmt.Errorf("mock: close bead %s: %w", beadID, err)
 	}
 	emitBeadDone(projectDir, beadID, log)
 	return nil
 }
 
-// ─── Internals ────────────────────────────────────────────────────
-
-type beadJSON struct {
-	ID          string   `json:"id"`
-	Title       string   `json:"title"`
-	Description string   `json:"description"`
-	Labels      []string `json:"labels"`
+// closeBead transitions the bead to state_category=completed via the
+// in-process workplane adaptor. The bound bd workplane (gm-e6.x)
+// resolves the state-map and writes through to the embedded Dolt
+// without any extra subprocess.
+func closeBead(ctx context.Context, wp WorkPlaneFetcher, beadID string) error {
+	stateCompleted := core.StateCompleted
+	patch := core.WorkItemPatch{
+		StateCategory: &stateCompleted,
+	}
+	_, err := wp.UpdateWorkItem(ctx, core.WorkItemID(beadID), patch)
+	return err
 }
 
-func fetchBead(projectDir, beadID string) (beadJSON, error) {
-	cmd := exec.Command("bd", "show", beadID, "--json")
-	cmd.Dir = projectDir
-	out, err := cmd.Output()
-	if err != nil {
-		return beadJSON{}, fmt.Errorf("bd show %s: %w", beadID, err)
-	}
-	var b beadJSON
-	if err := json.Unmarshal(out, &b); err != nil {
-		return beadJSON{}, fmt.Errorf("parse bd show %s: %w", beadID, err)
-	}
-	return b, nil
-}
-
-func closeBead(projectDir, beadID string) error {
-	cmd := exec.Command("bd", "close", beadID,
-		"-m", "Closed by mock orchestration plane (gm-root.28.6)")
-	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("bd close %s: %w\n%s", beadID, err, string(out))
-	}
-	return nil
-}
-
+// emitBeadDone is best-effort. The mock plane transitions sessions
+// directly in start.go's runSession goroutine; this emit is for
+// external observers that want to correlate via the gemba-state
+// bridge (e.g. a separately-running bd hook).
 func emitBeadDone(projectDir, beadID string, log func(string)) {
 	cmd := exec.Command("gemba-state", "bead-done", "--bead", beadID)
 	cmd.Dir = projectDir
-	out, err := cmd.CombinedOutput()
-	if err != nil {
+	if out, err := cmd.CombinedOutput(); err != nil {
 		log(fmt.Sprintf(
 			"mock: gemba-state bead-done failed (best-effort) for %s: %v\n%s",
 			beadID, err, string(out),

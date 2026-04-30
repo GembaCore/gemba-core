@@ -44,6 +44,11 @@ type OrchestrationPlane struct {
 	// transport advertises core.TransportAPI by default. Carried
 	// for parity with native — see Describe().
 	transport core.Transport
+
+	// workPlane is the in-process WorkPlane reference the runner
+	// uses for fetch/close so it never shells out to bd while the
+	// server's own workplane adaptor holds the embedded-Dolt lock.
+	workPlane WorkPlaneFetcher
 }
 
 // Config carries plane construction options.
@@ -64,6 +69,24 @@ type Config struct {
 	// Empty list → no pre-seed (operator must spawn sessions
 	// manually via the SPA before the daemon engages).
 	PreseedPersonas []string
+
+	// WorkPlane is the in-process WorkPlaneAdaptor the mock runner
+	// uses to fetch + close beads. Required for end-to-end
+	// dispatch — without it, the runner falls back to shell-out
+	// to `bd` which races on the embedded-Dolt lock the gemba
+	// server's own workplane adaptor holds. The cli registration
+	// (serve.go registerMockOrchestration) passes the bound plane
+	// from host.WorkPlane().
+	WorkPlane WorkPlaneFetcher
+}
+
+// WorkPlaneFetcher is the narrow surface the mock runner needs from
+// the bound work plane: GetWorkItem (read) + UpdateWorkItem (close).
+// Defined as an interface (not core.WorkPlaneAdaptor) so the mock
+// package stays decoupled from the bd workplane's full surface.
+type WorkPlaneFetcher interface {
+	GetWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error)
+	UpdateWorkItem(ctx context.Context, id core.WorkItemID, patch core.WorkItemPatch) (core.WorkItem, error)
 }
 
 // NewOrchestrationPlane returns a configured mock plane. If
@@ -79,6 +102,7 @@ func NewOrchestrationPlane(cfg Config) *OrchestrationPlane {
 		sessions:   make(map[string]core.Session),
 		projectDir: cfg.ProjectDir,
 		transport:  transport,
+		workPlane:  cfg.WorkPlane,
 	}
 	for _, p := range cfg.PreseedPersonas {
 		_ = o.preseedSession(p)

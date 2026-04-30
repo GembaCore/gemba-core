@@ -800,9 +800,14 @@ func registerMockOrchestration(ctx context.Context, host *api.Host, cfg config.S
 	// pre-seed, mock-mode would require the operator to manually
 	// kick off a session via the SPA before any work flows.
 	personas := discoverPersonaNames(cfg.BeadsDir)
+	// Pass the bound workplane so the runner can fetch+close
+	// beads in-process (no shell-out to bd, no embedded-Dolt
+	// lock race with the workplane adaptor itself).
+	wp := host.WorkPlane()
 	plane := mock.NewOrchestrationPlane(mock.Config{
 		ProjectDir:      cfg.BeadsDir,
 		PreseedPersonas: personas,
+		WorkPlane:       wp,
 	})
 	reg, err := host.RegisterOrchestrationPlane(ctx, plane)
 	if err != nil {

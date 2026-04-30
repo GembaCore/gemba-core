@@ -94,23 +94,24 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	}
 	sess := o.sessions[sessionID]
 	projectDir := o.projectDir
+	wp := o.workPlane
 	o.mu.Unlock()
 
 	// Spawn the per-bead work asynchronously so StartSession returns
 	// immediately. The daemon polls ListSessions to observe state
 	// transitions.
-	go o.runSession(ctx, sessionID, projectDir, beadID)
+	go o.runSession(ctx, sessionID, projectDir, beadID, wp)
 
 	return sess, nil
 }
 
-func (o *OrchestrationPlane) runSession(_ context.Context, sessionID, projectDir, beadID string) {
+func (o *OrchestrationPlane) runSession(_ context.Context, sessionID, projectDir, beadID string, wp WorkPlaneFetcher) {
 	log := func(msg string) {
 		// Currently silent — daemon observes via session-status
 		// polling. Hook into a real logger when needed.
 		_ = msg
 	}
-	err := RunBead(context.Background(), projectDir, beadID, log)
+	err := RunBead(context.Background(), wp, projectDir, beadID, log)
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	sess, ok := o.sessions[sessionID]
