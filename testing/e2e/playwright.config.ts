@@ -86,6 +86,8 @@ const projects: Project[] = [
       // repos / sticky-nav). The rest of the Setup section family
       // will land here as it ships.
       'setup/**/*.spec.ts',
+      // gm-s47n.18 — /settings/pools Pool Dispatch editor.
+      'settings/**/*.spec.ts',
       // gm-uipx.7 — /bootstrap 4-step wizard.
       'bootstrap/**/*.spec.ts',
       // gm-root.17.3 — /new full-page conversational project creation.
