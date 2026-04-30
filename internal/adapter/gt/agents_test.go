@@ -288,18 +288,50 @@ func TestResolveGroupMembersUnknownTagged(t *testing.T) {
 	}
 }
 
-func TestUnsupportedMethodsReturnTaggedError(t *testing.T) {
+// TestGenuinelyUnsupportedMethodsReturnTaggedError covers the methods
+// gt CLI does not have a primitive for: PauseSession / ResumeSession
+// (no per-session pause), and the queue-claim pair (ClaimNextReady /
+// ReleaseReservation — gt has its own sling/unsling semantics that
+// don't map onto Gemba's reservation contract). Session-lifecycle
+// methods StartSession / EndSession / ListSessions / PeekSession /
+// ListPendingRequests / Subscribe / ResolveEscalation are validated
+// against fake gt output in sessions_test.go (gm-e7.9).
+func TestGenuinelyUnsupportedMethodsReturnTaggedError(t *testing.T) {
 	o := &OrchestrationPlane{}
-	_, err := o.StartSession(context.Background(), "any", core.SessionPrompt{})
-	if err == nil {
-		t.Fatal("StartSession must return an error in gm-e7.1")
+	tests := []struct {
+		name string
+		fn   func() error
+	}{
+		{"PauseSession", func() error {
+			_, err := o.PauseSession(context.Background(), "id", "")
+			return err
+		}},
+		{"ResumeSession", func() error {
+			_, err := o.ResumeSession(context.Background(), "id", "")
+			return err
+		}},
+		{"ClaimNextReady", func() error {
+			_, err := o.ClaimNextReady(context.Background(), core.ReadyFilter{}, core.AgentRef{})
+			return err
+		}},
+		{"ReleaseReservation", func() error {
+			return o.ReleaseReservation(context.Background(), "id")
+		}},
 	}
-	ae := core.AsAdaptorError(err)
-	if ae == nil {
-		t.Fatalf("expected *core.AdaptorError, got %T", err)
-	}
-	if ae.Kind != core.KindUnsupported {
-		t.Errorf("StartSession kind=%q, want %q", ae.Kind, core.KindUnsupported)
+	for _, tc := range tests {
+		err := tc.fn()
+		if err == nil {
+			t.Errorf("%s: expected an error", tc.name)
+			continue
+		}
+		ae := core.AsAdaptorError(err)
+		if ae == nil {
+			t.Errorf("%s: expected *core.AdaptorError, got %T", tc.name, err)
+			continue
+		}
+		if ae.Kind != core.KindUnsupported {
+			t.Errorf("%s kind=%q, want %q", tc.name, ae.Kind, core.KindUnsupported)
+		}
 	}
 }
 
