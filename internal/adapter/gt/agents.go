@@ -48,12 +48,27 @@ type gtProbeRunner func(ctx context.Context, args ...string) ([]byte, error)
 // ResolveGroupMembers by shelling out to `gt`. The remaining lifecycle
 // methods land in sibling beads (gm-e7.2–gm-e7.7); they return
 // KindUnsupported here so callers can still branch on a tagged envelope.
+//
+// caps is populated once at construction by probeCapabilities (gm-e7.12)
+// and consulted by feature-gated codepaths (e.g. RecycleSession needs
+// `gt handoff` to exist). Tests construct OrchestrationPlane directly
+// and may leave caps zero-valued — callers MUST tolerate that.
+//
+// recycledEvents is the side-channel through which RecycleSession
+// (gm-e7.13) emits `session.recycled` events. The Subscribe goroutine
+// drains it alongside the poll-based emitters so the
+// session_recycles writer (gm-s47n.12) sees gt recycles too. nil
+// channel disables emission (used by tests that don't care about
+// recycle events).
 type OrchestrationPlane struct {
-	run gtProbeRunner
+	run            gtProbeRunner
+	caps           gtCapabilities
+	recycledEvents chan core.OrchestrationEvent
 }
 
 // NewOrchestrationPlane returns an adaptor that shells to the `gt` binary
-// on PATH. Returns an error if `gt` is not installed.
+// on PATH. Returns an error if `gt` is not installed or if the gt CLI
+// itself fails to answer `gt --version` (capability probe — gm-e7.12).
 func NewOrchestrationPlane() (*OrchestrationPlane, error) {
 	path, err := exec.LookPath("gt")
 	if err != nil {
@@ -63,7 +78,16 @@ func NewOrchestrationPlane() (*OrchestrationPlane, error) {
 	runner := func(ctx context.Context, args ...string) ([]byte, error) {
 		return exec.CommandContext(ctx, path, args...).Output()
 	}
-	return &OrchestrationPlane{run: runner}, nil
+	o := &OrchestrationPlane{
+		run:            runner,
+		recycledEvents: make(chan core.OrchestrationEvent, 16),
+	}
+	caps, err := probeCapabilities(context.Background(), liveProbeRunner(path), nil)
+	if err != nil {
+		return nil, err
+	}
+	o.caps = caps
+	return o, nil
 }
 
 var _ core.OrchestrationPlaneAdaptor = (*OrchestrationPlane)(nil)
@@ -106,8 +130,33 @@ var gastownManifest = core.OrchestrationCapabilityManifest{
 
 // Describe returns the capability manifest. Subsequent gm-e7.x beads
 // expand it as they implement more of the interface.
+//
+// gm-e7.12 surfaces the capability probe results in the manifest's
+// Extension map under the keys:
+//
+//   - "gt_version"          (parsed semver, e.g. "1.0.0")
+//   - "gt_version_raw"      (full --version line for diagnostics)
+//   - "gt_version_floor"    (the floor we expect)
+//   - "gt_version_below_floor" (true when WARN was logged)
+//   - "supports_sling_json" (bool)
+//   - "has_scheduler"       (bool)
+//   - "has_handoff"         (bool — gates RecycleSession)
+//
+// A zero-valued caps struct (tests, no probe run) emits empty/false
+// values which the SPA renders as "unknown" without crashing.
 func (o *OrchestrationPlane) Describe() core.OrchestrationCapabilityManifest {
-	return gastownManifest
+	m := gastownManifest
+	ext := map[string]any{
+		"gt_version":             o.caps.Version,
+		"gt_version_raw":         o.caps.VersionRaw,
+		"gt_version_floor":       minimumGtVersion,
+		"gt_version_below_floor": o.caps.VersionBelowFloor,
+		"supports_sling_json":    o.caps.SupportsSlingJSON,
+		"has_scheduler":          o.caps.HasScheduler,
+		"has_handoff":            o.caps.HasHandoff,
+	}
+	m.Extension = ext
+	return m
 }
 
 // gtRig is the shape of a row from `gt rig list --json`.
@@ -526,20 +575,15 @@ func (o *OrchestrationPlane) ReleaseReservation(context.Context, string) error {
 	return unsupported("ReleaseReservation")
 }
 
-// RecycleSession is the optional pool-lifecycle capability added by
-// gm-s47n.11 (session-pool.md §5.2). The gt adaptor does not yet
-// wrap `gt handoff` for pool recycle; until that lands the daemon's
-// recycle gate becomes a no-op against gt-managed sessions. Filed
-// for follow-up alongside gm-e7.10/gm-e7.11.
-func (o *OrchestrationPlane) RecycleSession(context.Context, string) (core.Session, error) {
-	return core.Session{}, unsupported("RecycleSession")
-}
+// RecycleSession (gm-e7.13) lives in sessions.go alongside the rest
+// of the lifecycle code. It wraps `gt handoff <session-id>` and
+// honours the §5.2 dirty-worktree refusal contract.
 
 // ListOpenEscalations is implemented in escalations.go (gm-e7.5).
 // Session lifecycle (StartSession, PauseSession, ResumeSession,
 // EndSession, PeekSession, ListPendingRequests, ListSessions,
-// ResolveEscalation, Subscribe) is implemented in sessions.go
-// (gm-e7.9).
+// ResolveEscalation, Subscribe, RecycleSession) is implemented in
+// sessions.go (gm-e7.9, gm-e7.13).
 
 func unsupported(method string) error {
 	return core.NewAdaptorError(core.KindUnsupported,

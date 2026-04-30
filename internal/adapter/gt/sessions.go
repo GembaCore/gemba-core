@@ -32,6 +32,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -653,10 +654,27 @@ func (o *OrchestrationPlane) Subscribe(ctx context.Context, f core.SubscribeFilt
 		defer ticker.Stop()
 		var lastSessions map[string]core.SessionStatus
 		var lastEscalations map[string]struct{}
+		// recycledIn is the side-channel RecycleSession publishes
+		// session.recycled events on. nil channel makes the select
+		// case never fire (a no-op when the adaptor was constructed
+		// without an event channel — e.g. in tests).
+		recycledIn := o.recycledEvents
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case evt, ok := <-recycledIn:
+				if !ok {
+					recycledIn = nil
+					continue
+				}
+				if subscribeMatches(evt, f) {
+					select {
+					case ch <- evt:
+					case <-ctx.Done():
+						return
+					}
+				}
 			case <-ticker.C:
 				now := time.Now()
 				// Session transitions.
@@ -842,4 +860,214 @@ func polecatSessionID(w convoyWorker) string {
 		return ""
 	}
 	return fmt.Sprintf("gastown/%s/polecats/%s", w.Rig, name)
+}
+
+// gtPolecatGitState matches the JSON shape `gt polecat git-state --json`
+// emits. Used by RecycleSession's cleanliness gate (gm-e7.13). Fields
+// not used here (uncommitted_files, unpushed_commits, stash_count) are
+// preserved in the struct for forward compatibility.
+type gtPolecatGitState struct {
+	Clean            bool     `json:"clean"`
+	UncommittedFiles []string `json:"uncommitted_files,omitempty"`
+	UnpushedCommits  int      `json:"unpushed_commits,omitempty"`
+	StashCount       int      `json:"stash_count,omitempty"`
+}
+
+// RecycleSession implements the §5.2 recycle protocol against gt by
+// wrapping `gt handoff <session-id>`. Same polecat slot, fresh context.
+//
+// Sequence:
+//
+//  1. Validate session is Status=Ready. Mid-bead recycle is rejected as
+//     KindValidation — we don't destroy in-flight work.
+//  2. Verify the polecat's worktree is clean via `gt polecat git-state
+//     <rig>/<name> --json`. Dirty → REFUSE; convert to
+//     EndSession(SessionEndCompleted) so the pool releases the slot
+//     and the daemon spawns fresh on the next dispatch tick. Spec §5.2
+//     step 2 / §5.4 is explicit: never destructively reset.
+//  3. Shell `gt handoff <rig>/<name>`. gt's handoff respawns the agent
+//     in place; our adaptor mints a logical new session id (gt's own
+//     polecat path is stable across handoffs).
+//  4. gt handoff already syncs the worktree internally (per the
+//     subcommand's docstring — "Hand off to a fresh agent session"
+//     implies a clean handoff base). We do not run a second checkout
+//     + ff-only pull here.
+//  5. Mint a new session id, publish a session.recycled
+//     OrchestrationEvent for the retro pipeline (gm-s47n.12 writer).
+//
+// Capability gate (gm-e7.12): when probeCapabilities reported
+// HasHandoff=false, RecycleSession returns KindUnsupported with a
+// pointed diagnostic instead of attempting the shell-out.
+func (o *OrchestrationPlane) RecycleSession(ctx context.Context, sessionID string) (core.Session, error) {
+	if !o.caps.HasHandoff && o.caps.VersionRaw != "" {
+		// Probe ran (caps non-zero) and reported handoff missing.
+		// Tests that don't run the probe leave caps zero-valued; we
+		// treat that as "probe didn't run, take the optimistic path".
+		return core.Session{}, core.NewAdaptorError(core.KindUnsupported,
+			"gastown: RecycleSession requires gt handoff subcommand (not detected at probe time; gt %s)",
+			o.caps.Version)
+	}
+	if strings.TrimSpace(sessionID) == "" {
+		return core.Session{}, core.NewAdaptorError(core.KindValidation,
+			"gastown: RecycleSession requires a session id")
+	}
+
+	// Step 1 — status gate. We need the session row to know its
+	// current status; resolveSession + a polecat lookup gives us
+	// both the (rig, name) for git-state + handoff and the status.
+	beadID, target, err := o.resolveSession(ctx, sessionID)
+	if err != nil {
+		return core.Session{}, err
+	}
+	rigName, polecatName := splitPolecatTarget(sessionID, target)
+	if rigName == "" || polecatName == "" {
+		return core.Session{}, core.NewAdaptorError(core.KindValidation,
+			"gastown: RecycleSession only supports polecat sessions (id=%q)", sessionID)
+	}
+	status, err := o.lookupPolecatStatus(ctx, rigName, polecatName)
+	if err != nil {
+		return core.Session{}, err
+	}
+	if status != core.SessionReady {
+		return core.Session{}, core.NewAdaptorError(core.KindValidation,
+			"gastown: recycle requires Status=Ready, got %q for %q", status, sessionID)
+	}
+
+	// Step 2 — cleanliness gate.
+	clean, gitErr := o.polecatWorktreeClean(ctx, rigName, polecatName)
+	if gitErr != nil {
+		// Probe failure is non-fatal but worth logging; we proceed
+		// only when we can prove cleanliness, never assume it.
+		slog.Warn("gastown: recycle cleanliness probe failed; treating as dirty (refusing recycle)",
+			"session", sessionID,
+			"err", gitErr)
+		clean = false
+	}
+	if !clean {
+		slog.Warn("session.recycle.refused.dirty_worktree",
+			"session", sessionID,
+			"rig", rigName,
+			"polecat", polecatName)
+		// Convert to End so the slot releases and the daemon's
+		// dispatch tick spawns fresh.
+		_, endErr := o.EndSession(ctx, sessionID, core.SessionEndCompleted, "")
+		if endErr != nil {
+			return core.Session{}, core.WrapAdaptorError(core.KindAdaptorDegraded, endErr,
+				"gastown: recycle refused (dirty worktree) and end fallback failed for %s", sessionID)
+		}
+		return core.Session{}, core.NewAdaptorError(core.KindValidation,
+			"gastown: recycle refused: %s/%s has uncommitted changes (converted to end; pool will spawn fresh)",
+			rigName, polecatName)
+	}
+
+	// Step 3 — shell `gt handoff <rig>/<polecat>`. gt mints a fresh
+	// session in place; we mint the logical session id ourselves so
+	// the orchestration plane's session id namespace stays consistent.
+	target = rigName + "/" + polecatName
+	if _, err := o.run(ctx, "handoff", target); err != nil {
+		return core.Session{}, wrapGtError(err, "gt handoff "+target)
+	}
+
+	// Step 5 — mint, emit session.recycled, return.
+	now := time.Now()
+	newSessionID := fmt.Sprintf("gastown/%s/polecats/%s:recycle:%d",
+		rigName, polecatName, now.UnixNano())
+
+	priorAgentID := core.AgentID(sessionID)
+	newSess := core.Session{
+		ID:           newSessionID,
+		AssignmentID: "", // recycle clears the prior assignment (no bead until next dispatch)
+		AgentID:      priorAgentID,
+		Status:       core.SessionInitializing,
+		StartedAt:    now,
+		ProviderMetadata: map[string]any{
+			"adaptor":          "gastown",
+			"rig":              rigName,
+			"polecat":          polecatName,
+			"prior_session_id": sessionID,
+			"prior_bead_id":    beadID,
+			"gt_handoff":       true,
+			"recycled_at":      now.Format(time.RFC3339Nano),
+		},
+	}
+
+	// Publish session.recycled — non-blocking (the channel has a
+	// buffer; if it's full we drop, matching the "best-effort event
+	// emission" pattern the rest of Subscribe uses).
+	if o.recycledEvents != nil {
+		evt := core.OrchestrationEvent{
+			ID:        "gastown-session-recycled:" + newSessionID,
+			Kind:      "session.recycled",
+			At:        now,
+			SessionID: newSessionID,
+			Payload: map[string]any{
+				"prior_session_id": sessionID,
+				"new_session_id":   newSessionID,
+				"rig":              rigName,
+				"polecat":          polecatName,
+				"agent_type":       "polecat",
+				"reason":           "explicit",
+				"prior_bead_id":    beadID,
+			},
+		}
+		select {
+		case o.recycledEvents <- evt:
+		default:
+			slog.Warn("gastown: recycle event channel full; dropping session.recycled",
+				"session", newSessionID)
+		}
+	}
+
+	return newSess, nil
+}
+
+// splitPolecatTarget pulls (rig, polecat) out of a Gemba session id of
+// the form "gastown/<rig>/polecats/<name>". Falls back to the resolved
+// target rig when the id shape is non-canonical (synthetic ids from
+// StartSession use "gastown/<target>/<bead>/<ts>" which can't recycle).
+// Returns "", "" when the id can't be split into a polecat target.
+func splitPolecatTarget(sessionID, fallbackTarget string) (string, string) {
+	rest := strings.TrimPrefix(sessionID, "gastown/")
+	parts := strings.Split(rest, "/")
+	if len(parts) >= 3 && parts[1] == "polecats" {
+		return parts[0], parts[2]
+	}
+	_ = fallbackTarget
+	return "", ""
+}
+
+// lookupPolecatStatus reads the polecat's current status by re-running
+// `gt polecat list --all --json` and matching on (rig, name). Returns
+// KindSessionNotFound when the polecat is not in the listing.
+func (o *OrchestrationPlane) lookupPolecatStatus(ctx context.Context, rig, name string) (core.SessionStatus, error) {
+	pcs, err := o.loadPolecats(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range pcs {
+		if p.Rig == rig && p.Name == name {
+			return polecatStateToSessionStatus(p.State, p.SessionRunning), nil
+		}
+	}
+	return "", core.NewAdaptorError(core.KindSessionNotFound,
+		"gastown: polecat %s/%s not found in `gt polecat list`", rig, name)
+}
+
+// polecatWorktreeClean shells `gt polecat git-state <rig>/<name> --json`
+// and parses the {clean: bool, ...} payload. Returns (clean, err) —
+// any non-nil err is the underlying gt failure (cmd missing, JSON
+// parse error, etc.). The recycle path treats err as "dirty" (defense
+// in depth: never destroy on uncertainty).
+func (o *OrchestrationPlane) polecatWorktreeClean(ctx context.Context, rig, name string) (bool, error) {
+	target := rig + "/" + name
+	out, err := o.run(ctx, "polecat", "git-state", target, "--json")
+	if err != nil {
+		return false, wrapGtError(err, "gt polecat git-state "+target+" --json")
+	}
+	var st gtPolecatGitState
+	if err := json.Unmarshal(out, &st); err != nil {
+		return false, core.WrapAdaptorError(core.KindProcessFailed, err,
+			"gastown: parse gt polecat git-state --json")
+	}
+	return st.Clean, nil
 }
