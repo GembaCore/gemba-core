@@ -105,6 +105,18 @@ const (
 	OutcomeNoEligibleBead  Outcome = "no_eligible_bead"
 	OutcomeBlockedConflict Outcome = "blocked_by_conflict"
 	OutcomeError           Outcome = "error"
+	// OutcomeBelowFloor is the auto-dispatch floor gate (spec §8.1
+	// / gm-s47n.12). The daemon refuses to dispatch when the top
+	// pick's combined affinity is below the floor — protects against
+	// low-confidence picks. Per-pool config carries the floor; the
+	// rig-level default is 0.5.
+	OutcomeBelowFloor Outcome = "below_floor"
+	// OutcomeNoPersona is the persona-routing-cascade refusal
+	// (spec §3.2 / gm-s47n.12). The daemon does not dispatch a
+	// bead whose persona did not resolve via any of the three
+	// layers (bead extras → routing.<kind> → default_persona).
+	// The bead is left for manual drag.
+	OutcomeNoPersona Outcome = "no_persona"
 )
 
 // FairnessConfig controls the age-in-ready-queue boost applied
@@ -178,6 +190,13 @@ type Daemon struct {
 	// Fairness tunes the age-in-ready-queue boost. nil →
 	// DefaultFairness. Pass &FairnessConfig{} to opt out.
 	Fairness *FairnessConfig
+
+	// AutoDispatchFloor is the minimum Layer 5 Selection score
+	// below which the daemon refuses to dispatch (spec §8.1).
+	// Zero means "no floor" — every dispatchable pick goes through.
+	// Operators tune per-pool via [pool.<rig>.<persona>] floor =
+	// 0.4 with the rig-level default at [pool] default_floor = 0.5.
+	AutoDispatchFloor float64
 }
 
 // TickResult bundles every Action produced this tick plus any
@@ -312,6 +331,20 @@ func (d *Daemon) tickSession(
 			SessionID: sessionID,
 			Outcome:   OutcomeRecycled,
 			Reason:    "recycle threshold",
+			Affinity:  top.scores,
+		}
+	}
+
+	// Auto-dispatch floor (spec §8.1). Below the floor the daemon
+	// declines to dispatch — the bead will sit in the ready set
+	// until a higher-affinity session asks for it or an operator
+	// drags it manually. Zero floor disables the gate.
+	if d.AutoDispatchFloor > 0 && top.scores.Combined < d.AutoDispatchFloor {
+		return Action{
+			SessionID: sessionID,
+			BeadID:    top.bead.BeadID,
+			Outcome:   OutcomeBelowFloor,
+			Reason:    "score below floor",
 			Affinity:  top.scores,
 		}
 	}

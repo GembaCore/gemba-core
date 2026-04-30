@@ -2,8 +2,11 @@ package cli
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // TestServe_RejectsNonLoopbackWithoutAuth locks in the bind policy at the
@@ -196,5 +199,38 @@ func TestServe_NoopRejectsBeadsDir(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--noop is mutually exclusive") {
 		t.Errorf("error must mention --noop mutex; got %q", err.Error())
+	}
+}
+
+// TestPoolSizingDocExists is the gm-s47n.12 §3.3 "Documentation
+// requirement" tripwire. The pool sizing doc must reference both
+// MaxParallel and pool.size or operators won't find the
+// cross-reference when the clamp surprises them.
+func TestPoolSizingDocExists(t *testing.T) {
+	body, err := os.ReadFile("../../docs/deployment/pool-sizing.md")
+	if err != nil {
+		t.Fatalf("docs/deployment/pool-sizing.md missing: %v", err)
+	}
+	s := string(body)
+	for _, want := range []string{"MaxParallel", "pool.size", "reserved_for_manual"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("pool-sizing.md missing reference to %q", want)
+		}
+	}
+}
+
+// TestPhase0ZeroDelta_NoPoolConfigYieldsNoDaemons confirms the
+// gm-s47n.12 §11.1 contract: a server with no pool config
+// constructs no daemons and behaves identically to today's main.
+// The serve test suite is what the architect cares about for
+// regression — this test is the explicit zero-delta tripwire.
+func TestPhase0ZeroDelta_NoPoolConfigYieldsNoDaemons(t *testing.T) {
+	cfg := config.ServeConfig{}
+	resolved, _, err := loadAndResolvePools(cfg)
+	if err != nil {
+		t.Fatalf("zero-delta load: %v", err)
+	}
+	if len(resolved) != 0 {
+		t.Errorf("Phase 0 zero-delta requires no daemons; got %d resolved pools", len(resolved))
 	}
 }

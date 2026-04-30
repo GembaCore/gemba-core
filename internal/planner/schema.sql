@@ -259,3 +259,46 @@ CREATE TABLE IF NOT EXISTS dispatch_decisions (
   KEY idx_dispatch_decisions_mode (mode),
   KEY idx_dispatch_decisions_combined (affinity_combined)
 );
+
+-- session_recycles (gm-s47n.12, spec §10.3)
+--
+-- Audit trail of every recycle event the OrchestrationPlane emits.
+-- The retro pipeline reads this to grade recycle timing: did the
+-- next bead on this slot do better after the recycle? A
+-- miscalibrated recycle threshold shows up as a string of recycles
+-- whose follow-on beads grade no better than pre-recycle.
+--
+-- Schema notes:
+--   - id is a 128-bit hex generated at insert time.
+--   - pool_key denormalises (rig, persona) into a single
+--     "rig:persona" string. The retrospective grouped-by query
+--     ("recycle frequency per pool") goes against this column
+--     directly.
+--   - prior_session_id and new_session_id span the recycle: the
+--     same pane, two logical sessions. Joins to dispatch_decisions
+--     follow either id depending on which side of the recycle the
+--     query is grading.
+--   - reason is a typed enum: "context_pressure" | "concept_drift"
+--     | "time_on_task" | "bead_count_safety_belt" | "explicit"
+--     | "manual_operator". Stored as a VARCHAR so a future addition
+--     doesn't require a schema change.
+--   - prior_profile_json captures the SessionProfile at recycle
+--     time so the retro can ask "did the new chapter's affinity
+--     better fit the bead than the prior chapter's would have?"
+--     without re-loading historical profile snapshots.
+
+CREATE TABLE IF NOT EXISTS session_recycles (
+  id                  VARCHAR(64)  NOT NULL,
+  pool_key            VARCHAR(128) NOT NULL,
+  pane_id             VARCHAR(64)  NOT NULL,
+  prior_session_id    VARCHAR(64)  NOT NULL,
+  new_session_id      VARCHAR(64)  NOT NULL,
+  reason              VARCHAR(64)  NOT NULL,
+  prior_profile_json  TEXT,
+  recycled_at         DATETIME(6)  NOT NULL,
+
+  PRIMARY KEY (id),
+  KEY idx_session_recycles_pool (pool_key, recycled_at),
+  KEY idx_session_recycles_prior (prior_session_id),
+  KEY idx_session_recycles_new (new_session_id)
+);

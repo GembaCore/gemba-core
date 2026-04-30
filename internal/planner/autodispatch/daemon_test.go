@@ -604,3 +604,80 @@ func TestTick_DispatchAdvancesRateLimit(t *testing.T) {
 		t.Errorf("second tick should be rate-limited; got %+v", r)
 	}
 }
+
+// ── Auto-dispatch floor (gm-s47n.12, spec §8.1) ─────────────────
+
+// TestTick_BlockedByFloorWhenScoreBelow pins the spec §8.1 gate. A
+// daemon with AutoDispatchFloor=0.5 must refuse a dispatch when the
+// top pick's combined affinity is below the floor — even when no
+// other gate would block.
+func TestTick_BlockedByFloorWhenScoreBelow(t *testing.T) {
+	// Empty profile + minimal health → top affinity will be near zero.
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", &planner.SessionProfile{}, &planner.SessionHealth{}),
+	}
+	ready := []ReadyBead{bead("gm-1", "gemba", "unrelated-concept")}
+	dsp := &fakeDispatcher{}
+	d := newDaemon(idle, nil, ready, enabledGate(), dsp)
+	d.Now = fixedClock(t)
+	d.AutoDispatchFloor = 0.5 // spec default
+
+	r := d.Tick(context.Background())
+	if r.Err != nil {
+		t.Fatalf("Tick: %v", r.Err)
+	}
+	if len(r.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1", len(r.Actions))
+	}
+	if r.Actions[0].Outcome != OutcomeBelowFloor {
+		t.Errorf("outcome = %q, want %q", r.Actions[0].Outcome, OutcomeBelowFloor)
+	}
+	if len(dsp.calls) != 0 {
+		t.Errorf("no dispatch should fire below floor; got %+v", dsp.calls)
+	}
+}
+
+// TestTick_FloorZeroDisabled confirms that AutoDispatchFloor=0 keeps
+// the daemon's prior (Phase 0) behavior — every dispatchable pick
+// goes through. Phase 0 zero-delta requires this.
+func TestTick_FloorZeroDisabled(t *testing.T) {
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", &planner.SessionProfile{}, &planner.SessionHealth{}),
+	}
+	ready := []ReadyBead{bead("gm-1", "gemba", "unrelated")}
+	dsp := &fakeDispatcher{}
+	d := newDaemon(idle, nil, ready, enabledGate(), dsp)
+	d.Now = fixedClock(t)
+	// d.AutoDispatchFloor zero → no floor gate
+
+	r := d.Tick(context.Background())
+	if r.Err != nil {
+		t.Fatalf("Tick: %v", r.Err)
+	}
+	if r.Actions[0].Outcome != OutcomeDispatched {
+		t.Errorf("outcome = %q, want %q (no floor)", r.Actions[0].Outcome, OutcomeDispatched)
+	}
+}
+
+// TestTick_FloorAllowsHighAffinity confirms that the floor only
+// blocks scores below it — when the top pick clears the floor, the
+// dispatch fires normally.
+func TestTick_FloorAllowsHighAffinity(t *testing.T) {
+	// Strong concept match → high affinity.
+	profile := &planner.SessionProfile{
+		Concepts: map[planner.ConceptTag]float64{"auth": 1.0},
+	}
+	idle := []planner.OperationalContext{
+		sessCtx("sess-1", "gemba", profile, &planner.SessionHealth{}),
+	}
+	ready := []ReadyBead{bead("gm-1", "gemba", "auth")}
+	dsp := &fakeDispatcher{}
+	d := newDaemon(idle, nil, ready, enabledGate(), dsp)
+	d.Now = fixedClock(t)
+	d.AutoDispatchFloor = 0.1
+
+	r := d.Tick(context.Background())
+	if r.Actions[0].Outcome != OutcomeDispatched {
+		t.Errorf("high-affinity match should clear floor; got %+v", r.Actions[0])
+	}
+}
