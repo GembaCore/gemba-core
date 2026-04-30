@@ -134,6 +134,18 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   const runID = opts.runID ?? randomRunID();
   const gembaPort = portFromBaseURL(opts.baseURL);
 
+  // gm-root.27.33: count bug-bead-stub invocations so we can fail
+  // the Playwright test when steps internally bailed and filed
+  // stubs. Without this, runAcceptance returns a clean report even
+  // when M-steps timed out or assertions tripped — the report is
+  // forensic only; the throw is what actually gates Playwright.
+  const bugFilerInvocations: Array<{ severity: string; title: string }> = [];
+  const wrappedBugFiler: SharedContext['fileBugBead'] = async (filerOpts) => {
+    bugFilerInvocations.push({ severity: filerOpts.severity, title: filerOpts.title });
+    const downstream = opts.bugFiler?.fileBugBead.bind(opts.bugFiler) ?? defaultBugFiler;
+    return downstream(filerOpts);
+  };
+
   const ctx: SharedContext = {
     variant: opts.variant,
     page: opts.page,
@@ -153,7 +165,7 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
     importBeads: (jsonlPath) =>
       importBeadsCLI(opts.projectDir, jsonlPath, opts.beadPrefix ?? 'tspa'),
     escalationInjector: opts.escalationInjector ?? defaultEscalationInjector,
-    fileBugBead: opts.bugFiler?.fileBugBead.bind(opts.bugFiler) ?? defaultBugFiler,
+    fileBugBead: wrappedBugFiler,
   };
 
   const milestones: AcceptanceReport['milestones'] = {
@@ -183,13 +195,48 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   milestones.triage = await timed(() => runTriageStep(ctx));
   milestones.M3 = await timed(() => runM3Step(ctx));
 
-  return {
+  const report: AcceptanceReport = {
     variant: opts.variant,
     runID,
     startedAt,
     finishedAt: new Date().toISOString(),
     milestones,
   };
+
+  // gm-root.27.33: gate Playwright on real success. M-steps tolerate
+  // internal failures (file a bug stub + return) so the run flushes
+  // every gap in one pass. But the Playwright test itself MUST fail
+  // when any step bailed or any bug stub was filed — otherwise
+  // 'pnpm test:native green' is misleading.
+  const failedMilestones = (Object.entries(milestones) as Array<
+    [keyof AcceptanceReport['milestones'], AcceptanceReport['milestones']['M1']]
+  >).filter(([, m]) => !m.ok);
+  if (failedMilestones.length > 0 || bugFilerInvocations.length > 0) {
+    const summary = [
+      failedMilestones.length > 0
+        ? `${failedMilestones.length} milestones failed: ${failedMilestones.map(([k, m]) => `${k}=${m.error ?? 'no-error'}`).join('; ')}`
+        : null,
+      bugFilerInvocations.length > 0
+        ? `${bugFilerInvocations.length} bug stubs filed: ${bugFilerInvocations.map((b) => `${b.severity}=${b.title}`).join('; ')}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+    throw new AcceptanceFailure(summary, report, bugFilerInvocations);
+  }
+
+  return report;
+}
+
+export class AcceptanceFailure extends Error {
+  constructor(
+    summary: string,
+    public readonly report: AcceptanceReport,
+    public readonly bugStubs: Array<{ severity: string; title: string }>,
+  ) {
+    super(`acceptance: ${summary}`);
+    this.name = 'AcceptanceFailure';
+  }
 }
 
 function portFromBaseURL(baseURL: string): number {

@@ -29,6 +29,8 @@
 //   - testing/e2e/fixtures/realServer.ts (existing pattern reused)
 //   - internal/server/newproject.go (POST /api/v1/newproject/create)
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { spinRealServer, type RealServer } from '../../../../e2e/fixtures/realServer';
 
 export type ProjectHandle = {
@@ -139,6 +141,13 @@ export async function bootstrapProject(
   // workspace IS the project from the acceptance test's perspective.
   void runId;
 
+  // gm-root.27.34: spinRealServer's bd init bypasses gm-root.24's
+  // auto-seed personas, so the bootstrapped project has no
+  // .gemba/personas/. Write a minimal acceptance-engineer persona
+  // so pool config can route work and the editor doesn't render
+  // empty (which is the source of gm-root.27.31's selector miss).
+  seedAcceptanceEnginerPersona(server.beadsDir);
+
   return {
     baseURL: server.baseURL,
     projectDir: server.beadsDir,
@@ -152,6 +161,32 @@ export async function bootstrapProject(
     },
     server,
   };
+}
+
+/**
+ * Drop a minimal acceptance-engineer.toml under <projectDir>/.gemba/
+ * personas/. Matches the persona-shape contract (gm-57b) tightly
+ * enough for pool config + dispatch to route work; the actual agent
+ * runtime is MockAgentRunner so heavy persona fields (volunteer_mode,
+ * skills, etc.) are kept minimal.
+ *
+ * Spec mirrors target-jsonl/decisions.jsonl.tmpl tspa-d2.
+ */
+function seedAcceptanceEnginerPersona(projectDir: string): void {
+  const dir = join(projectDir, '.gemba', 'personas');
+  mkdirSync(dir, { recursive: true });
+  const toml = `# Acceptance test persona — written by gm-root.27.34 bootstrap helper.
+# Minimum schema for pool config + dispatch routing; actual agent
+# runtime is MockAgentRunner (gm-root.27.2), not a real claude session.
+
+id = "acceptance-engineer"
+name = "Acceptance Engineer"
+role = "Engineer"
+variety = "coach"
+description = "Mocked engineer persona used by the gm-root.27 acceptance harness. Builds the temperature-spa target through the M1/M2/M3 milestones."
+icon = "🧪"
+`;
+  writeFileSync(join(dir, 'acceptance-engineer.toml'), toml, 'utf8');
 }
 
 /**
