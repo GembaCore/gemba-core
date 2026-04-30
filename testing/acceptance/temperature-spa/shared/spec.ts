@@ -37,6 +37,12 @@ import { runM1Step } from './steps/m1';
 import { runM2Step } from './steps/m2';
 import { runM3Step } from './steps/m3';
 import { runTriageStep } from './steps/triage';
+import {
+  installDemoBanner,
+  setDemoCaption,
+  demoPause,
+  DEMO_MODE,
+} from './helpers/demo-mode';
 
 // ─── Types ────────────────────────────────────────────────────────
 
@@ -189,11 +195,36 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   // configured. spec.ts no longer drives configurePool itself — the
   // variants own it.
 
-  // Step through the milestones.
+  // Demo-mode (gm-root.27.36): install the caption banner + start
+  // the acceptance with a brief title frame. No-op when
+  // GEMBA_ACCEPTANCE_DEMO_MODE is unset.
+  await installDemoBanner(ctx.page);
+  if (DEMO_MODE) {
+    await setDemoCaption(ctx.page, 'Acceptance: building a SPA via beads');
+    await demoPause(2_000);
+  }
+
+  // Step through the milestones, captioning each.
+  await setDemoCaption(ctx.page, 'M1 — scaffolding the project');
   milestones.M1 = await timed(() => runM1Step(ctx));
+  await demoPause(1_500);
+
+  await setDemoCaption(ctx.page, 'M2 — Hello world MVP');
   milestones.M2 = await timed(() => runM2Step(ctx));
+  await demoPause(1_500);
+
+  await setDemoCaption(ctx.page, 'Triage — operator approves a blocking escalation');
   milestones.triage = await timed(() => runTriageStep(ctx));
+  await demoPause(1_500);
+
+  await setDemoCaption(ctx.page, 'M3 — conversion table, oracle verifies 16 rows');
   milestones.M3 = await timed(() => runM3Step(ctx));
+  await demoPause(2_000);
+
+  if (DEMO_MODE) {
+    await setDemoCaption(ctx.page, 'Done — three milestones, two operator clicks');
+    await demoPause(2_000);
+  }
 
   const report: AcceptanceReport = {
     variant: opts.variant,

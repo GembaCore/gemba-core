@@ -9,6 +9,7 @@
     "test:e2e": "playwright test",
     "test:native": "playwright test --project=acceptance-native",
     "test:gastown": "GEMBA_ACCEPTANCE_RUN_GASTOWN=1 playwright test --project=acceptance-gastown",
+    "test:demo": "GEMBA_ACCEPTANCE_DEMO_MODE=1 playwright test --project=acceptance-native-demo",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

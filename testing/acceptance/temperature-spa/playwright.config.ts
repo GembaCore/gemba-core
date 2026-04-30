@@ -58,5 +58,25 @@ export default defineConfig({
           'gated on GEMBA_ACCEPTANCE_RUN_GASTOWN=1; the variant test.skip()s when unset',
       },
     },
+    // gm-root.27.36 demo mode — same spec, but with on-screen
+    // captions, slowMo cursor, video always on, 1080p capture.
+    // Activates GEMBA_ACCEPTANCE_DEMO_MODE=1 inside spec.ts. Aim
+    // for ~30s of usable footage; operator hand-trims in post.
+    {
+      name: 'acceptance-native-demo',
+      testMatch: ['variants/native/spec.ts'],
+      use: {
+        viewport: { width: 1920, height: 1080 },
+        launchOptions: { slowMo: 250 },
+        video: { mode: 'on', size: { width: 1920, height: 1080 } },
+        screenshot: 'on',
+      },
+      metadata: {
+        bead: 'gm-root.27.36',
+        variant: 'native',
+        mode: 'demo',
+        note: 'sets GEMBA_ACCEPTANCE_DEMO_MODE=1; produces 1080p video with captions',
+      },
+    },
   ],
 });
