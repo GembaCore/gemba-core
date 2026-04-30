@@ -189,13 +189,68 @@ live in [Adaptors](https://gembacore.github.io/gemba-core/adaptors/).
   with `SessionReady` idle state, in-place recycle (no respawn), an
   idle-pane reaper, and a per-pool dispatch daemon that runs
   Layer-5 selection over the ready set. Adaptor-aware editor at
-  `/settings/pools`. Phase 0 zero-delta: opt-in by writing
+  `/settings/pools` (path picker, dropdowns, live TOML preview,
+  clamp warnings). Phase 0 zero-delta: opt-in by writing
   `pool.toml`. Quickstart:
   [Autonomous dispatch](https://gembacore.github.io/gemba-core/getting-started/autonomous-dispatch/).
-- **Gas Town session lifecycle** (`gm-e7.9`) — `gt sling` /
-  `gt unsling` / `gt convoy list` / `gt mail` wired through the
-  Gas Town orchestration adaptor; pause/resume + claim-reservation
-  intentionally `KindUnsupported` where the CLI lacks the primitive.
+- **Native orchestration is the default happy path** (`gm-native.x`,
+  matured across the cycle) — `--orchestration=native` auto-detects
+  tmux / iTerm2 / Terminal.app, provisions a git worktree per
+  session, idempotently merges the bridge stanza into Claude Code's
+  `settings.local.json`, and injects a project + epic + bead
+  preamble through `core/prompt.Envelope`. Permission prompts and
+  HITL approvals from Claude Code surface live in the SPA;
+  operator answers route back to the terminal as input. No external
+  daemon required.
+- **Gas Town adaptor — session lifecycle, escalations, cost
+  synthesis** (`gm-e7.x`) — `gt sling` / `gt unsling` / `gt convoy
+  list` / `gt peek` / `gt mail` / `gt escalate close` all wired
+  through the Gas Town orchestration adaptor (`gm-e7.9`), plus
+  cost-meter synthesis from transcript tokens (`gm-e7.4`) and live
+  escalation listing (`gm-e7.5`). Pause/Resume + ClaimNextReady
+  remain `KindUnsupported` where the gt CLI lacks the primitive
+  (tracked as `gm-e7.10` / `gm-e7.11`).
+- **Triage workspace `/refine`** (`gm-3ofd` + descendants) —
+  dedicated triage + refinement surface for `state_category=backlog`
+  beads, distinct from the execution kanban. Density-rich tabular
+  layout with age, suggested-epic, blockers, and `dispatch_status`
+  columns; defer + dismiss actions with notes (`gm-mw5n`); single
+  + bulk drop-into-epic (`gm-ju5o`); persona-driven milestone
+  creation during refinement (`gm-yjst`). Replaces the
+  `?layout=list&view=backlog` crutch.
+- **Escalation visibility** (`gm-e11.3` and friends) — escalation
+  card badge on every bead/epic, Board-level banner with
+  scope-aware count and link to the dedicated escalations page,
+  and a hand-off dispatcher skill (`gm-e11.8.7`) so PM-class
+  personas can route blockers to the right reviewer. Escalations
+  are advisory by design — they surface, they don't halt.
+- **Right-Hand Panel (RHP) detail-tab system** (`gm-root.22.x`) —
+  unified URL-driven tab system replaces the legacy drawer
+  infrastructure across Epic / WorkItem / RecommendOrder views.
+  URL codec with kind-replace/stack semantics for deep-link
+  navigation; per-route Help tab pinned in the panel; shared
+  `<TabBar>` component for in-pane nav (`gm-e12.19.7`).
+- **Insights with `/api/v1/metrics/series` time-series proxy**
+  (`gm-e12.17.1`, `gm-e9m0`) — `/insights` ships a three-tile MVP
+  on top of recharts (sprint burn-down, dispatch rate, escalation
+  rate) backed by a Prometheus query proxy with capability-manifest
+  gating. `/api/v1/metrics/series` is the public surface; the SPA
+  hides tiles when no Prometheus URL is configured.
+- **Milestones across the kanban + drawer** (`gm-98sq` / `gm-935r`
+  / `gm-o2k9` / `gm-mqiz` / `gm-4se1` / `gm-yyo8`) — milestone
+  child-epic panel inside the WorkItemDrawer, drag-an-epic-onto-a-
+  milestone to re-parent, milestone dropdown on epic detail,
+  auto-close + notify when the last child closes, color stripe +
+  M-pill on EpicCard, and selective milestone context threaded
+  into the preamble for personas working under one.
+- **Workflows API surface** (`gm-e12.22.2`) — `/api/workflows` lists
+  active workflow runs and templates from the WorkPlane; underlying
+  beads adaptor exposes the cooked + active distinction so the SPA
+  can render the Workflow Library and Active runs without
+  template/wisp polluting the Plan / Backlog surfaces.
+- **Graph density UX** (`gm-vubw`) — auto granularity at low zoom on
+  the dependency graph; sub-thousand-edge view collapses cleanly
+  into one node per cluster, full detail returns on zoom-in.
 - **Per-agent parallelism** (`gm-root.16`) — agent types declare
   `intra_parallel` + `max_parallel` in `.gemba/agents.toml`; a
   try-reuse-before-spawn dispatcher policy co-locates beads on capable
@@ -216,7 +271,8 @@ live in [Adaptors](https://gembacore.github.io/gemba-core/adaptors/).
   exploration and conformance bring-up.
 - **Evidence synthesis library** (`gm-e11.6`) — git log + GitHub PR
   API + CI status collectors with parallel execution and partial-failure
-  tolerance.
+  tolerance. `has_evidence` capability gates + synthesized-marker on
+  beads (`gm-t4af`).
 
 > See the [GitHub commit log](https://github.com/GembaCore/gemba-core/commits/main)
 > for the full history.
