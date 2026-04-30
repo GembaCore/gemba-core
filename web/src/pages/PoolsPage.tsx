@@ -417,6 +417,7 @@ export default function PoolsPage() {
 
       <div className="flex min-h-0 flex-1 gap-6 overflow-auto p-6">
         <div className="flex-1 space-y-6">
+          {personas.length === 0 && <NoPersonasHelper />}
           {adaptorID === 'gastown' && (
             <Section title="Imported from gt">
               <div className="space-y-3 text-sm">
@@ -675,6 +676,69 @@ export default function PoolsPage() {
         onClose={() => setModalKind(null)}
       />
     </div>
+  );
+}
+
+// NoPersonasHelper (gm-root.26 item 3). Fresh project + /settings/pools
+// today shows an empty persona dropdown, an empty pools list, and no
+// guidance. Pools dispatch to personas, so without at least one
+// persona on disk every dropdown in the editor is dead. This helper
+// renders only when `personas.length === 0` and is suppressed once
+// any persona file exists. Becomes a no-op once gm-root.24's project
+// ratify auto-seeds personas — at that point fresh projects always
+// boot with an "engineer" persona on disk, so this branch never fires.
+function NoPersonasHelper() {
+  const SNIPPET = `# .gemba/personas/engineer.toml
+id = "engineer"
+name = "Engineer"
+agent_type = "claude"
+system_prompt = "You are a software engineer..."
+
+[[skills]]
+id = "default"
+`;
+  const [copied, setCopied] = useState(false);
+  function onCopy() {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(SNIPPET).then(
+        () => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 2000);
+        },
+        () => {
+          /* clipboard API rejected — leave the snippet on screen */
+        }
+      );
+    }
+  }
+  return (
+    <Section title="No personas configured">
+      <div className="space-y-3 text-sm" data-testid="pools-no-personas-helper">
+        <p className="text-neutral-700 dark:text-neutral-300">
+          Pools dispatch to personas. Drop a TOML file into{' '}
+          <code className="font-mono text-xs">.gemba/personas/&lt;name&gt;.toml</code>{' '}
+          and reload.
+        </p>
+        <pre
+          data-testid="pools-no-personas-snippet"
+          className="overflow-x-auto rounded-md bg-neutral-100 p-3 text-xs dark:bg-neutral-900"
+        >
+          {SNIPPET}
+        </pre>
+        <button
+          type="button"
+          data-testid="pools-no-personas-copy"
+          onClick={onCopy}
+          className="rounded-sm border px-3 py-1 text-xs hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+        >
+          {copied ? 'Copied' : 'Copy snippet'}
+        </button>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Once <code className="font-mono">gm-root.24</code> ships (project
+          ratify auto-seeds personas), fresh projects will skip this step.
+        </p>
+      </div>
+    </Section>
   );
 }
 
