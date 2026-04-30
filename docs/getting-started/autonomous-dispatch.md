@@ -266,15 +266,55 @@ gt polecat list --all --json | jq
   `gm-s47n.17`; until then, run those `gt` commands in your
   shell and click **Refresh from gt**).
 
-### 6. Mind the agent skill contract
+### 6. Mind the agent skill contract (`bead-done` emit)
 
-In Gas Town mode, the agent's `gt done` skill must emit
-`gemba-state bead-done` after the merge-queue submission completes.
-This is the "I'm going idle, not exiting" signal that lets the
-session transition to `SessionReady` instead of being torn down.
-Without it the lifecycle plumbing exists but never fires —
-filed as `gm-s47n.14`. Until that lands, expect every bead to
-spawn a fresh polecat.
+The agent must emit `gemba-state bead-done` **after `gt done` (or
+the equivalent end-of-bead skill) reports success**. This is the
+"I'm going idle, not exiting" signal that lets the session
+transition to `SessionReady` (pool member retention) instead of
+being torn down. Without it the lifecycle plumbing exists but
+never fires and every bead cold-spawns.
+
+Two paths to wire this:
+
+**a. Native source path** (durable, recommended): the `gt done`
+subcommand in the gastown CLI source is being updated (tracked as
+`gm-s47n.20`) to emit `gemba-state bead-done --bead <id>` from its
+post-success branch. Until that ships, use option (b).
+
+**b. Operator-local slash command** (works today): polecats that
+finish their bead via a `/done` slash command can have the slash
+command's bash post-step do the emit. Add this to the bottom of
+your `.claude/commands/done.md` (which is operator-local —
+`.claude/` is gitignored — so paste this into your own copy):
+
+```markdown
+## Post-success: emit bead-done for pool retention
+
+After `gt done` reports success, emit the `bead-done` token so the
+gemba bridge transitions this session to `SessionReady` (pool
+retention). Best-effort: silent fall-through outside a gemba native
+session.
+
+​```bash
+BEAD_ID="$(git rev-parse --abbrev-ref HEAD 2>/dev/null | sed -n 's,^bead/,,p;s,^polecat/[^/]*/,,p')"
+if [ -n "$BEAD_ID" ]; then
+  gemba-state bead-done --bead "$BEAD_ID" 2>/dev/null || true
+else
+  gemba-state bead-done 2>/dev/null || true
+fi
+​```
+```
+
+Make sure the slash command's `allowed-tools` frontmatter
+includes `Bash(gemba-state:*)` and `Bash(git rev-parse:*)`.
+
+The bridge then runs the §5.4.2 worktree-cleanliness check; on a
+clean worktree the session goes idle and the autodispatch daemon
+hands it the next bead without a cold spawn.
+
+If the agent invokes `gt done` directly (not via a slash command),
+the durable fix lives in the gt CLI source — see `gm-s47n.20`.
 
 ---
 
