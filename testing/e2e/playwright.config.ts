@@ -183,6 +183,7 @@ const projects: Project[] = [
           'variants/**/*.spec.ts',
           'shared/**/spec.smoke.test.ts',
           'shared/**/pool-config.test.ts',
+          'shared/**/narrator.test.ts',
         ]
       : [],
     testIgnore: ACCEPTANCE_ON ? [] : ['**/*'],

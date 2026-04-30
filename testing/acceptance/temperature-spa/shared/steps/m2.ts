@@ -26,6 +26,7 @@ function m2Timeout(): number {
 
 export async function runM2Step(ctx: SharedContext): Promise<void> {
   // ─── Import + wait for daemon ───────────────────────────────
+  ctx.narrator.emit('M2 ships a hello-world build', 'short');
   await ctx.importBeads('target-jsonl/m2.jsonl');
   await ctx.waitForAllBeadsClosed(M2_MILESTONE_ID, m2Timeout());
 

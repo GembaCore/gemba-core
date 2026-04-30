@@ -31,6 +31,7 @@ const TRIAGE_TARGET_BEAD = 'M3.1';
 const TRIAGE_TARGET_FALLBACK = 'M3';
 
 export async function runTriageStep(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit('Triage approves a blocking escalation', 'medium');
   // ─── Choose a target bead ───────────────────────────────────
   const targetBead = await pickExistingBead(ctx, [
     TRIAGE_TARGET_BEAD,

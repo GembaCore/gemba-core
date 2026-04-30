@@ -33,6 +33,7 @@ import type {
   BugFiler,
   EscalationInjector,
 } from './contracts';
+import { Narrator, noopNarrator } from './narrator';
 import { runM1Step } from './steps/m1';
 import { runM2Step } from './steps/m2';
 import { runM3Step } from './steps/m3';
@@ -69,6 +70,26 @@ export interface RunAcceptanceOpts {
   bugFiler?: BugFiler;
   /** Optional rig name override for gastown variant. Defaults to acceptance-{runID}. */
   rigName?: string;
+  /**
+   * Optional narrator (gm-root.27.37). When provided, runAcceptance
+   * + each step emit phrase events at known boundaries. The narrator
+   * builds a `narration.json` for downstream TTS / voice-over
+   * pipelines aligned to the demo-mode video capture. Absent →
+   * emits are no-ops.
+   */
+  narrator?: Narrator;
+  /**
+   * Optional path to write narration.json at run end. When the
+   * narrator is set but this is absent, the JSON is included on the
+   * AcceptanceReport but not persisted.
+   */
+  narrationOutputPath?: string;
+  /**
+   * Optional video path to embed in the narration.json envelope so
+   * downstream renderers know which mp4 to align against. Demo mode
+   * sets this; default runs leave it undefined.
+   */
+  narrationVideoPath?: string;
 }
 
 export interface AcceptanceReport {
@@ -81,6 +102,12 @@ export interface AcceptanceReport {
     durationMs: number;
     error?: string;
   }>;
+  /**
+   * Narration timeline (gm-root.27.37). Present when opts.narrator
+   * was provided. Aligned to startedAt; the renderer pairs it with
+   * the Playwright video for TTS.
+   */
+  narration?: import('./narrator').NarrationFile;
 }
 
 /** Public shape passed into each step. */
@@ -126,6 +153,13 @@ export interface SharedContext {
   escalationInjector: EscalationInjector;
   /** Wave 4 bug-filing helper (`.19`). Always defined; falls back to logger. */
   fileBugBead: BugFiler['fileBugBead'];
+  /**
+   * Narrator (gm-root.27.37) — always defined on the context. Steps
+   * call `narrator.emit(phrase, hint)` at semantically meaningful
+   * boundaries (bead dispatch, build start, oracle pass, etc.).
+   * Defaults to a no-op shim when the caller didn't supply one.
+   */
+  narrator: Pick<Narrator, 'emit'>;
 }
 
 // ─── Public entry point ───────────────────────────────────────────
@@ -172,6 +206,7 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
       importBeadsCLI(opts.projectDir, jsonlPath, opts.beadPrefix ?? 'tspa'),
     escalationInjector: opts.escalationInjector ?? defaultEscalationInjector,
     fileBugBead: wrappedBugFiler,
+    narrator: opts.narrator ?? noopNarrator,
   };
 
   const milestones: AcceptanceReport['milestones'] = {
@@ -199,12 +234,17 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   // the acceptance with a brief title frame. No-op when
   // GEMBA_ACCEPTANCE_DEMO_MODE is unset.
   await installDemoBanner(ctx.page);
+  ctx.narrator.emit('A fresh project boots', 'short');
   if (DEMO_MODE) {
     await setDemoCaption(ctx.page, 'Acceptance: building a SPA via beads');
     await demoPause(2_000);
   }
 
   // Step through the milestones, captioning each.
+  ctx.narrator.emit(
+    'The operator configures a pool with the acceptance-engineer persona',
+    'long',
+  );
   await setDemoCaption(ctx.page, 'M1 — scaffolding the project');
   milestones.M1 = await timed(() => runM1Step(ctx));
   await demoPause(1_500);
@@ -221,9 +261,22 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   milestones.M3 = await timed(() => runM3Step(ctx));
   await demoPause(2_000);
 
+  ctx.narrator.emit('Done. Three milestones, two operator clicks', 'short');
   if (DEMO_MODE) {
     await setDemoCaption(ctx.page, 'Done — three milestones, two operator clicks');
     await demoPause(2_000);
+  }
+
+  // Narration timeline (gm-root.27.37). Build the JSON envelope; if
+  // the caller asked for a file path, persist it. Otherwise it lives
+  // on the report only.
+  const narration = opts.narrator
+    ? opts.narrator.build({ video_path: opts.narrationVideoPath })
+    : undefined;
+  if (opts.narrator && opts.narrationOutputPath) {
+    opts.narrator.writeTo(opts.narrationOutputPath, {
+      video_path: opts.narrationVideoPath,
+    });
   }
 
   const report: AcceptanceReport = {
@@ -232,6 +285,7 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
     startedAt,
     finishedAt: new Date().toISOString(),
     milestones,
+    narration,
   };
 
   // gm-root.27.33: gate Playwright on real success. M-steps tolerate

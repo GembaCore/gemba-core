@@ -32,6 +32,10 @@ function m3Timeout(): number {
 }
 
 export async function runM3Step(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit(
+    'M3 lands the conversion table — sixteen rows, oracle passes',
+    'long',
+  );
   await ctx.importBeads('target-jsonl/m3.jsonl');
   await ctx.waitForAllBeadsClosed(M3_MILESTONE_ID, m3Timeout());
 

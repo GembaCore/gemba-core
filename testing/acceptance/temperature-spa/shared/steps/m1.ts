@@ -55,6 +55,7 @@ export async function runM1Step(ctx: SharedContext): Promise<void> {
   const badgeProbe = pollForBadge(ctx, m1Timeout());
 
   // ─── Import the M1 bead pack ────────────────────────────────
+  ctx.narrator.emit('Mock agents claim M1 scaffolding work', 'medium');
   try {
     await ctx.importBeads('target-jsonl/m1.jsonl');
   } catch (err) {
