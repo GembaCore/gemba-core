@@ -1,18 +1,26 @@
 # gm-root.27.13 — native variant pool fixture.
 #
-# Loaded by `gemba serve --orchestration=native --pool-config <this file>`.
+# Loaded by `gemba serve --orchestration=mock --pool-config <this file>`.
 # Drives the daemon to claim acceptance-engineer work for a single in-process
 # pool (scope=local). The corresponding gastown fixture template lives at
 # ../../gastown/fixtures/pool.toml.tmpl and differs only in the rig scope.
+#
+# Top-level [pool] table holds the cascade defaults. Without these the
+# routing falls through to "no persona resolved" and the daemon
+# silently skips every bead (decoded as no_eligible_bead).
+
+[pool]
+default_persona = "acceptance-engineer"
+default_size = 1
+default_floor = 0.01
+reserved_for_manual = 0
 
 [pool.local.acceptance-engineer]
 size = 1
-floor = 0.5
+# Floor must be below the daemon's affinity_combined score for
+# dispatch to fire. Acceptance-test beads carry no concept tags or
+# repo affinity, so their score is ~0.15. Use 0.01 to ensure dispatch.
+# (Floor=0 silently falls back to DefaultAutoDispatchFloor=0.5.)
+floor = 0.01
 recycle_after_beads = 5
 idle_ceiling_minutes = 30
-
-# Default routing — issue_type=task is dispatched to the acceptance-engineer
-# pool. Without this, the daemon has no edge from queued beads to the pool.
-[[routing]]
-issue_type = "task"
-pool = "local.acceptance-engineer"
