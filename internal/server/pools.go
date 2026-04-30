@@ -29,9 +29,13 @@ type PoolMember struct {
 	LastRecycleAt       *time.Time `json:"last_recycle_at,omitempty"`
 }
 
-// PoolStateEntry is one (rig, persona) pool's exposed state.
+// PoolStateEntry is one (scope, persona) pool's exposed state.
+//
+// gm-s47n.16 (spec §2): the JSON field renamed `rig` → `scope`.
+// Existing SPA consumers reading `rig` are updated; the change ships
+// in lockstep with the editor.
 type PoolStateEntry struct {
-	Rig                 string       `json:"rig"`
+	Scope               string       `json:"scope"`
 	Persona             string       `json:"persona"`
 	SizeTargetDeclared  int          `json:"size_target_declared"`
 	SizeTargetEffective int          `json:"size_target_effective"`
@@ -101,7 +105,7 @@ func (r *Router) listPools(w http.ResponseWriter, req *http.Request) {
 
 	for _, p := range resolved {
 		entry := PoolStateEntry{
-			Rig:                 p.Rig,
+			Scope:               p.Scope,
 			Persona:             p.Persona,
 			SizeTargetDeclared:  p.SizeDeclared,
 			SizeTargetEffective: p.SizeEffective,

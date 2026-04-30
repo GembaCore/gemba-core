@@ -85,6 +85,19 @@ export default function SettingsPage() {
       />
 
       <div className="min-h-0 flex-1 overflow-auto p-6">
+        {/* gm-s47n.16: Pool Dispatch editor lives at /settings/pools.
+            Link card sits above the tab content so operators discover
+            the editor without tab-hunting. */}
+        <a
+          href="/settings/pools"
+          data-testid="settings-pool-dispatch-link"
+          className="mb-4 block rounded-md border border-neutral-200 bg-white p-4 text-sm shadow-sm hover:border-blue-400 dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <span className="font-semibold">Pool Dispatch →</span>
+          <span className="ml-2 text-xs text-neutral-500">
+            Configure sticky session pools (per-persona auto-dispatch)
+          </span>
+        </a>
         {error ? (
           <div
             className="rounded-md bg-red-50 px-4 py-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300"

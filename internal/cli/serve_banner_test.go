@@ -147,7 +147,7 @@ func TestPrintStartupBanner_PoolLineWithPools(t *testing.T) {
 	cfg := config.ServeConfig{Listen: "127.0.0.1", Port: 7666}
 	reg := &workPlaneReg{Manifest: bannerManifest(), Mode: "bd-dir", SourceKind: "dir", Source: "/tmp"}
 	pools := []config.ResolvedPool{
-		{Rig: "gemba", Persona: "engineer-claude",
+		{Scope: "gemba", Persona: "engineer-claude",
 			SizeDeclared: 5, SizeEffective: 3, ClampActivated: true,
 			Floor: 0.5, RecycleAfterBeads: 5, IdleCeilingMinutes: 30},
 	}

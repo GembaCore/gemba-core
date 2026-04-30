@@ -32,7 +32,7 @@ func TestListPools_DeclaredAndEffectiveSurfaced(t *testing.T) {
 	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	r.AttachPools([]config.ResolvedPool{
 		{
-			Rig:            "gemba",
+			Scope:          "gemba",
 			Persona:        "engineer-claude",
 			SizeDeclared:   5,
 			SizeEffective:  3,
@@ -70,7 +70,7 @@ func TestListPools_DeclaredAndEffectiveSurfaced(t *testing.T) {
 func TestListPools_V1Alias(t *testing.T) {
 	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
 	r.AttachPools([]config.ResolvedPool{
-		{Rig: "gemba", Persona: "engineer-claude", SizeDeclared: 1, SizeEffective: 1},
+		{Scope: "gemba", Persona: "engineer-claude", SizeDeclared: 1, SizeEffective: 1},
 	})
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/pools", nil))

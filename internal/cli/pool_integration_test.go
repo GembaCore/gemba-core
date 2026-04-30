@@ -103,7 +103,7 @@ func TestPoolDaemon_FullDispatchPath(t *testing.T) {
 		},
 	}
 	resolved := config.ResolvedPool{
-		Rig:           "test",
+		Scope:         "test",
 		Persona:       "engineer-claude",
 		AgentType:     "claude",
 		SizeEffective: 1,
@@ -149,7 +149,7 @@ func TestPoolDaemon_RunHonorsContext(t *testing.T) {
 	op := &fakeOpForIntegration{}
 	wp := &fakeWPForIntegration{}
 	resolved := config.ResolvedPool{
-		Rig: "t", Persona: "p", AgentType: "claude", SizeEffective: 1,
+		Scope: "t", Persona: "p", AgentType: "claude", SizeEffective: 1,
 	}
 	d, err := buildDaemon(op, wp, resolved, config.PoolConfig{})
 	if err != nil {

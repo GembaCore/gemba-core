@@ -250,7 +250,7 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// when no pool config exists OR every entry has size = 0, NO
 	// daemons are constructed and behavior is identical to today's
 	// main. The clamp + WARN emission lives in this function.
-	resolvedPools, poolCfg, err := loadAndResolvePools(cfg)
+	resolvedPools, poolCfg, poolCfgPath, poolMaxParallel, err := loadAndResolvePoolsWithMeta(cfg)
 	if err != nil {
 		return err
 	}
@@ -285,6 +285,10 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// gm-s47n.12: surface the resolved pool config to the router so
 	// /api/pools can return declared vs effective sizes.
 	handler.AttachPools(resolvedPools)
+	// gm-s47n.16: bind pool.toml path + MaxParallel for the editor's
+	// /api/pool-config endpoint. Empty path is fine — GET returns an
+	// empty envelope and PUT returns 400 path_not_configured.
+	handler.AttachPoolConfig(poolCfgPath, poolMaxParallel, poolCfg.ReservedForManual)
 	// Construct + run the daemons. Phase 0 zero-delta path: when
 	// resolvedPools is empty, this loop is a no-op and no goroutines
 	// are spawned.
@@ -894,7 +898,7 @@ func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *w
 				clamp = fmt.Sprintf(" (clamped from %d by MaxParallel)", p.SizeDeclared)
 			}
 			fmt.Fprintf(w, "▶ pool[%s/%s]: size=%d%s floor=%.2f recycle_after_beads=%d idle_ceiling_min=%d\n",
-				p.Rig, p.Persona,
+				p.Scope, p.Persona,
 				p.SizeEffective, clamp,
 				p.Floor, p.RecycleAfterBeads, p.IdleCeilingMinutes)
 		}

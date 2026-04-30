@@ -6,6 +6,10 @@ import { SessionsPage } from '@/pages/SessionsPage';
 import { GraphPage } from '@/pages/GraphPage';
 import CapabilitiesPage from '@/pages/CapabilitiesPage';
 import SettingsPage from '@/pages/SettingsPage';
+// gm-s47n.16: Pool Dispatch editor — adaptor-aware sub-route off
+// /settings rather than a tab on /settings, per the spec's slight
+// preference (§11 q1).
+import PoolsPage from '@/pages/PoolsPage';
 import { CoachPage } from '@/pages/CoachPage';
 import { WalkPage } from '@/pages/WalkPage';
 import { WalkDetailPage } from '@/pages/WalkDetailPage';
@@ -81,6 +85,7 @@ export default function App() {
         <Route path="/escalations" element={<EscalationsPage />} />
         <Route path="/capabilities" element={<CapabilitiesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/settings/pools" element={<PoolsPage />} />
         {/* gm-e12.13: desired-vs-actual drift dashboard. */}
         <Route path="/drift" element={<DriftPage />} />
         <Route path="/coach" element={<CoachPage />} />
