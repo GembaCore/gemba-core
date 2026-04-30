@@ -180,6 +180,9 @@ func (o *silentOrchestration) EndSession(_ context.Context, sessionID string, _ 
 	s.CloseReason = &r
 	return *s, nil
 }
+func (o *silentOrchestration) RecycleSession(_ context.Context, _ string) (core.Session, error) {
+	return core.Session{}, core.NewAdaptorError(core.KindUnsupported, "silent: RecycleSession not supported")
+}
 func (o *silentOrchestration) PeekSession(context.Context, string) (core.SessionPeek, error) {
 	return core.SessionPeek{}, nil
 }

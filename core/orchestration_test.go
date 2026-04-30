@@ -317,6 +317,9 @@ func (noopOrchestrator) ResumeSession(context.Context, string, ConfirmNonce) (Se
 func (noopOrchestrator) EndSession(context.Context, string, SessionEndMode, ConfirmNonce) (Session, error) {
 	return Session{}, nil
 }
+func (noopOrchestrator) RecycleSession(context.Context, string) (Session, error) {
+	return Session{}, nil
+}
 func (noopOrchestrator) PeekSession(context.Context, string) (SessionPeek, error) {
 	return SessionPeek{}, nil
 }

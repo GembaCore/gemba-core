@@ -313,6 +313,9 @@ func (*FakeOrchestrationPlane) ResumeSession(context.Context, string, core.Confi
 func (*FakeOrchestrationPlane) EndSession(context.Context, string, core.SessionEndMode, core.ConfirmNonce) (core.Session, error) {
 	return core.Session{}, errors.New("fake: EndSession not implemented")
 }
+func (*FakeOrchestrationPlane) RecycleSession(context.Context, string) (core.Session, error) {
+	return core.Session{}, core.NewAdaptorError(core.KindUnsupported, "fake: RecycleSession not supported")
+}
 func (*FakeOrchestrationPlane) PeekSession(context.Context, string) (core.SessionPeek, error) {
 	return core.SessionPeek{}, errors.New("fake: PeekSession not implemented")
 }
