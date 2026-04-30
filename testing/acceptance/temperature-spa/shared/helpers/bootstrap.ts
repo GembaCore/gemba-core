@@ -29,6 +29,8 @@
 //   - testing/e2e/fixtures/realServer.ts (existing pattern reused)
 //   - internal/server/newproject.go (POST /api/v1/newproject/create)
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { spinRealServer, type RealServer } from '../../../../e2e/fixtures/realServer';
 
 export type ProjectHandle = {
@@ -38,6 +40,12 @@ export type ProjectHandle = {
   projectDir: string;
   /** Project name from /api/v1/newproject/create. */
   projectName: string;
+  /**
+   * The bd-issue prefix initialized in this workspace (e.g. 'e2e0').
+   * Used by the JSONL pack loader to substitute {{PREFIX}} placeholders
+   * before `bd import` (gm-root.27.4 / .29).
+   */
+  beadPrefix: string;
   /**
    * Tear everything down: kill gemba, rm tempdir, free ports.
    * Idempotent; safe to call from t.Cleanup. Survives partial-failure
@@ -77,6 +85,14 @@ export type BootstrapOptions = {
    * use distinct values to keep tempdir paths disambiguated.
    */
   workerIndex?: number;
+  /**
+   * gm-root.27.21 — extra argv forwarded to `gemba serve`. Used by
+   * the variant wrappers to pass `--orchestration=...` and
+   * `--pool-config <path>` so the autodispatch daemon picks up the
+   * test's pool configuration on first launch (no in-place restart
+   * needed). Appended verbatim after the fixture's own flags.
+   */
+  serveArgs?: string[];
 };
 
 /**
@@ -104,43 +120,40 @@ export async function bootstrapProject(
   const workerIndex = opts.workerIndex ?? process.pid;
 
   // Spin gemba serve against an isolated bd workspace (embedded Dolt).
+  // spinRealServer runs `bd init` in the tempdir before launching
+  // gemba, so the resulting workspace is already a valid project — no
+  // separate POST /api/v1/newproject/create call is needed (and would
+  // collide with the prior bd init).
+  //
+  // Caveat: spinRealServer's bd init does NOT auto-seed personas /
+  // agents.toml / CLAUDE.md the way `gemba newproject` does
+  // (gm-root.24). Pool config + persona-routed dispatch may need to
+  // seed those files separately. Tracked under the acceptance-suite
+  // first-run cleanup arc.
   const server = await spinRealServer({
     workerIndex,
     mode: workspaceMode,
     auth: 'open',
+    serveArgs: opts.serveArgs,
   });
+  // projectName is preserved on the handle for reporting even though
+  // we didn't formally create a "project" via the API — the bd
+  // workspace IS the project from the acceptance test's perspective.
+  void runId;
 
-  // Create the project. POST /api/v1/newproject/create runs the same
-  // atomic ratify the conversational flow uses, just with an empty
-  // milestone tree (we'll populate via JSONL import from the M1/M2/M3
-  // pack — see gm-root.27.4).
-  const createUrl = `${server.baseURL}/api/v1/newproject/create`;
-  const res = await fetch(createUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      project_name: projectName,
-      description,
-    }),
-  });
-  if (!res.ok) {
-    // Clean up before surfacing the failure so we don't leak resources
-    // when the API rejects the create.
-    await server.dispose();
-    const text = await res.text().catch(() => '<unreadable>');
-    throw new Error(
-      `bootstrapProject: POST /api/v1/newproject/create failed (${res.status}): ${text}`
-    );
-  }
-  // Body shape matches newProjectCreate's response — at minimum the
-  // project path is returned. We don't depend on the exact shape; we
-  // rely on server.beadsDir which is the workspace root.
-  await res.json().catch(() => undefined);
+  // gm-root.27.34: spinRealServer's bd init bypasses gm-root.24's
+  // auto-seed personas, so the bootstrapped project has no
+  // .gemba/personas/. Write a minimal acceptance-engineer persona
+  // so pool config can route work and the editor doesn't render
+  // empty (which is the source of gm-root.27.31's selector miss).
+  seedAcceptanceEnginerPersona(server.beadsDir);
 
   return {
     baseURL: server.baseURL,
     projectDir: server.beadsDir,
     projectName,
+    // spinRealServer initializes bd with prefix `e2e${workerIndex}`.
+    beadPrefix: `e2e${workerIndex}`,
     cleanup: async () => {
       // dispose() in realServer kills the gemba child, removes the
       // worktrees parent, and rms the tempdir. Idempotent.
@@ -148,6 +161,32 @@ export async function bootstrapProject(
     },
     server,
   };
+}
+
+/**
+ * Drop a minimal acceptance-engineer.toml under <projectDir>/.gemba/
+ * personas/. Matches the persona-shape contract (gm-57b) tightly
+ * enough for pool config + dispatch to route work; the actual agent
+ * runtime is MockAgentRunner so heavy persona fields (volunteer_mode,
+ * skills, etc.) are kept minimal.
+ *
+ * Spec mirrors target-jsonl/decisions.jsonl.tmpl tspa-d2.
+ */
+function seedAcceptanceEnginerPersona(projectDir: string): void {
+  const dir = join(projectDir, '.gemba', 'personas');
+  mkdirSync(dir, { recursive: true });
+  const toml = `# Acceptance test persona — written by gm-root.27.34 bootstrap helper.
+# Minimum schema for pool config + dispatch routing; actual agent
+# runtime is MockAgentRunner (gm-root.27.2), not a real claude session.
+
+id = "acceptance-engineer"
+name = "Acceptance Engineer"
+role = "Engineer"
+variety = "coach"
+description = "Mocked engineer persona used by the gm-root.27 acceptance harness. Builds the temperature-spa target through the M1/M2/M3 milestones."
+icon = "🧪"
+`;
+  writeFileSync(join(dir, 'acceptance-engineer.toml'), toml, 'utf8');
 }
 
 /**

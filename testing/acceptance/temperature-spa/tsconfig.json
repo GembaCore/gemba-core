@@ -14,7 +14,8 @@
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "isolatedModules": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "allowImportingTsExtensions": true
   },
   "include": ["shared/**/*.ts", "variants/**/*.ts"]
 }

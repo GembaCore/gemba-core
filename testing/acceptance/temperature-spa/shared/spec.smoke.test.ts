@@ -53,12 +53,11 @@ test.describe('acceptance harness smoke (gm-root.27.6)', () => {
 
   test('bootstrap → server-spawn → SPA load (real)', async ({ page }) => {
     test.skip(!SMOKE, 'gated on GEMBA_ACCEPTANCE_SMOKE=1');
-    // A real run would import `.3`'s bootstrap helper. We can't here
-    // because Wave 1 hasn't landed. When it does, swap the stub for
-    // the real bootstrap — no code change to runAcceptance.
-    const stubBootstrap: Bootstrap = async () => {
-      throw new Error('Wave 1 .3 bootstrap not landed; rerun with GEMBA_ACCEPTANCE_SMOKE=0');
-    };
+    // After gm-root.27.24 the contract is: variants pass an already-
+    // running gemba server's baseURL + projectDir into runAcceptance.
+    // The smoke test here uses a deliberately-bogus baseURL so the
+    // very first SPA navigation fails — proves the scaffolding wires
+    // up but doesn't require Wave 1 plumbing for the static shape.
     const stubFactory: AgentRunnerFactory = {
       create: () => ({
         run: async () => undefined,
@@ -73,11 +72,12 @@ test.describe('acceptance harness smoke (gm-root.27.6)', () => {
       runAcceptance({
         variant: 'native',
         runID: 'smoke',
-        bootstrap: stubBootstrap,
+        baseURL: 'http://127.0.0.1:1', // unbound port → page.goto fails
+        projectDir: '/tmp/noop',
         agentFactory: stubFactory,
         escalationInjector: stubInjector,
         page,
       }),
-    ).rejects.toThrow(/Wave 1/);
+    ).rejects.toThrow();
   });
 });

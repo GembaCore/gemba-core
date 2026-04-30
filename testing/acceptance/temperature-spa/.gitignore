@@ -1,1 +1,12 @@
 node_modules/
+
+# Playwright run artifacts
+test-results/
+playwright-report/
+reports/
+
+# Rendered JSONL packs (templates ship as .tmpl; rendered files
+# are per-run artifacts written to projectDir during the test —
+# but if one accidentally lands here, ignore it).
+shared/target-jsonl/m*.jsonl
+shared/target-jsonl/decisions.jsonl

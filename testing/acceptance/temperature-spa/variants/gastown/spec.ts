@@ -27,9 +27,12 @@ import { join } from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { bootstrapProject } from '../../shared/helpers/bootstrap';
 import { runAcceptance } from '../../shared/spec';
-import { configurePool } from '../../shared/configurePool';
+import { configurePool } from '../../shared/pool-config';
 import { renderGastownPoolToml } from './pool-template';
 import { cleanupGastown, type GastownHandle } from './cleanup';
+import { makeAgentRunnerFactory } from '../../shared/runner/factory';
+import { injectEscalation } from '../../shared/helpers/escalation';
+import type { EscalationInjector } from '../../shared/contracts';
 
 const RUN_GASTOWN = process.env.GEMBA_ACCEPTANCE_RUN_GASTOWN === '1';
 
@@ -41,7 +44,13 @@ test.describe('temperature-spa @gastown', () => {
     const rigName = `acceptance-${runId}`;
     const polecatName = `acceptance-pc-${runId}`;
 
-    const project = await bootstrapProject({ workerIndex: testInfo.workerIndex });
+    // gm-root.27.21 — orchestration mode passed at boot. Pool config
+    // for gastown is still saved through the UI (rig name is dynamic
+    // per-run; not knowable until after the gt rig create UI step).
+    const project = await bootstrapProject({
+      workerIndex: testInfo.workerIndex,
+      serveArgs: ['--orchestration=gastown'],
+    });
 
     const handle: GastownHandle = {
       project,
@@ -66,6 +75,7 @@ test.describe('temperature-spa @gastown', () => {
       await createPolecatViaModal(page, polecatName, rigName);
 
       await configurePool(page, {
+        variant: 'gastown',
         scope: rigName,
         persona: 'acceptance-engineer',
         size: 1,
@@ -84,11 +94,36 @@ test.describe('temperature-spa @gastown', () => {
         contentType: 'text/plain',
       });
 
+      const agentFactory = makeAgentRunnerFactory({
+        baseURL: project.baseURL,
+        projectDir: project.projectDir,
+      });
+      const escalationInjector: EscalationInjector = {
+        async inject(spec) {
+          const res = await injectEscalation(project.baseURL, {
+            target: spec.beadID,
+            kind: spec.kind,
+            urgency: spec.urgency,
+            summary: `Synthetic escalation for ${spec.beadID} (acceptance test)`,
+          });
+          if (!res.ok) {
+            throw new Error(
+              `injectEscalation failed (${res.err.kind}): see gm-root.27.22 backend follow-up`,
+            );
+          }
+          return { escalationID: res.value.id };
+        },
+      };
+
       await runAcceptance({
         variant: 'gastown',
         page,
         baseURL: project.baseURL,
         projectDir: project.projectDir,
+        beadPrefix: project.beadPrefix,
+        rigName,
+        agentFactory,
+        escalationInjector,
       });
     } finally {
       await cleanupGastown(handle);

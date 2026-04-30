@@ -128,6 +128,16 @@ export type SpinOptions = {
    */
   expectBootFailure?: boolean;
 
+  /**
+   * gm-root.27.21 — extra argv to append to `gemba serve`. Used by
+   * the acceptance harness to pass `--orchestration` and
+   * `--pool-config` per variant. Appended verbatim after the
+   * fixture's required flags; the caller is responsible for any
+   * required flag prefixes (e.g. ['--orchestration=native',
+   * '--pool-config', '/abs/path/pool.toml']).
+   */
+  serveArgs?: string[];
+
   // gm-5v8v.11.1 — workspace-mode fixture
   /**
    * Workspace mode to persist into `<beadsDir>/.gemba/workspace.toml`
@@ -268,6 +278,13 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
       process.env.TERM_PROGRAM.length > 0);
   if (!hasTerminalEnv && !args.includes('--orchestration') && !args.includes('--terminal')) {
     args.push('--terminal', 'tmux');
+  }
+
+  // gm-root.27.21: append caller-supplied args (--orchestration,
+  // --pool-config, etc.) AFTER the fixture's own bootstrapping flags
+  // so callers can override defaults the fixture set.
+  if (opts.serveArgs && opts.serveArgs.length > 0) {
+    args.push(...opts.serveArgs);
   }
 
   const child = spawn(gembaBin, args, {

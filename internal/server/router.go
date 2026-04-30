@@ -529,6 +529,14 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/v1/escalations", r.listEscalations)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/escalations/{id}/respond", r.respondEscalation)
+		// gm-root.27.22 — test-mode synthetic-escalation injector,
+		// gated on GEMBA_ENABLE_TEST_ESCALATIONS=1. Default-off so
+		// production servers never expose it. Used by the headless
+		// acceptance harness's triage step (gm-root.27.11).
+		if testEscalationsEnabled() {
+			api.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/test/escalations", r.postTestEscalation)
+		}
 		api.Get("/v1/sprints", r.listSprints)
 		api.Get("/v1/workitems", r.listWorkItems)
 		api.Get("/v1/workitems/{id}", r.getWorkItem)
