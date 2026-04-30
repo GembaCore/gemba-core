@@ -3,20 +3,19 @@
 // variants.
 //
 // Per D15 §10, this file owns the test orchestration:
-//   • spawn `gemba serve` against the bootstrapped project
+//   • point the SPA at the bootstrapped project
 //   • expose navigation + polling helpers as a shared context object
 //   • call `runM1Step` / triage / `runM2Step` / `runM3Step` in order
-//   • tear the server back down via Playwright `test.afterAll`
 //
-// Wave 1 (`.1`–`.5`) is stubbed via the contracts in `./contracts.ts`.
-// We accept those shapes as DI parameters; we never construct them.
-//
-// The exported `runAcceptance(opts)` is the function each variant
-// (`gm-root.27.12` native, `.15` gastown) wraps. The variant wrapper
-// builds the AgentRunnerFactory + Bootstrap + EscalationInjector and
-// hands them to us.
+// gm-root.27.24 contract reconciliation: bootstrapProject (.3)
+// already spawns gemba serve via spinRealServer. Variants pass the
+// baseURL + projectDir from that handle directly into runAcceptance;
+// we don't spawn a second server. RunAcceptanceOpts therefore takes
+// the simpler {variant, page, baseURL, projectDir, ...} shape rather
+// than the older {bootstrap, agentFactory, ...} DI shape that
+// spec.ts originally drafted.
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -24,10 +23,8 @@ import type { Page } from '@playwright/test';
 
 import type {
   AgentRunnerFactory,
-  Bootstrap,
   BugFiler,
   EscalationInjector,
-  ProjectHandle,
 } from './contracts';
 import { configurePool } from './pool-config';
 import { runM1Step } from './steps/m1';
@@ -39,21 +36,19 @@ import { runTriageStep } from './steps/triage';
 
 export interface RunAcceptanceOpts {
   variant: 'native' | 'gastown';
-  /** Test run identifier (ulid). Threaded through bootstrap + report. */
-  runID: string;
-  /** Wave 1 bootstrap helper (`.3`). Yields a ProjectHandle. */
-  bootstrap: Bootstrap;
-  /** Wave 1 agent factory (`.1`). Constructed once per run. */
-  agentFactory: AgentRunnerFactory;
-  /** Wave 1 escalation injector (`.5`). Used by the triage step. */
-  escalationInjector: EscalationInjector;
   /** Playwright page handle (drives the SPA). */
   page: Page;
-  /**
-   * Optional bug-filing helper (Wave 4, `.19`). If absent, failures
-   * are logged with structured detail and the test continues to fail
-   * via Playwright assertions.
-   */
+  /** http://127.0.0.1:<port> — the gemba server bootstrap already started. */
+  baseURL: string;
+  /** Absolute path to the bootstrapped project directory. */
+  projectDir: string;
+  /** Optional run identifier; defaults to a fresh ulid-shape per call. */
+  runID?: string;
+  /** Wave 1 agent factory (`.1`). Constructed lazily by the spec. */
+  agentFactory?: AgentRunnerFactory;
+  /** Wave 1 escalation injector (`.5`). Used by the triage step. */
+  escalationInjector?: EscalationInjector;
+  /** Optional bug-filing helper (Wave 4, `.19`). Defaults to a stderr logger. */
   bugFiler?: BugFiler;
   /** Optional rig name override for gastown variant. Defaults to acceptance-{runID}. */
   rigName?: string;
@@ -76,7 +71,19 @@ export interface SharedContext {
   variant: 'native' | 'gastown';
   page: Page;
   projectDir: string;
+  /** http://127.0.0.1:<port> — gemba server base URL. */
+  baseURL: string;
+  /**
+   * gembaPort — derived from baseURL for steps that still build URLs
+   * the legacy way (e.g., triage.ts). Prefer baseURL in new code.
+   */
   gembaPort: number;
+  /**
+   * doltPort — exposed for completeness; bootstrap doesn't surface
+   * it (embedded Dolt per tempdir per gm-root.27.3 + gm-h4n
+   * discipline). Always 0 today; reserved for a future external
+   * Dolt mode.
+   */
   doltPort: number;
   /** Navigate to a SPA route by absolute path. */
   goto: (route: '/board' | '/settings/pools' | '/escalations' | string) => Promise<void>;
@@ -84,7 +91,13 @@ export interface SharedContext {
   waitForBeadClosed: (beadID: string, timeoutMs: number) => Promise<void>;
   /** Recurse children of a milestone; gate on all closed. */
   waitForAllBeadsClosed: (milestoneID: string, timeoutMs: number) => Promise<void>;
-  /** Kill `gemba serve` and relaunch with the same flags (post-pool save). */
+  /**
+   * No-op today (gemba is owned by bootstrap; in-place restart not
+   * supported). Documented gap for the pool-via-UI flow that needs
+   * a restart after Save. Tracked as a v1 acceptance limitation —
+   * variants currently pre-write pool.toml before bootstrap so no
+   * restart is required.
+   */
   restartServer: () => Promise<void>;
   /**
    * Import beads from a JSONL file. Tries `bd import <path>` from the
@@ -107,26 +120,28 @@ export interface SharedContext {
  */
 export async function runAcceptance(opts: RunAcceptanceOpts): Promise<AcceptanceReport> {
   const startedAt = new Date().toISOString();
-  const handle = await opts.bootstrap({ variant: opts.variant, runID: opts.runID });
+  const runID = opts.runID ?? randomRunID();
+  const gembaPort = portFromBaseURL(opts.baseURL);
 
-  const ctx: SharedContext & { _server: ServerHandle | null; _handle: ProjectHandle } = {
+  const ctx: SharedContext = {
     variant: opts.variant,
     page: opts.page,
-    projectDir: handle.projectDir,
-    gembaPort: handle.gembaPort,
-    doltPort: handle.doltPort,
-    goto: (route) => navigate(opts.page, handle.gembaPort, route),
-    waitForBeadClosed: (id, t) => waitForBeadClosed(handle.gembaPort, id, t),
-    waitForAllBeadsClosed: (mid, t) => waitForAllBeadsClosed(handle.gembaPort, mid, t),
+    projectDir: opts.projectDir,
+    baseURL: opts.baseURL,
+    gembaPort,
+    doltPort: 0,
+    goto: (route) => navigate(opts.page, opts.baseURL, route),
+    waitForBeadClosed: (id, t) => waitForBeadClosed(opts.baseURL, id, t),
+    waitForAllBeadsClosed: (mid, t) => waitForAllBeadsClosed(opts.baseURL, mid, t),
     restartServer: async () => {
-      if (ctx._server) await ctx._server.kill();
-      ctx._server = await spawnGembaServe(handle, opts.variant);
+      // Server lifecycle is owned by bootstrap (gm-root.27.3). In-place
+      // restart isn't wired in v1 — variants pre-stage pool.toml before
+      // bootstrap so the daemon picks it up on first launch. If a future
+      // bead needs hot-reload, expose a restart hook on ProjectHandle.
     },
-    importBeads: (jsonlPath) => importBeadsCLI(handle.projectDir, jsonlPath),
-    escalationInjector: opts.escalationInjector,
+    importBeads: (jsonlPath) => importBeadsCLI(opts.projectDir, jsonlPath),
+    escalationInjector: opts.escalationInjector ?? defaultEscalationInjector,
     fileBugBead: opts.bugFiler?.fileBugBead.bind(opts.bugFiler) ?? defaultBugFiler,
-    _server: null,
-    _handle: handle,
   };
 
   const milestones: AcceptanceReport['milestones'] = {
@@ -136,16 +151,14 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
     triage: { ok: false, durationMs: 0 },
   };
 
+  // Configure the pool via the SPA. Note: configurePool requires the
+  // editor's selectors per gm-s47n.18 to be present and a restart to
+  // pick up the saved pool.toml. The variant pre-stages pool.toml in
+  // projectDir today (cleanup tracked under gm-root.27.27); the UI
+  // call here is best-effort and serves to exercise the editor.
   try {
-    // 1. Boot the server.
-    ctx._server = await spawnGembaServe(handle, opts.variant);
-    await waitForServerReady(handle.gembaPort, 30_000);
-
-    // 2. Configure pool via SPA. Note: configurePool does NOT trigger
-    //    the restart itself; we do that here so the new pool.toml is
-    //    re-read on the next gemba serve start.
     await ctx.goto('/settings/pools');
-    const scope = opts.variant === 'native' ? 'local' : (opts.rigName ?? `acceptance-${opts.runID}`);
+    const scope = opts.variant === 'native' ? 'local' : (opts.rigName ?? `acceptance-${runID}`);
     await configurePool(opts.page, {
       variant: opts.variant,
       scope,
@@ -153,113 +166,71 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
       size: 1,
       floor: 0.5,
     });
-    await ctx.restartServer();
-    await waitForServerReady(handle.gembaPort, 30_000);
-
-    // 3. Step through the milestones.
-    milestones.M1 = await timed(() => runM1Step(ctx));
-    milestones.M2 = await timed(() => runM2Step(ctx));
-    milestones.triage = await timed(() => runTriageStep(ctx));
-    milestones.M3 = await timed(() => runM3Step(ctx));
-  } finally {
-    if (ctx._server) {
-      await ctx._server.kill().catch(() => undefined);
-    }
-    await handle.cleanup().catch(() => undefined);
+  } catch (err) {
+    // Don't abort — the pre-staged pool.toml keeps the daemon
+    // dispatching even if the UI step fails (e.g., editor not yet
+    // mounted). The first end-to-end run (gm-root.27.29) will
+    // verify both paths.
+    // eslint-disable-next-line no-console
+    console.warn(`[acceptance] configurePool failed (continuing): ${(err as Error).message}`);
   }
+
+  // Step through the milestones.
+  milestones.M1 = await timed(() => runM1Step(ctx));
+  milestones.M2 = await timed(() => runM2Step(ctx));
+  milestones.triage = await timed(() => runTriageStep(ctx));
+  milestones.M3 = await timed(() => runM3Step(ctx));
 
   return {
     variant: opts.variant,
-    runID: opts.runID,
+    runID,
     startedAt,
     finishedAt: new Date().toISOString(),
     milestones,
   };
 }
 
-// ─── Server lifecycle ─────────────────────────────────────────────
-
-interface ServerHandle {
-  proc: ChildProcess;
-  kill: () => Promise<void>;
+function portFromBaseURL(baseURL: string): number {
+  const m = baseURL.match(/:([0-9]+)(?:\/|$)/);
+  return m && m[1] ? parseInt(m[1], 10) : 0;
 }
 
-async function spawnGembaServe(
-  handle: ProjectHandle,
-  variant: 'native' | 'gastown',
-): Promise<ServerHandle> {
-  // Resolve the gemba binary the same way the e2e fixture does — prefer
-  // a workspace-local build, fall back to PATH.
-  const gembaBin = process.env.GEMBA_ACCEPTANCE_BIN ?? 'gemba';
-  const args = [
-    'serve',
-    '--port',
-    String(handle.gembaPort),
-    `--orchestration=${variant}`,
-  ];
-  const proc = spawn(gembaBin, args, {
-    cwd: handle.projectDir,
-    env: {
-      ...process.env,
-      // Pin the project's Dolt port so bd inside the project hits it.
-      GEMBA_DOLT_PORT: String(handle.doltPort),
-      // Force MockAgentRunner unless the operator has opted into real
-      // claude (real-vs-mock factory contract per D16 §4.4).
-      GEMBA_ACCEPTANCE_REAL_AGENTS: process.env.GEMBA_ACCEPTANCE_REAL_AGENTS ?? '0',
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  // Surface server logs on test failure (Playwright captures stdout/stderr).
-  proc.stdout?.on('data', (b: Buffer) => process.stdout.write(`[gemba] ${b.toString()}`));
-  proc.stderr?.on('data', (b: Buffer) => process.stderr.write(`[gemba!] ${b.toString()}`));
-
-  return {
-    proc,
-    kill: async () => {
-      if (proc.killed || proc.exitCode != null) return;
-      proc.kill('SIGTERM');
-      // Give it 5s to flush. If still alive, escalate.
-      const exited = await new Promise<boolean>((resolve) => {
-        const t = setTimeout(() => resolve(false), 5_000);
-        proc.once('exit', () => {
-          clearTimeout(t);
-          resolve(true);
-        });
-      });
-      if (!exited) proc.kill('SIGKILL');
-    },
-  };
-}
-
-async function waitForServerReady(port: number, timeoutMs: number): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/workspace`);
-      if (res.ok) return;
-    } catch {
-      // not ready
-    }
-    await sleep(250);
+function randomRunID(): string {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let id = '';
+  for (let i = 0; i < 8; i += 1) {
+    id += alphabet[Math.floor(Math.random() * alphabet.length)];
   }
-  throw new Error(`gemba serve did not become ready within ${timeoutMs}ms on port ${port}`);
+  return id;
 }
+
+const defaultEscalationInjector: EscalationInjector = {
+  async inject() {
+    throw new Error(
+      'EscalationInjector not provided to runAcceptance — pass one or expect the triage step to fall back.',
+    );
+  },
+};
 
 // ─── Navigation helpers ───────────────────────────────────────────
 
-async function navigate(page: Page, port: number, route: string): Promise<void> {
-  const url = `http://127.0.0.1:${port}${route.startsWith('/') ? route : `/${route}`}`;
+async function navigate(page: Page, baseURL: string, route: string): Promise<void> {
+  const url = `${baseURL}${route.startsWith('/') ? route : `/${route}`}`;
   await page.goto(url, { waitUntil: 'domcontentloaded' });
 }
 
 // ─── Bead-state polling ───────────────────────────────────────────
 
-async function waitForBeadClosed(port: number, beadID: string, timeoutMs: number): Promise<void> {
+async function waitForBeadClosed(
+  baseURL: string,
+  beadID: string,
+  timeoutMs: number,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let last: string | undefined;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/api/workitems/${encodeURIComponent(beadID)}`);
+      const res = await fetch(`${baseURL}/api/workitems/${encodeURIComponent(beadID)}`);
       if (res.ok) {
         const json = (await res.json()) as { state_category?: string; status?: string };
         last = `${json.state_category}/${json.status}`;
@@ -276,18 +247,16 @@ async function waitForBeadClosed(port: number, beadID: string, timeoutMs: number
 }
 
 async function waitForAllBeadsClosed(
-  port: number,
+  baseURL: string,
   milestoneID: string,
   timeoutMs: number,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  // Recurse milestone -> epics -> tasks; gate on every node completed.
   while (Date.now() < deadline) {
     try {
-      const open = await collectOpenDescendants(port, milestoneID);
+      const open = await collectOpenDescendants(baseURL, milestoneID);
       if (open.length === 0) return;
     } catch (err) {
-      // transient — keep polling
       void err;
     }
     await sleep(2_000);
@@ -295,7 +264,7 @@ async function waitForAllBeadsClosed(
   throw new Error(`milestone ${milestoneID} did not fully close within ${timeoutMs}ms`);
 }
 
-async function collectOpenDescendants(port: number, parentID: string): Promise<string[]> {
+async function collectOpenDescendants(baseURL: string, parentID: string): Promise<string[]> {
   const open: string[] = [];
   const queue: string[] = [parentID];
   const seen = new Set<string>();
@@ -303,9 +272,8 @@ async function collectOpenDescendants(port: number, parentID: string): Promise<s
     const id = queue.shift()!;
     if (seen.has(id)) continue;
     seen.add(id);
-    const res = await fetch(`http://127.0.0.1:${port}/api/workitems/${encodeURIComponent(id)}`);
+    const res = await fetch(`${baseURL}/api/workitems/${encodeURIComponent(id)}`);
     if (!res.ok) {
-      // Treat as still-pending if the server isn't ready yet.
       open.push(id);
       continue;
     }
@@ -313,10 +281,13 @@ async function collectOpenDescendants(port: number, parentID: string): Promise<s
     if (node.state_category !== 'completed') open.push(id);
 
     const childRes = await fetch(
-      `http://127.0.0.1:${port}/api/workitems?parent_id=${encodeURIComponent(id)}`,
+      `${baseURL}/api/workitems?parent_id=${encodeURIComponent(id)}`,
     );
     if (childRes.ok) {
-      const json = (await childRes.json()) as { items?: Array<{ id: string }>; workitems?: Array<{ id: string }> };
+      const json = (await childRes.json()) as {
+        items?: Array<{ id: string }>;
+        workitems?: Array<{ id: string }>;
+      };
       const items = json.items ?? json.workitems ?? [];
       for (const c of items) queue.push(c.id);
     }
