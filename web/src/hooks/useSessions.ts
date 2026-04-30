@@ -27,6 +27,7 @@ import {
   type StartSessionRequest,
 } from '@/api/sessions';
 import { ApiError } from '@/api/client';
+import { useToast } from '@/components/ui/ToastContext';
 
 export const sessionsKeys = {
   all: ['sessions'] as const,
@@ -85,8 +86,20 @@ export function useSessionPeek(id: string | null | undefined): UseQueryResult<Se
 
 export function useStartSession(): UseMutationResult<Session, ApiError, StartSessionRequest> {
   const qc = useQueryClient();
+  // gm-root.26 item 2: surface a discoverability toast on every
+  // successful session start. The agent runs in a tmux/iTerm pane in
+  // a separate window so first-time users don't know to look at
+  // /sessions; the toast points them there with a click-through link.
+  const toast = useToast();
   return useMutation<Session, ApiError, StartSessionRequest>({
     mutationFn: (body) => startSession(body),
+    onSuccess: (session) => {
+      toast.show({
+        message: `Session running in pane ${session.id} — view in /sessions`,
+        action: { to: '/sessions', label: 'Open /sessions' },
+        ariaLabel: `Session ${session.id} started`,
+      });
+    },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: sessionsKeys.all });
     },

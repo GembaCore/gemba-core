@@ -7,6 +7,10 @@ import { useTheme } from '@/lib/theme-context';
 import { usePalette } from '@/components/palette/PaletteContext';
 import { usePmPanel } from '@/components/pm/PmPanelContext';
 import { GlobalInFlightCounter } from '@/components/sessions/GlobalInFlightCounter';
+// gm-root.26 item 2: live-session count badge sits next to the
+// project picker so first-time users discover /sessions even when
+// the spawned agent runs in a separate pane window.
+import { LiveSessionsBadge } from '@/components/sessions/LiveSessionsBadge';
 import { cn } from '@/lib/utils';
 import { ProjectPicker } from '@/components/projectpicker/ProjectPicker';
 import { NewProjectAffordance } from '@/components/projectpicker/NewProjectAffordance';
@@ -27,6 +31,7 @@ export function Topbar() {
           immediately to the LEFT of the picker. Navigates to /new. */}
       <NewProjectAffordance />
       <ProjectPicker />
+      <LiveSessionsBadge />
 
       <button
         type="button"

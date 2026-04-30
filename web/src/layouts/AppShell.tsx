@@ -34,6 +34,10 @@ import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 // registers the 'workitem' kind with the RHP detail-content registry so
 // popDetail({kind: 'workitem', id}) renders WorkItemDetail inside the tab.
 import { WorkItemDetailRegistration } from '@/components/rhp/details/WorkItemDetailRegistration';
+// gm-root.26 item 2: minimal in-house toast system. Used by the
+// session launcher to surface "session running in pane <id>" with a
+// link to /sessions so first-time users discover the surface.
+import { ToastProvider } from '@/components/ui/ToastContext';
 
 export function AppShell() {
   return (
@@ -44,6 +48,7 @@ export function AppShell() {
         <WalkProvider>
         <RhpProvider>
         <RhpPinnedContentProvider>
+        <ToastProvider>
           <div className="flex h-screen w-screen bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
             <Sidebar />
             <div className="flex min-w-0 flex-1 flex-col">
@@ -72,6 +77,7 @@ export function AppShell() {
             <PmPanel />
             <AppWalkBindings />
           </div>
+        </ToastProvider>
         </RhpPinnedContentProvider>
         </RhpProvider>
         </WalkProvider>

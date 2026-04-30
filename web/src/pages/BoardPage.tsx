@@ -887,20 +887,25 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   const navigate = useNavigate();
-  // gm-root.17.13: gate the "Plan with the Onboarder" CTA on whether
-  // an LLM client is configured. The probe is fire-and-forget — the
-  // CTA simply doesn't render until/unless the probe says yes, so a
-  // missing or slow probe never blocks the manual-create path.
-  const [planAvailable, setPlanAvailable] = useState(false);
+  // gm-root.17.13 + gm-root.26 item 1: gate the "Plan with the
+  // Onboarder" CTA on whether an LLM client is configured. The probe
+  // is fire-and-forget. While the probe is in flight (or has failed)
+  // we don't render either branch — `probed === null` keeps the
+  // manual-create path uncluttered. Once a 200 lands we render the
+  // active CTA when `available`, or a disabled-style note + docs
+  // link + tooltip when `!available` so first-time users discover
+  // they need to add an LLM credential before clicking through to a
+  // 503.
+  const [probed, setProbed] = useState<{ available: boolean; reason?: string } | null>(null);
   useEffect(() => {
     let cancelled = false;
     void import('@/api/newproject').then(({ probeOnboarder }) => {
       probeOnboarder()
         .then((p) => {
-          if (!cancelled) setPlanAvailable(Boolean(p.available));
+          if (!cancelled) setProbed({ available: Boolean(p.available), reason: p.reason });
         })
         .catch(() => {
-          /* swallow — the CTA stays hidden on probe failure */
+          /* swallow — neither branch renders on probe failure */
         });
     });
     return () => {
@@ -926,7 +931,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
           <Plus className="h-3.5 w-3.5" />
           New work item
         </button>
-        {planAvailable ? (
+        {probed && probed.available ? (
           <button
             type="button"
             data-testid="board-empty-plan"
@@ -935,6 +940,24 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
           >
             Plan with the Onboarder →
           </button>
+        ) : probed && !probed.available ? (
+          <span
+            data-testid="board-empty-plan-disabled"
+            title={probed.reason ?? 'Onboarder unavailable'}
+            aria-disabled="true"
+            className="inline-flex items-center gap-1.5 rounded-md border border-dashed border-neutral-300 bg-neutral-50 px-3 py-1.5 text-xs text-neutral-500 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-400"
+          >
+            Add an LLM credential to enable the Onboarder ·{' '}
+            <a
+              href="/docs/getting-started/configuration.md"
+              target="_blank"
+              rel="noreferrer"
+              data-testid="board-empty-plan-docs"
+              className="underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-200"
+            >
+              Configuration docs
+            </a>
+          </span>
         ) : null}
       </div>
     </div>
