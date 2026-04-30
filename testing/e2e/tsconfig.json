@@ -18,8 +18,7 @@
     "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "paths": {
-      "@e2e/*": ["./*"],
-      "@acc/*": ["../acceptance/temperature-spa/*"]
+      "@e2e/*": ["./*"]
     }
   },
   "include": [
@@ -28,8 +27,6 @@
     "helpers/**/*.ts",
     "pages/**/*.ts",
     "specs/**/*.ts",
-    "builders/**/*.ts",
-    "../acceptance/temperature-spa/shared/**/*.ts",
-    "../acceptance/temperature-spa/variants/**/*.ts"
+    "builders/**/*.ts"
   ]
 }

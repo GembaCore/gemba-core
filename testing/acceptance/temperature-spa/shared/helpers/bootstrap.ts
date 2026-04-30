@@ -29,7 +29,7 @@
 //   - testing/e2e/fixtures/realServer.ts (existing pattern reused)
 //   - internal/server/newproject.go (POST /api/v1/newproject/create)
 
-import { spinRealServer, type RealServer } from '@e2e/fixtures/realServer';
+import { spinRealServer, type RealServer } from '../../../../e2e/fixtures/realServer';
 
 export type ProjectHandle = {
   /** http://127.0.0.1:<port> — pass to Playwright as baseURL. */
