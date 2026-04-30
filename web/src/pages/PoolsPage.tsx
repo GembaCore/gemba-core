@@ -191,6 +191,12 @@ export default function PoolsPage() {
     null | 'rig' | 'polecat' | 'scheduler'
   >(null);
 
+  // Path-change panel toggle (gm-s47n.19, option b — restart-hint
+  // only). The pool.toml path is fixed at server boot via
+  // --pool-config; runtime path changes require a restart, so the
+  // editor only offers a clipboard-copy of the right flag.
+  const [changePathOpen, setChangePathOpen] = useState(false);
+
   // Refetch the orchestration state — used after a successful gt
   // mutation lands so the rig / polecat lists repopulate.
   const refreshOrchState = useCallback(() => {
@@ -391,7 +397,22 @@ export default function PoolsPage() {
         <p className="mt-1 text-xs text-neutral-500">
           File: <code>{env.path || '(unset)'}</code> · MaxParallel = {env.max_parallel} ·
           Reserved for manual = {env.reserved_for_manual}
+          {' · '}
+          <button
+            type="button"
+            data-testid="change-path-toggle"
+            onClick={() => setChangePathOpen((v) => !v)}
+            className="text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+          >
+            Change path
+          </button>
         </p>
+        {changePathOpen && (
+          <ChangePathPanel
+            currentPath={env.path}
+            onClose={() => setChangePathOpen(false)}
+          />
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1 gap-6 overflow-auto p-6">
@@ -680,6 +701,92 @@ function UnsupportedAdaptor({ adaptorID, body }: { adaptorID: string; body: stri
       <pre className="mt-3 overflow-x-auto rounded-md bg-neutral-100 p-3 text-xs dark:bg-neutral-900">
         {body || '(empty)'}
       </pre>
+    </div>
+  );
+}
+
+// ChangePathPanel — gm-s47n.19 option (b). The pool.toml path is
+// fixed at server boot (--pool-config flag); runtime path changes
+// would require restarting the daemon. Rather than write to a
+// different file at runtime (which would diverge "saved file" from
+// "running config" — the option-a footgun), we surface a copy-the-
+// restart-flag affordance and let the operator do the restart.
+function ChangePathPanel({
+  currentPath,
+  onClose,
+}: {
+  currentPath: string;
+  onClose: () => void;
+}) {
+  const [path, setPath] = useState(currentPath);
+  const [copied, setCopied] = useState(false);
+  const flag = `--pool-config ${path || '<path>'}`;
+
+  const onCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(flag);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access denied (insecure context, browser policy).
+      // Surface that to the operator so they can copy manually from
+      // the pre block above.
+      setCopied(false);
+    }
+  }, [flag]);
+
+  return (
+    <div
+      className="mt-3 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-xs dark:border-neutral-700 dark:bg-neutral-900"
+      data-testid="change-path-panel"
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex-1 space-y-2">
+          <label className="block">
+            <span className="text-[11px] font-medium text-neutral-500 dark:text-neutral-400">
+              New path:
+            </span>
+            <input
+              type="text"
+              value={path}
+              data-testid="change-path-input"
+              onChange={(e) => setPath(e.target.value)}
+              placeholder="/path/to/new/pool.toml"
+              className="mt-1 w-full rounded-sm border border-neutral-300 bg-white px-2 py-1 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-950"
+            />
+          </label>
+          <pre
+            data-testid="change-path-flag-preview"
+            className="overflow-x-auto rounded-sm bg-white px-2 py-1 font-mono text-[11px] dark:bg-neutral-950"
+          >
+            {flag}
+          </pre>
+          <p className="text-[11px] text-neutral-500 dark:text-neutral-400">
+            Stop your server, then restart with this flag in place of
+            the current <code>--pool-config</code> (preserve your other
+            flags). Hot-reload is filed as a follow-up.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            data-testid="change-path-copy"
+            onClick={onCopy}
+            disabled={!path}
+            className="rounded-sm border border-neutral-300 bg-white px-3 py-1 text-[11px] hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950 dark:hover:bg-neutral-800"
+          >
+            {copied ? 'Copied ✓' : 'Copy flag'}
+          </button>
+          <button
+            type="button"
+            data-testid="change-path-close"
+            onClick={onClose}
+            className="rounded-sm px-3 py-1 text-[11px] text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          >
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

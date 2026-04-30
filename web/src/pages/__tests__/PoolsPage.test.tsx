@@ -217,4 +217,50 @@ describe('PoolsPage', () => {
     expect(screen.getByTestId('run-command-field-name')).toBeTruthy();
     expect(screen.getByTestId('run-command-preview').textContent).toContain('gt rig create');
   });
+
+  it('change-path panel toggles open and renders the flag preview (gm-s47n.19)', async () => {
+    const Wrapper = buildWrapper({
+      work_plane: null,
+      orchestration_plane: orchManifest({ adaptor_id: 'native' }),
+    });
+    render(<PoolsPage />, { wrapper: Wrapper });
+    await waitFor(() => screen.getByTestId('change-path-toggle'));
+    expect(screen.queryByTestId('change-path-panel')).toBeNull();
+    fireEvent.click(screen.getByTestId('change-path-toggle'));
+    await waitFor(() => screen.getByTestId('change-path-panel'));
+    const preview = screen.getByTestId('change-path-flag-preview');
+    expect(preview.textContent).toContain('--pool-config');
+    expect(preview.textContent).toContain('/.gemba/pool.toml');
+  });
+
+  it('change-path panel updates the flag preview when the path input changes', async () => {
+    const Wrapper = buildWrapper({
+      work_plane: null,
+      orchestration_plane: orchManifest({ adaptor_id: 'native' }),
+    });
+    render(<PoolsPage />, { wrapper: Wrapper });
+    await waitFor(() => screen.getByTestId('change-path-toggle'));
+    fireEvent.click(screen.getByTestId('change-path-toggle'));
+    await waitFor(() => screen.getByTestId('change-path-panel'));
+    const input = screen.getByTestId('change-path-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '/tmp/new-pool.toml' } });
+    expect(screen.getByTestId('change-path-flag-preview').textContent).toBe(
+      '--pool-config /tmp/new-pool.toml'
+    );
+  });
+
+  it('change-path Copy button writes the flag to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    const Wrapper = buildWrapper({
+      work_plane: null,
+      orchestration_plane: orchManifest({ adaptor_id: 'native' }),
+    });
+    render(<PoolsPage />, { wrapper: Wrapper });
+    await waitFor(() => screen.getByTestId('change-path-toggle'));
+    fireEvent.click(screen.getByTestId('change-path-toggle'));
+    await waitFor(() => screen.getByTestId('change-path-copy'));
+    fireEvent.click(screen.getByTestId('change-path-copy'));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('--pool-config /.gemba/pool.toml'));
+  });
 });
