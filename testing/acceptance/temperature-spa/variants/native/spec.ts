@@ -23,7 +23,6 @@ import { dirname, resolve } from 'node:path';
 import { test } from '@playwright/test';
 import { bootstrapProject } from '../../shared/helpers/bootstrap';
 import { runAcceptance } from '../../shared/spec';
-import { makeAgentRunnerFactory } from '../../shared/runner/factory';
 import { injectEscalation } from '../../shared/helpers/escalation';
 import type { EscalationInjector } from '../../shared/contracts';
 
@@ -32,13 +31,17 @@ const POOL_CONFIG = resolve(here, 'fixtures/pool.toml');
 
 test.describe('temperature-spa @native', () => {
   test('builds the SPA end-to-end via beads (native orchestration)', async ({ page }, testInfo) => {
-    // gm-root.27.21 forwards serveArgs through bootstrap so gemba
-    // serve picks up --pool-config + --orchestration on first launch
-    // — no copyFileSync into projectDir, no in-place restart.
+    // gm-root.28.8: native variant uses --orchestration=mock so the
+    // dispatch daemon routes work to the in-process mock plane
+    // (gm-root.28). The TS MockAgentRunner is retired; templates
+    // live in internal/adapter/mock/templates.go now. The variant
+    // name 'native' is preserved for continuity but the orchestration
+    // mode is mock — variants/native/ is the 'CI default' path,
+    // not 'real claude'.
     const project = await bootstrapProject({
       workerIndex: testInfo.workerIndex,
       serveArgs: [
-        '--orchestration=native',
+        '--orchestration=mock',
         '--pool-config', POOL_CONFIG,
       ],
     });
@@ -49,10 +52,6 @@ test.describe('temperature-spa @native', () => {
       description: `--pool-config ${POOL_CONFIG} forwarded to gemba serve via bootstrap`,
     });
 
-    const agentFactory = makeAgentRunnerFactory({
-      baseURL: project.baseURL,
-      projectDir: project.projectDir,
-    });
     const escalationInjector: EscalationInjector = {
       async inject(spec) {
         const res = await injectEscalation(project.baseURL, {
@@ -77,7 +76,6 @@ test.describe('temperature-spa @native', () => {
         baseURL: project.baseURL,
         projectDir: project.projectDir,
         beadPrefix: project.beadPrefix,
-        agentFactory,
         escalationInjector,
       });
     } finally {

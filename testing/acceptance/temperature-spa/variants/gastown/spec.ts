@@ -30,7 +30,6 @@ import { runAcceptance } from '../../shared/spec';
 import { configurePool } from '../../shared/pool-config';
 import { renderGastownPoolToml } from './pool-template';
 import { cleanupGastown, type GastownHandle } from './cleanup';
-import { makeAgentRunnerFactory } from '../../shared/runner/factory';
 import { injectEscalation } from '../../shared/helpers/escalation';
 import type { EscalationInjector } from '../../shared/contracts';
 
@@ -94,10 +93,6 @@ test.describe('temperature-spa @gastown', () => {
         contentType: 'text/plain',
       });
 
-      const agentFactory = makeAgentRunnerFactory({
-        baseURL: project.baseURL,
-        projectDir: project.projectDir,
-      });
       const escalationInjector: EscalationInjector = {
         async inject(spec) {
           const res = await injectEscalation(project.baseURL, {
@@ -122,7 +117,6 @@ test.describe('temperature-spa @gastown', () => {
         projectDir: project.projectDir,
         beadPrefix: project.beadPrefix,
         rigName,
-        agentFactory,
         escalationInjector,
       });
     } finally {
