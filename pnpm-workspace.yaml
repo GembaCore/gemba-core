@@ -1,4 +1,5 @@
 packages:
   - 'web'
   - 'testing/e2e'
+  - 'testing/acceptance/temperature-spa'
   - 'docs-site'

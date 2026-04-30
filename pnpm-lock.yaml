@@ -20,6 +20,18 @@ importers:
         specifier: ^0.33.5
         version: 0.33.5
 
+  testing/acceptance/temperature-spa:
+    devDependencies:
+      '@playwright/test':
+        specifier: ^1.49.0
+        version: 1.59.1
+      '@types/node':
+        specifier: ^22.9.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+
   testing/e2e:
     devDependencies:
       '@axe-core/playwright':

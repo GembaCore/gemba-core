@@ -1,0 +1,4 @@
+// Placeholder. The real M1 bead pack ships in gm-root.27.4 (Wave 1).
+// Per D17 §5.2: scaffolding milestone with M1.1 (init-repo),
+// M1.2 (noop config copy), M1.3 (npm-install). The harness's M1 step
+// will time out predictably until this file is populated.
