@@ -1,0 +1,15 @@
+{
+  "name": "gemba-acceptance-temperature-spa",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Headless acceptance test for native + gastown end-to-end SPA build via beads (gm-root.27).",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.9.0",
+    "typescript": "^5.6.3"
+  }
+}

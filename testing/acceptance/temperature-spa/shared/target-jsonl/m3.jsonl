@@ -1,0 +1,4 @@
+// Placeholder. The real M3 bead pack ships in gm-root.27.4 (Wave 1).
+// Per D17 §5.4: conversion table with M3.1 (temperatureRows),
+// M3.2 (TemperatureTable), M3.3 (test), M3.4 (App.tsx replace),
+// M3.5 (build+serve).

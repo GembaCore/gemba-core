@@ -29,6 +29,12 @@ function pending(name: string, meta: { tier: string; backend: 'fake' | 'real'; b
   };
 }
 
+// gm-root.27 wave 2 — temperature-spa acceptance test. Skipped by
+// default; the variant wrappers (`gm-root.27.12` native + `.15` gastown)
+// flip GEMBA_ACCEPTANCE=1 on. Until then this project enumerates so
+// the matrix is visible but `testIgnore` everything.
+const ACCEPTANCE_ON = process.env.GEMBA_ACCEPTANCE === '1';
+
 const projects: Project[] = [
   // ── Active ─────────────────────────────────────────────────────────
   // smoke-fake is the only project running specs as of gm-5v8v.1. It
@@ -161,6 +167,41 @@ const projects: Project[] = [
     metadata: { tier: 'error', backend: 'fake', bead: 'gm-5v8v.13', status: 'active' },
     timeout: 30_000,
   },
+  // acceptance-temperature-spa (gm-root.27 wave 2). Drives the full
+  // operator-driven build of the target SPA via beads, end to end.
+  // Spec body lives in testing/acceptance/temperature-spa/shared/.
+  // Skipped by default unless GEMBA_ACCEPTANCE=1 is set; the variant
+  // wrappers (`.12` native default-on / `.15` gastown opt-in) flip
+  // it on. Wave 2 ships only the spec body — the variant wrappers
+  // (which actually invoke runAcceptance under a `test()`) land in
+  // Wave 3.
+  {
+    name: 'acceptance-temperature-spa',
+    testDir: '../acceptance/temperature-spa',
+    testMatch: ACCEPTANCE_ON
+      ? [
+          'variants/**/*.spec.ts',
+          'shared/**/spec.smoke.test.ts',
+          'shared/**/pool-config.test.ts',
+        ]
+      : [],
+    testIgnore: ACCEPTANCE_ON ? [] : ['**/*'],
+    use: {
+      ...devices['Desktop Chrome'],
+      // The acceptance harness drives a real `gemba serve` per run;
+      // it doesn't share the fake/real backend taxonomy of the
+      // other projects.
+    },
+    metadata: {
+      tier: 'acceptance',
+      backend: 'real',
+      bead: 'gm-root.27',
+      status: ACCEPTANCE_ON ? 'active' : 'gated (GEMBA_ACCEPTANCE=1)',
+    },
+    timeout: 30 * 60_000,
+    fullyParallel: false,
+  },
+
   // pending-fake: living specs for ui-spec §5 surfaces that haven't
   // shipped yet (gm-5v8v.14). Every test in this tier is test.skip'd
   // with a tracking note; the project exists so the runner enumerates
