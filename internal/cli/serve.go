@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -793,8 +794,15 @@ func registerOrchestrationPlane(ctx context.Context, host *api.Host, cfg config.
 // any other plane; SessionReady recycling exercises the same
 // pool warmth path the native adaptor does.
 func registerMockOrchestration(ctx context.Context, host *api.Host, cfg config.ServeConfig) error {
+	// Pre-seed one mock session per persona discovered in
+	// <project>/.gemba/personas/. The autodispatch daemon expects
+	// idle sessions to exist before it dispatches; without
+	// pre-seed, mock-mode would require the operator to manually
+	// kick off a session via the SPA before any work flows.
+	personas := discoverPersonaNames(cfg.BeadsDir)
 	plane := mock.NewOrchestrationPlane(mock.Config{
-		ProjectDir: cfg.BeadsDir,
+		ProjectDir:      cfg.BeadsDir,
+		PreseedPersonas: personas,
 	})
 	reg, err := host.RegisterOrchestrationPlane(ctx, plane)
 	if err != nil {
@@ -808,6 +816,31 @@ func registerMockOrchestration(ctx context.Context, host *api.Host, cfg config.S
 		"mode", "mock",
 		"project_dir", cfg.BeadsDir)
 	return nil
+}
+
+// discoverPersonaNames lists the persona toml files under
+// <project>/.gemba/personas/ and returns their persona ids
+// (filename without extension). Used to pre-seed the mock plane
+// with one session per persona at registration time. Best-effort:
+// returns empty slice on any error.
+func discoverPersonaNames(projectDir string) []string {
+	dir := filepath.Join(projectDir, ".gemba", "personas")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".toml") {
+			continue
+		}
+		out = append(out, strings.TrimSuffix(name, ".toml"))
+	}
+	return out
 }
 
 // registerGastownOrchestration binds the gt-CLI orchestration

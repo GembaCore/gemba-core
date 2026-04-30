@@ -28,8 +28,9 @@ import (
 )
 
 const (
-	extKeyBeadID    = "gemba:bead_id"
-	extKeyPersonaID = "gemba:persona_id"
+	extKeyBeadID      = "gemba:bead_id"
+	extKeyPersonaID   = "gemba:persona_id"
+	extKeyReusePaneID = "gemba:reuse_pane_id"
 )
 
 // StartSession implements core.OrchestrationPlaneAdaptor.StartSession.
@@ -43,24 +44,55 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 			"mock: SessionPrompt.Extension must include %q", extKeyBeadID)
 	}
 	personaID := stringExtension(prompt.Extension, extKeyPersonaID)
+	reusePaneID := stringExtension(prompt.Extension, extKeyReusePaneID)
 
 	o.mu.Lock()
-	o.nextSessionN++
-	sessionID := fmt.Sprintf("mock-sess-%d-%s", o.nextSessionN, randomSuffix())
 	now := time.Now().UTC()
-	sess := core.Session{
-		ID:           sessionID,
-		AssignmentID: assignmentID,
-		Status:       core.SessionWorking,
-		StartedAt:    now,
-		Persona:      personaID,
-		ProviderMetadata: map[string]any{
-			"adaptor":  "mock",
-			"bead_id":  beadID,
-			"started":  now.Format(time.RFC3339),
-		},
+
+	// Reuse path: if reuse_pane_id is set and we have a session
+	// with that pane_id, transition it to Working with a new bead
+	// instead of minting a fresh session. Mirrors the native
+	// adaptor's warm-pool reuse semantics (gm-s47n.11).
+	var sessionID string
+	if reusePaneID != "" {
+		for id, existing := range o.sessions {
+			if pid, _ := existing.ProviderMetadata["pane_id"].(string); pid == reusePaneID {
+				existing.Status = core.SessionWorking
+				existing.AssignmentID = assignmentID
+				existing.EndedAt = nil
+				existing.ProviderMetadata["bead_id"] = beadID
+				if personaID != "" {
+					existing.Persona = personaID
+				}
+				o.sessions[id] = existing
+				sessionID = id
+				break
+			}
+		}
 	}
-	o.sessions[sessionID] = sess
+
+	if sessionID == "" {
+		// Mint a fresh session.
+		o.nextSessionN++
+		suffix := randomSuffix()
+		sessionID = fmt.Sprintf("mock-sess-%d-%s", o.nextSessionN, suffix)
+		paneID := fmt.Sprintf("mock-pane-%d-%s", o.nextSessionN, suffix)
+		sess := core.Session{
+			ID:           sessionID,
+			AssignmentID: assignmentID,
+			Status:       core.SessionWorking,
+			StartedAt:    now,
+			Persona:      personaID,
+			ProviderMetadata: map[string]any{
+				"adaptor": "mock",
+				"pane_id": paneID,
+				"bead_id": beadID,
+				"started": now.Format(time.RFC3339),
+			},
+		}
+		o.sessions[sessionID] = sess
+	}
+	sess := o.sessions[sessionID]
 	projectDir := o.projectDir
 	o.mu.Unlock()
 

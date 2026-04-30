@@ -55,21 +55,61 @@ type Config struct {
 	// Transport advertised in the capability manifest. Defaults to
 	// core.TransportAPI.
 	Transport core.Transport
+
+	// PreseedPersonas pre-creates one idle SessionReady session per
+	// persona name listed here. The autodispatch daemon expects
+	// idle sessions to exist before it dispatches; the plane has no
+	// way to read pool.toml, so callers (e.g., the cli registration
+	// in serve.go) supply the personas they want warmed at boot.
+	// Empty list → no pre-seed (operator must spawn sessions
+	// manually via the SPA before the daemon engages).
+	PreseedPersonas []string
 }
 
-// NewOrchestrationPlane returns a configured mock plane. The plane
-// does not start any background loops on construction — sessions are
-// minted lazily via StartSession.
+// NewOrchestrationPlane returns a configured mock plane. If
+// cfg.PreseedPersonas is non-empty, one idle SessionReady session is
+// minted per persona at construction so the autodispatch daemon's
+// first tick has something to dispatch against.
 func NewOrchestrationPlane(cfg Config) *OrchestrationPlane {
 	transport := cfg.Transport
 	if transport == "" {
 		transport = core.TransportAPI
 	}
-	return &OrchestrationPlane{
+	o := &OrchestrationPlane{
 		sessions:   make(map[string]core.Session),
 		projectDir: cfg.ProjectDir,
 		transport:  transport,
 	}
+	for _, p := range cfg.PreseedPersonas {
+		_ = o.preseedSession(p)
+	}
+	return o
+}
+
+// preseedSession mints an idle SessionReady session bound to the
+// given persona. Synthetic pane_id keeps the dispatcher's reuse path
+// happy.
+func (o *OrchestrationPlane) preseedSession(persona string) string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.nextSessionN++
+	suffix := randomSuffix()
+	sessionID := fmt.Sprintf("mock-sess-%d-%s", o.nextSessionN, suffix)
+	paneID := fmt.Sprintf("mock-pane-%d-%s", o.nextSessionN, suffix)
+	now := time.Now().UTC()
+	sess := core.Session{
+		ID:        sessionID,
+		Status:    core.SessionReady,
+		StartedAt: now,
+		Persona:   persona,
+		ProviderMetadata: map[string]any{
+			"adaptor": "mock",
+			"pane_id": paneID,
+			"started": now.Format(time.RFC3339),
+		},
+	}
+	o.sessions[sessionID] = sess
+	return sessionID
 }
 
 // Describe returns the capability manifest the SPA + daemon consume
