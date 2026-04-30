@@ -133,6 +133,13 @@ type RatifyResponse struct {
 	ProjectName    string `json:"project_name"`
 	MilestoneCount int    `json:"milestone_count"`
 	EpicCount      int    `json:"epic_count"`
+	// SeedWarnings carries any non-fatal failures from the FTUX seed
+	// steps (.gemba/agents.toml, .gemba/personas/, CLAUDE.md — gm-root.24).
+	// These are best-effort additions: a failure here does NOT roll back
+	// the project — the SPA renders a "partial seed" toast so the
+	// operator can hand-fix and proceed. Empty (or omitted) means every
+	// seed step succeeded.
+	SeedWarnings []string `json:"seed_warnings,omitempty"`
 }
 
 // ─── Session store ──────────────────────────────────────────────────

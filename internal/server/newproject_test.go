@@ -787,3 +787,200 @@ func TestOnboarderProbe_Unavailable(t *testing.T) {
 		t.Errorf("expected reason to carry diagnostic, got %q", resp.Reason)
 	}
 }
+
+// ─── gm-root.24: FTUX seed (agents.toml + personas + CLAUDE.md) ─────
+
+// TestRatify_FTUXSeed_VirginRatify asserts a fresh ratify lands the
+// three FTUX seed files: .gemba/agents.toml, .gemba/personas/<3>.toml,
+// CLAUDE.md at the project root.
+func TestRatify_FTUXSeed_VirginRatify(t *testing.T) {
+	tmp := t.TempDir()
+	stub := newStubRunner()
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	})
+
+	resp, err := rfr.Ratify(context.Background(), sampleState())
+	if err != nil {
+		t.Fatalf("Ratify: %v", err)
+	}
+	if len(resp.SeedWarnings) != 0 {
+		t.Errorf("expected zero seed warnings on virgin ratify; got %v", resp.SeedWarnings)
+	}
+
+	root := resp.ProjectPath
+
+	// .gemba/agents.toml — must exist + carry the README's claude shape.
+	agentsBody, err := os.ReadFile(filepath.Join(root, ".gemba", "agents.toml"))
+	if err != nil {
+		t.Fatalf("read agents.toml: %v", err)
+	}
+	if !bytes.Contains(agentsBody, []byte(`name           = "claude"`)) {
+		t.Errorf("agents.toml missing claude entry; body=%q", agentsBody)
+	}
+	if !bytes.Contains(agentsBody, []byte(`intra_parallel = true`)) {
+		t.Errorf("agents.toml missing intra_parallel=true; body=%q", agentsBody)
+	}
+	if !bytes.Contains(agentsBody, []byte(`max_parallel   = 4`)) {
+		t.Errorf("agents.toml missing max_parallel=4; body=%q", agentsBody)
+	}
+
+	// .gemba/personas/ — must contain all three bundled TOMLs.
+	for _, name := range []string{
+		"deployment-engineer.toml",
+		"documentarian.toml",
+		"project-manager.toml",
+	} {
+		p := filepath.Join(root, ".gemba", "personas", name)
+		info, err := os.Stat(p)
+		if err != nil {
+			t.Errorf("persona %s missing: %v", name, err)
+			continue
+		}
+		if info.Size() < 100 {
+			t.Errorf("persona %s suspiciously small (%d bytes)", name, info.Size())
+		}
+	}
+
+	// CLAUDE.md — must exist at the project root + interpolate name.
+	claudeBody, err := os.ReadFile(filepath.Join(root, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read CLAUDE.md: %v", err)
+	}
+	if !bytes.Contains(claudeBody, []byte("# demo")) {
+		t.Errorf("CLAUDE.md missing project-name header; body=%q", claudeBody)
+	}
+	if !bytes.Contains(claudeBody, []byte("## Conventions")) {
+		t.Errorf("CLAUDE.md missing Conventions section; body=%q", claudeBody)
+	}
+}
+
+// TestRatify_FTUXSeed_IdempotentSkip asserts the seed steps do not
+// clobber pre-existing files. Each seed sub-step is exercised with a
+// pre-seeded directory (via direct seedFTUXFiles invocation, not a full
+// ratify, since the existing transaction rejects pre-existing project
+// dirs at step 2).
+func TestRatify_FTUXSeed_IdempotentSkip(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "demo")
+
+	// Seed pre-existing operator-curated content.
+	if err := os.MkdirAll(filepath.Join(target, ".gemba", "personas"), 0o755); err != nil {
+		t.Fatalf("seed dir: %v", err)
+	}
+	preAgents := []byte(`# operator-managed agents.toml — DO NOT TOUCH`)
+	if err := os.WriteFile(filepath.Join(target, ".gemba", "agents.toml"), preAgents, 0o644); err != nil {
+		t.Fatalf("seed agents: %v", err)
+	}
+	preClaude := []byte(`# operator-managed CLAUDE.md — DO NOT TOUCH`)
+	if err := os.WriteFile(filepath.Join(target, "CLAUDE.md"), preClaude, 0o644); err != nil {
+		t.Fatalf("seed claude: %v", err)
+	}
+	prePersona := []byte(`id = "operator-curated"`)
+	if err := os.WriteFile(
+		filepath.Join(target, ".gemba", "personas", "operator-curated.toml"),
+		prePersona, 0o644); err != nil {
+		t.Fatalf("seed persona: %v", err)
+	}
+
+	// Invoke the seed step directly. It should skip every sub-step.
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             newStubRunner().run,
+	}).(*ratifier)
+	warnings := rfr.seedFTUXFiles(target, "demo")
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings on pre-seeded project; got %v", warnings)
+	}
+
+	// Pre-existing files must be byte-identical.
+	if got, _ := os.ReadFile(filepath.Join(target, ".gemba", "agents.toml")); !bytes.Equal(got, preAgents) {
+		t.Errorf("agents.toml mutated; got %q want %q", got, preAgents)
+	}
+	if got, _ := os.ReadFile(filepath.Join(target, "CLAUDE.md")); !bytes.Equal(got, preClaude) {
+		t.Errorf("CLAUDE.md mutated; got %q want %q", got, preClaude)
+	}
+	// The non-empty personas dir must be untouched: only the operator's
+	// file should remain — the bundled three must NOT have been added.
+	entries, err := os.ReadDir(filepath.Join(target, ".gemba", "personas"))
+	if err != nil {
+		t.Fatalf("read personas dir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "operator-curated.toml" {
+		names := make([]string, 0, len(entries))
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("personas dir mutated; entries=%v", names)
+	}
+}
+
+// TestRatify_FTUXSeed_EmptyPersonasDir asserts that a personas/
+// directory which exists but is empty IS populated (the "empty"
+// branch of the empty-or-absent check).
+func TestRatify_FTUXSeed_EmptyPersonasDir(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "demo")
+	if err := os.MkdirAll(filepath.Join(target, ".gemba", "personas"), 0o755); err != nil {
+		t.Fatalf("seed dir: %v", err)
+	}
+
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             newStubRunner().run,
+	}).(*ratifier)
+	if w := rfr.seedPersonas(target); w != "" {
+		t.Errorf("expected no warning, got %q", w)
+	}
+
+	for _, name := range []string{
+		"deployment-engineer.toml",
+		"documentarian.toml",
+		"project-manager.toml",
+	} {
+		if _, err := os.Stat(filepath.Join(target, ".gemba", "personas", name)); err != nil {
+			t.Errorf("persona %s missing after empty-dir seed: %v", name, err)
+		}
+	}
+}
+
+// TestRatify_FTUXSeed_StagedAndCommitted asserts the seed files land
+// before step 10's `git add -A` so they are part of the initial
+// commit rather than left as untracked working-tree files.
+func TestRatify_FTUXSeed_StagedAndCommitted(t *testing.T) {
+	tmp := t.TempDir()
+	stub := newStubRunner()
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: tmp,
+		Runner:             stub.run,
+	})
+	if _, err := rfr.Ratify(context.Background(), sampleState()); err != nil {
+		t.Fatalf("Ratify: %v", err)
+	}
+
+	// Find the index of the bd-init call (step 5) and the git add -A
+	// call (step 10) in the runner log. agents.toml / personas /
+	// CLAUDE.md are written between them. We assert the writes happened
+	// AFTER bd-init (so beads is initialised first) and the git-add was
+	// the last filesystem-touching call before commit.
+	addIdx, commitIdx := -1, -1
+	for i, c := range stub.calls {
+		if c.Bin != "git" {
+			continue
+		}
+		joined := strings.Join(c.Args, " ")
+		if strings.Contains(joined, "add -A") {
+			addIdx = i
+		}
+		if strings.Contains(joined, "commit") && strings.Contains(joined, "feat: initial project bootstrap") {
+			commitIdx = i
+		}
+	}
+	if addIdx < 0 || commitIdx < 0 {
+		t.Fatalf("missing git add / commit; calls=%+v", stub.calls)
+	}
+	if addIdx >= commitIdx {
+		t.Errorf("git add must precede commit; addIdx=%d commitIdx=%d", addIdx, commitIdx)
+	}
+}
