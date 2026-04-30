@@ -30,6 +30,9 @@ import { runAcceptance } from '../../shared/spec';
 import { configurePool } from '../../shared/pool-config';
 import { renderGastownPoolToml } from './pool-template';
 import { cleanupGastown, type GastownHandle } from './cleanup';
+import { makeAgentRunnerFactory } from '../../shared/runner/factory';
+import { injectEscalation } from '../../shared/helpers/escalation';
+import type { EscalationInjector } from '../../shared/contracts';
 
 const RUN_GASTOWN = process.env.GEMBA_ACCEPTANCE_RUN_GASTOWN === '1';
 
@@ -85,11 +88,35 @@ test.describe('temperature-spa @gastown', () => {
         contentType: 'text/plain',
       });
 
+      const agentFactory = makeAgentRunnerFactory({
+        baseURL: project.baseURL,
+        projectDir: project.projectDir,
+      });
+      const escalationInjector: EscalationInjector = {
+        async inject(spec) {
+          const res = await injectEscalation(project.baseURL, {
+            target: spec.beadID,
+            kind: spec.kind,
+            urgency: spec.urgency,
+            summary: `Synthetic escalation for ${spec.beadID} (acceptance test)`,
+          });
+          if (!res.ok) {
+            throw new Error(
+              `injectEscalation failed (${res.err.kind}): see gm-root.27.22 backend follow-up`,
+            );
+          }
+          return { escalationID: res.value.id };
+        },
+      };
+
       await runAcceptance({
         variant: 'gastown',
         page,
         baseURL: project.baseURL,
         projectDir: project.projectDir,
+        rigName,
+        agentFactory,
+        escalationInjector,
       });
     } finally {
       await cleanupGastown(handle);
