@@ -27,7 +27,7 @@ import { join } from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 import { bootstrapProject } from '../../shared/helpers/bootstrap';
 import { runAcceptance } from '../../shared/spec';
-import { configurePool } from '../../shared/configurePool';
+import { configurePool } from '../../shared/pool-config';
 import { renderGastownPoolToml } from './pool-template';
 import { cleanupGastown, type GastownHandle } from './cleanup';
 
@@ -66,6 +66,7 @@ test.describe('temperature-spa @gastown', () => {
       await createPolecatViaModal(page, polecatName, rigName);
 
       await configurePool(page, {
+        variant: 'gastown',
         scope: rigName,
         persona: 'acceptance-engineer',
         size: 1,
