@@ -139,6 +139,26 @@ type ServeConfig struct {
 	// origins. Methods + headers are derived from the Gemba HTTP
 	// surface (GET / POST / PATCH / DELETE; X-GEMBA-Confirm).
 	CORSAllowedOrigins []string
+
+	// PoolConfigPath points at a TOML file declaring the
+	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
+	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —
+	// the Phase 0 zero-delta default; no daemons constructed.
+	// Resolution order: explicit --pool-config flag > probe
+	// .gemba/pool.toml in cwd > "" (no pools).
+	//
+	// Pool sizing CROSS-REFERENCES MaxParallel (the orchestration
+	// manifest's per-host pane cap). The clamp computes
+	//
+	//	effective_size = min(declared_size, MaxParallel - reserved_for_manual)
+	//
+	// reserved_for_manual defaults to 1 — at least one slot is held
+	// back from the pool so a human's manual drag is never starved
+	// by a saturated pool. When the clamp activates, gemba logs a
+	// WARN naming declared/cap/effective sizes and the SPA's
+	// /api/pools endpoint surfaces both numbers. See
+	// docs/deployment/pool-sizing.md for the full operator guide.
+	PoolConfigPath string
 }
 
 // NormalizeListen splits c.Listen if it is in host:port form (e.g.

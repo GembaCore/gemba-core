@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"crypto/tls"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -138,6 +139,15 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 	cmd.Flags().BoolVar(&quiet, "quiet", false,
 		"suppress the startup banner")
 
+	// gm-s47n.12: pool config path. Empty defaults to
+	// .gemba/pool.toml in cwd; missing file = no pools (Phase 0
+	// zero-delta). When non-empty AND the file exists, the
+	// auto-dispatch daemon is constructed per (rig, persona) entry
+	// with size > 0 in the file.
+	cmd.Flags().StringVar(&cfg.PoolConfigPath, "pool-config", "",
+		"path to pool.toml declaring [pool.<rig>.<persona>] blocks "+
+			"(default: probe .gemba/pool.toml; missing → no pools)")
+
 	return cmd
 }
 
@@ -235,8 +245,18 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		return err
 	}
 
+	// gm-s47n.12: load pool config + construct one auto-dispatch
+	// daemon per (rig, persona) with size > 0. Phase 0 zero-delta:
+	// when no pool config exists OR every entry has size = 0, NO
+	// daemons are constructed and behavior is identical to today's
+	// main. The clamp + WARN emission lives in this function.
+	resolvedPools, poolCfg, err := loadAndResolvePools(cfg)
+	if err != nil {
+		return err
+	}
+
 	if !quiet {
-		printStartupBanner(bannerOut, b, cfg, reg)
+		printStartupBanner(bannerOut, b, cfg, reg, resolvedPools)
 	}
 
 	// gm-root.17.4: cold-start redirect — if no project exists under
@@ -262,6 +282,23 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 				"non-API routes will return a 503 build hint")
 	}
 	handler := server.NewRouter(cfg, spa, host)
+	// gm-s47n.12: surface the resolved pool config to the router so
+	// /api/pools can return declared vs effective sizes.
+	handler.AttachPools(resolvedPools)
+	// Construct + run the daemons. Phase 0 zero-delta path: when
+	// resolvedPools is empty, this loop is a no-op and no goroutines
+	// are spawned.
+	if len(resolvedPools) > 0 {
+		startPoolDaemons(ctx, handler, host, resolvedPools, poolCfg)
+	}
+	// gm-s47n.12 §10.3: persist session.recycled events to the
+	// session_recycles dolt table. Only fires when Mode=dolt-sql
+	// (the bd CLI path doesn't expose a *sql.DB); other modes
+	// silently skip — the events still flow through the SSE hub
+	// for the SPA, just without persistence.
+	if op := host.OrchestrationPlane(); op != nil && reg.DoltDB != nil {
+		_ = server.StartRecycleWriter(ctx, op, reg.DoltDB)
+	}
 	// Start the adaptor HealthBus ticker so /api/adaptors and
 	// /api/adaptors/stream read from a shared cache instead of
 	// probing once per client request (gm-root.7).
@@ -513,6 +550,11 @@ type workPlaneReg struct {
 	SourceKind string
 	// Source is the dir path or redacted Dolt URL.
 	Source string
+	// DoltDB is the live *sql.DB when Mode="dolt-sql"; nil
+	// otherwise. The session_recycles writer reads this for the
+	// audit-table INSERT (gm-s47n.12, spec §10.3). Optional — when
+	// nil, the writer becomes a no-op.
+	DoltDB *sql.DB
 }
 
 func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*workPlaneReg, error) {
@@ -703,6 +745,7 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 		Mode:       "dolt-sql",
 		SourceKind: "url",
 		Source:     redacted,
+		DoltDB:     adaptor.DB(),
 	}, nil
 }
 
@@ -815,7 +858,7 @@ func registerNativeOrchestration(ctx context.Context, host *api.Host, cfg config
 //
 // The banner never carries credentials: the Dolt URL is redacted upstream by
 // redactDoltURL before it lands in workPlaneReg.Source.
-func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *workPlaneReg) {
+func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *workPlaneReg, pools []config.ResolvedPool) {
 	version := b.Version
 	if version == "" {
 		version = "dev"
@@ -839,6 +882,23 @@ func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *w
 		len(reg.Manifest.EdgeExtensions),
 		yesNo(reg.Manifest.SprintNative),
 		yesNo(reg.Manifest.TokenBudgetEnforced))
+	// gm-s47n.12 §3.3: surface effective pool size next to the
+	// (implicit) MaxParallel cap so the clamp is visible without
+	// grepping the slog stream. Phase 0 zero-delta: when no pools
+	// are resolved the line is omitted entirely so existing banner
+	// regression tests stay green.
+	if len(pools) > 0 {
+		for _, p := range pools {
+			clamp := ""
+			if p.ClampActivated {
+				clamp = fmt.Sprintf(" (clamped from %d by MaxParallel)", p.SizeDeclared)
+			}
+			fmt.Fprintf(w, "▶ pool[%s/%s]: size=%d%s floor=%.2f recycle_after_beads=%d idle_ceiling_min=%d\n",
+				p.Rig, p.Persona,
+				p.SizeEffective, clamp,
+				p.Floor, p.RecycleAfterBeads, p.IdleCeilingMinutes)
+		}
+	}
 }
 
 func yesNo(b bool) string {

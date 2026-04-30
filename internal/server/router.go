@@ -164,6 +164,13 @@ type Router struct {
 	// cmd/gemba serve attaches a real client via AttachWorkflowClient.
 	workflowClient *workflow.Client
 
+	// pools backs GET /api/pools (gm-s47n.12, spec §10.1). Holds the
+	// resolved pool config so the endpoint can surface declared vs
+	// effective sizes (the MaxParallel clamp is observable
+	// post-startup via this field). Nil / empty → endpoint returns
+	// {"pools": []}.
+	pools *poolsRegistry
+
 	mux http.Handler
 }
 
@@ -385,6 +392,14 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// affinity matrix, parallel-safe batches.
 		api.Get("/planner/coach", r.plannerCoach)
 
+		// gm-s47n.12: pool state read endpoint (spec §10.1). Returns
+		// one entry per (rig, persona) pool with declared vs
+		// effective sizes (so the MaxParallel clamp is observable
+		// post-startup) and a member roster projected from the
+		// OrchestrationPlane's live session inventory. Read-only;
+		// no nonce.
+		api.Get("/pools", r.listPools)
+
 		// gm-twp2: persona consults + the skill registry. All routes
 		// here return 503 until AttachPersonaDispatcher binds the
 		// dispatcher and skill registry. Write paths (POST consult,
@@ -491,6 +506,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Patch("/v1/workitems/{id}", r.patchWorkItem)
 		api.Get("/v1/workspaces", r.listWorkspaces)
+		api.Get("/v1/pools", r.listPools)
 
 		// gm-root.18: project picker — enumerate projects on disk +
 		// switch the active workspace. Both endpoints are read-light and
