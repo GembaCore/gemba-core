@@ -19,7 +19,14 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
+
+// gm-root.27.29 found: __dirname is not defined under "type": "module".
+// Compute it from import.meta.url so importBeadsCLI can resolve relative
+// jsonl paths from the shared/ directory.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 import type {
   AgentRunnerFactory,
@@ -42,6 +49,11 @@ export interface RunAcceptanceOpts {
   baseURL: string;
   /** Absolute path to the bootstrapped project directory. */
   projectDir: string;
+  /**
+   * bd issue prefix for the project (e.g. 'e2e0'). Used to render the
+   * target JSONL pack's {{PREFIX}} placeholders. Defaults to 'tspa'.
+   */
+  beadPrefix?: string;
   /** Optional run identifier; defaults to a fresh ulid-shape per call. */
   runID?: string;
   /** Wave 1 agent factory (`.1`). Constructed lazily by the spec. */
@@ -139,7 +151,8 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
       // bootstrap so the daemon picks it up on first launch. If a future
       // bead needs hot-reload, expose a restart hook on ProjectHandle.
     },
-    importBeads: (jsonlPath) => importBeadsCLI(opts.projectDir, jsonlPath),
+    importBeads: (jsonlPath) =>
+      importBeadsCLI(opts.projectDir, jsonlPath, opts.beadPrefix ?? 'tspa'),
     escalationInjector: opts.escalationInjector ?? defaultEscalationInjector,
     fileBugBead: opts.bugFiler?.fileBugBead.bind(opts.bugFiler) ?? defaultBugFiler,
   };
@@ -297,18 +310,35 @@ async function collectOpenDescendants(baseURL: string, parentID: string): Promis
 
 // ─── bd import shim ───────────────────────────────────────────────
 
-async function importBeadsCLI(projectDir: string, jsonlPath: string): Promise<void> {
+async function importBeadsCLI(
+  projectDir: string,
+  jsonlPath: string,
+  beadPrefix: string,
+): Promise<void> {
   // Resolve the jsonl path absolutely — callers pass it relative to
-  // the shared/ dir.
-  const abs = path.isAbsolute(jsonlPath)
+  // the shared/ dir. If the rendered .jsonl doesn't exist but a
+  // .jsonl.tmpl is adjacent (gm-root.27.4 ships templates with
+  // {{PREFIX}} placeholders), render to a tempdir and import that.
+  const requested = path.isAbsolute(jsonlPath)
     ? jsonlPath
     : path.resolve(__dirname, jsonlPath);
+  let abs = requested;
   if (!existsSync(abs)) {
-    // The file may legitimately not exist yet — `gm-root.27.4`
-    // populates these placeholders. Fail soft so the M1 wait path
-    // surfaces the real failure (timeout) rather than a bogus
-    // import error.
-    throw new Error(`bead pack not found: ${abs} (gm-root.27.4 must land first)`);
+    const tmpl = `${requested}.tmpl`;
+    if (existsSync(tmpl)) {
+      const { renderPack } = await import('./target-jsonl/loader');
+      const kind = path.basename(requested, '.jsonl') as
+        | 'm1'
+        | 'm2'
+        | 'm3'
+        | 'decisions';
+      const rendered = renderPack(kind, beadPrefix, projectDir);
+      abs = rendered.path;
+    } else {
+      throw new Error(
+        `bead pack not found: ${abs} (no .jsonl or .jsonl.tmpl)`,
+      );
+    }
   }
   return new Promise((resolve, reject) => {
     const proc = spawn('bd', ['import', abs], { cwd: projectDir, stdio: 'inherit' });

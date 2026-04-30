@@ -120,6 +120,7 @@ test.describe('temperature-spa @gastown', () => {
         page,
         baseURL: project.baseURL,
         projectDir: project.projectDir,
+        beadPrefix: project.beadPrefix,
         rigName,
         agentFactory,
         escalationInjector,

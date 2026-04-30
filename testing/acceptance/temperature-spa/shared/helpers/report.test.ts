@@ -18,6 +18,7 @@ function fixtureHandle(): ProjectHandle {
     baseURL: 'http://127.0.0.1:51001',
     projectDir: '/tmp/gemba-acceptance-fixture',
     projectName: 'tspa-test',
+    beadPrefix: 'tspa',
     cleanup: async () => {},
     server: {} as ProjectHandle['server'],
   };

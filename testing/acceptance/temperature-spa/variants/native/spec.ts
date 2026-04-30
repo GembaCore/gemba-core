@@ -76,6 +76,7 @@ test.describe('temperature-spa @native', () => {
         page,
         baseURL: project.baseURL,
         projectDir: project.projectDir,
+        beadPrefix: project.beadPrefix,
         agentFactory,
         escalationInjector,
       });

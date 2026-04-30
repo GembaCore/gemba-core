@@ -39,6 +39,12 @@ export type ProjectHandle = {
   /** Project name from /api/v1/newproject/create. */
   projectName: string;
   /**
+   * The bd-issue prefix initialized in this workspace (e.g. 'e2e0').
+   * Used by the JSONL pack loader to substitute {{PREFIX}} placeholders
+   * before `bd import` (gm-root.27.4 / .29).
+   */
+  beadPrefix: string;
+  /**
    * Tear everything down: kill gemba, rm tempdir, free ports.
    * Idempotent; safe to call from t.Cleanup. Survives partial-failure
    * states (e.g., gemba died mid-run).
@@ -112,44 +118,33 @@ export async function bootstrapProject(
   const workerIndex = opts.workerIndex ?? process.pid;
 
   // Spin gemba serve against an isolated bd workspace (embedded Dolt).
+  // spinRealServer runs `bd init` in the tempdir before launching
+  // gemba, so the resulting workspace is already a valid project — no
+  // separate POST /api/v1/newproject/create call is needed (and would
+  // collide with the prior bd init).
+  //
+  // Caveat: spinRealServer's bd init does NOT auto-seed personas /
+  // agents.toml / CLAUDE.md the way `gemba newproject` does
+  // (gm-root.24). Pool config + persona-routed dispatch may need to
+  // seed those files separately. Tracked under the acceptance-suite
+  // first-run cleanup arc.
   const server = await spinRealServer({
     workerIndex,
     mode: workspaceMode,
     auth: 'open',
     serveArgs: opts.serveArgs,
   });
-
-  // Create the project. POST /api/v1/newproject/create runs the same
-  // atomic ratify the conversational flow uses, just with an empty
-  // milestone tree (we'll populate via JSONL import from the M1/M2/M3
-  // pack — see gm-root.27.4).
-  const createUrl = `${server.baseURL}/api/v1/newproject/create`;
-  const res = await fetch(createUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      project_name: projectName,
-      description,
-    }),
-  });
-  if (!res.ok) {
-    // Clean up before surfacing the failure so we don't leak resources
-    // when the API rejects the create.
-    await server.dispose();
-    const text = await res.text().catch(() => '<unreadable>');
-    throw new Error(
-      `bootstrapProject: POST /api/v1/newproject/create failed (${res.status}): ${text}`
-    );
-  }
-  // Body shape matches newProjectCreate's response — at minimum the
-  // project path is returned. We don't depend on the exact shape; we
-  // rely on server.beadsDir which is the workspace root.
-  await res.json().catch(() => undefined);
+  // projectName is preserved on the handle for reporting even though
+  // we didn't formally create a "project" via the API — the bd
+  // workspace IS the project from the acceptance test's perspective.
+  void runId;
 
   return {
     baseURL: server.baseURL,
     projectDir: server.beadsDir,
     projectName,
+    // spinRealServer initializes bd with prefix `e2e${workerIndex}`.
+    beadPrefix: `e2e${workerIndex}`,
     cleanup: async () => {
       // dispose() in realServer kills the gemba child, removes the
       // worktrees parent, and rms the tempdir. Idempotent.
