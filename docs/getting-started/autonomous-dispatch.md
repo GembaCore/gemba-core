@@ -316,6 +316,53 @@ command's bash post-step do the emit. Add this to the bottom of
 your `.claude/commands/done.md` (which is operator-local —
 `.claude/` is gitignored — so paste this into your own copy):
 
+## Mock mode (dry-run)
+
+`gemba serve --orchestration=mock` runs the entire dispatch loop
+**without spawning a real claude session**. The Go mock plane
+(`internal/adapter/mock/`, gm-root.28) implements the full
+`OrchestrationPlaneAdaptor` contract — minted Session lifecycle,
+`SessionReady` recycling, conflict-graph arbitration — but per-bead
+work is performed by an in-process template library that:
+
+- writes a fixed set of files from a content registry
+- shells to `npm install`, `npm run build`, etc. as needed
+- closes the bead via `bd close`
+- emits `gemba-state bead-done` so the bridge transitions to
+  `SessionReady`
+
+When to reach for it:
+
+- **Workflow validation.** Verify your pool config + persona routing +
+  bead frontmatter (`template:`/`testid:`/`files:`) before running
+  with real LLM calls.
+- **Dispatch-loop debugging.** Mock mode is fast and deterministic; if
+  the daemon misbehaves under mock, the issue is in the orchestration
+  layer, not in the agent runtime.
+- **CI-style integration tests.** The temperature-spa acceptance test
+  (`gm-root.27`) uses mock mode as its default backend.
+
+**Caveats:**
+
+- Mock-mode does NOT validate that an agent could actually perform
+  the bead's DoD. It only writes from a pre-shipped template.
+- Beads not matching any template (by frontmatter or title-keyword
+  fallback) cause the session to enter `SessionFailed` — there's no
+  smart fallback. Add new templates in `internal/adapter/mock/
+  templates.go` to extend coverage.
+- Operators running mock-mode on a real project should treat any
+  closed bead as "the dispatch loop is healthy," not as "the work
+  is done."
+
+Setup is the same as native — write `pool.toml`, then:
+
+```bash
+./bin/gemba serve --beads-dir .beads --orchestration=mock --pool-config ./pool.toml
+```
+
+The mock plane preseeds one idle session per persona discovered in
+`<project>/.gemba/personas/` so the daemon dispatches immediately.
+
 ```markdown
 ## Post-success: emit bead-done for pool retention
 
