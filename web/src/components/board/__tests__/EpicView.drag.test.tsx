@@ -124,7 +124,14 @@ describe('resolveRestage', () => {
 });
 
 describe('shouldAutoStartSession', () => {
-  it('fires for an epic transitioning to started', () => {
+  // Helper: clone the base epic shape but swap kind so we exercise the
+  // gm-root.25 expanded predicate without rebuilding the WorkItem from
+  // scratch every time.
+  function withKind(state: WorkItem['state_category'], kind: WorkItem['kind']): WorkItem {
+    return { ...epic('demo/pc-a', state), kind };
+  }
+
+  it('fires for an epic transitioning to started (regression — pre gm-root.25)', () => {
     expect(shouldAutoStartSession(epic('demo/pc-a', 'started'))).toBe(true);
   });
 
@@ -133,9 +140,29 @@ describe('shouldAutoStartSession', () => {
     expect(shouldAutoStartSession(epic('demo/pc-a', 'completed'))).toBe(false);
   });
 
-  it('does not fire for non-epic items dropped into started', () => {
-    const task: WorkItem = { ...epic('demo/pc-t', 'started'), kind: 'task' };
-    expect(shouldAutoStartSession(task)).toBe(false);
+  it('fires for a task dragged to started (gm-root.25)', () => {
+    expect(shouldAutoStartSession(withKind('started', 'task'))).toBe(true);
+  });
+
+  it('fires for a bug dragged to started (gm-root.25)', () => {
+    expect(shouldAutoStartSession(withKind('started', 'bug'))).toBe(true);
+  });
+
+  it('fires for a feature dragged to started (gm-root.25)', () => {
+    expect(shouldAutoStartSession(withKind('started', 'feature'))).toBe(true);
+  });
+
+  it('does not fire for a decision dragged to started (documentation-shaped)', () => {
+    expect(shouldAutoStartSession(withKind('started', 'decision'))).toBe(false);
+  });
+
+  it('does not fire for a chore dragged to started (too small for a session)', () => {
+    expect(shouldAutoStartSession(withKind('started', 'chore'))).toBe(false);
+  });
+
+  it('does not fire for an autostart kind that lands somewhere other than started', () => {
+    expect(shouldAutoStartSession(withKind('unstarted', 'task'))).toBe(false);
+    expect(shouldAutoStartSession(withKind('staged', 'bug'))).toBe(false);
   });
 });
 

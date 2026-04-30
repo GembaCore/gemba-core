@@ -21,6 +21,15 @@ Phase 0 (the default): no `pool.toml`, no daemons, every dispatch
 spawns fresh. Behavior identical to `gemba serve` with no extra
 config. **Pools are opt-in.**
 
+Manual drag also auto-spawns: dropping an `epic`, `task`, `bug`, or
+`feature` bead into the **In Progress** column on the Board fires a
+session for that bead. `decision` and `chore` kinds change state but
+do not spawn (decisions are documentation-shaped; chores are too
+small to warrant a session). The kind set is enforced in
+`web/src/components/board/dragToRestage.ts` (`AUTOSTART_KINDS`) and
+deliberately overlaps the autodispatch routing defaults so the daemon
+and a human drag agree on what counts as "do this now."
+
 The **scope axis** above persona is named differently per adaptor:
 
 | Adaptor | Scope axis | Editor label |
