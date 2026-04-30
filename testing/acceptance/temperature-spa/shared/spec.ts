@@ -33,7 +33,6 @@ import type {
   BugFiler,
   EscalationInjector,
 } from './contracts';
-import { configurePool } from './pool-config';
 import { runM1Step } from './steps/m1';
 import { runM2Step } from './steps/m2';
 import { runM3Step } from './steps/m3';
@@ -164,29 +163,19 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
     triage: { ok: false, durationMs: 0 },
   };
 
-  // Configure the pool via the SPA. Note: configurePool requires the
-  // editor's selectors per gm-s47n.18 to be present and a restart to
-  // pick up the saved pool.toml. The variant pre-stages pool.toml in
-  // projectDir today (cleanup tracked under gm-root.27.27); the UI
-  // call here is best-effort and serves to exercise the editor.
-  try {
-    await ctx.goto('/settings/pools');
-    const scope = opts.variant === 'native' ? 'local' : (opts.rigName ?? `acceptance-${runID}`);
-    await configurePool(opts.page, {
-      variant: opts.variant,
-      scope,
-      persona: 'acceptance-engineer',
-      size: 1,
-      floor: 0.5,
-    });
-  } catch (err) {
-    // Don't abort — the pre-staged pool.toml keeps the daemon
-    // dispatching even if the UI step fails (e.g., editor not yet
-    // mounted). The first end-to-end run (gm-root.27.29) will
-    // verify both paths.
-    // eslint-disable-next-line no-console
-    console.warn(`[acceptance] configurePool failed (continuing): ${(err as Error).message}`);
-  }
+  // Pool config is variant-owned (gm-root.27.27 reconciliation):
+  //
+  //  - Native: pool.toml is delivered to gemba serve as --pool-config
+  //    via serveArgs at boot (gm-root.27.21). The variant wrapper
+  //    needs no UI step.
+  //
+  //  - Gastown: rig name is dynamic per-run, so pool.toml CAN'T be
+  //    pre-staged. The variant wrapper drives the UI to create the
+  //    rig + polecat + save pool.toml BEFORE calling runAcceptance.
+  //
+  // Either way, by the time runAcceptance is called, the daemon is
+  // configured. spec.ts no longer drives configurePool itself — the
+  // variants own it.
 
   // Step through the milestones.
   milestones.M1 = await timed(() => runM1Step(ctx));
