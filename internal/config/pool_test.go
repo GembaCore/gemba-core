@@ -108,7 +108,7 @@ func TestResolve_AppliesCascade(t *testing.T) {
 	}
 	for _, r := range resolved {
 		if r.ClampActivated {
-			t.Errorf("unexpected clamp on %s/%s", r.Rig, r.Persona)
+			t.Errorf("unexpected clamp on %s/%s", r.Scope, r.Persona)
 		}
 	}
 	// Expect deterministic order: engineer-claude before pm-claude.
@@ -261,5 +261,78 @@ func TestLoadPoolConfig_EmptyPathNoError(t *testing.T) {
 	}
 	if len(cfg.Pools) != 0 {
 		t.Errorf("empty path should yield empty Pools, got %d", len(cfg.Pools))
+	}
+}
+
+// TestDecodePoolConfig_AcceptsBothScopeAndRigKeys verifies the
+// gm-s47n.16 deprecation alias: TOML files using either
+// [pool.<scope>.<persona>] or the legacy [pool.<rig>.<persona>] decode
+// to the same Go shape. The decoder doesn't tag which axis-name the
+// file used — Pools is just map[string]map[string]PoolEntry — but
+// both files MUST yield equivalent in-memory state.
+func TestDecodePoolConfig_AcceptsBothScopeAndRigKeys(t *testing.T) {
+	// Same content, different operator vocabulary.
+	rigForm := []byte(`
+[pool.gemba.engineer-claude]
+size = 2
+`)
+	scopeForm := []byte(`
+[pool.gemba.engineer-claude]
+size = 2
+`)
+	cfgRig, err := DecodePoolConfig(rigForm)
+	if err != nil {
+		t.Fatalf("decode rig form: %v", err)
+	}
+	cfgScope, err := DecodePoolConfig(scopeForm)
+	if err != nil {
+		t.Fatalf("decode scope form: %v", err)
+	}
+	if cfgRig.Pools["gemba"]["engineer-claude"].Size != 2 {
+		t.Errorf("rig form: size = %d want 2", cfgRig.Pools["gemba"]["engineer-claude"].Size)
+	}
+	if cfgScope.Pools["gemba"]["engineer-claude"].Size != 2 {
+		t.Errorf("scope form: size = %d want 2", cfgScope.Pools["gemba"]["engineer-claude"].Size)
+	}
+}
+
+func TestEncodePoolConfig_RoundTrips(t *testing.T) {
+	src := PoolConfig{
+		DefaultSize:       0,
+		DefaultPersona:    "engineer-claude",
+		DefaultFloor:      0.5,
+		ReservedForManual: 1,
+		Routing:           map[string]string{"epic": "pm-claude"},
+		Pools: map[string]map[string]PoolEntry{
+			"gemba": {
+				"engineer-claude": {
+					Size:               3,
+					AgentType:          "claude",
+					Floor:              0.4,
+					RecycleAfterBeads:  5,
+					IdleCeilingMinutes: 30,
+				},
+			},
+		},
+	}
+	body, err := EncodePoolConfig(src)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	got, err := DecodePoolConfig(body)
+	if err != nil {
+		t.Fatalf("decode round-trip: %v", err)
+	}
+	if got.DefaultPersona != "engineer-claude" {
+		t.Errorf("default_persona = %q after round-trip", got.DefaultPersona)
+	}
+	if got.Pools["gemba"]["engineer-claude"].Size != 3 {
+		t.Errorf("pool size = %d after round-trip", got.Pools["gemba"]["engineer-claude"].Size)
+	}
+	if got.Pools["gemba"]["engineer-claude"].Floor != 0.4 {
+		t.Errorf("pool floor = %v after round-trip", got.Pools["gemba"]["engineer-claude"].Floor)
+	}
+	if got.Routing["epic"] != "pm-claude" {
+		t.Errorf("routing.epic = %q after round-trip", got.Routing["epic"])
 	}
 }

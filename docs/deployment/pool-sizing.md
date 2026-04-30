@@ -116,10 +116,14 @@ size = 1
 
 Cascade, lowest precedence to highest:
 
-1. **Rig-level default**: `[pool] default_*` keys
-2. **Per-pool override**: `[pool.<rig>.<persona>]` keys
+1. **Scope-level default**: `[pool] default_*` keys
+2. **Per-pool override**: `[pool.<scope>.<persona>]` keys
+   (legacy `[pool.<rig>.<persona>]` form still accepted with a
+   deprecation `WARN` for one release; see gm-s47n.16 §2 — `scope`
+   is the data-model name, `rig` was its original gt-specific
+   spelling. New writes should use `scope`.)
 
-A daemon is constructed per `(rig, persona)` with `effective_size > 0`.
+A daemon is constructed per `(scope, persona)` with `effective_size > 0`.
 Pools with `size = 0` (default) construct no daemon — the
 `engineer-codex` persona, for example, can sit unconfigured and a
 manual drag still works fine against it.

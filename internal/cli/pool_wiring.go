@@ -43,6 +43,16 @@ const DefaultDaemonTickPeriod = 10 * time.Second
 // the maximum max_parallel across all configured agents. Empty
 // registry → 0 (no clamp).
 func loadAndResolvePools(cfg config.ServeConfig) ([]config.ResolvedPool, config.PoolConfig, error) {
+	resolved, poolCfg, _, _, err := loadAndResolvePoolsWithMeta(cfg)
+	return resolved, poolCfg, err
+}
+
+// loadAndResolvePoolsWithMeta is loadAndResolvePools augmented with
+// the resolved pool.toml path + the host-wide MaxParallel. cmd/gemba
+// serve passes both into Router.AttachPoolConfig so the editor's
+// /api/pool-config endpoint knows where to read/write and what
+// clamp value to surface in its preview (gm-s47n.16).
+func loadAndResolvePoolsWithMeta(cfg config.ServeConfig) ([]config.ResolvedPool, config.PoolConfig, string, int, error) {
 	path := cfg.PoolConfigPath
 	if path == "" {
 		// Probe the conventional location.
@@ -55,7 +65,7 @@ func loadAndResolvePools(cfg config.ServeConfig) ([]config.ResolvedPool, config.
 	}
 	poolCfg, err := config.LoadPoolConfig(path)
 	if err != nil {
-		return nil, config.PoolConfig{}, err
+		return nil, config.PoolConfig{}, "", 0, err
 	}
 	maxParallel := loadMaxParallel(cfg)
 	resolved := poolCfg.Resolve(maxParallel)
@@ -71,7 +81,7 @@ func loadAndResolvePools(cfg config.ServeConfig) ([]config.ResolvedPool, config.
 			"max_parallel", maxParallel,
 			"reserved_for_manual", reserved)
 	}
-	return resolved, poolCfg, nil
+	return resolved, poolCfg, path, maxParallel, nil
 }
 
 // loadMaxParallel returns the maximum agents.toml `max_parallel` on
@@ -127,7 +137,7 @@ func startPoolDaemons(
 		daemon, err := buildDaemon(op, wp, p, poolCfg)
 		if err != nil {
 			slog.Warn("pool: daemon build failed",
-				"rig", p.Rig, "persona", p.Persona, "err", err)
+				"scope", p.Scope, "persona", p.Persona, "err", err)
 			continue
 		}
 		go runDaemon(ctx, p, daemon)
@@ -137,7 +147,7 @@ func startPoolDaemons(
 func runDaemon(ctx context.Context, p config.ResolvedPool, d *autodispatch.Daemon) {
 	period := DefaultDaemonTickPeriod
 	slog.Info("pool: daemon started",
-		"rig", p.Rig,
+		"scope", p.Scope,
 		"persona", p.Persona,
 		"agent_type", p.AgentType,
 		"size", p.SizeEffective,
@@ -145,7 +155,7 @@ func runDaemon(ctx context.Context, p config.ResolvedPool, d *autodispatch.Daemo
 		"period", period)
 	if err := d.Run(ctx, period); err != nil && ctx.Err() == nil {
 		slog.Warn("pool: daemon exited",
-			"rig", p.Rig, "persona", p.Persona, "err", err)
+			"scope", p.Scope, "persona", p.Persona, "err", err)
 	}
 }
 

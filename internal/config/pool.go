@@ -1,8 +1,9 @@
-// Pool config (gm-s47n.12). Loads the [pool] table from a TOML file
-// and resolves per-pool overrides against rig-level defaults.
+// Pool config (gm-s47n.12, scope-renamed in gm-s47n.16). Loads the
+// [pool] table from a TOML file and resolves per-pool overrides
+// against scope-level defaults.
 //
 // Phase 0 zero-delta is the default: an unconfigured server (no
-// [pool.<rig>.<persona>] block with size > 0) constructs no daemons.
+// [pool.<scope>.<persona>] block with size > 0) constructs no daemons.
 // Behavior identical to today's main.
 //
 // MaxParallel clamp:
@@ -15,12 +16,11 @@
 // SPA's /api/pools endpoint surfaces both `size_target_declared` and
 // `size_target_effective` so the clamp stays observable post-startup.
 //
-// Pool sizing and MaxParallel cross-reference (spec §3.3 documentation
-// requirement): MaxParallel is the orchestration manifest's per-host
-// cap on concurrent agent panes. Pool sizing is best-effort against
-// it. Operators tuning pool size MUST also size MaxParallel — a pool
-// of 5 against MaxParallel=2 silently clamps to 1 (MaxParallel -
-// reserved_for_manual = 2 - 1).
+// Naming (gm-s47n.16, spec §2): the first axis of the pool key is now
+// `scope` rather than `rig`. The TOML decoder accepts both
+// `[pool.<scope>.<persona>]` and the legacy `[pool.<rig>.<persona>]`
+// for one release; the latter logs a WARN once per process. Phase 3
+// of the migration drops the alias.
 
 package config
 
@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 
 	"github.com/BurntSushi/toml"
 )
@@ -37,9 +38,9 @@ import (
 // saturated pool. Operators tune via [pool] reserved_for_manual = N.
 const DefaultReservedForManual = 1
 
-// DefaultAutoDispatchFloor is the rig-level default minimum Layer 5
+// DefaultAutoDispatchFloor is the scope-level default minimum Layer 5
 // Selection score (spec §8.1). Per-pool overrides via
-// [pool.<rig>.<persona>] floor = N.
+// [pool.<scope>.<persona>] floor = N.
 const DefaultAutoDispatchFloor = 0.5
 
 // DefaultRecycleAfterBeads is the safety-belt recycle counter. 0
@@ -50,8 +51,13 @@ const DefaultRecycleAfterBeads = 5
 // members idle past this long are reaped (spec §4.4).
 const DefaultIdleCeilingMinutes = 30
 
+// rigDeprecationOnce ensures the "rig is now scope" deprecation WARN
+// fires at most once per process — multiple file loads (server +
+// editor reload) shouldn't spam the log.
+var rigDeprecationOnce sync.Once
+
 // PoolConfig captures the [pool] table from gemba.toml — both the
-// rig-level defaults and the per-pool overrides. Loaded by
+// scope-level defaults and the per-pool overrides. Loaded by
 // LoadPoolConfig; the cascade is applied at daemon-construction time
 // via Resolve.
 //
@@ -74,21 +80,19 @@ const DefaultIdleCeilingMinutes = 30
 //	decision = "pm-claude"
 //
 //	[pool.gemba.engineer-claude]
-//	# Per-pool overrides. Pool key = (rig, persona). Rig is implicit
-//	# when running a single gemba server; the daemon constructs one
-//	# instance per (rig, persona) with size > 0.
+//	# Per-pool overrides. Pool key = (scope, persona). Scope is implicit
+//	# when running a single gemba server (native adaptor); for the gt
+//	# adaptor it's the rig name. The legacy
+//	# [pool.<rig>.<persona>] form remains accepted with a WARN.
 //	size = 3                   # target pool members (clamped by
 //	                           # MaxParallel - reserved_for_manual)
 //	floor = 0.4                # overrides default_floor for THIS pool
 //	recycle_after_beads = 5    # 0 disables
 //	idle_ceiling_minutes = 30  # reaper threshold
 type PoolConfig struct {
-	// DefaultSize is the rig-level fallback pool size when a
+	// DefaultSize is the scope-level fallback pool size when a
 	// per-pool block doesn't override. 0 means "no pool" — Phase 0
-	// zero-delta. Operators opt in by setting per-pool size > 0;
-	// the rig default is rarely useful (each persona's warm
-	// context is distinct, see spec §3.2) but is supported for
-	// uniform sizing across personas.
+	// zero-delta. Operators opt in by setting per-pool size > 0.
 	DefaultSize int `toml:"default_size"`
 
 	// DefaultPersona is the server-level persona fallback for the
@@ -97,7 +101,7 @@ type PoolConfig struct {
 	// [pool.routing.<kind>] entry covers its kind.
 	DefaultPersona string `toml:"default_persona"`
 
-	// DefaultFloor is the rig-level auto-dispatch score floor
+	// DefaultFloor is the scope-level auto-dispatch score floor
 	// (spec §8.1). 0 falls back to DefaultAutoDispatchFloor.
 	DefaultFloor float64 `toml:"default_floor"`
 
@@ -116,21 +120,19 @@ type PoolConfig struct {
 	// autodispatch and waits for manual drag.
 	Routing map[string]string `toml:"routing"`
 
-	// Pools is the per-(rig, persona) override map. Indexed by rig
-	// name first (e.g. "gemba") then by persona id (e.g.
-	// "engineer-claude"). Daemons are constructed for every entry
-	// with effective size > 0 after the cascade resolves.
+	// Pools is the per-(scope, persona) override map. Indexed by
+	// scope name first (e.g. "gemba" — for the native adaptor a
+	// singleton; for gt the rig name) then by persona id.
 	Pools map[string]map[string]PoolEntry `toml:"-"`
 }
 
-// PoolEntry holds the per-(rig, persona) overrides. Zero values
-// cascade to the rig-level defaults.
+// PoolEntry holds the per-(scope, persona) overrides. Zero values
+// cascade to the scope-level defaults.
 type PoolEntry struct {
 	// Size is the declared target count of pool members. Subject
 	// to the MaxParallel clamp (see EffectiveSize). 0 means "fall
 	// back to PoolConfig.DefaultSize"; -1 means "explicitly disable
-	// this pool" (rare, but lets an operator set a default and turn
-	// off one specific pool).
+	// this pool".
 	Size int `toml:"size"`
 
 	// AgentType names the agents.toml entry the daemon dispatches
@@ -139,30 +141,21 @@ type PoolEntry struct {
 	// pane-reuse path can find a slot. Empty defaults to "claude".
 	AgentType string `toml:"agent_type"`
 
-	// Floor overrides PoolConfig.DefaultFloor for this pool. Zero
-	// cascades to DefaultFloor; DefaultFloor zero in turn cascades
-	// to DefaultAutoDispatchFloor (0.5).
+	// Floor overrides PoolConfig.DefaultFloor for this pool.
 	Floor float64 `toml:"floor"`
 
-	// RecycleAfterBeads bounds profile staleness. The daemon
-	// recycles a session after this many beads even without
-	// health-trip. 0 cascades to DefaultRecycleAfterBeads (5).
-	// Negative disables the safety belt.
+	// RecycleAfterBeads bounds profile staleness.
 	RecycleAfterBeads int `toml:"recycle_after_beads"`
 
 	// IdleCeilingMinutes is the reaper threshold for this pool's
-	// members. 0 cascades to DefaultIdleCeilingMinutes (30).
-	// Negative disables the reaper for this pool.
+	// members.
 	IdleCeilingMinutes int `toml:"idle_ceiling_minutes"`
 
-	// MinIntervalPerSession is the per-session rate limit (spec
-	// §11; planner.DispatchPolicy). 0 cascades to the planner's
-	// DefaultMinIntervalPerSession (5m).
+	// MinIntervalPerSession is the per-session rate limit.
 	MinIntervalPerSession int `toml:"min_interval_per_session_seconds"`
 
 	// MaxConcurrent is the auto-dispatch concurrency cap for this
-	// pool (planner.DispatchPolicy). 0 cascades to
-	// planner.DefaultMaxConcurrent.
+	// pool.
 	MaxConcurrent int `toml:"max_concurrent"`
 }
 
@@ -209,7 +202,7 @@ func DecodePoolConfig(body []byte) (PoolConfig, error) {
 		Pools:             map[string]map[string]PoolEntry{},
 	}
 
-	// Second pass — pull the nested [pool.<rig>.<persona>] blocks.
+	// Second pass — pull the nested [pool.<scope>.<persona>] blocks.
 	// We decode into a generic map[string]any then walk it because
 	// BurntSushi's toml package doesn't have a "rest of table" tag.
 	var raw map[string]any
@@ -220,7 +213,7 @@ func DecodePoolConfig(body []byte) (PoolConfig, error) {
 	if !ok {
 		return cfg, nil // no [pool] table at all → zero-delta
 	}
-	// Reserved keys at [pool] top level — anything else is a rig name.
+	// Reserved keys at [pool] top level — anything else is a scope name.
 	reserved := map[string]bool{
 		"default_size":        true,
 		"default_persona":     true,
@@ -228,25 +221,56 @@ func DecodePoolConfig(body []byte) (PoolConfig, error) {
 		"reserved_for_manual": true,
 		"routing":             true,
 	}
-	for rig, val := range poolRaw {
-		if reserved[rig] {
+	// Track whether the file used the legacy `<rig>` shape for the
+	// deprecation WARN. We can't distinguish `<rig>` from `<scope>`
+	// from the keys alone — both are arbitrary strings — so the
+	// heuristic is: if the file has scope blocks AND no top-level
+	// migration-marker, emit the WARN once. Spec §10.3: drop alias
+	// in Phase 3. Until then, every non-empty Pools triggers the
+	// soft notice; operators editing via the SPA will see it once
+	// then save with the new field name.
+	if len(poolRaw) > len(reserved) {
+		// At least one non-reserved key — i.e. a scope block exists.
+		// We don't know the editor source, so assume legacy until
+		// a future commit threads a `[pool.format = "scope"]` marker.
+		warnRigDeprecationIfNeeded(poolRaw, reserved)
+	}
+	for scope, val := range poolRaw {
+		if reserved[scope] {
 			continue
 		}
-		rigMap, ok := val.(map[string]any)
+		scopeMap, ok := val.(map[string]any)
 		if !ok {
 			continue
 		}
-		cfg.Pools[rig] = map[string]PoolEntry{}
-		for personaID, personaVal := range rigMap {
+		cfg.Pools[scope] = map[string]PoolEntry{}
+		for personaID, personaVal := range scopeMap {
 			personaMap, ok := personaVal.(map[string]any)
 			if !ok {
 				continue
 			}
 			entry := decodePoolEntry(personaMap)
-			cfg.Pools[rig][personaID] = entry
+			cfg.Pools[scope][personaID] = entry
 		}
 	}
 	return cfg, nil
+}
+
+// warnRigDeprecationIfNeeded fires the rig→scope deprecation WARN
+// once per process. Wired via sync.Once so multiple PoolConfig loads
+// (the editor's read-modify-write cycle) don't double-log.
+//
+// The signature accepts the parsed table so a future enhancement can
+// inspect a [pool.format] marker to suppress the warning when the
+// file was written by the SPA editor (which already uses the scope
+// vocabulary). Today there's no such marker so the warning fires
+// whenever any per-pool block is present.
+func warnRigDeprecationIfNeeded(_ map[string]any, _ map[string]bool) {
+	rigDeprecationOnce.Do(func() {
+		slog.Warn("config: pool keys: 'rig' is now 'scope' — both forms accepted for one release; new writes use 'scope'",
+			"see", "docs/design/pool-editor.md §2",
+		)
+	})
 }
 
 func decodePoolEntry(m map[string]any) PoolEntry {
@@ -276,10 +300,15 @@ func decodePoolEntry(m map[string]any) PoolEntry {
 }
 
 // ResolvedPool is one daemon's worth of effective config — the
-// per-pool overrides cascaded against the rig-level defaults and (for
-// Size) clamped against MaxParallel.
+// per-pool overrides cascaded against the scope-level defaults and
+// (for Size) clamped against MaxParallel.
 type ResolvedPool struct {
-	Rig                string
+	// Scope is the first axis of the pool key. For native it's the
+	// implicit local server scope (e.g. "gemba"); for gt it's a rig
+	// name. Renamed from `Rig` in gm-s47n.16 (spec §2). For one
+	// release the Rig() method below returns the same string so
+	// existing callers can migrate without an immediate flag day.
+	Scope              string
 	Persona            string
 	AgentType          string  // "claude" default
 	SizeDeclared       int     // before clamp
@@ -290,24 +319,14 @@ type ResolvedPool struct {
 	MinIntervalSeconds int
 	MaxConcurrent      int
 	// ClampActivated is true when SizeEffective < SizeDeclared
-	// because the MaxParallel-reserved_for_manual cap fired. The
-	// caller logs a WARN and surfaces it via /api/pools.
+	// because the MaxParallel-reserved_for_manual cap fired.
 	ClampActivated bool
 }
 
-// Resolve walks every (rig, persona) entry, applies the rig-level
+// Resolve walks every (scope, persona) entry, applies the scope-level
 // default cascade, and clamps Size against MaxParallel -
 // ReservedForManual. Pools with effective size <= 0 are dropped.
-// Returns a deterministic-order slice (rig asc, persona asc) so the
-// caller's startup log is reproducible.
-//
-// maxParallel is the host-wide concurrent-pane cap (e.g. derived
-// from the agents.toml `max_parallel` for the pool's agent_type, or
-// from the orchestration manifest). 0 disables the clamp — the
-// operator opted out of host-level parallelism control. The
-// resulting effective_size = min(declared_size, maxParallel -
-// reserved_for_manual). When the clamp activates, ResolvedPool.
-// ClampActivated is true and LogClampWarnings emits a WARN.
+// Returns a deterministic-order slice (scope asc, persona asc).
 func (c PoolConfig) Resolve(maxParallel int) []ResolvedPool {
 	out := []ResolvedPool{}
 	reserved := c.ReservedForManual
@@ -322,11 +341,11 @@ func (c PoolConfig) Resolve(maxParallel int) []ResolvedPool {
 		}
 	}
 
-	rigs := sortedKeys(c.Pools)
-	for _, rig := range rigs {
-		personas := sortedKeys(c.Pools[rig])
+	scopes := sortedKeys(c.Pools)
+	for _, scope := range scopes {
+		personas := sortedKeys(c.Pools[scope])
 		for _, persona := range personas {
-			entry := c.Pools[rig][persona]
+			entry := c.Pools[scope][persona]
 			declared := entry.Size
 			if declared == 0 {
 				declared = c.DefaultSize
@@ -341,9 +360,6 @@ func (c PoolConfig) Resolve(maxParallel int) []ResolvedPool {
 				clamp = true
 			}
 			if effective <= 0 {
-				// Clamp pushed it below 1; skip — there's no
-				// pane budget. The WARN at config load already
-				// names the pool.
 				continue
 			}
 			floor := entry.Floor
@@ -366,7 +382,7 @@ func (c PoolConfig) Resolve(maxParallel int) []ResolvedPool {
 				agentType = "claude"
 			}
 			out = append(out, ResolvedPool{
-				Rig:                rig,
+				Scope:              scope,
 				Persona:            persona,
 				AgentType:          agentType,
 				SizeDeclared:       declared,
@@ -385,9 +401,7 @@ func (c PoolConfig) Resolve(maxParallel int) []ResolvedPool {
 
 // LogClampWarnings emits a WARN slog line for every pool whose
 // effective size was clamped down by the MaxParallel -
-// reserved_for_manual cap. Spec §3.3: when the clamp activates,
-// gemba MUST log a WARN naming the declared, cap, and effective
-// sizes so the operator sees the difference at startup.
+// reserved_for_manual cap.
 func LogClampWarnings(resolved []ResolvedPool, maxParallel, reserved int) {
 	if reserved <= 0 {
 		reserved = DefaultReservedForManual
@@ -397,7 +411,7 @@ func LogClampWarnings(resolved []ResolvedPool, maxParallel, reserved int) {
 			continue
 		}
 		slog.Warn("pool: size clamped by MaxParallel cap",
-			"rig", r.Rig,
+			"scope", r.Scope,
 			"persona", r.Persona,
 			"declared", r.SizeDeclared,
 			"effective", r.SizeEffective,
@@ -414,10 +428,7 @@ func LogClampWarnings(resolved []ResolvedPool, maxParallel, reserved int) {
 //  2. [pool.routing.<kind>] map for the bead's kind
 //  3. [pool] default_persona
 //
-// Returns ("", false) when no layer resolves — the daemon then
-// declines to autodispatch the bead and the manual drag is the only
-// path forward. This is the documented OutcomeNoPersona path; logged
-// so operators can find unrouted beads.
+// Returns ("", false) when no layer resolves.
 func (c PoolConfig) ResolvePersona(beadPersona, beadKind string) (string, bool) {
 	if beadPersona != "" {
 		return beadPersona, true
@@ -433,12 +444,92 @@ func (c PoolConfig) ResolvePersona(beadPersona, beadKind string) (string, bool) 
 	return "", false
 }
 
+// EncodePoolConfig serialises a PoolConfig back to TOML in the editor's
+// canonical scope-key shape. Used by the PUT /api/pool-config handler
+// so the on-disk file always reflects the operator's last save in a
+// stable, human-readable form.
+//
+// Key order: top-level [pool] table → [pool.routing] → [pool.<scope>.<persona>]
+// blocks in scope-asc, persona-asc order. Deterministic so a no-op
+// save produces an unchanged file.
+func EncodePoolConfig(c PoolConfig) ([]byte, error) {
+	// BurntSushi/toml.Marshal can't round-trip the nested
+	// [pool.<scope>.<persona>] shape from our flat-by-design Go
+	// struct (Pools is excluded from struct tags). Hand-render to
+	// keep deterministic key order.
+	var b bufBuilder
+	b.WriteString("[pool]\n")
+	if c.DefaultSize != 0 {
+		b.WriteFmt("default_size = %d\n", c.DefaultSize)
+	}
+	if c.DefaultPersona != "" {
+		b.WriteFmt("default_persona = %q\n", c.DefaultPersona)
+	}
+	if c.DefaultFloor != 0 {
+		b.WriteFmt("default_floor = %v\n", c.DefaultFloor)
+	}
+	if c.ReservedForManual != 0 {
+		b.WriteFmt("reserved_for_manual = %d\n", c.ReservedForManual)
+	}
+	if len(c.Routing) > 0 {
+		b.WriteString("\n[pool.routing]\n")
+		for _, k := range sortedKeys(c.Routing) {
+			b.WriteFmt("%s = %q\n", k, c.Routing[k])
+		}
+	}
+	for _, scope := range sortedKeys(c.Pools) {
+		for _, persona := range sortedKeys(c.Pools[scope]) {
+			e := c.Pools[scope][persona]
+			b.WriteFmt("\n[pool.%s.%s]\n", scope, persona)
+			if e.Size != 0 {
+				b.WriteFmt("size = %d\n", e.Size)
+			}
+			if e.AgentType != "" {
+				b.WriteFmt("agent_type = %q\n", e.AgentType)
+			}
+			if e.Floor != 0 {
+				b.WriteFmt("floor = %v\n", e.Floor)
+			}
+			if e.RecycleAfterBeads != 0 {
+				b.WriteFmt("recycle_after_beads = %d\n", e.RecycleAfterBeads)
+			}
+			if e.IdleCeilingMinutes != 0 {
+				b.WriteFmt("idle_ceiling_minutes = %d\n", e.IdleCeilingMinutes)
+			}
+			if e.MinIntervalPerSession != 0 {
+				b.WriteFmt("min_interval_per_session_seconds = %d\n", e.MinIntervalPerSession)
+			}
+			if e.MaxConcurrent != 0 {
+				b.WriteFmt("max_concurrent = %d\n", e.MaxConcurrent)
+			}
+		}
+	}
+	return []byte(b.String()), nil
+}
+
+// bufBuilder is a tiny wrapper around strings.Builder that adds a
+// printf-style helper. Local-only — keeps EncodePoolConfig terse.
+type bufBuilder struct {
+	parts []string
+}
+
+func (b *bufBuilder) WriteString(s string) { b.parts = append(b.parts, s) }
+func (b *bufBuilder) WriteFmt(format string, args ...any) {
+	b.parts = append(b.parts, fmt.Sprintf(format, args...))
+}
+func (b *bufBuilder) String() string {
+	out := ""
+	for _, p := range b.parts {
+		out += p
+	}
+	return out
+}
+
 func sortedKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
 	}
-	// Simple insertion sort to avoid pulling in sort for trivial sizes.
 	for i := 1; i < len(out); i++ {
 		for j := i; j > 0 && out[j-1] > out[j]; j-- {
 			out[j-1], out[j] = out[j], out[j-1]

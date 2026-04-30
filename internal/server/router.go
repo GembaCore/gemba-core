@@ -171,6 +171,18 @@ type Router struct {
 	// {"pools": []}.
 	pools *poolsRegistry
 
+	// poolConfig backs GET/PUT /api/pool-config (gm-s47n.16). Holds
+	// the configured pool.toml path + the host-level MaxParallel +
+	// ReservedForManual default the editor surfaces alongside the
+	// parsed body. Nil → GET returns an empty envelope, PUT returns
+	// 400 path_not_configured.
+	poolConfig *poolConfigRegistry
+
+	// personasDir backs GET /api/personas (gm-s47n.16). Filesystem
+	// path to the workspace's `.gemba/personas/` directory; when
+	// empty the endpoint falls back to "<cwd>/.gemba/personas".
+	personasDir string
+
 	mux http.Handler
 }
 
@@ -393,12 +405,31 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/planner/coach", r.plannerCoach)
 
 		// gm-s47n.12: pool state read endpoint (spec §10.1). Returns
-		// one entry per (rig, persona) pool with declared vs
+		// one entry per (scope, persona) pool with declared vs
 		// effective sizes (so the MaxParallel clamp is observable
 		// post-startup) and a member roster projected from the
 		// OrchestrationPlane's live session inventory. Read-only;
 		// no nonce.
 		api.Get("/pools", r.listPools)
+
+		// gm-s47n.16: pool config editor surface (spec §7).
+		// /api/pool-config GET reads pool.toml; PUT writes it
+		// (nonce-gated). /api/personas enumerates
+		// .gemba/personas/*.toml for the editor's persona dropdown.
+		// /api/orchestration/* is the adaptor-aware bridge for the
+		// gt-flow editor (rigs, polecats, scheduler config).
+		api.Get("/pool-config", r.getPoolConfig)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Put("/pool-config", r.putPoolConfig)
+		api.Get("/personas", r.listPersonaFiles)
+		api.Get("/orchestration/state", r.orchestrationState)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/orchestration/scopes", r.createScope)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/orchestration/polecats", r.createPolecat)
+		api.Get("/orchestration/scheduler-config", r.getSchedulerConfig)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Put("/orchestration/scheduler-config", r.putSchedulerConfig)
 
 		// gm-twp2: persona consults + the skill registry. All routes
 		// here return 503 until AttachPersonaDispatcher binds the
