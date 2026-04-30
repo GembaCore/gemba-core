@@ -1,0 +1,5 @@
+# Acceptance test reports (gm-root.27.18) — generated per run.
+# Keep the directory in tree so writeReport's mkdirSync target
+# always exists, but ignore the dated subdirs themselves.
+*
+!.gitignore

@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Headless acceptance test for native + gastown end-to-end SPA build via beads (gm-root.27).",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "test:unit": "node --test --experimental-strip-types --test-timeout=15000 shared/helpers/*.test.ts",
+    "typecheck": "cd ../../e2e && pnpm exec tsc --noEmit"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

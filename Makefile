@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docs docs-dev docs-install install-hooks uninstall-hooks
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docs docs-dev docs-install install-hooks uninstall-hooks acceptance-purge
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -222,3 +222,16 @@ docs: docs-install ## build the docs site to docs-site/dist
 
 clean: ## remove build artifacts
 	rm -rf bin/ dist/ web/dist/* web/node_modules docs-site/dist docs-site/node_modules docs-site/.astro docs-site/src/content/docs
+
+# Emergency cleanup for acceptance-test resource leaks (gm-root.27.20).
+# Hunts /tmp/gemba-acceptance-* dirs and any processes still bound to
+# them. Operators run this when a CI lane crashes mid-test and leaves
+# orphan Dolt servers / gemba serve processes / temp dirs behind.
+acceptance-purge: ## kill orphan acceptance-test resources (/tmp/gemba-acceptance-*)
+	@echo ">> hunting acceptance-test processes"
+	-@ps -axo pid,command | awk '/gemba-acceptance/ && !/awk/ { print $$1 }' | xargs -I{} -- sh -c 'echo "  killing pid {}"; kill {} 2>/dev/null || true'
+	@sleep 1
+	-@ps -axo pid,command | awk '/gemba-acceptance/ && !/awk/ { print $$1 }' | xargs -I{} -- sh -c 'echo "  SIGKILL pid {}"; kill -9 {} 2>/dev/null || true'
+	@echo ">> removing /tmp/gemba-acceptance-* dirs"
+	-@find /tmp -maxdepth 1 -name 'gemba-acceptance-*' -print -exec rm -rf {} + 2>/dev/null
+	@echo ">> done"

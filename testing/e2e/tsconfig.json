@@ -15,6 +15,7 @@
     "noEmit": true,
     "isolatedModules": true,
     "allowSyntheticDefaultImports": true,
+    "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "paths": {
       "@e2e/*": ["./*"],
