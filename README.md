@@ -184,6 +184,18 @@ live in [Adaptors](https://gembacore.github.io/gemba-core/adaptors/).
 
 ### Recent (April 2026)
 
+- **Autonomous dispatch (sticky session pools)** (`gm-s47n.10`/`.11`/
+  `.12`/`.16`) — long-lived agent sessions per `(scope, persona)`
+  with `SessionReady` idle state, in-place recycle (no respawn), an
+  idle-pane reaper, and a per-pool dispatch daemon that runs
+  Layer-5 selection over the ready set. Adaptor-aware editor at
+  `/settings/pools`. Phase 0 zero-delta: opt-in by writing
+  `pool.toml`. Quickstart:
+  [Autonomous dispatch](https://gembacore.github.io/gemba-core/getting-started/autonomous-dispatch/).
+- **Gas Town session lifecycle** (`gm-e7.9`) — `gt sling` /
+  `gt unsling` / `gt convoy list` / `gt mail` wired through the
+  Gas Town orchestration adaptor; pause/resume + claim-reservation
+  intentionally `KindUnsupported` where the CLI lacks the primitive.
 - **Per-agent parallelism** (`gm-root.16`) — agent types declare
   `intra_parallel` + `max_parallel` in `.gemba/agents.toml`; a
   try-reuse-before-spawn dispatcher policy co-locates beads on capable
@@ -332,6 +344,71 @@ spawning a new pane; the SPA renders an `n/max` pill per pane plus a
 global in-flight counter. Full detail:
 the [Parallelism guide](https://gembacore.github.io/gemba-core/getting-started/parallelism/).
 
+### Autonomous dispatch (sticky session pools)
+
+Per-agent parallelism is the *capacity* axis. Pools are the
+*continuity* axis: long-lived sessions that survive across beads,
+carry warm context, and pick up ready work on their own — no
+human drag, no fresh spawn per bead.
+
+Phase 0 is the default: no `pool.toml`, no daemons, identical
+behavior to the basic flows above. Pools are opt-in.
+
+**Native quickstart** (one persona, two pool members, agents.toml
+already has `claude` with `max_parallel = 4`):
+
+```toml
+# pool.toml
+[pool]
+default_persona = "engineer-claude"
+default_floor = 0.5
+reserved_for_manual = 1
+
+[pool.routing]
+epic = "engineer-claude"
+task = "engineer-claude"
+
+[pool.local.engineer-claude]
+size = 2
+agent_type = "claude"
+```
+
+```bash
+./bin/gemba serve --beads-dir <rig> --orchestration=native \
+  --pool-config ./pool.toml
+```
+
+`/api/pools` shows live pool state; `/settings/pools` is the
+adaptor-aware SPA editor (path picker, dropdowns, live TOML
+preview, clamp warnings).
+
+**Gas Town**: same shape but the scope axis is the rig name and
+the SPA editor imports rigs/personas from `gt agents` and shells
+to `gt rig create` / `gt polecat create` for adaptor-owned changes
+(`gm-s47n.17` wires the SPA buttons; CLI works today).
+
+```toml
+[pool.gemba.engineer]
+size = 3
+agent_type = "claude"
+
+[pool.lume.engineer]
+size = 1
+agent_type = "claude"
+```
+
+```bash
+./bin/gemba serve --beads-dir <rig> --orchestration=gastown \
+  --pool-config ./pool.toml
+```
+
+Full quickstart with verification + troubleshooting:
+[Autonomous dispatch quickstart](https://gembacore.github.io/gemba-core/getting-started/autonomous-dispatch/).
+Operational deep dive:
+[Pool sizing and MaxParallel](https://gembacore.github.io/gemba-core/deployment/pool-sizing/).
+Design: [`docs/design/session-pool.md`](docs/design/session-pool.md)
++ [`docs/design/pool-editor.md`](docs/design/pool-editor.md).
+
 ### TLS
 
 ```bash
@@ -350,6 +427,13 @@ provide, swap the orchestration flag:
 ```bash
 ./bin/gemba serve --beads-dir <rig> --orchestration=gastown
 ```
+
+Gas Town's session lifecycle is implemented end-to-end (`gt sling`
+for dispatch, `gt unsling`/`gt release` for end, `gt convoy list`
+for session enumeration, `gt mail` for escalations) — see
+`gm-e7.9`. Pause/Resume + ClaimNextReady remain `KindUnsupported`
+where gt's CLI lacks the primitive (tracked as `gm-e7.10` /
+`gm-e7.11`).
 
 Native, Gas Town, Gas City, LangGraph, CrewAI, OpenHands, Devin, and
 Factory adaptors are mutually exclusive — exactly one or zero

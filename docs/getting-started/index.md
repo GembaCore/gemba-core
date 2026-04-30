@@ -21,6 +21,11 @@ items, configuring agent runtimes, and tuning parallelism.
   parallelism in `.gemba/agents.toml`, understand intra- vs
   inter-session axes, the dispatcher's try-reuse-before-spawn
   policy, and the SPA's pill / global-counter surfaces.
+- **[Autonomous dispatch (pools) — quickstart](autonomous-dispatch)** —
+  10-minute path to a server that picks up ready beads on its own
+  and dispatches them to sticky pooled sessions. Two flows: native
+  (local panes) and Gas Town (rigs + polecats). Includes the SPA
+  editor at `/settings/pools`.
 
 ## Where next
 
