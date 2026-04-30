@@ -5,7 +5,9 @@ decision: gm-s47n.10
 
 # Sticky session pool + idle lifecycle for two-axis dispatch
 
-> Status: **draft / for review** — 2026-04-29
+> Status: **ratified** — 2026-04-29 (decision bead: see gm-s47n.10's
+> ratification record). All §12 questions resolved; implementation is
+> unblocked.
 > Owner: gemba mayor
 > Scope: the bridge between the two-axis dispatch design (`work-planning.md`,
 > gm-s47n) and the native orchestration adaptor. Specifies how sessions become
@@ -88,13 +90,26 @@ warm contexts; treating them as one pool slot would silently invalidate
 the affinity model the moment a recycle swapped the persona.
 
 Concrete consequence: a "PM persona" pool is separate from an "engineer
-persona" pool, even when both run on `claude`. Beads route to a pool
-either by an explicit `persona` extras field on the bead or by a
-configurable default-persona-per-bead-kind mapping (e.g. epics → PM
-persona, tasks → engineer persona). Beads with no persona resolution
-fall through to a server-level `pool.default_persona`; without that
-configured, the daemon refuses to autodispatch them and they wait for
-manual drag.
+persona" pool, even when both run on `claude`. Beads route to a persona
+via a **three-layer cascade**, lowest precedence to highest:
+
+1. `[pool] default_persona = "<id>"` — server-level fallback.
+2. `[pool.routing.<kind>] = "<persona-id>"` — per-bead-kind mapping.
+3. Bead extras `persona` field — explicit override on the bead itself.
+
+Example:
+```toml
+[pool]
+default_persona = "engineer-claude"
+[pool.routing]
+epic = "pm-claude"
+bug = "engineer-claude"
+decision = "pm-claude"
+```
+
+If no layer resolves a persona, the daemon refuses to autodispatch
+the bead — it waits for manual drag. Logged as `OutcomeNoPersona` so
+operators can see which beads are sitting unrouted.
 
 A daemon instance is constructed **per pool**, not globally. Each
 daemon's `IdleSessionLister` returns only its pool's idle members and
@@ -362,9 +377,24 @@ The agent's `gt done` (or equivalent end-of-bead skill) is updated to
 run, in order:
 
 1. `git status --porcelain` — if dirty, run `git add -A && git
-   commit -m "<auto-commit message keyed on bead id>"`. The
-   auto-commit message follows project convention; a follow-up bead
-   may delegate the message to the LLM via prompt.
+   commit -m "<deterministic auto-commit message; format below>"`.
+
+   **The auto-commit message is deterministic, not LLM-generated.**
+   Format:
+   ```
+   chore(<bead-id>): auto-commit before bead-done
+
+   Uncommitted changes captured by §5.4.1 fallback. The agent's
+   normal commit flow did not run for these; review before
+   treating as intent.
+   ```
+   Auto-commits should be *rare* — they fire when the agent skipped
+   a normal commit. The deterministic message acts as a flag in
+   `git log`: "this commit is suspicious, review it." Retro grading
+   greps for `auto-commit before bead-done` to count contract
+   violations and tune the §5.4.1 contract over time. LLM-generated
+   commit messages are right for normal commits but wrong here:
+   we're surfacing a contract violation, not summarizing intent.
 2. `git push origin <branch>` — push to the upstream the bead is
    bound to (typically `main` for direct-merge beads, the merge
    queue branch for `--merge=mr` beads).
@@ -524,6 +554,32 @@ brief toast.
 This is unchanged from today; the section is here only to confirm the
 existing mechanism is sufficient under the new lifecycle.
 
+### §7.4 Operator verbs: `End` vs `Recycle`
+
+A pool slot's pane can hold many session ids over its lifetime
+(every recycle mints a new id on the same pane). When the operator
+clicks something in the SPA's session card, two distinct intents
+must be supported. The SPA exposes them as **two distinct buttons,
+both nonce-gated**:
+
+| Button | Intent | Effect |
+|--------|--------|--------|
+| `End` | "Stop this thing." | Tears down the pool slot: graceful pane shutdown, worktree release, slot removed from pool. Daemon may spawn a fresh slot on next dispatch (subject to lazy-growth rules). Existing button — semantics preserved. |
+| `Recycle` | "Reset the chapter, keep the slot." | Calls the §5.2 protocol: clean-worktree check → keystroke clear → resync → new session id minted. Pane stays alive, profile resets. New button. |
+
+`End` matches today's operator mental model (the existing button keeps
+its existing semantics). `Recycle` is a new explicit verb for
+"contaminated context, fresh start, same slot." Both go through
+`requireConfirmNonce` at the HTTP layer.
+
+Wire shape:
+- `DELETE /api/sessions/{id}?mode=canceled` — existing, ends slot.
+- `POST /api/sessions/{id}/recycle` — new, runs §5.2 protocol.
+
+`POST /api/sessions/{id}/recycle` follows the same response shape as
+`POST /api/sessions` (returns the new `core.Session` with the freshly-
+minted id) so the SPA can swap the card content without a refresh.
+
 ## §8. Soft gates beyond what the daemon already does
 
 ### §8.1 Auto-dispatch floor
@@ -539,7 +595,21 @@ if top.scores.Combined < d.AutoDispatchFloor {
 }
 ```
 
-Configurable per-pool. Default 0.5.
+**Configured per-pool with a rig-level default cascade**, mirroring
+`pool.size`:
+
+```toml
+[pool]
+default_floor = 0.5
+[pool.gemba.engineer-claude]
+floor = 0.4   # this pool overrides the default
+```
+
+The cascade keeps surface area small: most operators set
+`default_floor` once at the rig level and forget; power users
+override per pool when they want a hacking pool to dispatch
+aggressively (low floor) and a production pool to be conservative
+(high floor).
 
 ### §8.2 Pool-occupancy ceiling
 
@@ -551,12 +621,22 @@ manual drags and high-priority interrupt work.
 
 ### §8.3 Cold-start grace
 
-A pool member whose session profile is empty (no beads completed
-yet) gets a one-time grace period before Layer 5 Selection scores it.
-During grace it is preferred for dispatch (it has nothing to lose by
-taking new work). Implementation: `Affinity` returns a synthetic
-mid-band score for cold-start members, so the fairness boost +
-priority dominate the pick.
+A pool member whose session profile is empty (zero beads completed)
+gets a **one-bead grace**: it is preferred for dispatch on its first
+bead, then competes normally on affinity from the second bead onward.
+Implementation: when `len(profile.LastBeads) == 0`, `Affinity`
+returns a synthetic mid-band score so the fairness boost + priority
+dominate the pick. From the second bead the real session profile
+exists and grace ends.
+
+**Why N=1 beads, not T minutes**: time-based grace is the wrong
+abstraction. A fresh pool member that sits idle for 30 minutes is no
+warmer than one that sits idle for 30 seconds — neither has any
+profile. The grace's purpose is "give it a first bead to load
+context"; once it has one bead, it has *some* profile and the
+affinity model can do its job. T-minute grace would either expire
+without the member doing any work (defeating the purpose) or last
+arbitrarily long during low-traffic periods.
 
 ## §9. Failure modes
 
@@ -687,35 +767,59 @@ becomes parity-with-native.
    schema comments, user guide section, and startup banner all
    surface the clamp. Part of gm-s47n.12 DoD.
 
-### Still open
+### Resolved (architect, 2026-04-29 — round 2)
 
-5. **Cold-start grace duration.** §8.3 specifies a "one-time" grace.
-   Should it be N beads (e.g. 1) or T minutes? Affects how aggressively
-   a fresh pool member competes against a warm one for the first work.
+5. ✅ **Cold-start grace = 1 bead.** Time-based grace is the wrong
+   abstraction (a member that sits idle isn't getting warmer). After
+   one bead the session has *some* profile and competes normally on
+   affinity. §8.3 updated.
 
-6. **Auto-dispatch floor scope.** Is it global, per-pool, or per-rig?
-   §8.1 says per-pool. Risk: too many knobs. Counterargument: a
-   conservative ops team wants a high floor on production; a hacking
-   team wants 0 on dev. Per-rig at minimum.
+6. ✅ **Auto-dispatch floor is per-pool with a rig-level default
+   cascade.** Mirrors `pool.size`. TOML:
+   ```toml
+   [pool]
+   default_floor = 0.5
+   [pool.gemba.engineer-claude]
+   floor = 0.4   # per-pool override
+   ```
+   Most operators set `default_floor`; power users override per
+   pool. §8.1 updated.
 
-7. **What does manual end on a recycled-many-times session do?** The
-   current pane has held maybe 20 session ids over its lifetime.
-   Operator clicks End in the SPA. Do we end the *current* session
-   (recycle to fresh slot) or end the *pool slot* (tear down the
-   pane)? Proposal: SPA's End ends the slot; SPA's "recycle" button
-   recycles. Two distinct verbs.
+7. ✅ **Two distinct SPA verbs:** `End` (existing button — preserves
+   today's slot-tear-down semantics) and `Recycle` (new — calls §5.2
+   in place on the same slot). Both nonce-gated. SPA gets a recycle
+   button next to End.
 
-8. **Default-persona-per-bead-kind mapping.** §3.2 mentions a
-   "configurable default-persona-per-bead-kind mapping (e.g. epics
-   → PM persona, tasks → engineer persona)" but does not specify
-   the schema. Likely a `[pool.routing]` table; needs a concrete
-   shape before .12 lands.
+8. ✅ **Three-layer persona routing cascade**, lowest precedence to
+   highest:
+   1. `[pool] default_persona` — server fallback
+   2. `[pool.routing.<kind>]` — per-bead-kind mapping
+   3. Bead extras `persona` field — explicit override on the bead
+   ```toml
+   [pool]
+   default_persona = "engineer-claude"
+   [pool.routing]
+   epic = "pm-claude"
+   bug = "engineer-claude"
+   decision = "pm-claude"
+   ```
+   No layer resolves → autodispatch refuses; manual drag still
+   works. §3.2 updated.
 
-9. **Auto-commit message on §5.4.1 step 1.** When the agent's
-   `bead-done` skill auto-commits dirty worktree state, the commit
-   message is currently "auto-commit message keyed on bead id".
-   Should it be deterministic (`"chore(<bead>): auto-commit before
-   bead-done"`) or LLM-generated? Defer until §5.4.1 lands.
+9. ✅ **Auto-commit message is deterministic.** Format:
+   ```
+   chore(<bead-id>): auto-commit before bead-done
+
+   Uncommitted changes captured by §5.4.1 fallback. The agent's
+   normal commit flow did not run for these; review before
+   treating as intent.
+   ```
+   Auto-commits should be rare; the deterministic message makes
+   them grep-able for retro grading and signals "review this."
+   §5.4.1 updated.
+
+**§12 closed.** All design questions resolved. gm-s47n.11 and
+gm-s47n.12 may proceed.
 
 ## §13. Appendix: code touchpoints
 
@@ -759,8 +863,12 @@ Net new files: ~6. Touched existing files: ~10. Estimated total LOC:
 - [x] `MaxParallel` clamp with WARN; `reserved_for_manual = 1` default;
       documentation required in TOML comments + user guide + banner
 - [x] Migration phase 0 = zero delta from today's main
+- [x] Cold-start grace = 1 bead (not time-based)
+- [x] Auto-dispatch floor = per-pool with rig-level default cascade
+- [x] Manual-end gets two SPA verbs: `End` (slot teardown) +
+      `Recycle` (in-place §5.2)
+- [x] Persona routing = three-layer cascade
+      (default → kind table → bead extras override)
+- [x] Auto-commit message is deterministic with §5.4.1 marker
 
-**Still open (non-blocking for §11.1):** §12.5 cold-start grace
-duration, §12.6 auto-dispatch floor scope, §12.7 manual-end semantics,
-§12.8 default-persona-per-bead-kind schema, §12.9 auto-commit message
-shape.
+**All §12 questions resolved. Status: ratified.**
