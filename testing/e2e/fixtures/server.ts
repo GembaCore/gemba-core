@@ -51,9 +51,11 @@ import { createSessionStore, type SessionStore } from './sessionStore';
 import { createEscalationStore, type EscalationStore } from './escalationStore';
 import { createAgentStore, type AgentStore } from './agentStore';
 import { createCapabilitiesPlane, type CapabilitiesPlane } from './capabilitiesPlane';
+import { createPoolsPlane, type PoolsPlane } from './poolsPlane';
 import { createModeHandle, DEFAULT_MODE, type ModeHandle } from './modes';
 import { createAuthHandle, type AuthHandle } from './auth';
 import type { WorkItem } from '../../../web/src/types/core.gen';
+import type { PoolConfigJSON } from '../../../web/src/api/poolConfig';
 
 export type Backend = 'fake' | 'real';
 
@@ -109,6 +111,12 @@ type TestFixtures = {
    * The fake-backend dispatcher serves /api/capabilities from this.
    */
   capabilitiesPlane: CapabilitiesPlane;
+  /**
+   * Per-test pool dispatch editor state (gm-s47n.18). Drives
+   * /api/pool-config (GET/PUT), /api/personas, and
+   * /api/orchestration/state for the /settings/pools editor.
+   */
+  poolsPlane: PoolsPlane;
   /**
    * Per-test adaptor health state. gm-5v8v.10. Specs (mostly under
    * specs/realtime/) call adaptorsState.set([{...degraded}]) BEFORE
@@ -222,6 +230,11 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await use(plane);
   },
 
+  poolsPlane: async ({}, use) => {
+    const plane = createPoolsPlane();
+    await use(plane);
+  },
+
   adaptorsState: async ({}, use) => {
     const state = createAdaptorsState();
     await use(state);
@@ -269,7 +282,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 
   page: async (
-    { page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane, projectsStore },
+    { page, backend, realServer, workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane, projectsStore, poolsPlane },
     use
   ) => {
     if (backend === 'fake') {
@@ -281,6 +294,7 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
         adaptorsState,
         capabilitiesPlane,
         projectsStore,
+        poolsPlane,
       });
     } else {
       if (!realServer) {
@@ -431,6 +445,7 @@ interface FakeStores {
   adaptorsState: AdaptorsState;
   capabilitiesPlane: CapabilitiesPlane;
   projectsStore: ProjectsStore;
+  poolsPlane: PoolsPlane;
 }
 
 async function installFakeBackend(page: Page, stores: FakeStores): Promise<void> {
@@ -452,7 +467,7 @@ function matchesEvents(p: string): boolean {
 }
 
 function dispatch(route: Route, stores: FakeStores): unknown {
-  const { workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane, projectsStore } = stores;
+  const { workPlane, sessionPlane, escalationPlane, agentPlane, adaptorsState, capabilitiesPlane, projectsStore, poolsPlane } = stores;
   const url = new URL(route.request().url());
   const path = url.pathname;
   const method = route.request().method();
@@ -798,6 +813,35 @@ function dispatch(route: Route, stores: FakeStores): unknown {
       milestone_count: milestoneCount,
       epic_count: epicCount,
     });
+  }
+
+  // Pool Dispatch editor (gm-s47n.18). The full editor lives at
+  // /settings/pools and reads three endpoints; the spec seeds via
+  // poolsPlane and asserts the round-trip via PUT echo.
+  if (isPath(path, '/api/pool-config')) {
+    if (method === 'PUT') {
+      const body = parseBody(route.request().postData()) as unknown as PoolConfigJSON;
+      const next = poolsPlane.applyPut(body);
+      return json(next);
+    }
+    return json(poolsPlane.getConfig());
+  }
+  if (isPath(path, '/api/personas')) {
+    return json({ personas: poolsPlane.getPersonas(), dir: '/.gemba/personas' });
+  }
+  if (isPath(path, '/api/orchestration/state')) {
+    const s = poolsPlane.getOrchState();
+    if (s) return json(s);
+    return route.fulfill({
+      status: 404,
+      json: { error: 'orchestration_not_configured', message: 'no orchestration plane bound' },
+    });
+  }
+  // gm-s47n.17 added a SchedulerConfig surface (gastown-only). The
+  // pool editor reads it on mount when adaptor_id=gastown; an empty
+  // shape is enough for fake-mode renders.
+  if (isPath(path, '/api/orchestration/scheduler-config')) {
+    return json({ max_polecats: 0 });
   }
 
   if (isPath(path, '/api/capabilities')) return json(capabilitiesPlane.get());
