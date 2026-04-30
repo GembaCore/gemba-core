@@ -23,6 +23,8 @@ import (
 	"github.com/GembaCore/gemba-core/core"
 	"github.com/GembaCore/gemba-core/internal/adapter/bd"
 	"github.com/GembaCore/gemba-core/internal/adapter/dolt"
+	"github.com/GembaCore/gemba-core/internal/adapter/gt"
+	"github.com/GembaCore/gemba-core/internal/adapter/mock"
 	"github.com/GembaCore/gemba-core/internal/adapter/native"
 	"github.com/GembaCore/gemba-core/internal/adapter/native/agents"
 	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
@@ -775,9 +777,60 @@ func registerOrchestrationPlane(ctx context.Context, host *api.Host, cfg config.
 		return registerNoopOrchestration(ctx, host)
 	case "native":
 		return registerNativeOrchestration(ctx, host, cfg)
+	case "mock":
+		return registerMockOrchestration(ctx, host, cfg)
+	case "gastown":
+		return registerGastownOrchestration(ctx, host)
 	default:
-		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native', 'noop', 'none', or empty)", cfg.Orchestration)
+		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native', 'noop', 'mock', 'gastown', 'none', or empty)", cfg.Orchestration)
 	}
+}
+
+// registerMockOrchestration binds the in-process mock plane
+// (gm-root.28). Operator-usable as a 'dry-run' mode: real bd
+// closes + gemba-state bead-done emits, but no claude session
+// spawn. The autodispatch daemon dispatches to mock sessions like
+// any other plane; SessionReady recycling exercises the same
+// pool warmth path the native adaptor does.
+func registerMockOrchestration(ctx context.Context, host *api.Host, cfg config.ServeConfig) error {
+	plane := mock.NewOrchestrationPlane(mock.Config{
+		ProjectDir: cfg.BeadsDir,
+	})
+	reg, err := host.RegisterOrchestrationPlane(ctx, plane)
+	if err != nil {
+		return fmt.Errorf("register mock orchestration: %w", err)
+	}
+	slog.Info("orchestration plane registered",
+		"adaptor", reg.AdaptorName,
+		"version", reg.AdaptorVersion,
+		"protocol", reg.ProtocolVersion,
+		"transport", reg.Transport,
+		"mode", "mock",
+		"project_dir", cfg.BeadsDir)
+	return nil
+}
+
+// registerGastownOrchestration binds the gt-CLI orchestration
+// adaptor (gm-root.27.35). The gt-adaptor capability probe
+// (gm-e7.12) runs at construction; if the gt binary is missing or
+// too old, NewOrchestrationPlane returns an error and the server
+// fails to start with a clear message.
+func registerGastownOrchestration(ctx context.Context, host *api.Host) error {
+	plane, err := gt.NewOrchestrationPlane()
+	if err != nil {
+		return fmt.Errorf("gastown orchestration: %w", err)
+	}
+	reg, err := host.RegisterOrchestrationPlane(ctx, plane)
+	if err != nil {
+		return fmt.Errorf("register gastown orchestration: %w", err)
+	}
+	slog.Info("orchestration plane registered",
+		"adaptor", reg.AdaptorName,
+		"version", reg.AdaptorVersion,
+		"protocol", reg.ProtocolVersion,
+		"transport", reg.Transport,
+		"mode", "gastown")
+	return nil
 }
 
 // registerNoopOrchestration binds the in-memory reference OrchestrationPlane
