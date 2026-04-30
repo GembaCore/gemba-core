@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Gemba pre-commit hook.
+#
+# Runs prettier with the project's prose-wrap settings against any
+# staged Markdown files, re-staging them if reformatting occurred.
+# Tolerant: if prettier isn't available (web/ deps not installed),
+# the hook prints a hint and skips — it never blocks a commit.
+#
+# Install via: `make install-hooks`. Uninstall via:
+#   git config --unset core.hooksPath
+
+set -euo pipefail
+
+# Resolve repo root regardless of where the hook is invoked from.
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# Collect staged Markdown files (added or modified, ignoring deletions).
+staged_md=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.md$' || true)
+if [ -z "$staged_md" ]; then
+  exit 0
+fi
+
+# Locate prettier. Prefer the web/ workspace's pinned binary so the
+# version matches what CI / other operators run.
+prettier_bin=""
+if [ -x "$repo_root/web/node_modules/.bin/prettier" ]; then
+  prettier_bin="$repo_root/web/node_modules/.bin/prettier"
+elif command -v pnpm >/dev/null 2>&1 && [ -d "$repo_root/web/node_modules" ]; then
+  prettier_bin="pnpm --filter gemba-web exec --silent prettier"
+fi
+
+if [ -z "$prettier_bin" ]; then
+  cat >&2 <<'EOF'
+[pre-commit] prettier not available; skipping markdown reformat.
+[pre-commit] Run `cd web && pnpm install` to enable, or skip with --no-verify if you intend to.
+EOF
+  exit 0
+fi
+
+# Format each staged .md file. Re-stage anything that changed.
+reformatted=()
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  [ -f "$f" ] || continue
+  before_hash=$(git hash-object "$f")
+  # shellcheck disable=SC2086 # we want word-splitting on the prettier launcher
+  $prettier_bin --prose-wrap always --print-width 72 --write "$f" >/dev/null 2>&1 || {
+    echo "[pre-commit] prettier failed on $f — leaving file unchanged" >&2
+    continue
+  }
+  after_hash=$(git hash-object "$f")
+  if [ "$before_hash" != "$after_hash" ]; then
+    git add "$f"
+    reformatted+=("$f")
+  fi
+done <<< "$staged_md"
+
+if [ ${#reformatted[@]} -gt 0 ]; then
+  echo "[pre-commit] reformatted + restaged:"
+  for f in "${reformatted[@]}"; do
+    echo "  - $f"
+  done
+fi
+
+exit 0

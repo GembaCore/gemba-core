@@ -694,6 +694,22 @@ path to "does it work": see the
 or the
 [OrchestrationPlane authoring guide](https://gembacore.github.io/gemba-core/adaptors/orchestration/).
 
+### Git hooks (optional)
+
+The repo ships a versioned pre-commit hook at
+`scripts/git-hooks/pre-commit` that runs prettier on staged Markdown
+files (`--prose-wrap always --print-width 72`) and re-stages anything it
+reformats. Install once per clone:
+
+```bash
+make install-hooks       # → git config core.hooksPath scripts/git-hooks
+make uninstall-hooks     # restore default
+```
+
+Tolerant: the hook skips silently if `web/node_modules/.bin/prettier`
+isn't present (e.g. you haven't run `pnpm install` in `web/` yet) and
+never blocks a commit.
+
 [⬆ back to top](#top)
 
 ## 📜 License

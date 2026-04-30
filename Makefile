@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docs docs-dev docs-install
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docs docs-dev docs-install install-hooks uninstall-hooks
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -85,6 +85,16 @@ lint-decisions: ## verify docs/design ↔ decision-bead linkage (D6 / gm-d1m1)
 fmt: ## format Go + frontend
 	gofmt -s -w .
 	cd web && pnpm format
+
+install-hooks: ## point git at scripts/git-hooks/ (versioned pre-commit + friends)
+	@git config core.hooksPath scripts/git-hooks
+	@echo "git hooks installed → scripts/git-hooks/"
+	@echo "  pre-commit: prettier --prose-wrap always --print-width 72 on staged *.md"
+	@echo "uninstall: make uninstall-hooks"
+
+uninstall-hooks: ## restore git's default hooks path
+	@git config --unset core.hooksPath || true
+	@echo "git hooks restored to default (.git/hooks/)"
 
 ## --- Codegen ---
 
