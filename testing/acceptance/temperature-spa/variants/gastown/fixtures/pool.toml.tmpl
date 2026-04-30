@@ -1,0 +1,16 @@
+# gm-root.27.16 — gastown variant pool fixture template.
+#
+# Identical shape to ../native/fixtures/pool.toml; the only delta is the pool
+# scope, which under gastown is the per-run rig name (not "local"). The
+# `{{.Rig}}` placeholder is interpolated by renderGastownPoolToml() in
+# ../pool-template.ts.
+
+[pool.{{.Rig}}.acceptance-engineer]
+size = 1
+floor = 0.5
+recycle_after_beads = 5
+idle_ceiling_minutes = 30
+
+[[routing]]
+issue_type = "task"
+pool = "{{.Rig}}.acceptance-engineer"
