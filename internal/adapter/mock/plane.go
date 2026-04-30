@@ -90,23 +90,7 @@ func (o *OrchestrationPlane) Close() {
 	o.sessions = make(map[string]core.Session)
 }
 
-// ─── Stubs (filled in by sibling beads) ───────────────────────────
-
-// StartSession lifecycle is implemented in start.go (gm-root.28.2).
-func (o *OrchestrationPlane) StartSession(_ context.Context, _ string, _ core.SessionPrompt) (core.Session, error) {
-	return core.Session{}, unsupported("StartSession (gm-root.28.2 — pending)")
-}
-
-// EndSession is implemented in end.go (gm-root.28.2).
-func (o *OrchestrationPlane) EndSession(_ context.Context, _ string, _ core.SessionEndMode, _ core.ConfirmNonce) (core.Session, error) {
-	return core.Session{}, unsupported("EndSession (gm-root.28.2 — pending)")
-}
-
-// RecycleSession is implemented in recycle.go (gm-root.28.2).
-func (o *OrchestrationPlane) RecycleSession(_ context.Context, _ string) (core.Session, error) {
-	return core.Session{}, unsupported("RecycleSession (gm-root.28.2 — pending)")
-}
-
+// StartSession / EndSession / RecycleSession live in start.go.
 // PauseSession / ResumeSession are not exercised by the autodispatch
 // daemon's mock path; surface them as unsupported.
 func (o *OrchestrationPlane) PauseSession(_ context.Context, _ string, _ core.ConfirmNonce) (core.Session, error) {
