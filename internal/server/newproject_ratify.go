@@ -19,13 +19,21 @@
 //       bd dep add. Cycle detection runs after every edge added; a
 //       detected cycle aborts the transaction (rollback).
 //   9. Write docs/project.md (the synthesized narrative).
+//   9a. FTUX seed (gm-root.24): write .gemba/agents.toml, copy bundled
+//       personas into .gemba/personas/, and drop a CLAUDE.md skeleton
+//       at the project root. Each step is idempotent — pre-existing
+//       files / non-empty dirs are skipped. Failures are best-effort:
+//       they surface as SeedWarnings on the response but do NOT roll
+//       back the transaction, because the workspace.toml + git +
+//       beads database have already been committed to disk.
 //  10. Stage all files; create initial commit on main
 //      ("feat: initial project bootstrap").
 //
 // Failure rollback: any step that fails after step 2 succeeded
 // triggers a deferred cleanup that rm -rf's the new dir. Step 2's
 // failure mode (dir already exists) explicitly does NOT rollback —
-// we never touch a pre-existing dir.
+// we never touch a pre-existing dir. Step 9a's per-file failures are
+// the one exception: they degrade to warnings instead of aborting.
 
 package server
 
@@ -566,6 +574,13 @@ func (r *ratifier) Ratify(ctx context.Context, state NewProjectState) (RatifyRes
 		}
 	}
 
+	// ── Step 9a: FTUX seed (gm-root.24) ─────────────────────────────
+	// Best-effort: failures surface as SeedWarnings on the response.
+	// Each sub-step is idempotent — pre-existing files / non-empty
+	// dirs are skipped silently so a re-ratify (or operator pre-config)
+	// is never clobbered.
+	seedWarnings := r.seedFTUXFiles(target, name)
+
 	// ── Step 10: stage all files + initial commit ──────────────────
 	if _, err := r.runner(ctx, target, "git", "add", "-A"); err != nil {
 		return RatifyResponse{}, &RatifyError{
@@ -599,6 +614,7 @@ func (r *ratifier) Ratify(ctx context.Context, state NewProjectState) (RatifyRes
 		ProjectName:    state.ProjectName,
 		MilestoneCount: len(state.Milestones),
 		EpicCount:      epicCount,
+		SeedWarnings:   seedWarnings,
 	}, nil
 }
 
@@ -924,6 +940,172 @@ func buildWorkspaceTOML(state NewProjectState, now time.Time) string {
 		fmt.Fprintf(&b, "architecture = %q\n", state.Architecture)
 	}
 	return b.String()
+}
+
+// ─── FTUX seed helpers (gm-root.24) ─────────────────────────────────
+
+// defaultAgentsTOML is the seed body for .gemba/agents.toml. Mirrors
+// the README's "Native, with parallelism" example so docs and reality
+// agree (gm-root.24). Operators can append more [[agent]] tables.
+const defaultAgentsTOML = `# Default agents registry (gemba ratify auto-seeded). Add more agents
+# by appending [[agent]] tables; see docs/getting-started/agent-setup.md.
+
+[[agent]]
+name           = "claude"
+binary         = "claude"
+preamble       = "claude_md"
+hooks          = "claude_code"
+intra_parallel = true
+max_parallel   = 4
+`
+
+// claudeMDSkeleton returns a short CLAUDE.md skeleton for a fresh
+// project. <project-name> is interpolated from the workspace ratify
+// input. The body is deliberately tiny — it exists so native dispatch's
+// preamble-inject has SOMETHING to read on day one and so an operator
+// has an obvious place to grow conventions over time.
+func claudeMDSkeleton(projectName string) string {
+	return fmt.Sprintf(`# %s
+
+> AI agents, including Claude Code, read this file at the start of every
+> session. Keep it short, current, and focused on what an agent needs
+> to know to be useful in this repo.
+
+## Conventions
+
+_Add commit-message style, branch naming, code-review expectations, etc._
+
+## Build & Test
+
+_Document the commands a fresh agent would run to verify their work._
+
+## Links
+
+- Beads workflow: run `+"`bd prime`"+` for command reference.
+- Gemba: open the kanban with `+"`gemba serve`"+`.
+`, projectName)
+}
+
+// seedFTUXFiles runs the three best-effort first-time-user-experience
+// seed steps (gm-root.24) against the just-ratified project dir.
+// Returns a slice of human-readable warnings — empty when every step
+// succeeded or skipped. Never panics; never aborts the parent
+// transaction.
+//
+// Idempotency: every sub-step checks for pre-existing files / non-empty
+// dirs and skips silently. A re-seed never clobbers an operator's
+// curated config.
+func (r *ratifier) seedFTUXFiles(target, projectName string) []string {
+	var warnings []string
+	if w := r.seedAgentsTOML(target); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := r.seedPersonas(target); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := r.seedClaudeMD(target, projectName); w != "" {
+		warnings = append(warnings, w)
+	}
+	return warnings
+}
+
+// seedAgentsTOML writes .gemba/agents.toml when absent. Returns a
+// warning string on failure; empty on success or when the file already
+// exists.
+func (r *ratifier) seedAgentsTOML(target string) string {
+	path := filepath.Join(target, ".gemba", "agents.toml")
+	if _, err := r.fs.Stat(path); err == nil {
+		// Already present — operator (or a previous ratify) already
+		// curated. Skip silently.
+		return ""
+	} else if !os.IsNotExist(err) {
+		return fmt.Sprintf("agents.toml: stat failed: %v", err)
+	}
+	// .gemba/ is created by step 4 (workspace.toml). Re-ensure with
+	// MkdirAll for defence-in-depth — cheap, idempotent.
+	if err := r.fs.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Sprintf("agents.toml: mkdir .gemba failed: %v", err)
+	}
+	if err := r.fs.WriteFile(path, []byte(defaultAgentsTOML), 0o644); err != nil {
+		return fmt.Sprintf("agents.toml: write failed: %v", err)
+	}
+	return ""
+}
+
+// seedPersonas copies the three bundled personas (deployment-engineer,
+// documentarian, project-manager) into .gemba/personas/ when the
+// directory is absent or empty. A non-empty pre-existing personas dir
+// signals operator curation — we skip without copying.
+//
+// Source is the go:embed'd embeddedPersonas FS so the binary is
+// self-contained: no shelling to the filesystem to discover the
+// roster, no dependence on the gemba-core source tree being present.
+func (r *ratifier) seedPersonas(target string) string {
+	dst := filepath.Join(target, ".gemba", "personas")
+	// Empty-or-absent check. Use os.ReadDir directly — this read is a
+	// best-effort probe, and the FilesystemBackend abstraction only
+	// covers writes (the Stat/MkdirAll/WriteFile/RemoveAll set used by
+	// rollback assertions). Production code paths use osFS so this is
+	// a real-filesystem read; tests that exercise the seed step write
+	// to t.TempDir which is also a real directory.
+	entries, err := os.ReadDir(dst)
+	if err == nil && len(entries) > 0 {
+		// Non-empty pre-existing dir — operator already curated.
+		return ""
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Sprintf("personas: scan failed: %v", err)
+	}
+	if err := r.fs.MkdirAll(dst, 0o755); err != nil {
+		return fmt.Sprintf("personas: mkdir failed: %v", err)
+	}
+	// Copy every embedded persona TOML into the destination, preserving
+	// filenames. embedded_personas/*.toml is the canonical source.
+	embedded, err := embeddedPersonas.ReadDir("embedded_personas")
+	if err != nil {
+		return fmt.Sprintf("personas: read embedded fs failed: %v", err)
+	}
+	if len(embedded) == 0 {
+		return "personas: embedded persona set is empty (build problem?)"
+	}
+	var failures []string
+	for _, e := range embedded {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".toml") {
+			continue
+		}
+		data, err := embeddedPersonas.ReadFile("embedded_personas/" + name)
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("read %s: %v", name, err))
+			continue
+		}
+		if err := r.fs.WriteFile(filepath.Join(dst, name), data, 0o644); err != nil {
+			failures = append(failures, fmt.Sprintf("write %s: %v", name, err))
+			continue
+		}
+	}
+	if len(failures) > 0 {
+		return "personas: " + strings.Join(failures, "; ")
+	}
+	return ""
+}
+
+// seedClaudeMD writes CLAUDE.md at the project root when absent.
+// Skips silently if the file already exists.
+func (r *ratifier) seedClaudeMD(target, projectName string) string {
+	path := filepath.Join(target, "CLAUDE.md")
+	if _, err := r.fs.Stat(path); err == nil {
+		return ""
+	} else if !os.IsNotExist(err) {
+		return fmt.Sprintf("CLAUDE.md: stat failed: %v", err)
+	}
+	if err := r.fs.WriteFile(path, []byte(claudeMDSkeleton(projectName)), 0o644); err != nil {
+		return fmt.Sprintf("CLAUDE.md: write failed: %v", err)
+	}
+	return ""
 }
 
 // synthesiseProjectMD is a fallback used when the skill doesn't ship
