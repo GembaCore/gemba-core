@@ -12,7 +12,7 @@
 // editing flows; a dedicated route gives this surface room to breathe
 // without forcing the existing /settings page into a hybrid mode.
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useCapabilities } from '@/capabilities/context-internal';
 import {
   type PoolConfigEnvelope,
@@ -20,13 +20,19 @@ import {
   type PoolEntryRow,
   type PersonaFile,
   type OrchestrationState,
+  type SchedulerConfig,
   getPoolConfig,
   putPoolConfig,
   listPersonaFiles,
   getOrchestrationState,
+  getSchedulerConfig,
 } from '@/api/poolConfig';
 import { TOMLPreview } from '@/components/pools/TOMLPreview';
 import { PoolCard, type PoolCardData, type ValidationIssue } from '@/components/pools/PoolCard';
+import {
+  RunCommandModal,
+  type ModalField,
+} from '@/components/pools/RunCommandModal';
 
 const BEAD_KINDS = ['epic', 'task', 'bug', 'decision', 'feature', 'chore'];
 const DEFAULT_AGENT_TYPES = ['claude', 'shell-only'];
@@ -173,9 +179,35 @@ export default function PoolsPage() {
   const [state, setState] = useState<EditorState | null>(null);
   const [personas, setPersonas] = useState<PersonaFile[]>([]);
   const [orchState, setOrchState] = useState<OrchestrationState | null>(null);
+  const [schedulerCfg, setSchedulerCfg] = useState<SchedulerConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveOK, setSaveOK] = useState(false);
+
+  // gt-flow modal state. Only one modal can be open at a time;
+  // 'kind' identifies which one. 'null' = closed. The native flow
+  // never sets these.
+  const [modalKind, setModalKind] = useState<
+    null | 'rig' | 'polecat' | 'scheduler'
+  >(null);
+
+  // Refetch the orchestration state — used after a successful gt
+  // mutation lands so the rig / polecat lists repopulate.
+  const refreshOrchState = useCallback(() => {
+    getOrchestrationState()
+      .then((s) => setOrchState(s))
+      .catch(() => {
+        /* tolerate — surfacing this would mask the success notice */
+      });
+  }, []);
+
+  const refreshSchedulerCfg = useCallback(() => {
+    getSchedulerConfig()
+      .then((s) => setSchedulerCfg(s))
+      .catch(() => {
+        /* tolerate; non-gastown returns an empty envelope, errors are non-fatal */
+      });
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -192,6 +224,13 @@ export default function PoolsPage() {
         .then((s) => active && setOrchState(s))
         .catch(() => {
           /* tolerate; gt-only */
+        });
+    }
+    if (adaptorID === 'gastown') {
+      getSchedulerConfig()
+        .then((s) => active && setSchedulerCfg(s))
+        .catch(() => {
+          /* tolerate */
         });
     }
     return () => {
@@ -281,6 +320,68 @@ export default function PoolsPage() {
     });
   }
 
+  // Modal field configurations for the three gt-flow buttons.
+  // Validators are kept inline so the field shape stays close to
+  // the spec; sharing them across the file would obscure intent.
+  const RIG_NAME_RE = /^[A-Za-z0-9_-]+$/;
+  const newRigFields: ModalField[] = [
+    {
+      name: 'name',
+      label: 'Rig name',
+      placeholder: 'my-rig',
+      required: true,
+      validate: (v) =>
+        RIG_NAME_RE.test(v.trim())
+          ? null
+          : 'Use letters, numbers, dash or underscore only',
+    },
+  ];
+
+  const rigOptions =
+    orchState?.scopes
+      ?.filter((s) => s.kind === 'rig')
+      .map((s) => ({ value: s.id, label: s.id })) ?? [];
+  const personaOptionsForPolecat = personas.map((p) => ({
+    value: p.id,
+    label: p.id,
+  }));
+  const newPolecatFields: ModalField[] = [
+    {
+      name: 'rig',
+      label: 'Rig',
+      kind: 'select',
+      required: true,
+      options: rigOptions,
+    },
+    {
+      name: 'persona',
+      label: 'Persona',
+      kind: 'select',
+      required: true,
+      options: personaOptionsForPolecat,
+    },
+  ];
+
+  const schedulerFields: ModalField[] = [
+    {
+      name: 'max_polecats',
+      label: 'Max polecats',
+      kind: 'number',
+      required: true,
+      initialValue:
+        schedulerCfg?.max_polecats != null
+          ? String(schedulerCfg.max_polecats)
+          : '',
+      validate: (v) => {
+        const n = Number(v);
+        if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1) {
+          return 'Must be a positive integer';
+        }
+        return null;
+      },
+    },
+  ];
+
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="pools-page">
       <header className="border-b px-6 py-4 dark:border-neutral-800">
@@ -295,6 +396,53 @@ export default function PoolsPage() {
 
       <div className="flex min-h-0 flex-1 gap-6 overflow-auto p-6">
         <div className="flex-1 space-y-6">
+          {adaptorID === 'gastown' && (
+            <Section title="Imported from gt">
+              <div className="space-y-3 text-sm">
+                <div data-testid="gt-rigs-list">
+                  <span className="text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                    Rigs:
+                  </span>{' '}
+                  {(orchState?.scopes ?? [])
+                    .filter((s) => s.kind === 'rig')
+                    .map((s) => s.id)
+                    .join(' · ') || '(none)'}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="gt-new-rig"
+                    onClick={() => setModalKind('rig')}
+                    className="rounded-sm border px-3 py-1 text-xs hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                  >
+                    + New rig
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="gt-new-polecat"
+                    onClick={() => setModalKind('polecat')}
+                    className="rounded-sm border px-3 py-1 text-xs hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                  >
+                    + New polecat
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="gt-edit-scheduler"
+                    onClick={() => setModalKind('scheduler')}
+                    className="rounded-sm border px-3 py-1 text-xs hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                  >
+                    Edit gt scheduler
+                    {schedulerCfg?.max_polecats != null &&
+                      schedulerCfg.max_polecats > 0 && (
+                        <span className="ml-1 text-neutral-400">
+                          (max_polecats={schedulerCfg.max_polecats})
+                        </span>
+                      )}
+                  </button>
+                </div>
+              </div>
+            </Section>
+          )}
           <Section title="Server defaults">
             <div className="grid grid-cols-2 gap-3 text-sm">
               <label className="flex flex-col">
@@ -462,6 +610,49 @@ export default function PoolsPage() {
           </div>
         </aside>
       </div>
+
+      {/* gt-flow modals — mounted regardless of adaptor; the
+          buttons that open them are only rendered for gastown so
+          they're inaccessible elsewhere. */}
+      <RunCommandModal
+        open={modalKind === 'rig'}
+        title="Create rig"
+        description="Shells out to gt rig create on the gemba server."
+        command="gt rig create <name>"
+        fields={newRigFields}
+        endpoint="/orchestration/scopes"
+        method="POST"
+        onConfirm={refreshOrchState}
+        onClose={() => setModalKind(null)}
+      />
+      <RunCommandModal
+        open={modalKind === 'polecat'}
+        title="Create polecat"
+        description="Shells out to gt polecat create on the gemba server."
+        command="gt polecat create <rig> <persona>"
+        fields={newPolecatFields}
+        endpoint="/orchestration/polecats"
+        method="POST"
+        onConfirm={refreshOrchState}
+        onClose={() => setModalKind(null)}
+      />
+      <RunCommandModal
+        open={modalKind === 'scheduler'}
+        title="gt scheduler config"
+        description="Shells out to gt config set scheduler.max_polecats."
+        command="gt config set scheduler.max_polecats <max_polecats>"
+        fields={schedulerFields}
+        endpoint="/orchestration/scheduler-config"
+        method="PUT"
+        // The PUT endpoint expects {max_polecats: int}, but our
+        // generic field-to-body packer would emit a string. Coerce
+        // here so the server's strict JSON decode succeeds.
+        bodyTransform={(values) => ({
+          max_polecats: parseInt(values.max_polecats ?? '0', 10) || 0,
+        })}
+        onConfirm={refreshSchedulerCfg}
+        onClose={() => setModalKind(null)}
+      />
     </div>
   );
 }

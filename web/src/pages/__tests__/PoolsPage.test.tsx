@@ -19,6 +19,7 @@ vi.mock('@/api/poolConfig', () => {
     putPoolConfig: vi.fn(),
     listPersonaFiles: vi.fn(),
     getOrchestrationState: vi.fn(),
+    getSchedulerConfig: vi.fn(),
   };
 });
 
@@ -80,6 +81,7 @@ beforeEach(() => {
     scopes: [{ id: 'local', kind: 'local', personas: [] }],
     polecats: [],
   });
+  vi.mocked(api.getSchedulerConfig).mockResolvedValue({ max_polecats: 0 });
 });
 
 describe('PoolsPage', () => {
@@ -161,5 +163,58 @@ describe('PoolsPage', () => {
     await waitFor(() =>
       expect(screen.getByTestId('pools-unsupported-adaptor')).toBeTruthy()
     );
+  });
+
+  // gm-s47n.17 — gt-flow mutation buttons should only render when
+  // the editor is bound to gastown.
+  it('hides gt-flow mutation buttons in the native flow', async () => {
+    const Wrapper = buildWrapper({
+      work_plane: null,
+      orchestration_plane: orchManifest({ adaptor_id: 'native' }),
+    });
+    render(<PoolsPage />, { wrapper: Wrapper });
+    await waitFor(() => screen.getByTestId('pools-page'));
+    expect(screen.queryByTestId('gt-new-rig')).toBeNull();
+    expect(screen.queryByTestId('gt-new-polecat')).toBeNull();
+    expect(screen.queryByTestId('gt-edit-scheduler')).toBeNull();
+  });
+
+  it('renders gt-flow mutation buttons when adaptor=gastown', async () => {
+    vi.mocked(api.getOrchestrationState).mockResolvedValue({
+      adaptor_id: 'gastown',
+      scopes: [
+        { id: 'gemba', kind: 'rig', personas: ['engineer-claude'] },
+        { id: 'lume', kind: 'rig', personas: [] },
+      ],
+      polecats: [],
+    });
+
+    const Wrapper = buildWrapper({
+      work_plane: null,
+      orchestration_plane: orchManifest({ adaptor_id: 'gastown' }),
+    });
+    render(<PoolsPage />, { wrapper: Wrapper });
+    await waitFor(() => screen.getByTestId('gt-new-rig'));
+    expect(screen.getByTestId('gt-new-polecat')).toBeTruthy();
+    expect(screen.getByTestId('gt-edit-scheduler')).toBeTruthy();
+  });
+
+  it('opens the RunCommandModal when "+ New rig" is clicked', async () => {
+    vi.mocked(api.getOrchestrationState).mockResolvedValue({
+      adaptor_id: 'gastown',
+      scopes: [{ id: 'gemba', kind: 'rig', personas: [] }],
+      polecats: [],
+    });
+
+    const Wrapper = buildWrapper({
+      work_plane: null,
+      orchestration_plane: orchManifest({ adaptor_id: 'gastown' }),
+    });
+    render(<PoolsPage />, { wrapper: Wrapper });
+    await waitFor(() => screen.getByTestId('gt-new-rig'));
+    fireEvent.click(screen.getByTestId('gt-new-rig'));
+    await waitFor(() => screen.getByTestId('run-command-modal'));
+    expect(screen.getByTestId('run-command-field-name')).toBeTruthy();
+    expect(screen.getByTestId('run-command-preview').textContent).toContain('gt rig create');
   });
 });
