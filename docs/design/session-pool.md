@@ -51,8 +51,8 @@ against (`work-planning.md` §1). This doc is the corrected approach.
 
 | Term | Definition |
 |------|------------|
-| **Pool** | A bounded set of long-lived sessions of one `agent_type`, scoped to a rig. Members carry continuous context across beads. |
-| **Pool key** | The `(rig, agent_type)` tuple that uniquely identifies a pool. `(gemba, claude)` is one pool; `(gemba, codex)` is another. |
+| **Pool** | A bounded set of long-lived sessions running one **persona**, scoped to a rig. Members carry continuous context across beads. |
+| **Pool key** | The `(rig, persona)` tuple that uniquely identifies a pool. Within a single gemba server instance the rig is implicit, so the pool key reduces to the persona id. The persona's TOML config carries its `agent_type`, system prompt, and skill list — agent_type is therefore implied by the persona, not a separate axis. |
 | **Pool member** | One session inside a pool. Has stable `session_id` + `pane_id`. Status transitions per §4. |
 | **Pool size** | Configured target count of members for a pool. Daemon maintains the pool at this size when under load; idle members beyond size are reaped (§4.4). |
 | **Idle session** | A pool member with `Status = SessionReady` — completed its last bead, pane alive, awaiting dispatch. |
@@ -78,42 +78,98 @@ on `session_id`, so a recycle resets the profile. That's intentional — the
 recycle's whole purpose is to drop the old context. The retro pipeline
 (`gm-s47n.8`) gets a clean boundary to grade against.
 
-### §3.2 Pool key is `(rig, agent_type)`
+### §3.2 Pool key is `(rig, persona)`
 
-A rig may host multiple pools — one per agent type (`claude`, `codex`,
-`gemini`, etc.). The daemon picks dispatches against pools whose
-`agent_type` matches the candidate bead. Beads without an explicit agent
-type fall through to a configured default pool.
+A rig may host multiple pools — one per persona. A persona uniquely
+implies its `agent_type`, system prompt, and skill list (see
+`internal/persona/` and `.gemba/personas/*.toml`). Two sessions running
+*different* personas have distinct system prompts and therefore distinct
+warm contexts; treating them as one pool slot would silently invalidate
+the affinity model the moment a recycle swapped the persona.
 
-The pool key is *not* `(rig, agent_type, persona)`. Personas are dispatch-
-time decoration on top of an agent type; conflating them with pool
-identity would explode pool counts unnecessarily. A persona switch on a
-recycled session is a re-priming, not a slot change.
+Concrete consequence: a "PM persona" pool is separate from an "engineer
+persona" pool, even when both run on `claude`. Beads route to a pool
+either by an explicit `persona` extras field on the bead or by a
+configurable default-persona-per-bead-kind mapping (e.g. epics → PM
+persona, tasks → engineer persona). Beads with no persona resolution
+fall through to a server-level `pool.default_persona`; without that
+configured, the daemon refuses to autodispatch them and they wait for
+manual drag.
+
+A daemon instance is constructed **per pool**, not globally. Each
+daemon's `IdleSessionLister` returns only its pool's idle members and
+its `ReadySetReader` returns only beads bound to that pool's persona.
+This isolates pools from each other: a slow PM-persona daemon does not
+gate engineer-persona dispatches, and the conflict graph stays scoped
+(beads for different personas can still surface workspace conflicts via
+the live-session lister, which returns sessions across all pools — see
+§6.2).
 
 ### §3.3 Pool sizing
 
 Two configuration shapes, in priority order:
 
-1. **Per-rig, per-agent-type explicit:**
+1. **Per-rig, per-persona explicit:**
    ```toml
-   [pool.gemba.claude]
-   size = 3
+   [pool.gemba.pm-claude]
+   size = 2
    recycle_after_beads = 5    # safety belt; 0 disables
    idle_ceiling_minutes = 30  # idle beyond this → reap
 
-   [pool.gemba.codex]
+   [pool.gemba.engineer-claude]
+   size = 3
+
+   [pool.gemba.engineer-codex]
    size = 1
    ```
 
 2. **Rig-level default:**
    ```toml
    [pool]
-   default_size = 0   # opt-in; explicit pool blocks override
+   default_size = 0           # opt-in; explicit pool blocks override
+   default_persona = ""       # optional fallback when a bead has no persona
    ```
 
 `size = 0` means "no pool" — today's behavior, every dispatch spawns
 fresh. `size = N` means "maintain N pool members for this `(rig,
-agent_type)`" subject to the manifest's `MaxParallel` constraints.
+persona)`" subject to the manifest's `MaxParallel` constraints (see
+clamp behavior immediately below).
+
+#### `MaxParallel` clamp
+
+The orchestration manifest declares a per-host `MaxParallel` (the
+hard cap on concurrent agent panes the host can support). Pool
+sizing is best-effort against this cap, not a parallel allocation:
+
+```
+effective_size = min(declared_size, MaxParallel - reserved_for_manual)
+```
+
+Where `reserved_for_manual` defaults to 1 — at least one pane slot
+is held back from the pool so a human operator's manual drag is not
+starved by a saturated pool. Tunable via `[pool] reserved_for_manual = N`.
+
+The clamp runs **once at config load**, not per-dispatch. If the
+clamp activates, gemba logs a `WARN` line at startup naming the
+declared size, the cap, and the effective size. Operators see the
+warning the next time they `gemba serve` — there's no silent
+degradation. The SPA's pool state endpoint (§10.1) also surfaces
+`size_target_declared` distinct from `size_target_effective` so the
+clamp is observable post-startup.
+
+**Documentation requirement:** because the clamp is the single most
+common source of "I configured size=5 but only see 3 pool members"
+confusion, every place `MaxParallel` and `pool.*.size` appear must
+cross-reference each other:
+
+- `internal/config/serve.go` — TOML schema comments must explain
+  both knobs together
+- `docs/user-guide.md` (or equivalent operator-facing doc) — a
+  "Pool sizing and MaxParallel" subsection
+- The startup banner — log the effective pool size next to
+  `MaxParallel` so it's visible without `grep`
+
+This is part of the gm-s47n.12 DoD, not an aspirational future bead.
 
 The daemon does NOT spawn pool members eagerly. Initial pool growth is
 **lazy on first dispatch**: the first time the daemon picks a bead for a
@@ -237,20 +293,30 @@ A new `Recycle(ctx, sessionID)` method on the native adaptor. Sequence:
 
 1. Validate the session is in `Status=Ready`. Mid-bead recycle is
    rejected; this is a contract assertion.
-2. Send the recycle keystroke sequence to the pane. For claude this is
+2. **Verify worktree is clean.** Run `git -C <worktree> status
+   --porcelain`; if any output, the worktree is dirty. **Refuse to
+   recycle.** Convert the recycle request into an end-and-respawn:
+   call `EndSession(SessionEndCompleted)` on the slot, log a
+   `WARN session.recycle.refused.dirty_worktree` event, and let
+   the next dispatch tick spawn a fresh pool member. **Never
+   destructively reset a dirty worktree** — uncommitted work is
+   the operator's, not the planner's, to decide what to do with.
+   This is a hard invariant: a dirty worktree at recycle time
+   indicates the prior session ended without honoring the §5.4
+   cleanliness contract, and the safe action is to surface it via
+   the cold-spawn cost rather than silently `git reset --hard`.
+3. Send the recycle keystroke sequence to the pane. For claude this is
    `/clear` (or whatever flushes the in-memory transcript). For shell-
    like agents, a re-exec.
-3. Reset the worktree:
-   - `git -C <worktree> reset --hard` (drop any uncommitted changes;
-     the bead's done so this is destructive-by-design).
-   - `git -C <worktree> clean -fd` (remove untracked artifacts).
-   - `git -C <worktree> checkout <base_branch>` (return to base).
+4. Resync the (clean) worktree to its base:
+   - `git -C <worktree> checkout <base_branch>` (return to base; only
+     safe because step 2 confirmed clean).
    - `git -C <worktree> pull --ff-only` (sync remote).
-4. Mint a new `session_id` for the next chapter. Reset session profile
+5. Mint a new `session_id` for the next chapter. Reset session profile
    and last-heartbeat. Status returns to `Initializing`.
-5. Re-deliver the boot preamble (from `internal/adapter/native/preamble`)
+6. Re-deliver the boot preamble (from `internal/adapter/native/preamble`)
    so the new context starts properly primed.
-6. Emit a `session.recycled` `OrchestrationEvent` with the prior session
+7. Emit a `session.recycled` `OrchestrationEvent` with the prior session
    id, the new session id, the trigger reason, and the prior session's
    profile snapshot. The retro pipeline reads this to grade recycle
    timing.
@@ -265,18 +331,82 @@ Three reasons:
 
 1. **Spawn cost amortization.** A claude pane costs ~5–10 seconds of boot
    time before the first prompt is accepted. A recycle costs ~1 second
-   (clear + git reset). If the pool churns through 50 beads/day, the
-   difference is 4 minutes/day per pool slot. Across a 10-slot fleet
-   that's 40 minutes/day of idle agent time.
+   (clear + git checkout + pull). If the pool churns through 50
+   beads/day, the difference is 4 minutes/day per pool slot. Across a
+   10-slot fleet that's 40 minutes/day of idle agent time.
 
-2. **Worktree continuity.** Even after `git reset --hard`, the worktree
-   has cached node_modules, Go module caches, gitnexus index, etc. Cold-
-   spawning means re-warming these. Recycle keeps them warm.
+2. **Worktree continuity.** The worktree has cached `node_modules`, Go
+   module caches, gitnexus index, etc. Cold-spawning means re-warming
+   these. Recycle keeps them warm. (Note: the *git* state is reset to
+   base; the *filesystem* state — caches outside the git index —
+   survives.)
 
-3. **Pool identity stability.** Operators thinking about "claude slot 1
-   in gemba" want that slot to have a stable identity. Recycle preserves
-   the slot; respawn destroys it. This matters for the SPA's agent
-   context strip (`work-planning.md` §6.1).
+3. **Pool identity stability.** Operators thinking about "PM-persona
+   slot 1 in gemba" want that slot to have a stable identity. Recycle
+   preserves the slot; respawn destroys it. This matters for the
+   SPA's agent context strip (`work-planning.md` §6.1).
+
+### §5.4 End-of-bead worktree cleanliness invariant
+
+The recycle protocol's refuse-on-dirty stance (§5.2 step 2) places a
+hard contract on the prior session: **when a session emits
+`bead-done`, its worktree MUST be clean** — every change for the bead
+is committed and pushed; no untracked files except those covered by
+`.gitignore`; no detached HEAD; no in-progress merge or rebase.
+
+Two layers enforce this. Both must be present (defense in depth):
+
+#### §5.4.1 Agent-side: the `bead-done` skill commits + pushes
+
+The agent's `gt done` (or equivalent end-of-bead skill) is updated to
+run, in order:
+
+1. `git status --porcelain` — if dirty, run `git add -A && git
+   commit -m "<auto-commit message keyed on bead id>"`. The
+   auto-commit message follows project convention; a follow-up bead
+   may delegate the message to the LLM via prompt.
+2. `git push origin <branch>` — push to the upstream the bead is
+   bound to (typically `main` for direct-merge beads, the merge
+   queue branch for `--merge=mr` beads).
+3. After successful push, emit `gemba-state bead-done`. Only then
+   does the bridge transition the session to `SessionReady`.
+
+If any step fails (e.g. push rejected by hook, commit fails), the
+agent does NOT emit `bead-done`. It surfaces the failure as an
+operator-visible escalation (`escalation.bead_done_blocked`) and
+the session stays in `SessionWorking`. The reconcile loop (§9)
+catches this if the agent itself crashes during the sequence.
+
+The system-prompt-level instructions (CLAUDE.md, persona TOMLs)
+already include language like "work is not complete until `git
+push` succeeds" — this contract makes that language load-bearing.
+
+#### §5.4.2 Bridge-side: verify before transitioning
+
+When the bridge receives a `bead-done` token, it does NOT
+immediately transition to `SessionReady`. Instead:
+
+1. Run `git -C <worktree> status --porcelain`.
+2. If output is empty (clean), proceed with the transition.
+3. If output is non-empty (dirty), refuse the transition and
+   emit `escalation.bead_done_with_dirty_worktree` instead.
+   The session stays in `SessionWorking`; an operator-visible
+   escalation surfaces the divergence. The agent skill failed to
+   honor §5.4.1 — that's a bug worth surfacing, not silently
+   masking.
+
+This belt-and-suspenders pattern means a buggy or hand-rolled
+agent skill cannot poison the pool. The invariant survives skill
+regressions.
+
+#### §5.4.3 Why so strict
+
+The pool model trades cold-spawn cost for warm-context retention.
+If recycle silently `git reset --hard`s away uncommitted work,
+the operator's trust in the system collapses on the first lost
+edit. The pool becomes worse than no pool. Forcing the cleanliness
+contract upstream (commit + push before going idle) means the
+recycle path stays simple and the operator's trust stays intact.
 
 ## §6. Daemon integration
 
@@ -324,9 +454,10 @@ func (d *dispatcher) Dispatch(ctx context.Context, sessionID string, beadID core
     prompt := core.SessionPrompt{
         Extension: map[string]any{
             "gemba:bead_id":         string(beadID),
-            "gemba:agent_type":      d.agentTypeFor(sessionID),
+            "gemba:persona_id":      d.poolPersona,            // bound to this daemon's pool
+            "gemba:agent_type":      d.poolAgentType,          // derived from persona at construction
             "gemba:nonce":           newAutodispatchNonce(),
-            "gemba:reuse_pane_id":   paneID,  // ← THE pool semantic
+            "gemba:reuse_pane_id":   paneID,                   // ← THE pool semantic
             "gemba:autodispatch":    "1",
         },
     }
@@ -433,8 +564,9 @@ priority dominate the pick.
 |------|-----------|----------|
 | Idle session's pane dies (manual close) | Pane-watcher observes EOF on the bridge tailer | Transition to `Failed`, reap, daemon spawns a fresh member next tick |
 | Agent emits `bead-done` but bead is not actually closed in beads | Reconcile loop reads `bd show <bead_id>` after each `bead-done` | If still open, transition to `Stalled` instead of `Ready`; log the divergence |
-| Recycle git reset fails (uncommitted hooks, dirty submodules) | Recycle returns error from §5.2 step 3 | Daemon falls back to End + spawn-fresh on this pool slot |
-| Pool grows past `MaxParallel` from manifest | Spawn rejects with cap error | Daemon logs, waits — pool size is best-effort against MaxParallel |
+| Recycle requested on dirty worktree (§5.2 step 2) | Bridge runs `git status --porcelain`, output non-empty | Refuse recycle. Convert to End + spawn-fresh. Log `WARN session.recycle.refused.dirty_worktree`. The dirty worktree means the prior session violated §5.4 — surface it as a cold-spawn cost rather than mask it |
+| Agent emits `bead-done` with dirty worktree (§5.4.2) | Bridge cleanliness check fails | Refuse the `Working → Ready` transition. Emit `escalation.bead_done_with_dirty_worktree`. Session stays in `Working` for operator triage |
+| Pool grows past `MaxParallel` from manifest | Effective size clamped at config load with WARN; runtime pushes through clamp logged + dropped | Pool sizing is best-effort against `MaxParallel`. The clamp is not silent — see §3.3 documentation requirement |
 | Operator changes `pool.size` at runtime | Config reload notices delta | Reaper drains excess on next idle window; daemon spawns more on next dispatch tick |
 | Session sits in `Ready` past `idle_ceiling_minutes` | Reaper (§4.4) | Reap (graceful end + worktree release) |
 | Server restarts with idle pool members alive in tmux | New server reattaches via tmux session list | Treat reattached panes as `SessionReady`; profile is rebuilt from beads `last_beads` field |
@@ -530,33 +662,36 @@ becomes parity-with-native.
 
 ## §12. Open questions
 
-These need explicit decisions before §11.1 ships.
+### Resolved (architect, 2026-04-29)
 
-1. **`bead-done` source-of-truth.** Does the agent emit it autonomously
-   (skill triggers on close), or does gemba poll for bead-state changes
-   and infer it? The §4.2 design assumes autonomous emit. Risk: agent
-   forgets and the session sits in `Working` forever. Mitigation:
-   reconcile loop that compares `Session.ActiveTurnID` to bead state
-   every 60s.
+1. ✅ **`bead-done` source-of-truth.** Autonomous emit from the agent
+   skill. Reconcile loop (60s) is the safety net for crashes mid-emit.
+   Reflected in §4.2 and §9.
 
-2. **Recycle's worktree reset is destructive by design.** What if the
-   bead leaves work uncommitted (the agent crashed mid-push)? §5.2
-   step 3 throws it away. Alternative: refuse to recycle when the
-   worktree is dirty, end the session instead. Safer; means more cold
-   spawns.
+2. ✅ **Recycle on dirty worktree.** **Refuse, do not destructively
+   reset.** End the session and let a fresh spawn replace the slot.
+   This pulls the cleanliness invariant upstream into the agent's
+   `bead-done` skill (§5.4) — commit + push are mandatory before
+   going idle. Reflected in §5.2 step 2 and §5.4.
 
-3. **Pool sizing under MaxParallel.** Manifest declares per-host
-   `MaxParallel`. If `pool.size > MaxParallel`, who wins? Today the
-   adaptor would reject the spawn. Proposal: `effective_size = min(pool.size, MaxParallel)` clamped at config load time, with a startup warning.
+3. ✅ **Pool key is `(rig, persona)`, not `(rig, agent_type)`.** A
+   persona uniquely implies its agent_type and system prompt;
+   different personas on the same agent_type warrant separate pools
+   because their warm contexts are not interchangeable. Reflected
+   in §2 vocabulary, §3.2, §3.3 TOML schema, §6.3 dispatcher.
 
-4. **Cold-start grace duration.** §8.3 specifies a "one-time" grace.
+4. ✅ **`MaxParallel` clamp.** Clamp `pool.size` to `MaxParallel -
+   reserved_for_manual` at config load with a startup `WARN`.
+   `reserved_for_manual` defaults to 1 to ensure manual drag is
+   never starved. Documentation requirement explicit in §3.3 — TOML
+   schema comments, user guide section, and startup banner all
+   surface the clamp. Part of gm-s47n.12 DoD.
+
+### Still open
+
+5. **Cold-start grace duration.** §8.3 specifies a "one-time" grace.
    Should it be N beads (e.g. 1) or T minutes? Affects how aggressively
    a fresh pool member competes against a warm one for the first work.
-
-5. **Per-persona pools, or per-agent-type only?** §3.2 argues for the
-   latter. But a "PM persona" and an "engineer persona" have wildly
-   different prompts and might warrant separate pools even on the
-   same agent type. Defer to follow-up if Phase 1 surfaces evidence.
 
 6. **Auto-dispatch floor scope.** Is it global, per-pool, or per-rig?
    §8.1 says per-pool. Risk: too many knobs. Counterargument: a
@@ -569,6 +704,18 @@ These need explicit decisions before §11.1 ships.
    (recycle to fresh slot) or end the *pool slot* (tear down the
    pane)? Proposal: SPA's End ends the slot; SPA's "recycle" button
    recycles. Two distinct verbs.
+
+8. **Default-persona-per-bead-kind mapping.** §3.2 mentions a
+   "configurable default-persona-per-bead-kind mapping (e.g. epics
+   → PM persona, tasks → engineer persona)" but does not specify
+   the schema. Likely a `[pool.routing]` table; needs a concrete
+   shape before .12 lands.
+
+9. **Auto-commit message on §5.4.1 step 1.** When the agent's
+   `bead-done` skill auto-commits dirty worktree state, the commit
+   message is currently "auto-commit message keyed on bead id".
+   Should it be deterministic (`"chore(<bead>): auto-commit before
+   bead-done"`) or LLM-generated? Defer until §5.4.1 lands.
 
 ## §13. Appendix: code touchpoints
 
@@ -602,11 +749,18 @@ Net new files: ~6. Touched existing files: ~10. Estimated total LOC:
 
 ---
 
-**Review checklist for the architect:**
+**Architect resolutions captured (2026-04-29):**
 
-- [ ] Pool key is `(rig, agent_type)` — not adding persona dimension
-- [ ] Lazy pool growth (not eager) is the default
-- [ ] `bead-done` is autonomous from the agent (not polled by gemba)
-- [ ] Recycle is destructive on dirty worktrees by design (§12.2 open)
-- [ ] Migration phase 0 = zero delta from today's main
-- [ ] Open questions §12 are addressed (or explicitly deferred) before §11.1 ships
+- [x] Pool key is `(rig, persona)` — persona is the right granularity
+- [x] Lazy pool growth (not eager) is the default
+- [x] `bead-done` is autonomous from the agent (not polled by gemba)
+- [x] Recycle **refuses** on dirty worktree — cleanliness invariant
+      enforced upstream by the `bead-done` skill (§5.4)
+- [x] `MaxParallel` clamp with WARN; `reserved_for_manual = 1` default;
+      documentation required in TOML comments + user guide + banner
+- [x] Migration phase 0 = zero delta from today's main
+
+**Still open (non-blocking for §11.1):** §12.5 cold-start grace
+duration, §12.6 auto-dispatch floor scope, §12.7 manual-end semantics,
+§12.8 default-persona-per-bead-kind schema, §12.9 auto-commit message
+shape.
