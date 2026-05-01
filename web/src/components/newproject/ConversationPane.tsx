@@ -1,6 +1,6 @@
 // ConversationPane (gm-root.17.3 — see docs/design/newproject.md).
 //
-// Left pane of the /new route. Shows the message transcript with the
+// Left pane of the /onboard route. Shows the message transcript with the
 // newproject skill and the operator's input box. Submitting a turn
 // posts to /api/v1/newproject/:id/turn; the host owns the network
 // call so this component is presentational + one onSend callback.

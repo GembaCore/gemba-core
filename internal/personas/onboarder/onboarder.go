@@ -40,8 +40,9 @@ type Persona struct {
 //
 // Returns ErrNoLLMClient (or a wrapping error) when the resolver
 // reports no chat client is configured. The HTTP layer surfaces
-// this as a 503 with [MissingClientDiagnostic] so the SPA's /new
-// route can render the operator-facing diagnostic verbatim.
+// this as a 503 with [MissingClientDiagnostic] so the SPA's /onboard
+// route and board CTA can render the operator-facing diagnostic
+// verbatim.
 func Spawn(ctx context.Context, resolver Resolver) (*Persona, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("onboarder: nil resolver")

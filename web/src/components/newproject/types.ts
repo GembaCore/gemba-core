@@ -1,4 +1,4 @@
-// Types for the /new conversational project-creation route
+// Types for the /onboard conversational project-creation route
 // (gm-root.17.3 — see docs/design/newproject.md).
 
 import type { ConversationMessage, NewProjectState } from '@/api/newproject';

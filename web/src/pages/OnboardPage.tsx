@@ -26,17 +26,17 @@
 // session. The route does NOT autosave or attempt to resume; the
 // design doc is explicit.
 //
-// Backend wiring: the `newproject` skill (gm-root.17.5), the
-// Onboarder persona (gm-root.17.10), and the atomic-ratify backend
-// (gm-root.17.6) do NOT exist yet. The route POSTs to:
+// Backend wiring: the route talks to the real `newproject` skill
+// (gm-root.17.5), transient Onboarder persona (gm-root.17.10), and
+// atomic-ratify backend (gm-root.17.6) through:
 //
 //   POST /api/v1/newproject/start
 //   POST /api/v1/newproject/:id/turn
 //   POST /api/v1/newproject/:id/ratify
 //
-// The fake-mode dispatcher in testing/e2e/fixtures/server.ts mocks
-// these endpoints so the route renders + transitions + commits
-// end-to-end. When the backend lands, no SPA changes are required.
+// The production server wires these through AttachNewProject. Tests
+// may still mock or stub the endpoints/turner for deterministic UI
+// coverage, but this page is no longer a frontend-only stub.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';

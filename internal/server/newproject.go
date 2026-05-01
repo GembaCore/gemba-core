@@ -1,10 +1,12 @@
 // /api/v1/newproject/* — conversational project-creation flow
 // (gm-root.17; design: docs/design/newproject.md).
 //
-// This file ships the server-side backing for the /new SPA route. The
-// route runs a transient Onboarder-persona conversation against the
-// `newproject` skill, then commits the resulting plan tree as a real
-// project via an atomic transaction (gm-root.17.6).
+// This file ships the server-side backing for the /onboard SPA route.
+// The route runs a transient Onboarder-persona conversation against
+// the `newproject` skill, then commits the resulting plan tree as a
+// real project via an atomic transaction (gm-root.17.6). The /new
+// route is now a lightweight create-project entry point that can
+// create an empty project without LLM involvement.
 //
 // Wire contract: web/src/api/newproject.ts is the canonical shape. The
 // Go types here mirror those typed-client interfaces verbatim — JSON
@@ -16,12 +18,10 @@
 //   POST /api/v1/newproject/:id/turn       — submit an operator message
 //   POST /api/v1/newproject/:id/ratify     — atomic commit
 //
-// The skill (gm-root.17.5) and the Onboarder persona host
-// (gm-root.17.10) are out of scope for gm-root.17.6 — start/turn store
-// state in-memory and emit deterministic stub replies. The skill plugs
-// in via the SkillTurner interface (AttachNewProject), which the
-// onboarder bead will implement against the real LLM client. Until
-// then a stub turner ships so the SPA keeps working in real-mode.
+// The skill (gm-root.17.5) plugs in via the SkillTurner interface
+// (AttachNewProject). Production serve wiring installs the real
+// Onboarder turner; tests and fallback setups can still use the
+// deterministic stub turner.
 //
 // Atomic ratification (gm-root.17.6 — primary deliverable): the
 // transaction lives in newproject_ratify.go. This file owns the
@@ -68,7 +68,8 @@ type DraftMilestone = newproject.DraftMilestone
 // ChangeRef points at the most-recent skill edit.
 type ChangeRef = newproject.ChangeRef
 
-// NewProjectState is the authoritative state for one /new session.
+// NewProjectState is the authoritative state for one /api/v1/newproject
+// conversation session.
 type NewProjectState = newproject.NewProjectState
 
 // emptyNewProjectState returns the skill's canonical EmptyState.
@@ -144,7 +145,8 @@ type RatifyResponse struct {
 
 // ─── Session store ──────────────────────────────────────────────────
 
-// NewProjectSession is the in-memory record for one /new conversation.
+// NewProjectSession is the in-memory record for one /onboard
+// conversation.
 // Lives only in server process memory — refresh / restart / Ctrl-C
 // discards it (one-shot persistence is by design; see
 // docs/design/newproject.md §One-shot persistence).
@@ -154,7 +156,8 @@ type NewProjectSession struct {
 	StartedAt time.Time
 }
 
-// NewProjectStore is the persistence interface for /new sessions.
+// NewProjectStore is the persistence interface for /onboard
+// conversation sessions.
 // Mirrors the bootstrap / walk store pattern: callers hand pre-built
 // records to mutation methods, the store concerns itself only with
 // id + lifecycle.
@@ -257,9 +260,10 @@ func newSessionID() string {
 // implements: take a state + an operator message + any in-place edits
 // and return the next state + a reply for the conversation pane.
 //
-// Until the real persona host lands, a stub implementation ships so
-// the SPA keeps working in real mode. The stub mirrors the e2e fixture's
-// deterministic plan-tree mutation so screenshot tests stay stable.
+// Production serve wiring installs the real Onboarder persona host.
+// A stub implementation remains available for tests and fallback
+// setups; it mirrors the e2e fixture's deterministic plan-tree
+// mutation so screenshot tests stay stable.
 type SkillTurner interface {
 	Turn(ctx context.Context, in NewProjectState, message string, edits map[string]interface{}) (out NewProjectState, reply string, err error)
 	// Greeting returns the assistant's opening line on /start. Empty
@@ -274,15 +278,15 @@ type SkillTurner interface {
 	Probe(ctx context.Context) error
 }
 
-// stubSkillTurner is a deterministic placeholder used until the
-// real Onboarder persona ships (gm-root.17.10). It mirrors the e2e
-// fixture's behaviour: the first turn seeds a single placeholder
-// milestone; subsequent turns append epics under it.
+// stubSkillTurner is a deterministic placeholder for tests and fallback
+// setups. It mirrors the e2e fixture's behaviour: the first turn seeds
+// a single placeholder milestone; subsequent turns append epics under
+// it.
 type stubSkillTurner struct{}
 
-// NewStubSkillTurner returns the placeholder turner. Production
-// builds use the real Onboarder when AttachNewProject(... real-turner)
-// is wired (gm-root.17.10).
+// NewStubSkillTurner returns the placeholder turner. Production serve
+// wiring uses the real Onboarder via AttachNewProject(... real-turner)
+// (gm-root.17.10).
 func NewStubSkillTurner() SkillTurner { return stubSkillTurner{} }
 
 func (stubSkillTurner) Probe(_ context.Context) error { return nil }
@@ -362,7 +366,7 @@ func newProjectItoa(i int) string {
 
 // ─── Router glue ────────────────────────────────────────────────────
 
-// AttachNewProject binds the /new session store + skill turner +
+// AttachNewProject binds the /onboard session store + skill turner +
 // ratify executor (gm-root.17.6). Calling with a nil store removes
 // the binding (handlers return 503). cmd/gemba serve calls this once
 // at boot; tests inject fixtures per case.
@@ -395,8 +399,8 @@ func (r *Router) newProjectStart(w http.ResponseWriter, req *http.Request) {
 	// Spawn-failure path (gm-root.17.10): real-mode turners (the
 	// Onboarder persona) return an error here when they can't
 	// resolve a chat client. Surface as 503 with the operator-facing
-	// diagnostic so the SPA's /new route can render it verbatim
-	// without parsing a 500 stack trace.
+	// diagnostic so the SPA's /onboard route and board CTA can render
+	// it verbatim without parsing a 500 stack trace.
 	if err := turner.Probe(req.Context()); err != nil {
 		httperr.Write(w, http.StatusServiceUnavailable,
 			"no_llm_client", err.Error())

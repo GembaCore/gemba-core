@@ -1,13 +1,11 @@
 // Typed data-access for /api/v1/newproject (gm-root.17.3 — see
 // docs/design/newproject.md).
 //
-// The /new SPA route runs a conversational project-creation flow
-// against the `newproject` skill. The skill (gm-root.17.5) and the
-// Onboarder persona host (gm-root.17.10) do NOT exist yet — this
-// module is a typed STUB client. Until the backend lands the e2e
-// suite intercepts /api/v1/newproject/** in
-// testing/e2e/fixtures/server.ts and the SPA route renders + commits
-// against the canned fake.
+// The /onboard SPA route runs a conversational project-creation flow
+// against the `newproject` skill hosted by the transient Onboarder
+// persona (gm-root.17.10). This module is the typed client for the
+// real /api/v1/newproject/* backend; tests may intercept these calls
+// or install a stub turner for deterministic UI coverage.
 //
 // Contract (per design doc):
 //

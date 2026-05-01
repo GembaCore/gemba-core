@@ -16,9 +16,9 @@
 //     used elsewhere by Gemba's agent layer (~/.gemba/config.toml,
 //     [llm] table). When no chat client is configured, [Spawn]
 //     returns [ErrNoLLMClient] with the diagnostic the SPA renders on
-//     /new. No first-run credential prompt — operators configure
-//     credentials in config.toml before kicking off a New project
-//     conversation.
+//     /onboard or in the board's Onboarder CTA gate. No first-run
+//     credential prompt — operators configure credentials in
+//     config.toml before kicking off a New project conversation.
 //   - A [SkillTurner] adapter so server.AttachNewProject can bind a
 //     real Onboarder in place of the stub turner shipped at
 //     gm-root.17.4.

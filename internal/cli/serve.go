@@ -460,7 +460,7 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// matches walk's pattern; SQL persistence is a follow-up bead.
 	handler.AttachBootstrap(server.NewMemoryBootstrapStore())
 
-	// gm-root.17: wire the /new conversational project-creation
+	// gm-root.17: wire the /onboard conversational project-creation
 	// flow. Memory store + the real Onboarder skill turner
 	// (gm-root.17.10) + the production ratifier (gm-root.17.6 —
 	// atomic transaction). Defaults: HOME-based config resolution,
@@ -469,8 +469,8 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// The Onboarder turner lazily resolves an LLM client on first
 	// /start probe by reading ~/.gemba/config.toml's [llm] table.
 	// When no client is configured, /start returns 503 with the
-	// canonical diagnostic so the SPA's /new route can render it
-	// verbatim — see docs/design/newproject.md §"Credential
+	// canonical diagnostic so the SPA's /onboard route and board CTA
+	// can render it verbatim — see docs/design/newproject.md §"Credential
 	// resolution".
 	handler.AttachNewProject(
 		server.NewMemoryNewProjectStore(),

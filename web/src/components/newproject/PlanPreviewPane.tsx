@@ -1,6 +1,6 @@
 // PlanPreviewPane (gm-root.17.3 — see docs/design/newproject.md).
 //
-// Right pane of the /new route. Renders the live plan tree
+// Right pane of the /onboard route. Renders the live plan tree
 // (Milestones → Epics → Beads) and the draft project description.
 // In-place edits feed back into NewProjectState so the next skill
 // turn sees them.
