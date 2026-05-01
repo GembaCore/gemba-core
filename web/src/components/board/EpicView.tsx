@@ -19,8 +19,6 @@ import { useMemo } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  STATE_CATEGORIES,
-  type StateCategory,
   type WorkItem,
 } from '@/types/core.gen';
 import { EpicCard, type EpicChildCounts } from './EpicCard';
@@ -31,18 +29,11 @@ import {
 } from './epicHierarchy';
 import { cellId } from './dragToRestage';
 import { buildMilestoneByEpic } from './milestoneBadge';
-
-// Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
-// Progress → Done → Canceled). The STATE_CATEGORIES order from
-// core.gen.ts already matches.
-const COLUMN_LABELS: Record<StateCategory, string> = {
-  backlog: 'Backlog',
-  unstarted: 'Next Up',
-  staged: 'Staged',
-  started: 'In Progress',
-  completed: 'Done',
-  canceled: 'Canceled',
-};
+import {
+  groupItemsByBoardColumn,
+  visibleBoardColumns,
+  type BoardDisplayColumn,
+} from './boardColumns';
 
 export interface EpicViewProps {
   items: WorkItem[];
@@ -72,9 +63,10 @@ export function EpicView({
   // gm-4se1: resolve each epic's milestone ancestor once per render so
   // the cards don't re-walk the relationship graph individually.
   const milestoneByEpic = useMemo(() => buildMilestoneByEpic(items), [items]);
-  // gm-5ekd: drop Backlog column unless toggled on.
-  const columns = useMemo<readonly StateCategory[]>(
-    () => (showBacklog ? STATE_CATEGORIES : STATE_CATEGORIES.filter((c) => c !== 'backlog')),
+  // Presentational column model: the board keeps canonical
+  // StateCategory values but collapses unstarted + staged into Ready.
+  const columns = useMemo<readonly BoardDisplayColumn[]>(
+    () => visibleBoardColumns(showBacklog),
     [showBacklog]
   );
 
@@ -115,19 +107,19 @@ export function EpicView({
   );
 }
 
-function ColumnHeader({ columns }: { columns: readonly StateCategory[] }) {
+function ColumnHeader({ columns }: { columns: readonly BoardDisplayColumn[] }) {
   return (
     <div
       data-testid="board-epic-header"
       className="sticky top-0 z-10 flex border-b border-neutral-200 bg-white/95 px-4 py-2 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95"
     >
       <div className="flex flex-1 gap-3">
-        {columns.map((cat) => (
+        {columns.map((col) => (
           <div
-            key={cat}
+            key={col.id}
             className="min-w-[14rem] flex-1 text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-400"
           >
-            {COLUMN_LABELS[cat]}
+            {col.label}
           </div>
         ))}
       </div>
@@ -137,7 +129,7 @@ function ColumnHeader({ columns }: { columns: readonly StateCategory[] }) {
 
 interface SwimlaneRowProps {
   swimlane: EpicSwimlane;
-  columns: readonly StateCategory[];
+  columns: readonly BoardDisplayColumn[];
   childCountsByEpic: Map<string, EpicChildCounts>;
   milestoneByEpic: Map<string, WorkItem>;
   escalationCounts?: Map<string, number>;
@@ -156,18 +148,9 @@ function SwimlaneRow({
   // gm-uekk: scope-driven filtering may leave only one swimlane —
   // suppress its label since it would just repeat the scope pill.
   const isSingleLane = false;
-  // Bucket members by state so each column renders only its slice.
-  const byState: Record<StateCategory, WorkItem[]> = {
-    backlog: [],
-    unstarted: [],
-    staged: [],
-    started: [],
-    completed: [],
-    canceled: [],
-  };
-  for (const m of swimlane.members) {
-    byState[m.state_category]?.push(m);
-  }
+  // Bucket members by visual board column. Canonical state still
+  // lives on the card as a pill.
+  const byColumn = groupItemsByBoardColumn(swimlane.members, columns);
   return (
     <section
       data-testid={`board-epic-swimlane-${swimlane.root.id}`}
@@ -191,9 +174,9 @@ function SwimlaneRow({
         </div>
       )}
       <div className="flex gap-3">
-        {columns.map((cat) => (
-          <DroppableCell key={cat} rootID={swimlane.root.id} cat={cat}>
-            {byState[cat].map((epicItem) => (
+        {columns.map((col) => (
+          <DroppableCell key={col.id} rootID={swimlane.root.id} column={col}>
+            {byColumn[col.id].map((epicItem) => (
               <DraggableEpicCard
                 key={epicItem.id}
                 item={epicItem}
@@ -215,15 +198,16 @@ function SwimlaneRow({
 // the right PATCH.
 interface DroppableCellProps {
   rootID: string;
-  cat: StateCategory;
+  column: BoardDisplayColumn;
   children: React.ReactNode;
 }
-function DroppableCell({ rootID, cat, children }: DroppableCellProps) {
-  const { setNodeRef, isOver } = useDroppable({ id: cellId(rootID, cat) });
+function DroppableCell({ rootID, column, children }: DroppableCellProps) {
+  const { setNodeRef, isOver } = useDroppable({ id: cellId(rootID, column.dropState) });
   return (
     <div
       ref={setNodeRef}
-      data-testid={`board-epic-cell-${rootID}-${cat}`}
+      data-testid={`board-epic-cell-${rootID}-${column.id}`}
+      data-state-categories={column.states.join(',')}
       data-drop-over={isOver || undefined}
       className={
         'min-w-[14rem] flex-1 space-y-2 rounded-sm transition-colors ' +

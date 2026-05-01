@@ -53,8 +53,13 @@ Startup banner on stderr:
 
 Then open <http://127.0.0.1:7666/board> — you should land on the board
 populated with every bead from the rig. Gemba normalizes adaptor states
-into the execution columns **Backlog**, **Next Up**, **Staged**, **In
-Progress**, **Done**, and **Canceled**.
+into canonical state categories, then presents the execution board as
+**Ready**, **In Progress**, and **Done**. The **Ready** column combines
+accepted work (`unstarted`, shown as a **Next up** pill) and work staged
+by propulsion (`staged`, shown as a **Staged** pill). **Backlog** is
+hidden by default because `/refine` is the triage surface; **Canceled**
+is available through list/filter views rather than as a default board
+lane.
 
 ## Mode B — `--dolt-url` (direct Dolt SQL)
 

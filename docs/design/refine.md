@@ -7,8 +7,9 @@ decision: gm-3ofd
 
 > **Status**: accepted 2026-04-29.
 > **Supersedes**: the `?layout=list&view=backlog` crutch.
-> **Sibling**: gm-5ekd — drop the Backlog column from Board's kanban
-> with a toggle.
+> **Sibling**: gm-5ekd and follow-ons — keep Backlog out of the
+> default Board kanban, with a toggle for inspection, while the Board
+> presents execution as Ready / In Progress / Done.
 
 ## Goal
 
@@ -21,7 +22,8 @@ actions.
 
 ## Why this lives outside the Board
 
-The Board is execution chrome — flow stages, swimlanes, scope.
+The Board is execution chrome — Ready / In Progress / Done flow,
+swimlanes, scope.
 Refinement is a sorting / triaging activity, not a flow stage. The
 Board's list mode (`?layout=list`) was an interim affordance; it
 does fine for general list browsing but is anemic for actual

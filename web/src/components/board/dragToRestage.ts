@@ -53,6 +53,11 @@ export function resolveRestage({
   const item = itemById.get(String(activeID));
   if (!item) return null;
   if (item.state_category === parsed.cat) return null;
+  // The board visually collapses Next Up (`unstarted`) and Staged into
+  // the Ready column. Dropping an already-ready item back into that
+  // visual column should not silently stage it; staging still happens
+  // through wrapper propulsion or explicit detail actions.
+  if (parsed.cat === 'staged' && item.state_category === 'unstarted') return null;
   return { id: item.id, patch: { state_category: parsed.cat } };
 }
 

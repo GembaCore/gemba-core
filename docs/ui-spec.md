@@ -142,23 +142,27 @@ No active-guardrail banner in the top bar. Guardrail violations surface inline o
 
 **No "assigned" concept.** Work is never assigned to a user. Work is either **staged** (in scope, not yet started) or **in progress** (a Worker is actively on it) or at another state_category. The user is the operator; they stage, start, complete — they don't get assigned.
 
-### 3.2 Column names (ratified)
+### 3.2 State Categories And Board Labels (ratified)
 
-| State category | Column label |
-|---|---|
-| Backlog | **Backlog** |
-| OnDeck | **Next Up** |
-| InScope | **Staged** |
-| InProgress | **In Progress** |
-| Completed | **Done** |
-| Canceled | **Canceled** |
+Gemba keeps six canonical `state_category` buckets at the WorkPlane
+contract boundary, but the Board presents a smaller operational view.
+The hidden detail stays visible on-card as a state pill.
+
+| State category | Canonical meaning | Default Board presentation |
+|---|---|---|
+| Backlog | Unrefined / not in the execution funnel | Hidden by default; shown by the Backlog toggle or `/refine` |
+| Unstarted | Accepted/refined but not staged into active execution | **Ready** column, card pill **Next up** |
+| Staged | Pulled into active scope, waiting for dispatch/dependencies | **Ready** column, card pill **Staged** |
+| Started | Active work or wrapper with active child work | **In Progress** column, card pill **In progress** |
+| Completed | Finished and accepted | **Done** column, card pill **Done** |
+| Canceled | Terminal abandoned/rejected state | List/filter surfaces, not a default Board column |
 
 ### 3.3 State transition verbs
 
 | Transition | Verb |
 |---|---|
-| → InScope | **Stage** |
-| → InProgress | **Start** |
+| → `staged` | **Stage** |
+| → `started` | **Start** |
 | → Completed | **Complete** |
 | → Backlog | **Defer** (primary) / "Move to backlog" (secondary) |
 | → any earlier state | **Reopen** |
@@ -222,7 +226,7 @@ Each gets injected as a first-position system message layer via PromptEnvelope (
 ### 4.1 First-viewport priorities
 
 When a user loads Gemba fresh, these must all be visible without scrolling:
-- All six columns side-by-side
+- The operational columns side-by-side: **Ready → In Progress → Done**
 - Every Epic card currently in the active swimlane
 - Top bar with mode indicator, phase, budget gauge, PM panel toggle
 - PM panel (in its last-saved state, collapsed or expanded)
@@ -233,11 +237,15 @@ When a user loads Gemba fresh, these must all be visible without scrolling:
 Top-to-bottom inside the card:
 1. **Priority stripe** (left edge, 3px wide, color-coded by P0-P4)
 2. **Title** (14px, bold, wraps to 3 lines max then ellipsis)
-3. **Readiness counts** — `3/7 ready · 2 blocked · 1 in progress · 1 done` (12px, muted)
-4. **Token-budget gauge** (thin horizontal bar under readiness, hidden if no Sprint+TokenBudget active)
-5. **Badges row:**
+3. **State / attention pills** — canonical state (`Next up`,
+   `Staged`, `In progress`, `Done`) plus actionable signals like
+   `Triage`, `Needs input`, `Review`, and `Ready`.
+4. **Readiness counts** — `3/7 ready · 2 blocked · 1 in progress · 1 done` (12px, muted)
+5. **Token-budget gauge** (thin horizontal bar under readiness, hidden if no Sprint+TokenBudget active)
+6. **Badges row:**
    - **Parallel-group glyph** (small circle with group letter/color)
-   - **Escalation dot** (red, top-right corner, count on hover)
+   - **Triage pill** for open EscalationRequests targeting the card;
+     it clears when the escalation is resolved and the Board refreshes
    - **Purview-violation dot** (yellow-outlined if blocked by a persona Purview in active phase)
    - **Perspective indicator** (small persona icons, 3-max visible, faded; click opens perspective sidebar)
 
@@ -248,11 +256,23 @@ Not in card anatomy (explicitly excluded per template):
 
 ### 4.3 Columns
 
-Six columns, fixed order: **Backlog → Next Up → Staged → In Progress → Done → Canceled**.
+Default execution Board columns, fixed order:
+**Ready → In Progress → Done**.
 
-- Column header: bold label + count (`Staged · 3`)
+Optional / alternate surfaces:
+- **Backlog** appears when the Board Backlog toggle is on; `/refine`
+  remains the preferred refinement surface.
+- **Canceled** is intentionally not a default Board lane; use list mode
+  / filters for audit or recovery.
+
+The **Ready** column is a presentation grouping for canonical
+`unstarted` and `staged` work. Cards retain the exact state in a pill
+so operators can distinguish "Next up" from "Staged" without paying for
+an extra column.
+
+- Column header: bold label + count (`Ready · 3`)
 - Column actions on hover: "collapse" / "filter this column"
-- WIP limits (from CapabilityManifest) render as `Staged · 3 / 5`; exceeded = yellow row under header
+- WIP limits (from CapabilityManifest) render as `In Progress · 3 / 5`; exceeded = yellow row under header
 - Columns auto-scroll independently if needed
 
 ### 4.4 Swimlanes
@@ -267,7 +287,8 @@ Swimlane switcher (top-right of board): by parent-epic / by parallel-group / by 
 - **Right-click:** context menu (stage / start / defer / open in graph / apply checkpoint / open detail / copy ID).
 - **Space:** multi-select current card.
 - **Cmd-A:** select all visible.
-- **Enter after selection:** "Stage selected" (if selections are OnDeck) or "Start selected" (if selections are Staged).
+- **Enter after selection:** "Stage selected" for unstarted work or
+  "Start selected" for staged work; both appear in the Ready column.
 - **J / K:** navigate cards down / up within column.
 - **H / L:** move focus to adjacent column.
 
@@ -292,33 +313,48 @@ Swimlane switcher (top-right of board): by parent-epic / by parallel-group / by 
 
 ### 4.9 WorkItem-granular view
 
-Alternate view at `/board?view=workitem`. Same six columns, but cards are individual WorkItems (not Epics). Accessible via keyboard shortcut (Cmd-Shift-W) and view toggle in board header.
+Alternate view at `/board?view=workitem`. Same operational columns
+(`Ready`, `In Progress`, `Done`), but cards are individual WorkItems
+instead of Epics. Accessible via keyboard shortcut and the board header
+view toggle.
 
 ### 4.10 View modes (kanban / list)
 
-Board exposes two visual modes over the same query result. The `view` URL param composes with `granularity` (Epic vs WorkItem) and `preset` (§4.11):
+Board exposes two visual modes over the same query result. The
+`layout` URL param controls shape, while `view` selects named filters
+(§4.11):
 
 | Mode | URL | Purpose |
 |---|---|---|
-| `kanban` (default) | `/board` | Six-column drag surface; the canonical Gemba view |
-| `list` | `/board?view=list` | Flat dense list with state_category + kind filter chips and client-side title search; absorbs the former `/backlog` surface |
+| `kanban` (default) | `/board` | Three-column execution surface; the canonical Gemba view |
+| `list` | `/board?layout=list` | Flat dense list with state_category + kind filter chips and client-side title search |
 
-Switcher lives in the board header next to the granularity toggle. Kanban list-mode shares the same query, RHP detail, and selection behavior as kanban-mode — only the rendering changes. Cmd-Shift-L toggles list ↔ kanban.
+Switcher lives in the board header next to the granularity toggle.
+List mode shares the same query, RHP detail, and selection behavior as
+kanban-mode — only the rendering changes. Cmd-Shift-L toggles list ↔
+kanban.
 
 `/grid` (§5.3) is intentionally NOT a Board view-mode: Grid is the power-user TanStack table with inline edit, column presets, and bulk-action ergonomics that don't fit a board frame. It stays a standalone surface in the sidebar.
 
-### 4.11 Built-in presets
+### 4.11 Built-in Named Views
 
-The view-mode toggle composes with named presets that pin filters + granularity. Presets live in the URL (`?preset=<name>`) and are URL-shareable. v1 ships:
+Named views pin filters and preferred layouts. They live in the URL as
+`?view=<name>`; legacy `?preset=` links migrate to the same shape.
 
-| Preset | Filter | Default mode |
+| View | Filter | Default layout |
 |---|---|---|
-| `staged` (default) | state_category ∈ {staged, started} | kanban |
-| `backlog` | state_category ∈ {backlog, unstarted} | **list** (absorbs the former standalone Backlog surface) |
+| `staged` | state_category = staged | kanban; appears under Ready with Staged pills |
+| `in-progress` | state_category = started | kanban |
+| `blocked` | derived human-action-required / escalation signals | list |
+| `ready-to-stage` | state_category = unstarted + agent-claimable | list |
+| `backlog` | state_category ∈ {backlog, unstarted} | list; `/refine` remains the dedicated backlog triage surface |
+| `recent` | created within the last 24h | list |
 | `done-recent` | state_category = completed; closed within 7d | list |
 | `mine` | assignee = current_agent | kanban |
 
-Selecting a preset updates filter chips but doesn't lock them — users can layer additional chips on top. Saved personal views (per §6.8) are preset extensions.
+Selecting a named view updates filter chips but doesn't lock them —
+users can layer additional chips on top. Saved personal views (per
+§6.8) are named-view extensions.
 
 ---
 
@@ -333,15 +369,19 @@ Selecting a preset updates filter chips but doesn't lock them — users can laye
 - Cost preview: always visible at the top — `Total cost estimate: $4.20 · ~142k tokens`
 - Post-execute: navigate to Board with dispatched Epics visibly transitioning to In Progress
 
-### 5.2 Backlog (now a Board preset, not a standalone surface)
+### 5.2 Refine / Backlog (`/refine`)
 
-> **Collapsed into Board (ratified 2026-04-26).** What was a standalone `/backlog` surface is now `/board?view=list&preset=backlog` (see §4.10–4.11). The legacy `/backlog` route persists as a permanent redirect so existing links and bookmarks keep working.
->
-> Behaviors carry over unchanged:
-> - Cross-workspace view of items in Backlog + Next Up columns (the `backlog` preset filter)
-> - Filter chips: workspace / priority / labels / sprint / phase (board chip-rail; preset pre-applies state filter)
-> - Bulk-triage: multi-select + "Promote to Next Up" / "Defer" / "Cancel" (the existing board multi-select + context menu, see §4.5)
-> - Grouping: by parent-epic (default) or chronological (the swimlane switcher in §4.4 covers this)
+Backlog triage lives in `/refine`, not in the default Board. The Board
+can temporarily show a Backlog column for inspection, and list mode can
+filter backlog/unstarted work, but dense refinement belongs on the
+Refine surface.
+
+- `/backlog` redirects to `/refine` for legacy links.
+- `/refine` filters `state_category=backlog` and exposes dense triage
+  controls: priority, age, suggested epic, blockers, labels, and
+  dispatch status.
+- Graduating backlog work moves it to `unstarted`; it then appears in
+  the Board's **Ready** column with a **Next up** pill.
 
 ### 5.3 Grid (`/grid`)
 
@@ -660,10 +700,10 @@ Destructive actions ALWAYS require typing-guard, regardless of mode: restore che
 - **Filter persistence:** URL (ratified)
 - **Saved views visibility:** personal (ratified; shared views v2)
 - **Default views shipped** (renamed per template clarification — no "assigned to me" concept):
-  1. **Staged** — InScope state, not yet InProgress
+  1. **Staged** — `state_category=staged`; appears in the Board's Ready column with a Staged pill
   2. **In Progress** — active work
   3. **Blocked** — open EscalationRequest OR unmet guardrail OR Purview violation
-  4. **Ready to stage** — OnDeck + readiness=100%
+  4. **Ready to stage** — unstarted + agent-claimable
   5. **Recently Done** — Completed in last 7d
 
 ### 6.9 Multi-select + bulk actions

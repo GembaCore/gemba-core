@@ -98,6 +98,16 @@ describe('resolveRestage', () => {
     ).toBeNull();
   });
 
+  it('is a no-op when an unstarted item is dropped into collapsed Ready', () => {
+    expect(
+      resolveRestage({
+        activeID: 'demo/pc-a',
+        overID: cellId('demo/pc-root', 'staged'),
+        itemById: items,
+      })
+    ).toBeNull();
+  });
+
   it('is a no-op when over is absent (drop outside any cell)', () => {
     expect(
       resolveRestage({
@@ -214,8 +224,8 @@ describe('EpicView — droppable cells + draggable cards smoke', () => {
         </QueryClientProvider>
       </MemoryRouter>
     );
-    // Every state column for the pc-root swimlane is a droppable cell.
-    for (const cat of ['backlog', 'unstarted', 'staged', 'started', 'completed', 'canceled']) {
+    // Backlog plus the three operational columns are droppable cells.
+    for (const cat of ['backlog', 'ready', 'started', 'completed']) {
       expect(
         screen.getByTestId(`board-epic-cell-demo/pc-root-${cat}`),
         `cell for ${cat} missing`

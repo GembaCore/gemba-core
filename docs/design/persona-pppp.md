@@ -130,7 +130,7 @@ Perspectives hook into Epic transitions:
 - `epic.create` — personas with matching triggers may offer a perspective on
   the new Epic (e.g., Architect: "touches core; flag for design review";
   Documentarian: "link this to decisions-log entry #14").
-- `epic.start` (→ InProgress) — readiness perspectives (QA: "no test plan yet";
+- `epic.start` (→ `started` / In Progress) — readiness perspectives (QA: "no test plan yet";
   Security: "auth surface touched — my purview activates").
 - `epic.end` (→ Completed) — retro perspectives (Architect: "design held up
   well"; Documentarian: "decisions-log updated").

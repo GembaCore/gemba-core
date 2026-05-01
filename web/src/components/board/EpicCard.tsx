@@ -42,6 +42,24 @@ const STATE_DOT: Record<StateCategory, string> = {
   canceled: 'bg-rose-500',
 };
 
+const STATE_LABELS: Record<StateCategory, string> = {
+  backlog: 'Backlog',
+  unstarted: 'Next up',
+  staged: 'Staged',
+  started: 'In progress',
+  completed: 'Done',
+  canceled: 'Canceled',
+};
+
+const STATE_PILL_STYLES: Record<StateCategory, string> = {
+  backlog: 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300',
+  unstarted: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
+  staged: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
+  started: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
+  canceled: 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300',
+};
+
 const STATE_BAR: Record<StateCategory, string> = {
   backlog: 'bg-neutral-300 dark:bg-neutral-700',
   unstarted: 'bg-sky-400',
@@ -215,6 +233,16 @@ export function EpicCard({
         </span>
         <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700 dark:bg-violet-950 dark:text-violet-300">
           epic
+        </span>
+        <span
+          className={cn(
+            'rounded px-1.5 py-0.5 text-[10px] font-medium',
+            STATE_PILL_STYLES[item.state_category]
+          )}
+          title={`State: ${item.state_category}`}
+          data-testid="epic-state-pill"
+        >
+          {STATE_LABELS[item.state_category]}
         </span>
         {milestone && mTone && (
           <span
@@ -392,7 +420,7 @@ function BadgesRow({ badges }: { badges: EpicCardBadges }) {
           data-testid="epic-badge-escalations"
         >
           <span aria-hidden>!</span>
-          <span>{badges.escalations}</span>
+          <span>Triage{badges.escalations > 1 ? ` ${badges.escalations}` : ''}</span>
         </span>
       )}
       {badges.purviewViolation && (

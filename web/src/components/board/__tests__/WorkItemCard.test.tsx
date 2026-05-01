@@ -92,10 +92,9 @@ describe('WorkItemCard', () => {
       ...base,
       labels: ['layer:ui', 'milestone:m1', 'risk:medium', 'surface:frontend', 'fed:safe'],
     };
-    const { container } = renderCard(<WorkItemCard item={many} />);
-    const list = container.querySelector('ul');
-    expect(list).toBeTruthy();
-    const chips = within(list as HTMLElement).getAllByRole('listitem');
+    renderCard(<WorkItemCard item={many} />);
+    const list = screen.getByTestId('workitem-card-gm-x1-labels');
+    const chips = within(list).getAllByRole('listitem');
     // 3 visible + 1 overflow chip.
     expect(chips).toHaveLength(4);
     expect(screen.getByText('+2')).toBeTruthy();
@@ -232,6 +231,7 @@ describe('WorkItemCard', () => {
     const badge = screen.getByTestId('workitem-card-gm-x1-escalation-badge');
     expect(badge).toBeTruthy();
     expect(badge.textContent).toContain('2');
+    expect(badge.textContent).toContain('Triage');
     expect(badge.getAttribute('title')).toContain('2 open escalations');
   });
 
@@ -239,6 +239,41 @@ describe('WorkItemCard', () => {
     renderCard(<WorkItemCard item={base} escalationCount={1} />);
     const badge = screen.getByTestId('workitem-card-gm-x1-escalation-badge');
     expect(badge.getAttribute('title')).toBe('1 open escalation');
+  });
+
+  it('renders canonical state and derived-signal pills', () => {
+    renderCard(
+      <WorkItemCard
+        item={{
+          ...base,
+          state_category: 'staged',
+          derived: {
+            agent_claimable: true,
+            human_action_required: false,
+            review_pending: true,
+          },
+        }}
+      />
+    );
+    expect(screen.getByTestId('workitem-card-gm-x1-state-pill').textContent).toBe('Staged');
+    expect(screen.getByTestId('workitem-card-gm-x1-ready-pill')).toBeTruthy();
+    expect(screen.getByTestId('workitem-card-gm-x1-review-pill')).toBeTruthy();
+  });
+
+  it('renders human-action-required as Needs input when no open escalation is attached', () => {
+    renderCard(
+      <WorkItemCard
+        item={{
+          ...base,
+          derived: {
+            agent_claimable: false,
+            human_action_required: true,
+            review_pending: false,
+          },
+        }}
+      />
+    );
+    expect(screen.getByTestId('workitem-card-gm-x1-blocked-pill').textContent).toBe('Needs input');
   });
 
   it('omits escalation badge when count is 0 or unset', () => {

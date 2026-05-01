@@ -1,11 +1,11 @@
-import type { StateCategory, WorkItem } from '@/types/core.gen';
+import type { WorkItem } from '@/types/core.gen';
 import type { CSSProperties } from 'react';
 import { WorkItemCard } from './WorkItemCard';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 
 export interface BoardColumnProps {
-  category: StateCategory;
+  columnID: string;
   label: string;
   items: WorkItem[];
   // Forwarded to each WorkItemCard. Clicking a card fires this with the id.
@@ -33,7 +33,7 @@ function sortItems(items: WorkItem[]): WorkItem[] {
 }
 
 export function BoardColumn({
-  category,
+  columnID,
   label,
   items,
   onSelect,
@@ -42,11 +42,11 @@ export function BoardColumn({
   escalationCounts,
 }: BoardColumnProps) {
   const sorted = sortItems(items);
-  const droppable = useDroppable({ id: droppableID ?? `disabled|${category}`, disabled: !droppableID });
+  const droppable = useDroppable({ id: droppableID ?? `disabled|${columnID}`, disabled: !droppableID });
   return (
     <section
       ref={droppable.setNodeRef}
-      data-testid={`board-column-${category}`}
+      data-testid={`board-column-${columnID}`}
       data-drop-over={droppable.isOver || undefined}
       className={
         'flex h-full min-w-[18rem] flex-1 flex-col rounded-md bg-neutral-50 transition-colors dark:bg-neutral-950 ' +
@@ -58,7 +58,7 @@ export function BoardColumn({
           {label}
         </h2>
         <span
-          data-testid={`board-column-${category}-count`}
+          data-testid={`board-column-${columnID}-count`}
           className="rounded bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 dark:bg-neutral-800 dark:text-neutral-300"
         >
           {items.length}

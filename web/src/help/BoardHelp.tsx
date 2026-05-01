@@ -11,8 +11,10 @@ export function RouteHelp() {
       <section>
         <h2 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-1">Plan board</h2>
         <p>
-          The Plan board shows your project's epics and work items organised by
-          status. Dispatch AI agents from here to execute work in parallel.
+          The Plan board shows your project's epics and work items in
+          Ready, In Progress, and Done. Card pills keep the precise state
+          and attention signals visible while agents execute work in
+          parallel.
         </p>
       </section>
 
@@ -22,6 +24,14 @@ export function RouteHelp() {
         </h2>
         <ul className="space-y-1 list-disc list-inside">
           <li>Press <kbd>n</kbd> to create a new work item</li>
+          <li>
+            Drag a runnable bead, epic, or milestone into In Progress to
+            dispatch work
+          </li>
+          <li>
+            Watch card pills for Staged, Triage, Needs input, Review, and
+            Ready signals
+          </li>
           <li>Press <kbd>j</kbd> / <kbd>k</kbd> to move focus up and down</li>
           <li>Press <kbd>o</kbd> to open the detail drawer for the focused item</li>
           <li>

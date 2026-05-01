@@ -8,7 +8,7 @@ import { BoardPage } from '../BoardPage';
 import { CapabilitiesProvider } from '@/capabilities';
 import type { CapabilitiesResponse } from '@/capabilities';
 import { HotkeyRegistry, HotkeysContext } from '@/hotkeys';
-import { STATE_CATEGORIES, type WorkItem } from '@/types/core.gen';
+import type { WorkItem } from '@/types/core.gen';
 import type { EscalationRequest } from '@/api/escalations';
 import type { ApiError } from '@/api/client';
 import { RhpProvider } from '@/components/rhp/RhpContext';
@@ -196,17 +196,14 @@ describe('BoardPage', () => {
     render(wrap(<BoardPage />, '/board?view=workitem'));
     await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
 
-    // gm-5ekd: Backlog column is hidden by default; the kanban renders
-    // 5 columns (Next Up → Canceled).
-    for (const cat of STATE_CATEGORIES) {
-      if (cat === 'backlog') {
-        expect(screen.queryByTestId(`board-column-${cat}`)).toBeNull();
-      } else {
-        expect(screen.getByTestId(`board-column-${cat}`)).toBeTruthy();
-      }
-    }
-    const unstartedCol = screen.getByTestId('board-column-unstarted');
-    expect(unstartedCol.querySelectorAll('[data-work-item-id]')).toHaveLength(2);
+    // Default execution kanban collapses unstarted + staged into Ready
+    // and hides backlog/canceled from the board surface.
+    expect(screen.getByTestId('board-column-ready')).toBeTruthy();
+    expect(screen.getByTestId('board-column-started')).toBeTruthy();
+    expect(screen.getByTestId('board-column-completed')).toBeTruthy();
+    expect(screen.queryByTestId('board-column-backlog')).toBeNull();
+    const readyCol = screen.getByTestId('board-column-ready');
+    expect(readyCol.querySelectorAll('[data-work-item-id]')).toHaveLength(2);
     // Epic view is not mounted on the alternate.
     expect(screen.queryByTestId('board-epic')).toBeNull();
   });
@@ -480,18 +477,18 @@ describe('BoardPage', () => {
       );
     }
 
-    it('default WorkItem kanban renders 5 columns and no Backlog heading', async () => {
+    it('default WorkItem kanban renders 3 operational columns and no Backlog heading', async () => {
       mockData();
       render(wrap(<BoardPage />, '/board?view=workitem'));
       await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
       expect(screen.queryByTestId('board-column-backlog')).toBeNull();
       const columns = document.querySelectorAll('[data-testid^="board-column-"]');
-      // 5 column sections + their 5 count badges = 10 nodes match the prefix.
+      // 3 column sections + their 3 count badges = 6 nodes match the prefix.
       // Filter to the section nodes (those without -count suffix).
       const sections = Array.from(columns).filter(
         (n) => !n.getAttribute('data-testid')?.endsWith('-count')
       );
-      expect(sections).toHaveLength(5);
+      expect(sections).toHaveLength(3);
       // No Backlog column heading — the column heading is an h2 inside
       // the missing board-column-backlog section.
       const headings = Array.from(
@@ -500,7 +497,7 @@ describe('BoardPage', () => {
       expect(headings).not.toContain('Backlog');
     });
 
-    it('?show_backlog=1 renders 6 columns including Backlog', async () => {
+    it('?show_backlog=1 renders 4 columns including Backlog', async () => {
       mockData();
       render(wrap(<BoardPage />, '/board?view=workitem&show_backlog=1'));
       await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
@@ -509,7 +506,7 @@ describe('BoardPage', () => {
       const sections = Array.from(columns).filter(
         (n) => !n.getAttribute('data-testid')?.endsWith('-count')
       );
-      expect(sections).toHaveLength(6);
+      expect(sections).toHaveLength(4);
     });
 
     it('toggle click flips the URL param + persists to localStorage', async () => {
@@ -556,7 +553,7 @@ describe('BoardPage', () => {
       );
       render(wrap(<BoardPage />, '/board?show_backlog=1'));
       await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
-      // 6 cells per swimlane when toggle is on.
+      // Backlog plus the three operational columns when toggle is on.
       expect(screen.getByTestId('board-epic-cell-root-backlog')).toBeTruthy();
     });
 

@@ -28,6 +28,7 @@ import { workItemsKeys } from '@/hooks/useWorkItems';
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import { HotkeyRegistry, HotkeysContext } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
+import type { BoardColumnID } from '@/components/board/boardColumns';
 import { RhpProvider } from '@/components/rhp/RhpContext';
 import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 import { RhpShell } from '@/components/rhp/RhpShell';
@@ -200,14 +201,15 @@ describe('Board regression — project-canonical fixture', () => {
     // test asserts every state bucket including backlog, so render
     // with the toggle on.
     mountBoard(items, '/board?show_backlog=1');
-    // Per-root expected counts of epics (kind==='epic') by state_category.
-    const epicsByRoot: Record<string, Partial<Record<StateCategory, number>>> = {
-      'demo/pc-root': { backlog: 1, started: 1, unstarted: 1, staged: 1, completed: 1 },
+    // Per-root expected counts of epics (kind==='epic') by visual board
+    // column. Ready collapses canonical unstarted + staged.
+    const epicsByRoot: Record<string, Partial<Record<BoardColumnID, number>>> = {
+      'demo/pc-root': { backlog: 1, started: 1, ready: 2, completed: 1 },
       'demo/pc-orphan': { backlog: 1 },
     };
     // pc-e4 is a child epic under pc-e1, which rolls up into pc-root's
-    // swimlane — add it to pc-root's unstarted bucket.
-    epicsByRoot['demo/pc-root'].unstarted = (epicsByRoot['demo/pc-root'].unstarted ?? 0) + 1;
+    // swimlane — add it to pc-root's Ready bucket.
+    epicsByRoot['demo/pc-root'].ready = (epicsByRoot['demo/pc-root'].ready ?? 0) + 1;
     for (const [rootID, byState] of Object.entries(epicsByRoot)) {
       for (const [cat, expected] of Object.entries(byState)) {
         const cell = screen.getByTestId(`board-epic-cell-${rootID}-${cat}`);

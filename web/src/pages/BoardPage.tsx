@@ -84,6 +84,7 @@ import { useWorkItems } from '@/hooks/useWorkItems';
 import { useHotkey } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+import { groupItemsByBoardColumn, visibleBoardColumns } from '@/components/board/boardColumns';
 
 // LayoutMode aliases the LegacyBoardView union — Board's three
 // kanban+list layouts. Renaming the type-local alias keeps the page
@@ -146,25 +147,6 @@ function writeStoredShowBacklog(on: boolean): void {
   }
 }
 
-// Filter the canonical STATE_CATEGORIES enum down to the columns the
-// kanban renders. Backlog is dropped unless show_backlog is on.
-function visibleColumns(showBacklog: boolean): readonly StateCategory[] {
-  if (showBacklog) return STATE_CATEGORIES;
-  return STATE_CATEGORIES.filter((c) => c !== 'backlog');
-}
-
-// Spec wording per ui-spec §4.3 (Backlog → Next Up → Staged → In
-// Progress → Done → Canceled). The internal core enum keeps its
-// camel-but-not-quite names; only the labels match the spec.
-const COLUMN_LABELS: Record<StateCategory, string> = {
-  backlog: 'Backlog',
-  unstarted: 'Next Up',
-  staged: 'Staged',
-  started: 'In Progress',
-  completed: 'Done',
-  canceled: 'Canceled',
-};
-
 function layoutFromQuery(p: URLSearchParams, view: WorkItemView | null): LayoutMode {
   const v = p.get(LAYOUT_PARAM);
   if (v === 'workitem' || v === 'list' || v === 'epic') return v;
@@ -184,21 +166,6 @@ function statesFromQuery(p: URLSearchParams): StateCategory[] {
 
 function kindsFromQuery(p: URLSearchParams): string[] {
   return p.getAll('kind').filter((s) => s.length > 0);
-}
-
-function groupByStateCategory(items: WorkItem[]): Record<StateCategory, WorkItem[]> {
-  const out: Record<StateCategory, WorkItem[]> = {
-    backlog: [],
-    unstarted: [],
-    staged: [],
-    started: [],
-    completed: [],
-    canceled: [],
-  };
-  for (const it of items) {
-    out[it.state_category]?.push(it);
-  }
-  return out;
 }
 
 export function BoardPage() {
@@ -812,18 +779,18 @@ function WorkItemBoard({
   showBacklog,
   escalationCounts,
 }: WorkItemBoardProps) {
-  const groups = useMemo(() => groupByStateCategory(data), [data]);
-  const columns = visibleColumns(showBacklog);
+  const columns = visibleBoardColumns(showBacklog);
+  const groups = useMemo(() => groupItemsByBoardColumn(data, columns), [data, columns]);
   return (
     <div data-testid="board-workitem" className="flex h-full gap-3 overflow-x-auto p-4">
-      {columns.map((cat) => (
+      {columns.map((col) => (
         <BoardColumn
-          key={cat}
-          category={cat}
-          label={COLUMN_LABELS[cat]}
-          items={groups[cat]}
+          key={col.id}
+          columnID={col.id}
+          label={col.label}
+          items={groups[col.id]}
           onSelect={onSelectWorkItem}
-          droppableID={cellId('workitem', cat)}
+          droppableID={cellId('workitem', col.dropState)}
           draggable
           escalationCounts={escalationCounts}
         />
@@ -852,16 +819,17 @@ function SkeletonCard() {
 }
 
 function SkeletonBoard() {
+  const columns = visibleBoardColumns(false);
   return (
     <div className="flex h-full gap-3 p-4" data-testid="board-loading">
-      {STATE_CATEGORIES.map((cat) => (
+      {columns.map((col) => (
         <section
-          key={cat}
+          key={col.id}
           className="flex h-full min-w-[18rem] flex-1 flex-col rounded-md bg-neutral-50 dark:bg-neutral-950"
         >
           <header className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-400">
-              {COLUMN_LABELS[cat]}
+              {col.label}
             </h2>
           </header>
           <div className="flex-1 space-y-2 p-2">

@@ -37,6 +37,24 @@ const STATE_DOT: Record<StateCategory, string> = {
   canceled: 'bg-rose-500',
 };
 
+const STATE_LABELS: Record<StateCategory, string> = {
+  backlog: 'Backlog',
+  unstarted: 'Next up',
+  staged: 'Staged',
+  started: 'In progress',
+  completed: 'Done',
+  canceled: 'Canceled',
+};
+
+const STATE_PILL_STYLES: Record<StateCategory, string> = {
+  backlog: 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300',
+  unstarted: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300',
+  staged: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300',
+  started: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300',
+  canceled: 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300',
+};
+
 function priorityLabel(priority: number | null | undefined): string | null {
   if (priority == null) return null;
   if (priority < 0 || priority > 4) return null;
@@ -97,6 +115,13 @@ export function WorkItemCard({
   const visibleLabels = labels.slice(0, MAX_VISIBLE_LABELS);
   const overflow = Math.max(0, labels.length - visibleLabels.length);
   const workflowRun = workflowParentID(item);
+  const readySignal =
+    item.derived?.agent_claimable === true &&
+    (item.state_category === 'backlog' ||
+      item.state_category === 'unstarted' ||
+      item.state_category === 'staged');
+  const blockedSignal = item.derived?.human_action_required === true && escalationCount === 0;
+  const reviewSignal = item.derived?.review_pending === true;
 
   const interactive = !!onSelect;
   const handleClick = onSelect ? () => onSelect(item.id) : undefined;
@@ -147,20 +172,6 @@ export function WorkItemCard({
         <span className="font-mono text-[11px] text-neutral-500 dark:text-neutral-400">
           {item.id}
         </span>
-        {escalationCount > 0 && (
-          <span
-            data-testid={`workitem-card-${item.id}-escalation-badge`}
-            title={`${escalationCount} open escalation${escalationCount === 1 ? '' : 's'}`}
-            className={cn(
-              'inline-flex h-4 items-center gap-0.5 rounded-full bg-rose-100 px-1.5 text-[10px] font-semibold text-rose-700',
-              'dark:bg-rose-950 dark:text-rose-300',
-              !pri && 'ml-auto'
-            )}
-          >
-            <AlertTriangle className="h-2.5 w-2.5" aria-hidden />
-            <span>{escalationCount}</span>
-          </span>
-        )}
         {pri && (
           <span
             className={cn(
@@ -177,8 +188,62 @@ export function WorkItemCard({
         {item.title}
       </h3>
 
+      <ul
+        className="mt-2 flex flex-wrap gap-1"
+        aria-label="Card status"
+        data-testid={`workitem-card-${item.id}-status-pills`}
+      >
+        <li
+          className={cn(
+            'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium',
+            STATE_PILL_STYLES[item.state_category]
+          )}
+          title={`State: ${item.state_category}`}
+          data-testid={`workitem-card-${item.id}-state-pill`}
+        >
+          {STATE_LABELS[item.state_category]}
+        </li>
+        {escalationCount > 0 && (
+          <li
+            data-testid={`workitem-card-${item.id}-escalation-badge`}
+            title={`${escalationCount} open escalation${escalationCount === 1 ? '' : 's'}`}
+            className="inline-flex items-center gap-1 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+          >
+            <AlertTriangle className="h-2.5 w-2.5" aria-hidden />
+            <span>Triage{escalationCount > 1 ? ` ${escalationCount}` : ''}</span>
+          </li>
+        )}
+        {blockedSignal && (
+          <li
+            className="inline-flex items-center rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-950 dark:text-rose-300"
+            title="Human action required"
+            data-testid={`workitem-card-${item.id}-blocked-pill`}
+          >
+            Needs input
+          </li>
+        )}
+        {reviewSignal && (
+          <li
+            className="inline-flex items-center rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300"
+            title="Review pending"
+            data-testid={`workitem-card-${item.id}-review-pill`}
+          >
+            Review
+          </li>
+        )}
+        {readySignal && (
+          <li
+            className="inline-flex items-center rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+            title="Agent claimable"
+            data-testid={`workitem-card-${item.id}-ready-pill`}
+          >
+            Ready
+          </li>
+        )}
+      </ul>
+
       {(visibleLabels.length > 0 || workflowRun) && (
-        <ul className="mt-2 flex flex-wrap gap-1">
+        <ul className="mt-2 flex flex-wrap gap-1" data-testid={`workitem-card-${item.id}-labels`}>
           {workflowRun && (
             <li
               data-testid={`workitem-card-${item.id}-workflow-chip`}

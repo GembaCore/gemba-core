@@ -408,6 +408,13 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   and dispatches currently unblocked runnable leaf beads up to the
   configured pool limit. Wrapper state reflects descendant state rather
   than running as agent work itself.
+- **Simplified Board lanes + card status pills** — the default kanban
+  now presents **Ready → In Progress → Done**. **Ready** combines
+  canonical `unstarted` and `staged` work; cards expose the precise
+  state with **Next up** / **Staged** pills plus actionable signals such
+  as **Triage**, **Needs input**, **Review**, and **Ready**. Backlog is
+  still available through `/refine` and the board toggle; canceled work
+  stays in list/filter views.
 - **Recent is now a Board named view** (`gm-uipx.18`) — the standalone
   `/recent` route remains as a deep link, but the sidebar no longer
   treats Recent as a top-level concern. Use the Board's **View →
@@ -444,12 +451,12 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   - bulk drop-into-epic (`gm-ju5o`); persona-driven milestone creation
     during refinement (`gm-yjst`). Replaces the
     `?layout=list&view=backlog` crutch.
-- **Escalation visibility** (`gm-e11.3` and friends) — escalation card
-  badge on every bead/epic, Board-level banner with scope-aware count
-  and link to the dedicated escalations page, and a hand-off dispatcher
-  skill (`gm-e11.8.7`) so PM-class personas can route blockers to the
-  right reviewer. Escalations are advisory by design — they surface,
-  they don't halt.
+- **Escalation visibility** (`gm-e11.3` and friends) — **Triage** pills
+  on bead/epic cards when open escalations target that work, a
+  Board-level banner with scope-aware count and link to the dedicated
+  escalations page, and a hand-off dispatcher skill (`gm-e11.8.7`) so
+  PM-class personas can route blockers to the right reviewer.
+  Escalations are advisory by design — they surface, they don't halt.
 - **Right-Hand Panel (RHP) detail-tab system** (`gm-root.22.x`) —
   unified URL-driven tab system replaces the legacy drawer
   infrastructure across Epic / WorkItem / RecommendOrder views. URL

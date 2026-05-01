@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BoardColumn } from '../BoardColumn';
@@ -56,7 +56,7 @@ describe('BoardColumn', () => {
   it('renders header label and count', () => {
     renderColumn(
       <BoardColumn
-        category="started"
+        columnID="started"
         label="In progress"
         items={[item({ id: 'gm-a' }), item({ id: 'gm-b' })]}
       />
@@ -73,16 +73,16 @@ describe('BoardColumn', () => {
       item({ id: 'gm-p0-fresh', priority: 0, updated_at: '2026-04-22T12:00:00Z' }),
     ];
     const { container } = renderColumn(
-      <BoardColumn category="started" label="Started" items={items} />
+      <BoardColumn columnID="started" label="Started" items={items} />
     );
     const list = container.querySelector('ol') as HTMLElement;
-    const cards = within(list).getAllByRole('listitem');
+    const cards = Array.from(list.children);
     const ids = cards.map((li) => li.querySelector('[data-work-item-id]')?.getAttribute('data-work-item-id'));
     expect(ids).toEqual(['gm-p0-fresh', 'gm-p0', 'gm-p2', 'gm-none']);
   });
 
   it('renders zero items without crashing', () => {
-    renderColumn(<BoardColumn category="completed" label="Completed" items={[]} />);
+    renderColumn(<BoardColumn columnID="completed" label="Completed" items={[]} />);
     expect(screen.getByText('0')).toBeTruthy();
   });
 });
