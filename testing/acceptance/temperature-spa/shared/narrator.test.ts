@@ -19,7 +19,7 @@ test.describe('Narrator (gm-root.27.37)', () => {
     now += 2200;
     n.emit('The operator configures a pool', 'long');
     now += 4300;
-    n.emit('Mock agents claim M1 work', 'medium');
+    n.emit('Agents claim M1 work', 'medium');
 
     const events = n.snapshot();
     expect(events).toHaveLength(3);
@@ -35,7 +35,7 @@ test.describe('Narrator (gm-root.27.37)', () => {
     });
     expect(events[2]).toEqual({
       at_ms: 6500,
-      phrase: 'Mock agents claim M1 work',
+      phrase: 'Agents claim M1 work',
       duration_hint: 'medium',
     });
   });

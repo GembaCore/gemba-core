@@ -219,12 +219,25 @@ func (f *fakeBd) handleUpdate(args []string) ([]byte, error) {
 		case "--add-label":
 			b.Labels = append(b.Labels, args[i+1])
 			i++
+		case "--remove-label":
+			b.Labels = removeFakeLabel(b.Labels, args[i+1])
+			i++
 		case "--json":
 			// default
 		}
 	}
 	b.UpdatedAt = time.Now().UTC()
 	return json.Marshal(b)
+}
+
+func removeFakeLabel(labels []string, target string) []string {
+	out := labels[:0]
+	for _, label := range labels {
+		if label != target {
+			out = append(out, label)
+		}
+	}
+	return out
 }
 
 // fakeExitError lets the fake report a non-zero bd exit with a stderr
@@ -946,9 +959,9 @@ func TestUpdateWorkItem_StateCategoryTranslation(t *testing.T) {
 	}{
 		{"backlog", core.StateBacklog, "deferred", core.StateBacklog, ""},
 		{"unstarted", core.StateUnstarted, "open", core.StateUnstarted, ""},
+		{"staged", core.StateStaged, "open", core.StateStaged, ""},
 		{"started", core.StateStarted, "in_progress", core.StateStarted, ""},
 		{"completed", core.StateCompleted, "closed", core.StateCompleted, ""},
-		{"staged-rejected", core.StateStaged, "", "", core.KindValidation},
 		{"canceled-rejected", core.StateCanceled, "", "", core.KindValidation},
 	}
 	for _, c := range cases {
@@ -984,6 +997,44 @@ func TestUpdateWorkItem_StateCategoryTranslation(t *testing.T) {
 				t.Errorf("StateCategory=%q want %q", got.StateCategory, c.wantCat)
 			}
 		})
+	}
+}
+
+func TestUpdateWorkItem_StagedStateUsesLabelConvention(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx := context.Background()
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title: "x", Kind: "task", Status: "open",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+
+	staged := core.StateStaged
+	got, err := impl.UpdateWorkItem(ctx, created.ID,
+		core.WorkItemPatch{StateCategory: &staged})
+	if err != nil {
+		t.Fatalf("UpdateWorkItem staged: %v", err)
+	}
+	if got.Status != "open" || got.StateCategory != core.StateStaged {
+		t.Fatalf("staged projection: status=%q category=%q", got.Status, got.StateCategory)
+	}
+	if !containsLabel(got.Labels, "staged:true") {
+		t.Fatalf("staged label missing: labels=%v", got.Labels)
+	}
+
+	started := core.StateStarted
+	got, err = impl.UpdateWorkItem(ctx, created.ID,
+		core.WorkItemPatch{StateCategory: &started})
+	if err != nil {
+		t.Fatalf("UpdateWorkItem started: %v", err)
+	}
+	if got.Status != "in_progress" || got.StateCategory != core.StateStarted {
+		t.Fatalf("started projection: status=%q category=%q", got.Status, got.StateCategory)
+	}
+	if containsLabel(got.Labels, "staged:true") {
+		t.Fatalf("staged label should be removed on non-staged transition: labels=%v", got.Labels)
 	}
 }
 

@@ -191,6 +191,7 @@ func buildDaemon(
 		Live:              w.LiveLister(),
 		Ready:             w.ReadyReader(),
 		Dispatcher:        w.Dispatcher(),
+		ColdStart:         w.ColdStarter(),
 		Recycler:          w.Recycler(),
 		Gate:              gate,
 		Logger:            slog.Default(),

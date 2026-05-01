@@ -125,6 +125,7 @@ func (r *Router) plannerCoach(w http.ResponseWriter, req *http.Request) {
 		}
 		contexts = append(contexts, opCtx)
 	}
+	enrichScopeStatuses(ctx, contexts)
 
 	// --- Ready beads → derive grid rows + per-detector inputs ---
 	items, err := wp.ListWorkItems(ctx, core.WorkItemFilter{})

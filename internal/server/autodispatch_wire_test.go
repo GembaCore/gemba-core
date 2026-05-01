@@ -9,6 +9,7 @@ import (
 	"github.com/GembaCore/gemba-core/core"
 	"github.com/GembaCore/gemba-core/internal/config"
 	"github.com/GembaCore/gemba-core/internal/planner"
+	"github.com/GembaCore/gemba-core/internal/planner/autodispatch"
 )
 
 // fakeOrchestration is a minimal stub satisfying the slice of
@@ -92,6 +93,15 @@ func (f *fakeWorkPlane) ListWorkItems(_ context.Context, filter core.WorkItemFil
 	return out, nil
 }
 
+func (f *fakeWorkPlane) GetWorkItem(_ context.Context, id core.WorkItemID) (core.WorkItem, error) {
+	for _, it := range f.items {
+		if it.ID == id {
+			return it, nil
+		}
+	}
+	return core.WorkItem{}, core.ErrNotFound
+}
+
 // ── IdleSessionLister ──
 
 func TestIdleLister_FiltersByPersona(t *testing.T) {
@@ -114,6 +124,24 @@ func TestIdleLister_FiltersByPersona(t *testing.T) {
 	}
 	if got[0].Session.ID != "a" {
 		t.Errorf("expected sess a; got %s", got[0].Session.ID)
+	}
+}
+
+func TestIdleLister_SkipsCodexReadySessionsForColdStart(t *testing.T) {
+	op := &fakeOrchestration{
+		sessions: []core.Session{
+			{ID: "a", Status: core.SessionReady, Persona: "engineer-codex"},
+		},
+	}
+	w := NewPoolWiring(op, nil,
+		config.ResolvedPool{Persona: "engineer-codex"},
+		config.PoolConfig{}, planner.OperationalContextReaders{}, "codex")
+	got, err := w.IdleLister().ListIdle(context.Background())
+	if err != nil {
+		t.Fatalf("ListIdle: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("codex ready sessions should not be reused; got %+v", got)
 	}
 }
 
@@ -190,6 +218,36 @@ func TestReadyReader_DropsSoftBlocked(t *testing.T) {
 	}
 }
 
+func TestReadyReader_DropsNonRunnableAndBlocked(t *testing.T) {
+	cfg := config.PoolConfig{DefaultPersona: "engineer-claude"}
+	wp := &fakeWorkPlane{
+		items: []core.WorkItem{
+			{ID: "gm-m1", Kind: core.KindMilestone, StateCategory: core.StateUnstarted},
+			{ID: "gm-e1", Kind: "epic", StateCategory: core.StateUnstarted},
+			{ID: "gm-blocker", Kind: "task", StateCategory: core.StateUnstarted},
+			{ID: "gm-blocked", Kind: "task", StateCategory: core.StateUnstarted,
+				Relationships: []core.Relationship{{Kind: core.RelBlocks, From: "gm-blocker", To: "gm-blocked"}}},
+			{ID: "gm-ready", Kind: "task", StateCategory: core.StateUnstarted},
+		},
+	}
+	w := NewPoolWiring(nil, wp,
+		config.ResolvedPool{Persona: "engineer-claude"},
+		cfg, planner.OperationalContextReaders{}, "claude")
+	beads, err := w.ReadyReader().ReadySet(context.Background())
+	if err != nil {
+		t.Fatalf("ReadySet: %v", err)
+	}
+	want := map[core.WorkItemID]bool{"gm-blocker": true, "gm-ready": true}
+	if len(beads) != len(want) {
+		t.Fatalf("got %d beads, want %d: %+v", len(beads), len(want), beads)
+	}
+	for _, b := range beads {
+		if !want[b.BeadID] {
+			t.Errorf("unexpected bead %q", b.BeadID)
+		}
+	}
+}
+
 func TestReadyReader_NoPersonaResolutionDrops(t *testing.T) {
 	cfg := config.PoolConfig{} // no default, no routing
 	wp := &fakeWorkPlane{
@@ -239,6 +297,39 @@ func TestDispatcher_StartsSessionWithReusePane(t *testing.T) {
 	}
 	if c.prompt.Extension["gemba:agent_type"] != "claude" {
 		t.Errorf("agent_type = %v", c.prompt.Extension["gemba:agent_type"])
+	}
+	if c.prompt.Extension["gemba:nonce"] == nil || c.prompt.Extension["gemba:nonce"] == "" {
+		t.Errorf("nonce should be populated")
+	}
+}
+
+func TestDispatcher_ColdStartsSessionWithoutReusePane(t *testing.T) {
+	op := &fakeOrchestration{}
+	w := NewPoolWiring(op, nil,
+		config.ResolvedPool{Persona: "engineer-codex"},
+		config.PoolConfig{}, planner.OperationalContextReaders{}, "codex")
+	sessionID, err := w.Dispatcher().(autodispatch.ColdStarter).StartCold(context.Background(), "gm-10")
+	if err != nil {
+		t.Fatalf("StartCold: %v", err)
+	}
+	if sessionID != "new-gm-10" {
+		t.Errorf("sessionID = %q, want new-gm-10", sessionID)
+	}
+	if len(op.startCalls) != 1 {
+		t.Fatalf("want 1 StartSession call, got %d", len(op.startCalls))
+	}
+	c := op.startCalls[0]
+	if c.prompt.Extension["gemba:reuse_pane_id"] != nil {
+		t.Errorf("reuse_pane_id should be absent on cold start")
+	}
+	if c.prompt.Extension["gemba:persona_id"] != "engineer-codex" {
+		t.Errorf("persona_id = %v", c.prompt.Extension["gemba:persona_id"])
+	}
+	if c.prompt.Extension["gemba:agent_type"] != "codex" {
+		t.Errorf("agent_type = %v", c.prompt.Extension["gemba:agent_type"])
+	}
+	if c.prompt.Extension["gemba:autodispatch"] != "1" {
+		t.Errorf("autodispatch flag missing")
 	}
 	if c.prompt.Extension["gemba:nonce"] == nil || c.prompt.Extension["gemba:nonce"] == "" {
 		t.Errorf("nonce should be populated")

@@ -72,6 +72,9 @@ func RunBead(
 	if err := closeBead(ctx, wp, beadID); err != nil {
 		return fmt.Errorf("mock: close bead %s: %w", beadID, err)
 	}
+	if err := closeCompletedAncestors(ctx, wp, beadID, map[core.WorkItemID]bool{}); err != nil {
+		return fmt.Errorf("mock: close ancestors for bead %s: %w", beadID, err)
+	}
 	emitBeadDone(projectDir, beadID, log)
 	return nil
 }
@@ -87,6 +90,73 @@ func closeBead(ctx context.Context, wp WorkPlaneFetcher, beadID string) error {
 	}
 	_, err := wp.UpdateWorkItem(ctx, core.WorkItemID(beadID), patch)
 	return err
+}
+
+func closeCompletedAncestors(
+	ctx context.Context,
+	wp WorkPlaneFetcher,
+	childID string,
+	seen map[core.WorkItemID]bool,
+) error {
+	child, err := wp.GetWorkItem(ctx, core.WorkItemID(childID))
+	if err != nil {
+		return err
+	}
+	for _, rel := range child.Relationships {
+		if rel.Kind != core.RelParentChild || rel.To != child.ID || rel.From == "" {
+			continue
+		}
+		parentID := rel.From
+		if seen[parentID] {
+			continue
+		}
+		seen[parentID] = true
+		parent, err := wp.GetWorkItem(ctx, parentID)
+		if err != nil {
+			return err
+		}
+		if isClosed(parent.StateCategory) {
+			continue
+		}
+		allClosed, err := parentChildrenClosed(ctx, wp, parent, child.ID)
+		if err != nil {
+			return err
+		}
+		if !allClosed {
+			continue
+		}
+		completed := core.StateCompleted
+		if _, err := wp.UpdateWorkItem(ctx, parent.ID, core.WorkItemPatch{StateCategory: &completed}); err != nil {
+			return err
+		}
+		if err := closeCompletedAncestors(ctx, wp, string(parent.ID), seen); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func parentChildrenClosed(ctx context.Context, wp WorkPlaneFetcher, parent core.WorkItem, justClosed core.WorkItemID) (bool, error) {
+	for _, rel := range parent.Relationships {
+		if rel.Kind != core.RelParentChild || rel.From != parent.ID || rel.To == "" {
+			continue
+		}
+		if rel.To == justClosed {
+			continue
+		}
+		child, err := wp.GetWorkItem(ctx, rel.To)
+		if err != nil {
+			return false, err
+		}
+		if !isClosed(child.StateCategory) {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+func isClosed(cat core.StateCategory) bool {
+	return cat == core.StateCompleted || cat == core.StateCanceled
 }
 
 // emitBeadDone is best-effort. The mock plane transitions sessions

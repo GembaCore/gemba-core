@@ -135,27 +135,49 @@ func writeRegistryFiles(ctx TemplateContext, fm Frontmatter) error {
 		if !ok {
 			return fmt.Errorf("mock: no registry entry for file %q (bead %s)", rel, ctx.BeadID)
 		}
-		abs := filepath.Join(ctx.ProjectDir, rel)
-		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		if err := writeProjectFile(ctx.ProjectDir, rel, body); err != nil {
 			return err
 		}
-		if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
-			return err
+		if rel == "src/App.tsx" && hasLabel(ctx.Labels, "milestone:m3") {
+			if err := writeProjectFile(ctx.ProjectDir, "src/App.test.tsx", fileContentAppTestTSXM3); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
+func writeProjectFile(projectDir, rel, body string) error {
+	abs := filepath.Join(projectDir, rel)
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(abs, []byte(body), 0o644)
+}
+
+func hasLabel(labels []string, want string) bool {
+	for _, label := range labels {
+		if label == want {
+			return true
+		}
+	}
+	return false
+}
+
 func resolveContent(rel string, labels []string) (string, bool) {
-	// App.tsx has two versions disambiguated by milestone label.
+	// App.tsx has three versions disambiguated by milestone label.
 	if rel == "src/App.tsx" {
 		for _, l := range labels {
 			if l == "milestone:m3" {
 				v, ok := contentRegistry["src/App.tsx#m3"]
 				return v, ok
 			}
+			if l == "milestone:m2" {
+				v, ok := contentRegistry["src/App.tsx#m2"]
+				return v, ok
+			}
 		}
-		v, ok := contentRegistry["src/App.tsx#m2"]
+		v, ok := contentRegistry["src/App.tsx#m1"]
 		return v, ok
 	}
 	v, ok := contentRegistry[rel]
@@ -180,16 +202,17 @@ func runCmd(cwd string, cmd string, args ...string) error {
 // source of truth the mock writes.
 
 var contentRegistry = map[string]string{
-	"package.json":              fileContentPackageJSON,
-	"vite.config.ts":            fileContentViteConfig,
-	"tsconfig.json":             fileContentTSConfig,
-	"index.html":                fileContentIndexHTML,
-	"src/main.tsx":              fileContentMainTSX,
-	"src/App.tsx#m2":            fileContentAppTSXm2,
-	"src/App.tsx#m3":            fileContentAppTSXm3,
-	"src/App.test.tsx":          fileContentAppTestTSX,
-	"src/temperatureRows.ts":    fileContentTemperatureRows,
-	"src/TemperatureTable.tsx":  fileContentTemperatureTable,
+	"package.json":                  fileContentPackageJSON,
+	"vite.config.ts":                fileContentViteConfig,
+	"tsconfig.json":                 fileContentTSConfig,
+	"index.html":                    fileContentIndexHTML,
+	"src/main.tsx":                  fileContentMainTSX,
+	"src/App.tsx#m1":                fileContentAppTSXm1,
+	"src/App.tsx#m2":                fileContentAppTSXm2,
+	"src/App.tsx#m3":                fileContentAppTSXm3,
+	"src/App.test.tsx":              fileContentAppTestTSX,
+	"src/temperatureRows.ts":        fileContentTemperatureRows,
+	"src/TemperatureTable.tsx":      fileContentTemperatureTable,
 	"src/TemperatureTable.test.tsx": fileContentTemperatureTableTest,
 }
 
@@ -213,6 +236,7 @@ const fileContentPackageJSON = `{
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "@asamuzakjp/css-color": "^3.2.0",
     "jsdom": "^25.0.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
@@ -275,6 +299,11 @@ if (!root) throw new Error('root element not found');
 ReactDOM.createRoot(root).render(<React.StrictMode><App /></React.StrictMode>);
 `
 
+const fileContentAppTSXm1 = `export default function App() {
+  return <div data-testid="app-root">Scaffold ready</div>;
+}
+`
+
 const fileContentAppTSXm2 = `export default function App() {
   return <div data-testid="app-root">Hello world</div>;
 }
@@ -300,6 +329,19 @@ describe('App', () => {
     render(<App />);
     const root = screen.getByTestId('app-root');
     expect(root.textContent).toBe('Hello world');
+  });
+});
+`
+
+const fileContentAppTestTSXM3 = `import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import App from './App';
+
+describe('App', () => {
+  it('keeps app-root and renders the temperature table', () => {
+    render(<App />);
+    expect(screen.getByTestId('app-root')).toBeTruthy();
+    expect(screen.getByTestId('temperature-table')).toBeTruthy();
   });
 });
 `

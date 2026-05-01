@@ -3,6 +3,7 @@ package bd
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -49,6 +50,9 @@ const (
 // don't hit a missing directory.
 func (w *WorkPlane) startBeadsWatcher() {
 	w.watcherOnce.Do(func() {
+		if os.Getenv("GEMBA_DISABLE_BD_WATCHER") == "1" {
+			return
+		}
 		dir := w.beadsDir
 		if dir == "" {
 			return

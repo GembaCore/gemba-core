@@ -102,8 +102,9 @@ test.describe('temperature-spa @gastown', () => {
             summary: `Synthetic escalation for ${spec.beadID} (acceptance test)`,
           });
           if (!res.ok) {
+            const detail = 'message' in res.err ? `: ${res.err.message}` : '';
             throw new Error(
-              `injectEscalation failed (${res.err.kind}): see gm-root.27.22 backend follow-up`,
+              `injectEscalation failed (${res.err.kind}${detail}): see gm-root.27.22 backend follow-up`,
             );
           }
           return { escalationID: res.value.id };

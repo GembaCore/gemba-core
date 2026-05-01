@@ -10,6 +10,10 @@ export interface WorkItemCardProps {
   // onSelect makes the card clickable (and keyboard-activatable). Wire
   // it from BoardPage to open the drill-in drawer. Omitted → static card.
   onSelect?: (id: string) => void;
+  // Marks the card as a dnd-kit handle. Click-to-open is preserved for
+  // the flat work-item board; pointer movement past the activation
+  // threshold is what distinguishes a drag.
+  draggable?: boolean;
   // Open EscalationRequest count targeting this work item (gm-e11.3).
   // Threaded by the page so each card stays stateless and the lookup
   // is O(1) per render. Zero / undefined → no badge.
@@ -81,7 +85,12 @@ function workflowParentID(item: WorkItem): string | null {
 
 const MAX_VISIBLE_LABELS = 3;
 
-export function WorkItemCard({ item, onSelect, escalationCount = 0 }: WorkItemCardProps) {
+export function WorkItemCard({
+  item,
+  onSelect,
+  draggable = false,
+  escalationCount = 0,
+}: WorkItemCardProps) {
   const pri = priorityLabel(item.priority);
   const name = assigneeName(item);
   const labels = item.labels ?? [];
@@ -91,6 +100,7 @@ export function WorkItemCard({ item, onSelect, escalationCount = 0 }: WorkItemCa
 
   const interactive = !!onSelect;
   const handleClick = onSelect ? () => onSelect(item.id) : undefined;
+  const handleDoubleClick = onSelect ? () => onSelect(item.id) : undefined;
   // <article> can't be a native <button> (buttons reject flow content
   // like <h3>) so we use the ARIA role-button pattern: role, tabIndex,
   // and a keydown handler that treats Enter / Space as activation.
@@ -116,7 +126,9 @@ export function WorkItemCard({ item, onSelect, escalationCount = 0 }: WorkItemCa
       role={interactive ? 'button' : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-label={interactive ? `Open bead ${item.id}` : undefined}
+      data-draggable={draggable || undefined}
       onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
       onKeyDown={handleKeyDown}
       className={cn(
         'group rounded-md border border-neutral-200 bg-white p-3 text-sm shadow-sm',

@@ -58,9 +58,14 @@ import {
   filterByMilestone,
   type MilestoneID,
 } from '@/components/board/milestone';
-import { resolveRestage, shouldAutoStartSession } from '@/components/board/dragToRestage';
+import {
+  cellId,
+  resolveRestage,
+  shouldAutoStartSession,
+  shouldCascadeDispatch,
+} from '@/components/board/dragToRestage';
 import { resolveReparent } from '@/components/board/dragToReparent';
-import { useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { useCascadeDispatchWorkItem, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { useStartSession } from '@/hooks/useSessions';
 import { agentsKeys } from '@/hooks/useAgents';
 import { useQueryClient } from '@tanstack/react-query';
@@ -443,6 +448,7 @@ export function BoardPage() {
     useSensor(KeyboardSensor)
   );
   const updateWorkItem = useUpdateWorkItem();
+  const cascadeDispatch = useCascadeDispatchWorkItem();
   const startSession = useStartSession();
   // Read the agents roster lazily from the query cache when auto-start
   // fires; we don't useAgents() here because mounting BoardPage in
@@ -476,7 +482,6 @@ export function BoardPage() {
       if (!restage) return;
       updateWorkItem.mutate(restage, {
         onSuccess: (updated) => {
-          if (!shouldAutoStartSession(updated)) return;
           const agents = queryClient.getQueryData<AgentRef[]>(agentsKeys.list()) ?? [];
           let agent = 'claude';
           for (const a of agents) {
@@ -485,11 +490,17 @@ export function BoardPage() {
               break;
             }
           }
-          startSession.mutate({ bead_id: updated.id, agent_type: agent });
+          if (shouldCascadeDispatch(updated)) {
+            cascadeDispatch.mutate({ id: updated.id, agent_type: agent });
+            return;
+          }
+          if (shouldAutoStartSession(updated)) {
+            startSession.mutate({ bead_id: updated.id, agent_type: agent });
+          }
         },
       });
     },
-    [itemById, updateWorkItem, startSession, queryClient]
+    [itemById, updateWorkItem, cascadeDispatch, startSession, queryClient]
   );
 
   // gm-e11.3: build the per-item escalation lookup once, then derive
@@ -812,6 +823,8 @@ function WorkItemBoard({
           label={COLUMN_LABELS[cat]}
           items={groups[cat]}
           onSelect={onSelectWorkItem}
+          droppableID={cellId('workitem', cat)}
+          draggable
           escalationCounts={escalationCounts}
         />
       ))}

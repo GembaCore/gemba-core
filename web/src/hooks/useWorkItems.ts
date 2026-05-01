@@ -21,16 +21,19 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import {
+  cascadeDispatchWorkItem,
   createWorkItem,
   getWorkItem,
   listWorkItems,
   updateWorkItem,
+  type CascadeDispatchResponse,
   type CreateWorkItemInput,
   type WorkItemListFilter,
   type WorkItemPatch,
 } from '@/api/workItems';
 import { ApiError } from '@/api/client';
 import type { WorkItem } from '@/types/core.gen';
+import { sessionsKeys } from '@/hooks/useSessions';
 
 export const workItemsKeys = {
   all: ['beads'] as const,
@@ -188,6 +191,31 @@ export function useUpdateWorkItem(): UseMutationResult<
   });
 }
 
+export interface CascadeDispatchVars {
+  id: string;
+  agent_type: string;
+  limit?: number;
+  nonce?: string;
+}
+
+export function useCascadeDispatchWorkItem(): UseMutationResult<
+  CascadeDispatchResponse,
+  ApiError,
+  CascadeDispatchVars,
+  unknown
+> {
+  const qc = useQueryClient();
+  return useMutation<CascadeDispatchResponse, ApiError, CascadeDispatchVars>({
+    mutationFn: ({ id, agent_type, limit, nonce }) =>
+      cascadeDispatchWorkItem(id, { agent_type, limit }, { nonce }),
+    onSettled: (_data, _err, vars) => {
+      qc.invalidateQueries({ queryKey: workItemsKeys.detail(vars.id) });
+      qc.invalidateQueries({ queryKey: workItemsKeys.all });
+      qc.invalidateQueries({ queryKey: sessionsKeys.all });
+    },
+  });
+}
+
 // useCreateWorkItem drives POST /api/work-items (gm-e12.10). On
 // success invalidates ['beads'] so the board + grid + drawer all pick
 // up the new item on their next refetch; the mutation does NOT write
@@ -241,4 +269,3 @@ function applyPatch(patch: WorkItemPatch): Partial<WorkItem> {
   out.updated_at = new Date().toISOString();
   return out;
 }
-

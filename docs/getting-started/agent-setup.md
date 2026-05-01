@@ -51,7 +51,7 @@ max_parallel     = 3                   # if so, what's the per-session cap?
 | `binary` | ✓ | Looked up via `exec.LookPath`. Missing binary makes the type unavailable (logged, not fatal). |
 | `args` |  | Empty list = no fixed prefix. |
 | `model` |  | Many CLIs accept `--model`; some don't. Leave blank to take the agent's own default. |
-| `preamble` | ✓ | `claude_md` / `first_message` / `stdout_banner`. See § Preamble below. |
+| `preamble` | ✓ | `claude_md` / `first_message` / `codex_exec` / `stdout_banner`. See § Preamble below. |
 | `hooks` | ✓ | `claude_code` / `prompt_command` / `none`. See § Hooks below. |
 | `interaction_mode` |  | `dangerous` / `balanced` / `cautious`. Default `balanced`. |
 | `intra_parallel` |  | Default `false` (one bead per session). |
@@ -67,6 +67,7 @@ only the delivery channel differs.
 |---|---|---|
 | `claude_md` | Appends a fenced block to `CLAUDE.md`, removed on session end. | Claude Code (it auto-reads `CLAUDE.md`). |
 | `first_message` | Sends the preamble as the first user prompt. | Most other agent CLIs (Aider, Codex, Cursor's chat). |
+| `codex_exec` | Writes the preamble to a prompt file before spawn; `gemba-codex-driver` passes that file to `codex exec --json`. | OpenAI Codex CLI through the native driver. |
 | `stdout_banner` | Prints a markdown banner to the terminal. | Shell-only (no agent — operator reads it). |
 
 ## Hook profiles
@@ -114,29 +115,40 @@ stalled" pill, transcript tab.
 
 ### OpenAI Codex CLI
 
-The `codex` CLI from `openai/codex` is interactive and accepts a
-first-message prompt. No `claude_md`-style file convention, no
-hook surface — Gemba sees the session as a black box that emits
-spawn + exit, plus whatever the hook profile catches.
+The `codex` CLI from `openai/codex` works best in Gemba through the
+native `gemba-codex-driver`. The driver writes the composed bead
+preamble to a prompt file, runs `codex exec --json` non-interactively,
+reports `working` / `bead-done` through `gemba-state`, and closes the
+bead when Codex exits successfully.
 
 **Install**: `npm install -g @openai/codex` (or per their README).
 
 ```toml
 [[agent]]
 name             = "codex"
-binary           = "codex"
-args             = ["chat", "--no-tty-color"]
-model            = "gpt-5"                    # or whatever codex accepts; --model is optional
-preamble         = "first_message"
+binary           = "gemba-codex-driver"
+args             = [
+  "--sandbox", "workspace-write",
+  "--ask-for-approval", "never",
+]
+model            = "gpt-5.4-mini"
+preamble         = "codex_exec"
 hooks            = "none"
 interaction_mode = "balanced"
+intra_parallel   = true
+max_parallel     = 2
 ```
 
 Notes:
-- `args = ["chat", ...]` enters Codex's interactive mode.
-- `hooks = "none"` because there's no Codex equivalent of Claude
-  Code's hook API. The SPA still shows pane state (running /
-  exited) but no fine-grained progress.
+- Gemba ships `gemba-codex-driver` beside the main `gemba` binary.
+  The driver invokes the `codex` binary on PATH; override with
+  `--codex-bin /path/to/codex` in `args` if needed.
+- For unattended acceptance runs, `--ask-for-approval never` prevents
+  approval prompts from deadlocking the run. For watched manual
+  sessions, use `on-request` instead.
+- `hooks = "none"` because there is no Codex equivalent of Claude
+  Code's hook API. Lifecycle still appears in the SPA because the
+  driver emits `gemba-state` frames.
 - Set `OPENAI_API_KEY` in your shell env before launching `gemba
   serve` — child sessions inherit it.
 
@@ -275,12 +287,15 @@ max_parallel     = 3
 
 # OpenAI Codex CLI — for hosted-model OpenAI work.
 [[agent]]
-name     = "codex"
-binary   = "codex"
-args     = ["chat", "--no-tty-color"]
-model    = "gpt-5"
-preamble = "first_message"
-hooks    = "none"
+name             = "codex"
+binary           = "gemba-codex-driver"
+args             = ["--sandbox", "workspace-write", "--ask-for-approval", "never"]
+model            = "gpt-5.4-mini"
+preamble         = "codex_exec"
+hooks            = "none"
+interaction_mode = "balanced"
+intra_parallel   = true
+max_parallel     = 2
 
 # Aider against a local Ollama model — fully offline.
 [[agent]]

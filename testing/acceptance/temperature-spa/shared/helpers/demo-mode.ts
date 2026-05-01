@@ -17,7 +17,7 @@
 // step on the captured .webm. Default 'video: on' produces a single
 // continuous video; the operator splices it down to 30s in post.
 
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 export const DEMO_MODE = process.env.GEMBA_ACCEPTANCE_DEMO_MODE === '1';
 
@@ -90,4 +90,37 @@ export async function setDemoCaption(page: Page, text: string): Promise<void> {
 export async function demoPause(ms: number): Promise<void> {
   if (!DEMO_MODE) return;
   await new Promise((r) => setTimeout(r, ms));
+}
+
+export async function demoDragTo(
+  page: Page,
+  source: Locator,
+  target: Locator,
+  opts: { steps?: number } = {},
+): Promise<void> {
+  const steps = opts.steps ?? 14;
+  await source.scrollIntoViewIfNeeded();
+  await target.scrollIntoViewIfNeeded();
+
+  const sBox = await source.boundingBox();
+  const tBox = await target.boundingBox();
+  if (!sBox || !tBox) {
+    throw new Error(
+      `demoDragTo: source or target has no bounding box (source=${!!sBox}, target=${!!tBox})`,
+    );
+  }
+
+  const sx = sBox.x + sBox.width / 2;
+  const sy = sBox.y + sBox.height / 2;
+  const tx = tBox.x + tBox.width / 2;
+  const ty = tBox.y + tBox.height / 2;
+
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  await page.mouse.move(sx + 8, sy + 8);
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps;
+    await page.mouse.move(sx + (tx - sx) * t, sy + (ty - sy) * t, { steps: 1 });
+  }
+  await page.mouse.up();
 }

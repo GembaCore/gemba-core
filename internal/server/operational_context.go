@@ -122,5 +122,6 @@ func (r *Router) operationalContext(w http.ResponseWriter, req *http.Request) {
 		httperr.WriteError(w, err)
 		return
 	}
+	enrichScopeStatus(req.Context(), ctx)
 	writeJSON(w, http.StatusOK, ctx)
 }

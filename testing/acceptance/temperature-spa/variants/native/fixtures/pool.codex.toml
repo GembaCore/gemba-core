@@ -1,0 +1,21 @@
+# gm-root.27.13 / gm-root.28 — real native Codex pool fixture.
+#
+# Loaded by `gemba serve --orchestration=native --pool-config <this file>`
+# when GEMBA_ACCEPTANCE_REAL_AGENTS=1. The native auto-dispatch daemon
+# cold-starts a Codex exec session for the first ready bead; no warm
+# idle pane is required.
+
+[pool]
+default_persona = "acceptance-engineer"
+default_size = 1
+default_floor = 0.01
+reserved_for_manual = 0
+
+[pool.local.acceptance-engineer]
+agent_type = "codex"
+size = 1
+floor = 0.01
+min_interval_per_session_seconds = 1
+max_concurrent = 100
+recycle_after_beads = 5
+idle_ceiling_minutes = 30

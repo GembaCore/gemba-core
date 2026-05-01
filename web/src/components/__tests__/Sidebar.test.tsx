@@ -80,6 +80,7 @@ function renderSidebar() {
 // from a cold start).
 const WORKSPACE_SCOPED = [
   'Plan',
+  'Refine',
   'Review',
   'Triage',
   'Sessions',
@@ -118,6 +119,7 @@ describe('Sidebar', () => {
       expect(link).toBeTruthy();
       expect(link.getAttribute('href')).toBeTruthy();
     }
+    expect(screen.queryByRole('link', { name: 'Recent' })).toBeNull();
   });
 
   it('cold-start: workspace-scoped items render as aria-disabled spans', async () => {

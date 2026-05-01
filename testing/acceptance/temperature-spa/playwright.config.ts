@@ -14,6 +14,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const isCI = !!process.env.CI;
+const timeoutMs = process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1'
+  ? 90 * 60 * 1000
+  : 30 * 60 * 1000;
 
 export default defineConfig({
   // Each variant exercises a real gemba server lifecycle inside the
@@ -24,7 +27,7 @@ export default defineConfig({
   workers: 1,
   forbidOnly: isCI,
   retries: 0,
-  timeout: 30 * 60 * 1000, // 30 minutes — real-claude opt-in tier
+  timeout: timeoutMs,
   expect: { timeout: 30_000 },
   reporter: [
     ['list'],

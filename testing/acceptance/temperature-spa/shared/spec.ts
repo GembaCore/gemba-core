@@ -16,7 +16,7 @@
 // spec.ts originally drafted.
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +42,7 @@ import {
   installDemoBanner,
   setDemoCaption,
   demoPause,
+  demoDragTo,
   DEMO_MODE,
 } from './helpers/demo-mode';
 
@@ -115,6 +116,8 @@ export interface SharedContext {
   variant: 'native' | 'gastown';
   page: Page;
   projectDir: string;
+  /** Runtime bd issue prefix, e.g. e2e0. */
+  beadPrefix: string;
   /** http://127.0.0.1:<port> — gemba server base URL. */
   baseURL: string;
   /**
@@ -131,7 +134,7 @@ export interface SharedContext {
   doltPort: number;
   /** Navigate to a SPA route by absolute path. */
   goto: (route: '/board' | '/settings/pools' | '/escalations' | string) => Promise<void>;
-  /** Poll `/api/workitems/{id}` until the bead is closed or timeout. */
+  /** Poll `/api/work-items/{id}` until the bead is closed or timeout. */
   waitForBeadClosed: (beadID: string, timeoutMs: number) => Promise<void>;
   /** Recurse children of a milestone; gate on all closed. */
   waitForAllBeadsClosed: (milestoneID: string, timeoutMs: number) => Promise<void>;
@@ -173,6 +176,7 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   const startedAt = new Date().toISOString();
   const runID = opts.runID ?? randomRunID();
   const gembaPort = portFromBaseURL(opts.baseURL);
+  const importedPacks = new Set<string>();
 
   // gm-root.27.33: count bug-bead-stub invocations so we can fail
   // the Playwright test when steps internally bailed and filed
@@ -190,6 +194,7 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
     variant: opts.variant,
     page: opts.page,
     projectDir: opts.projectDir,
+    beadPrefix: opts.beadPrefix ?? 'tspa',
     baseURL: opts.baseURL,
     gembaPort,
     doltPort: 0,
@@ -203,7 +208,12 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
       // bead needs hot-reload, expose a restart hook on ProjectHandle.
     },
     importBeads: (jsonlPath) =>
-      importBeadsCLI(opts.projectDir, jsonlPath, opts.beadPrefix ?? 'tspa'),
+      importBeadsOnce(
+        importedPacks,
+        opts.projectDir,
+        jsonlPath,
+        opts.beadPrefix ?? 'tspa',
+      ),
     escalationInjector: opts.escalationInjector ?? defaultEscalationInjector,
     fileBugBead: wrappedBugFiler,
     narrator: opts.narrator ?? noopNarrator,
@@ -240,6 +250,10 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
     await demoPause(2_000);
   }
 
+  if (DEMO_MODE) {
+    await runDemoOpening(ctx);
+  }
+
   // Step through the milestones, captioning each.
   ctx.narrator.emit(
     'The operator configures a pool with the acceptance-engineer persona',
@@ -247,10 +261,12 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   );
   await setDemoCaption(ctx.page, 'M1 — scaffolding the project');
   milestones.M1 = await timed(() => runM1Step(ctx));
+  await showAgentStatus(ctx, 'Agent status — M1 completed');
   await demoPause(1_500);
 
   await setDemoCaption(ctx.page, 'M2 — Hello world MVP');
   milestones.M2 = await timed(() => runM2Step(ctx));
+  await showAgentStatus(ctx, 'Agent status — M2 completed');
   await demoPause(1_500);
 
   await setDemoCaption(ctx.page, 'Triage — operator approves a blocking escalation');
@@ -313,6 +329,232 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   return report;
 }
 
+async function runDemoOpening(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit(
+    'The full plan is visible before work starts: milestones, epics, and beads',
+    'long',
+  );
+  await setDemoCaption(ctx.page, 'Loading the full plan: 3 milestones, 3 epics, 12 task beads');
+  await ctx.importBeads('target-jsonl/decisions.jsonl');
+  await ctx.importBeads('target-jsonl/m1.jsonl');
+  await ctx.importBeads('target-jsonl/m2.jsonl');
+  await ctx.importBeads('target-jsonl/m3.jsonl');
+
+  await ctx.goto('/board?layout=list&power=1');
+  await ctx.page.waitForSelector('[data-testid="board-list"]', { timeout: 15_000 });
+  await ctx.page.waitForSelector('[data-testid="board-list-count"]', { timeout: 15_000 });
+  await ctx.page.waitForFunction(
+    () => document.querySelector('[data-testid="board-list-count"]')?.textContent?.includes('20 item'),
+    null,
+    { timeout: 15_000 },
+  );
+  await ctx.page.waitForSelector('[data-testid^="grid-row-"]', { timeout: 15_000 });
+  await demoPause(1_500);
+
+  ctx.narrator.emit('The operator drags the first milestone into progress', 'medium');
+  await setDemoCaption(ctx.page, 'First drag: move M1 into In Progress to start development');
+  await ctx.goto('/board?layout=workitem&show_backlog=1');
+  await ctx.page.waitForSelector('[data-testid="board-workitem"]', { timeout: 15_000 });
+  const m1 = beadID(ctx, 'm1');
+  const source = ctx.page.locator(`[data-work-item-id$="${m1}"]`).first();
+  const target = ctx.page.getByTestId('board-column-started');
+  await source.waitFor({ state: 'visible', timeout: 15_000 });
+  await target.waitFor({ state: 'visible', timeout: 15_000 });
+  await demoDragTo(ctx.page, source, target, { steps: 18 });
+  await ensureDemoCascadeStarted(ctx, m1);
+  await demoPause(1_500);
+
+  await showSessionCreatedBeadInRecent(ctx);
+
+  ctx.narrator.emit('Board view shows milestone-coloured epics', 'medium');
+  await setDemoCaption(ctx.page, 'Board view: epics grouped with milestone badges');
+  await ctx.goto('/board?layout=epic&show_backlog=1');
+  await ctx.page.waitForSelector('[data-testid="board-epic"]', { timeout: 15_000 });
+  await demoPause(1_500);
+
+  ctx.narrator.emit('Milestone detail shows the Definition of Done in the bead description', 'medium');
+  await setDemoCaption(ctx.page, 'Milestone detail: Definition of Done in the bead');
+  await ctx.goto(`/board?bead=${encodeURIComponent(beadID(ctx, 'm1'))}`);
+  await ctx.page.waitForSelector('[data-testid="workitem-detail-id"]', { timeout: 15_000 });
+  await ctx.page.waitForSelector('[data-testid="section-description"]', { timeout: 15_000 });
+  await demoPause(1_800);
+
+  ctx.narrator.emit('Epic detail shows child beads by state', 'medium');
+  await setDemoCaption(ctx.page, 'Epic detail: child beads and state are visible');
+  await ctx.goto(`/board/${encodeURIComponent(beadID(ctx, 'e1'))}`);
+  await ctx.page.waitForSelector('[data-testid="epic-detail-id"]', { timeout: 15_000 });
+  await ctx.page.waitForSelector('[data-testid="epic-section-children"]', { timeout: 15_000 });
+  await demoPause(1_800);
+
+  ctx.narrator.emit('Refinement shows backlog triage work', 'medium');
+  await setDemoCaption(ctx.page, 'Refinement: backlog triage surface');
+  await ctx.goto('/refine');
+  await ctx.page.waitForSelector('[data-testid="refine-page"]', { timeout: 15_000 });
+  await demoPause(1_500);
+}
+
+async function showSessionCreatedBeadInRecent(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit(
+    'A running session files a follow-up bead, and propulsion pulls it into scope',
+    'medium',
+  );
+  await setDemoCaption(ctx.page, 'Session-created bead: auto-staged by the active M1 cascade');
+  const created = await createSessionFollowUpBead(ctx);
+  await waitForWorkItemCategory(ctx, created.id, ['staged', 'started', 'completed'], 10_000);
+  await demoPause(1_000);
+
+  ctx.narrator.emit('Recent shows the new bead for inspection', 'medium');
+  await setDemoCaption(ctx.page, 'Recent: inspect the bead the session just created');
+  await ctx.goto('/recent');
+  await ctx.page.getByTestId('recent-preset-1h').click();
+  const row = ctx.page.getByTestId(`recent-row-${created.id}`);
+  await row.waitFor({ state: 'visible', timeout: 15_000 });
+  await demoPause(1_200);
+  await row.click();
+  await ctx.page.waitForSelector('[data-testid="workitem-detail-id"]', { timeout: 15_000 });
+  await demoPause(1_800);
+}
+
+async function createSessionFollowUpBead(ctx: SharedContext): Promise<RawIssue> {
+  const nonceBase = process.env.GEMBA_E2E_CONFIRM_NONCE ?? 'acceptance-test';
+  const res = await fetch(`${ctx.baseURL}/api/work-items`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-GEMBA-Confirm': `${nonceBase}-session-followup-${Date.now()}`,
+    },
+    body: JSON.stringify({
+      item: {
+        title: 'Session-created follow-up: record scaffold evidence',
+        kind: 'task',
+        status: 'open',
+        state_category: 'backlog',
+        description:
+          '---\n' +
+          'template: noop\n' +
+          '---\n\n' +
+          '# Goal\n' +
+          'A running agent noticed a small follow-up while M1 was active and filed it under the current epic.\n\n' +
+          '# Definition of Done\n' +
+          '- The bead appears in Recent.\n' +
+          '- The active M1 cascade moves it from backlog into staged or in progress automatically.\n',
+        labels: ['acceptance', 'milestone:m1', 'created-by:session', 'template:noop'],
+        relationships: [
+          { kind: 'parent_child', from: beadID(ctx, 'e1'), to: '' },
+        ],
+      },
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`demo session follow-up create failed ${res.status}: ${txt}`);
+  }
+  return (await res.json()) as RawIssue;
+}
+
+async function showAgentStatus(ctx: SharedContext, caption: string): Promise<void> {
+  if (!DEMO_MODE) return;
+  ctx.narrator.emit(caption, 'short');
+  await setDemoCaption(ctx.page, caption);
+  await ctx.goto('/sessions');
+  await ctx.page.waitForSelector('[data-testid="sessions-page"]', { timeout: 15_000 });
+  await demoPause(2_000);
+}
+
+function beadID(ctx: SharedContext, suffix: string): string {
+  return `${ctx.beadPrefix}-${suffix}`;
+}
+
+async function ensureDemoCascadeStarted(ctx: SharedContext, wrapperID: string): Promise<void> {
+  const observed = await waitForWorkItemCategory(ctx, wrapperID, ['started', 'completed'], 3_000);
+  const nonceBase = process.env.GEMBA_E2E_CONFIRM_NONCE ?? 'acceptance-test';
+  if (!observed) {
+    const patch = await fetch(`${ctx.baseURL}/api/work-items/${encodeURIComponent(wrapperID)}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-GEMBA-Confirm': `${nonceBase}-wrapper-patch-${Date.now()}`,
+      },
+      body: JSON.stringify({ state_category: 'started' }),
+    });
+    if (!patch.ok) {
+      const txt = await patch.text().catch(() => '');
+      throw new Error(`demo fallback PATCH ${wrapperID} -> started failed ${patch.status}: ${txt}`);
+    }
+  }
+  const cascade = await fetch(`${ctx.baseURL}/api/work-items/${encodeURIComponent(wrapperID)}/cascade-dispatch`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-GEMBA-Confirm': `${nonceBase}-cascade-${Date.now()}`,
+    },
+    body: JSON.stringify({ agent_type: process.env.GEMBA_ACCEPTANCE_AGENT ?? 'claude' }),
+  });
+  if (!cascade.ok && cascade.status !== 409) {
+    const txt = await cascade.text().catch(() => '');
+    throw new Error(`demo fallback cascade-dispatch ${wrapperID} failed ${cascade.status}: ${txt}`);
+  }
+}
+
+async function importBeadsOnce(
+  importedPacks: Set<string>,
+  projectDir: string,
+  jsonlPath: string,
+  beadPrefix: string,
+): Promise<void> {
+  const key = `${beadPrefix}:${jsonlPath}`;
+  if (importedPacks.has(key)) return;
+  await importBeadsCLI(projectDir, jsonlPath, beadPrefix);
+  importedPacks.add(key);
+}
+
+async function ensureDemoDispatchStarted(ctx: SharedContext, beadID: string): Promise<void> {
+  const observed = await waitForWorkItemCategory(ctx, beadID, ['started', 'completed'], 3_000);
+  if (observed) return;
+  const nonceBase = process.env.GEMBA_E2E_CONFIRM_NONCE ?? 'acceptance-test';
+  const patchNonce = `${nonceBase}-patch-${Date.now()}`;
+  const startNonce = `${nonceBase}-start-${Date.now()}`;
+  const patch = await fetch(`${ctx.baseURL}/api/work-items/${encodeURIComponent(beadID)}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-GEMBA-Confirm': patchNonce,
+    },
+    body: JSON.stringify({ state_category: 'started' }),
+  });
+  if (!patch.ok) {
+    const txt = await patch.text().catch(() => '');
+    throw new Error(`demo fallback PATCH ${beadID} -> started failed ${patch.status}: ${txt}`);
+  }
+  const start = await fetch(`${ctx.baseURL}/api/sessions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-GEMBA-Confirm': startNonce,
+    },
+    body: JSON.stringify({ bead_id: beadID, agent_type: 'claude' }),
+  });
+  if (!start.ok && start.status !== 409) {
+    const txt = await start.text().catch(() => '');
+    throw new Error(`demo fallback POST /sessions for ${beadID} failed ${start.status}: ${txt}`);
+  }
+}
+
+async function waitForWorkItemCategory(
+  ctx: SharedContext,
+  beadID: string,
+  categories: string[],
+  timeoutMs: number,
+): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const item = await fetchWorkItem(ctx.baseURL, beadID);
+    if (item && categories.includes(item.state_category ?? '')) return true;
+    await sleep(250);
+  }
+  return false;
+}
+
 export class AcceptanceFailure extends Error {
   constructor(
     summary: string,
@@ -364,19 +606,16 @@ async function waitForBeadClosed(
   let last: string | undefined;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${baseURL}/api/workitems/${encodeURIComponent(beadID)}`);
-      if (res.ok) {
-        const json = (await res.json()) as { state_category?: string; status?: string };
-        last = `${json.state_category}/${json.status}`;
-        if (json.state_category === 'completed') return;
-      }
+      const item = await fetchWorkItem(baseURL, beadID);
+      last = item ? `${item.state_category}/${item.status}` : 'not found';
+      if (item && isClosedWorkItem(item)) return;
     } catch (err) {
       last = `fetch error: ${String((err as Error).message)}`;
     }
     await sleep(2_000);
   }
   throw new Error(
-    `bead ${beadID} did not reach state_category=completed within ${timeoutMs}ms (last: ${last ?? 'never observed'})`,
+    `bead ${beadID} did not close within ${timeoutMs}ms (last: ${last ?? 'never observed'})`,
   );
 }
 
@@ -398,35 +637,115 @@ async function waitForAllBeadsClosed(
   throw new Error(`milestone ${milestoneID} did not fully close within ${timeoutMs}ms`);
 }
 
+type RawIssue = {
+  id: string;
+  status?: string;
+  state_category?: string;
+  issue_type?: string;
+  kind?: string;
+  dependencies?: Array<{ issue_id?: string; depends_on_id?: string; type?: string }>;
+  relationships?: Array<{ kind?: string; from?: string; to?: string }>;
+};
+
+type IssueSnapshot = {
+  byID: Map<string, RawIssue>;
+  childrenByParent: Map<string, string[]>;
+};
+
 async function collectOpenDescendants(baseURL: string, parentID: string): Promise<string[]> {
+  const root = await fetchWorkItem(baseURL, parentID);
+  if (root && isClosedWorkItem(root)) return [];
+  const snap = await fetchWorkItemsSnapshot(baseURL);
   const open: string[] = [];
-  const queue: string[] = [parentID];
+  const queue: string[] = [nativeBeadID(parentID)];
   const seen = new Set<string>();
   while (queue.length > 0) {
     const id = queue.shift()!;
     if (seen.has(id)) continue;
     seen.add(id);
-    const res = await fetch(`${baseURL}/api/workitems/${encodeURIComponent(id)}`);
-    if (!res.ok) {
+    const node = snap.byID.get(id);
+    if (!node) {
       open.push(id);
       continue;
     }
-    const node = (await res.json()) as { state_category?: string };
-    if (node.state_category !== 'completed') open.push(id);
-
-    const childRes = await fetch(
-      `${baseURL}/api/workitems?parent_id=${encodeURIComponent(id)}`,
-    );
-    if (childRes.ok) {
-      const json = (await childRes.json()) as {
-        items?: Array<{ id: string }>;
-        workitems?: Array<{ id: string }>;
-      };
-      const items = json.items ?? json.workitems ?? [];
-      for (const c of items) queue.push(c.id);
+    if (id !== nativeBeadID(parentID) && !isWrapperIssue(node) && !isClosedWorkItem(node)) open.push(id);
+    for (const child of snap.childrenByParent.get(id) ?? []) {
+      queue.push(child);
     }
   }
   return open;
+}
+
+function loadIssueSnapshot(projectDir: string): IssueSnapshot {
+  const file = path.join(projectDir, '.beads', 'issues.jsonl');
+  const body = readFileSync(file, 'utf8');
+  const byID = new Map<string, RawIssue>();
+  const childrenByParent = new Map<string, string[]>();
+  for (const line of body.split(/\r?\n/)) {
+    if (line.trim() === '') continue;
+    const issue = JSON.parse(line) as RawIssue;
+    byID.set(issue.id, issue);
+    for (const dep of issue.dependencies ?? []) {
+      if (dep.type !== 'parent-child') continue;
+      const child = dep.issue_id ?? issue.id;
+      const parent = dep.depends_on_id;
+      if (!child || !parent) continue;
+      const children = childrenByParent.get(parent) ?? [];
+      children.push(child);
+      childrenByParent.set(parent, children);
+    }
+  }
+  return { byID, childrenByParent };
+}
+
+async function fetchWorkItemsSnapshot(baseURL: string): Promise<IssueSnapshot> {
+  const res = await fetch(`${baseURL}/api/work-items?limit=500`);
+  if (!res.ok) throw new Error(`GET /api/work-items failed ${res.status}`);
+  const json = (await res.json()) as { items?: RawIssue[]; workitems?: RawIssue[] };
+  const items = json.items ?? json.workitems ?? [];
+  const byID = new Map<string, RawIssue>();
+  const childrenByParent = new Map<string, string[]>();
+  for (const item of items) {
+    byID.set(nativeBeadID(item.id), item);
+  }
+  for (const item of items) {
+    const childID = nativeBeadID(item.id);
+    for (const rel of item.relationships ?? []) {
+      if (rel.kind !== 'parent_child') continue;
+      const parent = nativeBeadID(rel.from ?? '');
+      const child = nativeBeadID(rel.to ?? childID);
+      if (!parent || !child) continue;
+      const children = childrenByParent.get(parent) ?? [];
+      if (!children.includes(child)) children.push(child);
+      childrenByParent.set(parent, children);
+    }
+  }
+  return { byID, childrenByParent };
+}
+
+async function fetchWorkItem(baseURL: string, beadID: string): Promise<RawIssue | null> {
+  const res = await fetch(`${baseURL}/api/work-items/${encodeURIComponent(beadID)}`);
+  if (res.ok) return (await res.json()) as RawIssue;
+  if (res.status !== 404) throw new Error(`GET /api/work-items/${beadID} failed ${res.status}`);
+  const snap = await fetchWorkItemsSnapshot(baseURL);
+  return snap.byID.get(nativeBeadID(beadID)) ?? null;
+}
+
+function nativeBeadID(id: string): string {
+  const slash = id.lastIndexOf('/');
+  return slash >= 0 ? id.slice(slash + 1) : id;
+}
+
+function isClosedWorkItem(issue: RawIssue): boolean {
+  const state = (issue.state_category ?? '').toLowerCase();
+  if (state === 'completed' || state === 'canceled') return true;
+  return ['closed', 'completed', 'done', 'canceled', 'cancelled'].includes(
+    (issue.status ?? '').toLowerCase(),
+  );
+}
+
+function isWrapperIssue(issue: RawIssue): boolean {
+  return ['epic', 'milestone'].includes((issue.issue_type ?? issue.kind ?? '').toLowerCase());
 }
 
 // ─── bd import shim ───────────────────────────────────────────────
@@ -455,20 +774,90 @@ async function importBeadsCLI(
         | 'decisions';
       const rendered = renderPack(kind, beadPrefix, projectDir);
       abs = rendered.path;
+      if (DEMO_MODE && kind === 'm1') {
+        abs = writeDemoManualGateM1(abs, beadPrefix, projectDir);
+      }
     } else {
       throw new Error(
         `bead pack not found: ${abs} (no .jsonl or .jsonl.tmpl)`,
       );
     }
   }
+  if (packAlreadyImported(projectDir, abs)) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const proc = spawn('bd', ['import', abs], { cwd: projectDir, stdio: 'inherit' });
+    const proc = spawn('bd', ['import', abs], { cwd: projectDir, stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    proc.stdout.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      output += text;
+      process.stdout.write(text);
+    });
+    proc.stderr.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      output += text;
+      process.stderr.write(text);
+    });
     proc.on('exit', (code) => {
       if (code === 0) resolve();
+      else if (/nothing to commit/i.test(output)) resolve();
       else reject(new Error(`bd import exited ${code} (path=${abs})`));
     });
     proc.on('error', (err) => reject(err));
   });
+}
+
+function writeDemoManualGateM1(jsonlPath: string, beadPrefix: string, projectDir: string): string {
+  const firstTaskID = `${beadPrefix}-1`;
+  const gateID = `${beadPrefix}-d2`;
+  const body = readFileSync(jsonlPath, 'utf8');
+  const rendered = body
+    .split(/\r?\n/)
+    .map((line) => {
+      if (line.trim() === '') return line;
+      const row = JSON.parse(line) as {
+        id?: string;
+        dependencies?: Array<{ issue_id?: string; depends_on_id?: string; type?: string }>;
+      };
+      if (row.id !== firstTaskID) return line;
+      const dependencies = row.dependencies ?? [];
+      const hasGate = dependencies.some(
+        (dep) =>
+          dep.issue_id === firstTaskID &&
+          dep.depends_on_id === gateID &&
+          dep.type === 'blocks',
+      );
+      if (!hasGate) {
+        row.dependencies = [
+          ...dependencies,
+          { issue_id: firstTaskID, depends_on_id: gateID, type: 'blocks' },
+        ];
+      }
+      return JSON.stringify(row);
+    })
+    .join('\n');
+  const out = path.join(projectDir, 'm1.demo-manual-gate.jsonl');
+  writeFileSync(out, rendered, 'utf8');
+  return out;
+}
+
+function packAlreadyImported(projectDir: string, jsonlPath: string): boolean {
+  const issuePath = path.join(projectDir, '.beads', 'issues.jsonl');
+  if (!existsSync(issuePath)) return false;
+  const want = issueIDsFromJSONL(jsonlPath);
+  if (want.length === 0) return false;
+  const snap = loadIssueSnapshot(projectDir);
+  return want.every((id) => snap.byID.has(id));
+}
+
+function issueIDsFromJSONL(jsonlPath: string): string[] {
+  const body = readFileSync(jsonlPath, 'utf8');
+  const ids: string[] = [];
+  for (const line of body.split(/\r?\n/)) {
+    if (line.trim() === '') continue;
+    const row = JSON.parse(line) as { id?: string };
+    if (row.id) ids.push(row.id);
+  }
+  return ids;
 }
 
 // ─── Defaults ─────────────────────────────────────────────────────

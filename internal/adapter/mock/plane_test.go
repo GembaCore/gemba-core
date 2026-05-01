@@ -184,6 +184,41 @@ func TestListSessions_FiltersByStatus(t *testing.T) {
 	}
 }
 
+func TestSyntheticEscalationLifecycle(t *testing.T) {
+	p := NewOrchestrationPlane(Config{ProjectDir: t.TempDir()})
+	esc := core.EscalationRequest{
+		ID:         "synth-1",
+		Source:     core.EscalationHITLApproval,
+		Urgency:    core.UrgencyBlocking,
+		WorkItemID: "gm-1",
+		Title:      "Need approval",
+		Prompt:     "Need approval",
+	}
+	if err := p.InjectSyntheticEscalation(esc); err != nil {
+		t.Fatalf("InjectSyntheticEscalation: %v", err)
+	}
+	open, err := p.ListOpenEscalations(context.Background(), core.EscalationFilter{})
+	if err != nil {
+		t.Fatalf("ListOpenEscalations: %v", err)
+	}
+	if len(open) != 1 || open[0].ID != "synth-1" || open[0].State != core.EscalationOpen {
+		t.Fatalf("open escalations = %+v", open)
+	}
+	resolved, err := p.ResolveEscalation(context.Background(), "synth-1", core.EscalationResolution{
+		Kind: core.ResolutionApprove,
+	}, "")
+	if err != nil {
+		t.Fatalf("ResolveEscalation: %v", err)
+	}
+	if resolved.State != core.EscalationResolved {
+		t.Fatalf("resolved state = %q", resolved.State)
+	}
+	open, _ = p.ListOpenEscalations(context.Background(), core.EscalationFilter{})
+	if len(open) != 0 {
+		t.Fatalf("resolved escalation should not be open: %+v", open)
+	}
+}
+
 func TestInterfaceConformance(t *testing.T) {
 	var _ core.OrchestrationPlaneAdaptor = (*OrchestrationPlane)(nil)
 }

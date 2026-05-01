@@ -74,6 +74,13 @@ type SessionDispatcher interface {
 	Dispatch(ctx context.Context, sessionID string, beadID core.WorkItemID) error
 }
 
+// ColdStarter starts a fresh agent session for a bead when a pool has
+// ready work but no idle sessions yet. Implementations should enforce
+// the same atomic claim semantics as Dispatch.
+type ColdStarter interface {
+	StartCold(ctx context.Context, beadID core.WorkItemID) (sessionID string, err error)
+}
+
 // TwoPhaseDispatcher is the optional dispatch shape adaptors with
 // ClaimModelTwoPhase satisfy: claim a TTL'd reservation, then
 // convert it into a session. No in-tree adaptor declares this model
@@ -208,6 +215,7 @@ type Daemon struct {
 	Live       LiveSessionLister
 	Ready      ReadySetReader
 	Dispatcher SessionDispatcher
+	ColdStart  ColdStarter
 	Recycler   SessionRecycler
 	Gate       *planner.DispatchGate
 	Decisions  *dispatch.Store
@@ -279,7 +287,7 @@ func (d *Daemon) Tick(ctx context.Context) TickResult {
 	if err != nil {
 		return TickResult{Err: fmt.Errorf("autodispatch: ListIdle: %w", err)}
 	}
-	if len(idle) == 0 {
+	if len(idle) == 0 && d.ColdStart == nil {
 		return TickResult{}
 	}
 
@@ -311,6 +319,22 @@ func (d *Daemon) Tick(ctx context.Context) TickResult {
 	conflictBeads := beadConflictMap(conflicts)
 
 	_ = live // currently used only via the precomputed conflict map
+	if len(idle) == 0 {
+		action := d.tickColdStart(ctx, ready, conflicts, conflictBeads, now)
+		if action.Outcome == "" {
+			return TickResult{}
+		}
+		if logger != nil {
+			logger.Info("autodispatch.action",
+				slog.String("session_id", action.SessionID),
+				slog.String("bead_id", string(action.BeadID)),
+				slog.String("outcome", string(action.Outcome)),
+				slog.String("reason", action.Reason),
+				slog.Float64("affinity_combined", action.Affinity.Combined),
+			)
+		}
+		return TickResult{Actions: []Action{action}}
+	}
 	out := make([]Action, 0, len(idle))
 	for _, sess := range idle {
 		action := d.tickSession(ctx, sess, ready, conflicts, conflictBeads, now)
@@ -326,6 +350,80 @@ func (d *Daemon) Tick(ctx context.Context) TickResult {
 		}
 	}
 	return TickResult{Actions: out}
+}
+
+func (d *Daemon) tickColdStart(
+	ctx context.Context,
+	ready []ReadyBead,
+	conflicts []planner.WorkspaceCollision,
+	conflictBeads map[string]bool,
+	now time.Time,
+) Action {
+	if d.ColdStart == nil || len(ready) == 0 {
+		return Action{}
+	}
+	coldCtx := planner.OperationalContext{
+		Session: &core.Session{ID: "cold-start", Status: core.SessionReady},
+		Agent:   &core.AgentRef{ID: core.AgentID("cold-start")},
+	}
+	scoredAll := d.rankBeads(ready, coldCtx)
+	scoredEligible := filterScored(scoredAll, conflictBeads)
+	if len(scoredEligible) == 0 {
+		return Action{
+			SessionID: "cold-start",
+			Outcome:   OutcomeNoEligibleBead,
+			Reason:    "no eligible bead after conflict filter",
+		}
+	}
+	top := scoredEligible[0]
+	if d.AutoDispatchFloor > 0 && top.scores.Combined < d.AutoDispatchFloor {
+		return Action{
+			SessionID: "cold-start",
+			BeadID:    top.bead.BeadID,
+			Outcome:   OutcomeBelowFloor,
+			Reason:    "score below floor",
+			Affinity:  top.scores,
+		}
+	}
+	allowed, gateReason := d.Gate.AllowDispatch("cold-start", now)
+	if !allowed {
+		return Action{
+			SessionID: "cold-start",
+			Outcome:   OutcomeBlockedByGate,
+			Reason:    gateReason,
+		}
+	}
+	sessionID, err := d.ColdStart.StartCold(ctx, top.bead.BeadID)
+	if err != nil {
+		if core.IsAlreadyClaimedError(err) {
+			return Action{
+				SessionID: "cold-start",
+				BeadID:    top.bead.BeadID,
+				Outcome:   OutcomeAlreadyClaimed,
+				Reason:    "another session won the inline claim race",
+				Affinity:  top.scores,
+			}
+		}
+		return Action{
+			SessionID: "cold-start",
+			BeadID:    top.bead.BeadID,
+			Outcome:   OutcomeError,
+			Reason:    fmt.Sprintf("cold_start: %v", err),
+			Affinity:  top.scores,
+		}
+	}
+	if sessionID == "" {
+		sessionID = "cold-start"
+	}
+	d.Gate.RecordDispatch(sessionID, now)
+	decisionID := d.recordDecision(ctx, sessionID, coldCtx, top, scoredAll, conflicts, conflictBeads, now)
+	return Action{
+		SessionID:  sessionID,
+		BeadID:     top.bead.BeadID,
+		Outcome:    OutcomeDispatched,
+		Affinity:   top.scores,
+		DecisionID: decisionID,
+	}
 }
 
 func (d *Daemon) tickSession(

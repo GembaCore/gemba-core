@@ -8,25 +8,13 @@
 // might, but we don't want test outcomes to depend on chance LLM
 // requests for permission. So we synthesize one.
 //
-// CURRENT BACKEND REALITY (2026-04-30): there is no public
-// `POST /api/escalations` create endpoint. Escalations are minted
-// inside the OrchestrationPlane adaptor when sessions emit
-// `escalation.opened` events. To inject one for test purposes we
-// have three options:
-//
-//   1. Backend test-mode endpoint (preferred long-term, not yet built).
-//   2. Drive the orchestration plane to emit an escalation event
-//      directly. Possible only with a fake/test orchestration plane,
-//      which doesn't exist for the gemba-server REST surface today.
-//   3. The injector is a no-op until (1) lands; the triage step
-//      asserts the absence and files a "backend-incomplete" bug bead
-//      so the test doesn't silently pass when triage is unexercised.
-//
-// We ship option 3 today. The TypeScript surface is the contract the
-// future test-mode endpoint will conform to so the triage step
-// (gm-root.27.11) can be written against this signature today and
-// "just work" once the backend lands. A follow-up bead is filed
-// alongside this commit to track the backend work.
+// BACKEND CONTRACT (2026-04-30): there is no public
+// `POST /api/escalations` create endpoint. Escalations are normally
+// minted inside the OrchestrationPlane adaptor when sessions emit
+// `escalation.opened` events. Acceptance tests opt into the
+// test-only `POST /api/v1/test/escalations` endpoint so the triage
+// path can deterministically create one without relying on a real
+// agent to ask for help.
 //
 // References:
 //   - D15 docs/design/acceptance-temperature-spa.md §11.6 (escalation
@@ -117,14 +105,16 @@ export async function injectEscalation(
     summary: spec.summary,
     source: spec.source ?? 'acceptance-test',
   };
-  // The expected future endpoint. When backend-side this lands we
-  // bump and revisit the fallback below.
+  // Test-only endpoint, registered when GEMBA_ENABLE_TEST_ESCALATIONS=1.
   const url = `${baseURL}/api/v1/test/escalations`;
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-GEMBA-Confirm': `acceptance-inject-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      },
       body: JSON.stringify(body),
     });
   } catch (err) {
@@ -140,11 +130,12 @@ export async function injectEscalation(
     };
   }
   if (!res.ok) {
+    const text = await res.text().catch(() => '');
     return {
       ok: false,
       err: {
         kind: 'unexpected',
-        message: `${res.status} ${await res.text().catch(() => '')}`,
+        message: `${res.status} ${text}`,
       },
     };
   }

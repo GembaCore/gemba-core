@@ -17,7 +17,7 @@ import type { ReactNode } from 'react';
 import { EpicDetail, EpicDetailRegistration } from '../EpicDetail';
 import { workItemsKeys } from '@/hooks/useWorkItems';
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
-import type { StateCategory, WorkItem } from '@/types/core.gen';
+import { KIND_MILESTONE, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { RhpProvider, useRhpDetailRegistry } from '@/components/rhp/RhpContext';
 import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 import { useEffect, useState } from 'react';
@@ -53,10 +53,10 @@ function epicFixture(
   };
 }
 
-function mount(epic: WorkItem) {
+function mount(epic: WorkItem, allItems: WorkItem[] = [epic]) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(workItemsKeys.detail(epic.id), epic);
-  client.setQueryData(workItemsKeys.list(), [epic]);
+  client.setQueryData(workItemsKeys.list(), allItems);
   const ui: ReactNode = (
     <MemoryRouter>
       <QueryClientProvider client={client}>
@@ -96,6 +96,27 @@ describe('EpicDetail — rendering', () => {
     mount(epicFixture());
     const section = await screen.findByTestId('epic-section-children');
     expect(section.textContent).toContain('Children (0)');
+  });
+
+  it('shows the milestone > epic breadcrumb when the epic has a milestone ancestor', async () => {
+    const milestone: WorkItem = {
+      ...epicFixture(),
+      id: 'demo/pc-m1',
+      kind: KIND_MILESTONE,
+      title: 'M1 Foundation',
+      relationships: [],
+    };
+    const epic = epicFixture({
+      relationships: [{ kind: 'parent_child', from: milestone.id, to: 'demo/pc-e-test' }],
+    });
+
+    mount(epic, [milestone, epic]);
+
+    const breadcrumb = await screen.findByTestId('workitem-detail-breadcrumb');
+    expect(breadcrumb.textContent).toContain('Milestone');
+    expect(breadcrumb.textContent).toContain('M1 Foundation');
+    expect(breadcrumb.textContent).toContain('Epic');
+    expect(breadcrumb.textContent).toContain('Test epic');
   });
 });
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CONFIRM_HEADER,
+  cascadeDispatchWorkItem,
   createWorkItem,
   getWorkItem,
   listWorkItems,
@@ -154,5 +155,24 @@ describe('listWorkItems / getWorkItem', () => {
         state_category: 'backlog',
       },
     });
+  });
+
+  it('cascadeDispatchWorkItem POSTs to the wrapper cascade endpoint', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ wrapper_id: 'gm-e1', dispatched: [] }), {
+        status: 202,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    await cascadeDispatchWorkItem(
+      'gm/e1',
+      { agent_type: 'codex', limit: 2 },
+      { nonce: 'nonce-cascade' }
+    );
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe('/api/work-items/gm%2Fe1/cascade-dispatch');
+    expect(init.method).toBe('POST');
+    expect(init.headers[CONFIRM_HEADER]).toBe('nonce-cascade');
+    expect(JSON.parse(init.body as string)).toEqual({ agent_type: 'codex', limit: 2 });
   });
 });

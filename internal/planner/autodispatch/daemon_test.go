@@ -44,6 +44,7 @@ func (f fakeReady) ReadySet(_ context.Context) ([]ReadyBead, error) {
 
 type fakeDispatcher struct {
 	calls []dispatchCall
+	cold  []core.WorkItemID
 	err   error
 }
 
@@ -55,6 +56,14 @@ type dispatchCall struct {
 func (f *fakeDispatcher) Dispatch(_ context.Context, sessionID string, beadID core.WorkItemID) error {
 	f.calls = append(f.calls, dispatchCall{sessionID: sessionID, beadID: beadID})
 	return f.err
+}
+
+func (f *fakeDispatcher) StartCold(_ context.Context, beadID core.WorkItemID) (string, error) {
+	f.cold = append(f.cold, beadID)
+	if f.err != nil {
+		return "", f.err
+	}
+	return "sess-cold-" + string(beadID), nil
 }
 
 type fakeRecycler struct {
@@ -154,6 +163,37 @@ func TestTick_DispatchesHighestAffinityBead(t *testing.T) {
 	}
 	if len(dsp.calls) != 1 || dsp.calls[0].beadID != "gm-1" {
 		t.Errorf("dispatcher calls = %+v", dsp.calls)
+	}
+}
+
+func TestTick_ColdStartsWhenPoolHasNoIdleSessions(t *testing.T) {
+	ready := []ReadyBead{
+		bead("gm-1", "gemba", "auth"),
+		bead("gm-2", "other"),
+	}
+	dsp := &fakeDispatcher{}
+	d := newDaemon(nil, nil, ready, enabledGate(), dsp)
+	d.ColdStart = dsp
+	d.Now = fixedClock(t)
+
+	r := d.Tick(context.Background())
+	if r.Err != nil {
+		t.Fatalf("Tick: %v", r.Err)
+	}
+	if len(r.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1", len(r.Actions))
+	}
+	if r.Actions[0].Outcome != OutcomeDispatched {
+		t.Fatalf("outcome = %q, want dispatched", r.Actions[0].Outcome)
+	}
+	if r.Actions[0].SessionID != "sess-cold-gm-1" {
+		t.Errorf("sessionID = %q", r.Actions[0].SessionID)
+	}
+	if len(dsp.cold) != 1 || dsp.cold[0] != "gm-1" {
+		t.Errorf("cold starts = %+v", dsp.cold)
+	}
+	if len(dsp.calls) != 0 {
+		t.Errorf("reuse dispatcher should not be called on cold start: %+v", dsp.calls)
 	}
 }
 

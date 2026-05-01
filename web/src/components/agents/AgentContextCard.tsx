@@ -131,20 +131,23 @@ function CardHeader({ ctx }: { ctx: PlannerOperationalContext }) {
 
 function CardWorkspace({ ctx }: { ctx: PlannerOperationalContext }) {
   const ws = ctx.workspace;
-  if (!ws) return null;
+  const status = ctx.scope_status;
+  if (!ws && !status) return null;
   // Worktree path can be long; truncate from the front so the
   // last segment (the worktree name) stays visible.
-  const path = ws.worktree_path ?? '';
+  const path = ws?.worktree_path ?? '';
   const showPath = path !== '';
-  const isolationFlags = formatIsolation(ws.isolation);
+  const isolationFlags = formatIsolation(ws?.isolation);
   return (
     <div className="mb-2 space-y-1 text-[11px] text-neutral-500">
-      <div className="flex items-center gap-1">
-        <GitBranch className="h-3 w-3" />
-        <span className="truncate">
-          {ws.repository}/{ws.branch}
-        </span>
-      </div>
+      {ws ? (
+        <div className="flex items-center gap-1">
+          <GitBranch className="h-3 w-3" />
+          <span className="truncate">
+            {ws.repository}/{ws.branch}
+          </span>
+        </div>
+      ) : null}
       {showPath ? (
         <div className="flex items-center gap-1">
           <Box className="h-3 w-3" />
@@ -153,14 +156,39 @@ function CardWorkspace({ ctx }: { ctx: PlannerOperationalContext }) {
           </span>
         </div>
       ) : null}
-      <div className="flex items-center gap-1">
-        <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-neutral-800">
-          {ws.kind}
+      {ws ? (
+        <div className="flex items-center gap-1">
+          <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-[10px] dark:bg-neutral-800">
+            {ws.kind}
+          </span>
+          {isolationFlags ? (
+            <span className="font-mono text-[10px] text-neutral-500">{isolationFlags}</span>
+          ) : null}
+        </div>
+      ) : null}
+      <ScopeStatusPills status={status} />
+    </div>
+  );
+}
+
+function ScopeStatusPills({ status }: { status: PlannerOperationalContext['scope_status'] }) {
+  if (!status) return null;
+  const pills = buildScopePills(status);
+  if (pills.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1 pt-0.5" data-testid="scope-status-pills">
+      {pills.map((pill) => (
+        <span
+          key={pill.key}
+          title={pill.title}
+          className={cn(
+            'rounded px-1.5 py-0.5 font-mono text-[10px]',
+            scopePillTone(pill.tone)
+          )}
+        >
+          {pill.label}
         </span>
-        {isolationFlags ? (
-          <span className="font-mono text-[10px] text-neutral-500">{isolationFlags}</span>
-        ) : null}
-      </div>
+      ))}
     </div>
   );
 }
@@ -365,6 +393,102 @@ function formatIsolation(iso?: IsolationFlags): string {
   if (iso.mem_limited) flags.push('mem');
   if (iso.snapshot_restore) flags.push('snap');
   return flags.join('+');
+}
+
+type ScopePillTone = 'good' | 'warn' | 'danger' | 'neutral';
+
+interface ScopePill {
+  key: string;
+  label: string;
+  tone: ScopePillTone;
+  title?: string;
+}
+
+function buildScopePills(
+  status: NonNullable<PlannerOperationalContext['scope_status']>
+): ScopePill[] {
+  const pills: ScopePill[] = [];
+  const git = status.git;
+  if (git) {
+    if (git.state === 'clean') {
+      pills.push({ key: 'git', label: 'clean', tone: 'good', title: git.head_sha });
+    } else if (git.state === 'dirty') {
+      const count = git.changed_files ?? 0;
+      pills.push({
+        key: 'git',
+        label: count > 0 ? `changes ${count}` : 'changes',
+        tone: 'warn',
+        title: git.reason,
+      });
+    } else {
+      pills.push({ key: 'git', label: 'git unknown', tone: 'neutral', title: git.reason });
+    }
+    if (git.upstream) {
+      pills.push(syncPill(git.ahead ?? 0, git.behind ?? 0, git.upstream));
+    }
+  }
+
+  const analysis = status.analysis;
+  if (analysis) {
+    const backend = analysis.backend || 'analysis';
+    if (analysis.state === 'current') {
+      pills.push({
+        key: 'analysis',
+        label: `${backend} current`,
+        tone: 'good',
+        title: analysis.indexed_commit,
+      });
+    } else if (analysis.state === 'stale') {
+      pills.push({
+        key: 'analysis',
+        label: `${backend} stale`,
+        tone: 'warn',
+        title: analysis.reason,
+      });
+    } else if (analysis.state === 'missing') {
+      pills.push({
+        key: 'analysis',
+        label: `${backend} missing`,
+        tone: 'warn',
+        title: analysis.reason,
+      });
+    } else {
+      pills.push({
+        key: 'analysis',
+        label: `${backend} unknown`,
+        tone: 'neutral',
+        title: analysis.reason,
+      });
+    }
+  }
+
+  return pills;
+}
+
+function syncPill(ahead: number, behind: number, upstream: string): ScopePill {
+  if (ahead === 0 && behind === 0) {
+    return { key: 'sync', label: 'synced', tone: 'good', title: upstream };
+  }
+  if (ahead > 0 && behind > 0) {
+    return { key: 'sync', label: `diverged ${ahead}/${behind}`, tone: 'danger', title: upstream };
+  }
+  if (ahead > 0) {
+    return { key: 'sync', label: `ahead ${ahead}`, tone: 'warn', title: upstream };
+  }
+  return { key: 'sync', label: `behind ${behind}`, tone: 'danger', title: upstream };
+}
+
+function scopePillTone(tone: ScopePillTone): string {
+  switch (tone) {
+    case 'good':
+      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300';
+    case 'warn':
+      return 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300';
+    case 'danger':
+      return 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300';
+    default:
+      return 'bg-neutral-100 text-neutral-600 dark:bg-neutral-800 dark:text-neutral-300';
+  }
 }
 
 // leftEllipsize keeps the right (most-specific) part of a long

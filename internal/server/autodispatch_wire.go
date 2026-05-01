@@ -92,6 +92,11 @@ func (w *poolWiring) Dispatcher() autodispatch.SessionDispatcher {
 	return sessionDispatcher{w: w}
 }
 
+// ColdStarter returns the daemon's cold-start dispatcher.
+func (w *poolWiring) ColdStarter() autodispatch.ColdStarter {
+	return sessionDispatcher{w: w}
+}
+
 // Recycler returns the daemon's SessionRecycler implementation. Always
 // non-nil; implementations that don't support recycle return nil from
 // the Recycle method, which the daemon treats as "recycle gate
@@ -120,6 +125,14 @@ func (l idleSessionLister) ListIdle(ctx context.Context) ([]planner.OperationalC
 	for i := range sessions {
 		s := sessions[i]
 		if s.Persona != l.w.pool.Persona {
+			continue
+		}
+		if l.w.agentTyp == "codex" {
+			// Codex integration is one-shot: gemba-codex-driver runs
+			// `codex exec`, reports bead-done, then exits. The pane it
+			// leaves behind is not a live interactive Codex worker, so
+			// auto-dispatch must cold-start a fresh exec process for
+			// each bead instead of reusing a ready session row.
 			continue
 		}
 		oc := projectToContext(ctx, &s, l.w.readers)
@@ -177,8 +190,15 @@ func (r readySetReader) ReadySet(ctx context.Context) ([]autodispatch.ReadyBead,
 	}
 	out := make([]autodispatch.ReadyBead, 0, len(items))
 	for _, it := range items {
+		if !isAutodispatchRunnableKind(it.Kind) {
+			continue
+		}
 		// Skip items that aren't dispatch-ready (soft-blocked).
 		if it.DispatchStatus.Effective() != core.DispatchReady {
+			continue
+		}
+		blocked, err := hasOpenBlocker(ctx, r.w.wp, it)
+		if err != nil || blocked {
 			continue
 		}
 		// Three-layer cascade: bead extras > routing > default.
@@ -210,6 +230,35 @@ func (r readySetReader) ReadySet(ctx context.Context) ([]autodispatch.ReadyBead,
 		})
 	}
 	return out, nil
+}
+
+func isAutodispatchRunnableKind(kind string) bool {
+	switch kind {
+	case core.KindMilestone, "epic", "decision":
+		return false
+	default:
+		return true
+	}
+}
+
+func hasOpenBlocker(ctx context.Context, wp core.WorkPlane, it core.WorkItem) (bool, error) {
+	for _, rel := range it.Relationships {
+		if rel.Kind != core.RelBlocks || rel.To != it.ID || rel.From == "" {
+			continue
+		}
+		blocker, err := wp.GetWorkItem(ctx, rel.From)
+		if err != nil {
+			return true, err
+		}
+		if !isClosedWorkItem(blocker) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func isClosedWorkItem(it core.WorkItem) bool {
+	return it.StateCategory == core.StateCompleted || it.StateCategory == core.StateCanceled
 }
 
 // beadPersonaFromCustom reads the explicit-override `persona` extra
@@ -281,6 +330,30 @@ func (d sessionDispatcher) Dispatch(ctx context.Context, sessionID string, beadI
 	}
 	_, err = d.w.op.StartSession(ctx, string(beadID), prompt)
 	return err
+}
+
+// StartCold starts a fresh session for the pool when no same-persona
+// idle session exists yet. It intentionally omits gemba:reuse_pane_id;
+// the native adaptor provisions a new pane/worktree and the agent
+// driver owns lifecycle from there.
+func (d sessionDispatcher) StartCold(ctx context.Context, beadID core.WorkItemID) (string, error) {
+	if d.w.op == nil {
+		return "", errors.New("autodispatch: no orchestration plane")
+	}
+	prompt := core.SessionPrompt{
+		Extension: map[string]any{
+			"gemba:bead_id":      string(beadID),
+			"gemba:persona_id":   d.w.pool.Persona,
+			"gemba:agent_type":   d.w.agentTyp,
+			"gemba:nonce":        newAutodispatchNonce(),
+			"gemba:autodispatch": "1",
+		},
+	}
+	sess, err := d.w.op.StartSession(ctx, string(beadID), prompt)
+	if err != nil {
+		return "", err
+	}
+	return sess.ID, nil
 }
 
 // newAutodispatchNonce mints a fresh nonce per dispatch. The

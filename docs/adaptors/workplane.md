@@ -91,8 +91,8 @@ core advertises at boot; mismatches fail fast with an actionable error.
 ### StateMap
 
 A required declarative map from the adaptor's native status tokens
-(`"open"`, `"in_progress"`, `"To Do"`, `"hooked"`, …) to the five core
-`StateCategory` buckets (`backlog | unstarted | started | completed | canceled`).
+(`"open"`, `"in_progress"`, `"To Do"`, `"hooked"`, …) to the core
+`StateCategory` buckets (`backlog | unstarted | staged | started | completed | canceled`).
 Every native status the adaptor can emit MUST appear as a key; gaps are
 a conformance failure. Core never guesses: this keeps Kanban lane
 placement deterministic and keeps backend-specific vocabulary out of

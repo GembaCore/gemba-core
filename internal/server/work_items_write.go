@@ -64,6 +64,15 @@ func (r *Router) createWorkItem(w http.ResponseWriter, req *http.Request) {
 		httperr.WriteError(w, err)
 		return
 	}
+	// A session can file follow-up beads beneath an active epic or
+	// milestone. Treat that as new work entering the active cascade:
+	// wrapper rollups should update immediately, and propulsion should
+	// stage/dispatch the child if dependencies allow.
+	r.continueActiveCascades(req.Context(), wp, out)
+	r.reconcileWrapperAncestors(req.Context(), wp, out)
+	if refreshed, err := wp.GetWorkItem(req.Context(), out.ID); err == nil {
+		out = refreshed
+	}
 	writeJSON(w, http.StatusCreated, out)
 }
 
@@ -123,9 +132,11 @@ func (r *Router) patchWorkItem(w http.ResponseWriter, req *http.Request) {
 		httperr.WriteError(w, err)
 		return
 	}
-	// gm-mqiz: when this patch closed a milestone child, roll the
-	// milestone closed and notify. Best-effort — see milestone_autoclose.go.
-	r.maybeAutoCloseMilestone(req.Context(), wp, out)
+	// gm-1o9n: wrapper beads (epics/milestones) derive their board
+	// state from descendant runnable leaves. Best-effort — see
+	// milestone_autoclose.go.
+	r.reconcileWrapperAncestors(req.Context(), wp, out)
+	r.continueActiveCascades(req.Context(), wp, out)
 	writeJSON(w, http.StatusOK, out)
 }
 

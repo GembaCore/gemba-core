@@ -41,6 +41,25 @@ export interface PlannerOperationalContext {
       snapshot_restore?: boolean;
     };
   } | null;
+  scope_status?: {
+    git?: {
+      state: 'clean' | 'dirty' | 'unavailable' | string;
+      changed_files?: number;
+      ahead?: number;
+      behind?: number;
+      head_sha?: string;
+      upstream?: string;
+      reason?: string;
+    } | null;
+    analysis?: {
+      backend?: string;
+      state: 'current' | 'stale' | 'missing' | 'unavailable' | string;
+      indexed_at?: string;
+      indexed_commit?: string;
+      head_sha?: string;
+      reason?: string;
+    } | null;
+  } | null;
   profile?: {
     session_id: string;
     concepts?: Record<string, number>;

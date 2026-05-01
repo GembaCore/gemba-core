@@ -25,31 +25,43 @@ import { bootstrapProject } from '../../shared/helpers/bootstrap';
 import { runAcceptance } from '../../shared/spec';
 import { injectEscalation } from '../../shared/helpers/escalation';
 import type { EscalationInjector } from '../../shared/contracts';
+import { DEMO_MODE } from '../../shared/helpers/demo-mode';
+import { Narrator } from '../../shared/narrator';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const POOL_CONFIG = resolve(here, 'fixtures/pool.toml');
+const POOL_CONFIG_CODEX = resolve(here, 'fixtures/pool.codex.toml');
+const POOL_CONFIG_CLAUDE = resolve(here, 'fixtures/pool.claude.toml');
 
 test.describe('temperature-spa @native', () => {
   test('builds the SPA end-to-end via beads (native orchestration)', async ({ page }, testInfo) => {
-    // gm-root.28.8: native variant uses --orchestration=mock so the
-    // dispatch daemon routes work to the in-process mock plane
-    // (gm-root.28). The TS MockAgentRunner is retired; templates
-    // live in internal/adapter/mock/templates.go now. The variant
-    // name 'native' is preserved for continuity but the orchestration
-    // mode is mock — variants/native/ is the 'CI default' path,
-    // not 'real claude'.
+    const realAgents = process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1';
+    const realAgentType = (process.env.GEMBA_ACCEPTANCE_AGENT ?? 'codex').toLowerCase();
+    // gm-root.28.8: CI default uses --orchestration=mock so the
+    // dispatch daemon routes work to the in-process mock plane. When
+    // GEMBA_ACCEPTANCE_REAL_AGENTS=1, use native orchestration plus a
+    // selected real-agent pool fixture for a persuasive end-to-end run.
+    const poolConfig = realAgents
+      ? realAgentType === 'claude'
+        ? POOL_CONFIG_CLAUDE
+        : POOL_CONFIG_CODEX
+      : POOL_CONFIG;
     const project = await bootstrapProject({
       workerIndex: testInfo.workerIndex,
       serveArgs: [
-        '--orchestration=mock',
-        '--pool-config', POOL_CONFIG,
+        `--orchestration=${realAgents ? 'native' : 'mock'}`,
+        '--pool-config', poolConfig,
       ],
     });
 
-    testInfo.attach('native-pool-config', { path: POOL_CONFIG, contentType: 'text/plain' });
+    testInfo.attach('native-pool-config', { path: poolConfig, contentType: 'text/plain' });
     testInfo.annotations.push({
       type: 'pool-config',
-      description: `--pool-config ${POOL_CONFIG} forwarded to gemba serve via bootstrap`,
+      description: `--pool-config ${poolConfig} forwarded to gemba serve via bootstrap`,
+    });
+    testInfo.annotations.push({
+      type: 'agent-mode',
+      description: realAgents ? `native ${realAgentType} agent` : 'mock orchestration',
     });
 
     const escalationInjector: EscalationInjector = {
@@ -61,8 +73,9 @@ test.describe('temperature-spa @native', () => {
           summary: `Synthetic escalation for ${spec.beadID} (acceptance test)`,
         });
         if (!res.ok) {
+          const detail = 'message' in res.err ? `: ${res.err.message}` : '';
           throw new Error(
-            `injectEscalation failed (${res.err.kind}): see gm-root.27.22 backend follow-up`,
+            `injectEscalation failed (${res.err.kind}${detail}): see gm-root.27.22 backend follow-up`,
           );
         }
         return { escalationID: res.value.id };
@@ -77,6 +90,9 @@ test.describe('temperature-spa @native', () => {
         projectDir: project.projectDir,
         beadPrefix: project.beadPrefix,
         escalationInjector,
+        narrator: DEMO_MODE ? new Narrator() : undefined,
+        narrationOutputPath: DEMO_MODE ? testInfo.outputPath('narration.json') : undefined,
+        narrationVideoPath: DEMO_MODE ? testInfo.outputPath('temperature-spa-demo.mp4') : undefined,
       });
     } finally {
       await project.cleanup();

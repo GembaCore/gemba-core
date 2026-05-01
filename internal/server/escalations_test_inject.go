@@ -11,11 +11,10 @@
 // Default: not registered. POST returns 404 (the route doesn't
 // exist).
 //
-// When enabled and the bound OrchestrationPlane is the native
-// adapter, POST writes through to the adapter's escalation index
-// via InjectSyntheticEscalation (no event-bus round trip). For
-// other adapters (gastown, noop) the endpoint returns 501 —
-// gastown's index isn't reachable in-process.
+// When enabled and the bound OrchestrationPlane supports
+// InjectSyntheticEscalation, POST writes through to the adapter's
+// escalation index (no event-bus round trip). Adapters without a
+// synthetic injection hook return 501.
 
 package server
 
@@ -28,7 +27,6 @@ import (
 	"time"
 
 	"github.com/GembaCore/gemba-core/core"
-	"github.com/GembaCore/gemba-core/internal/adapter/native"
 	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
@@ -50,6 +48,10 @@ type testEscalationResponse struct {
 	ID string `json:"id"`
 }
 
+type syntheticEscalationInjector interface {
+	InjectSyntheticEscalation(core.EscalationRequest) error
+}
+
 func (r *Router) postTestEscalation(w http.ResponseWriter, req *http.Request) {
 	if r.host == nil {
 		httperr.Write(w, http.StatusServiceUnavailable,
@@ -62,11 +64,11 @@ func (r *Router) postTestEscalation(w http.ResponseWriter, req *http.Request) {
 			"adaptor_not_configured", "no orchestration plane bound")
 		return
 	}
-	nativePlane, ok := op.(*native.OrchestrationPlane)
+	injector, ok := op.(syntheticEscalationInjector)
 	if !ok {
 		httperr.Write(w, http.StatusNotImplemented,
 			"unsupported_adaptor",
-			"test-escalation injection requires the native orchestration plane")
+			"test-escalation injection requires an orchestration plane with synthetic injection support")
 		return
 	}
 	var body testEscalationRequest
@@ -102,7 +104,7 @@ func (r *Router) postTestEscalation(w http.ResponseWriter, req *http.Request) {
 		State:      core.EscalationOpen,
 		CreatedAt:  time.Now().UTC(),
 	}
-	if err := nativePlane.InjectSyntheticEscalation(esc); err != nil {
+	if err := injector.InjectSyntheticEscalation(esc); err != nil {
 		httperr.Write(w, http.StatusInternalServerError,
 			"injection_failed", err.Error())
 		return

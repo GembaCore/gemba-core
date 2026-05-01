@@ -22,5 +22,7 @@ size = 1
 # repo affinity, so their score is ~0.15. Use 0.01 to ensure dispatch.
 # (Floor=0 silently falls back to DefaultAutoDispatchFloor=0.5.)
 floor = 0.01
+min_interval_per_session_seconds = 1
+max_concurrent = 100
 recycle_after_beads = 5
 idle_ceiling_minutes = 30

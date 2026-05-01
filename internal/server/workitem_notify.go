@@ -175,13 +175,15 @@ func (r *Router) notifyWorkItem(w http.ResponseWriter, req *http.Request) {
 	// check needs the canonical UpdatedAt, and NotifyExternal owns
 	// the full read+publish path so the in-process emit semantics
 	// stay unified.
-	_, kind, err := notifier.NotifyExternal(req.Context(), id, body.Source)
+	wi, kind, err := notifier.NotifyExternal(req.Context(), id, body.Source)
 	if err != nil {
 		// Rare — we just successfully read the same id seconds ago.
 		// A failure here usually means an adaptor-degraded scenario.
 		httperr.WriteError(w, err)
 		return
 	}
+	r.reconcileWrapperAncestors(req.Context(), wp, wi)
+	r.continueActiveCascades(req.Context(), wp, wi)
 
 	writeJSON(w, http.StatusOK, notifyResponse{
 		WorkItemID: body.WorkItemID,

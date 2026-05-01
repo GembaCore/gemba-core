@@ -130,8 +130,19 @@ func renderWorkItem(item core.WorkItem) string {
 	if len(item.Labels) > 0 {
 		fmt.Fprintf(&b, "**Labels**: %s\n\n", strings.Join(item.Labels, ", "))
 	}
-	b.WriteString("## Your task\n\nWork this bead. Push when the DoD is met. Escalate (permission prompt) if blocked.\n")
+	b.WriteString("## Your task\n\n")
+	fmt.Fprintf(&b, "For local `bd` commands, use short issue id `%s` (for example, `bd close %s`). Use the full id `%s` only for `gemba-state -bead`.\n\n", shortBeadID(string(item.ID)), shortBeadID(string(item.ID)), item.ID)
+	fmt.Fprintf(&b, "Run `${GEMBA_STATE_COMMAND:-gemba-state} -bead %s working` when you start.\n\n", item.ID)
+	b.WriteString("Work this bead. Push when the DoD is met. Escalate (permission prompt) if blocked.\n\n")
+	fmt.Fprintf(&b, "After your changes are committed and the bead is closed, run `${GEMBA_STATE_COMMAND:-gemba-state} -bead %s bead-done`.\n", item.ID)
 	return b.String()
+}
+
+func shortBeadID(id string) string {
+	if idx := strings.LastIndex(id, "/"); idx >= 0 && idx+1 < len(id) {
+		return id[idx+1:]
+	}
+	return id
 }
 
 // renderMilestone emits the "## Milestone context" section so the model
@@ -342,6 +353,8 @@ func Apply(workspace string, agent agents.AgentType, composed prompt.Composed) (
 		}, nil
 	case agents.PreambleFirstMessage:
 		return ApplyStrategy{FirstMessage: composed.Text}, nil
+	case agents.PreambleCodexExec:
+		return ApplyStrategy{}, nil
 	case agents.PreambleStdoutBanner:
 		// shell-only: echo a short banner. The full text goes to
 		// stdout via a `cat <<EOF` style message the backend will

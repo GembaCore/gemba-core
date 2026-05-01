@@ -39,15 +39,22 @@ func TestNoop_WritesFiles(t *testing.T) {
 	h := GetTemplate("noop")
 	err := h(
 		TemplateContext{ProjectDir: dir, BeadID: "tspa-2", Labels: []string{"milestone:m1"}},
-		Frontmatter{Files: []string{"tsconfig.json", "index.html", "src/main.tsx"}, Extras: map[string]string{}},
+		Frontmatter{Files: []string{"tsconfig.json", "index.html", "src/main.tsx", "src/App.tsx"}, Extras: map[string]string{}},
 	)
 	if err != nil {
 		t.Fatalf("noop: %v", err)
 	}
-	for _, rel := range []string{"tsconfig.json", "index.html", "src/main.tsx"} {
+	for _, rel := range []string{"tsconfig.json", "index.html", "src/main.tsx", "src/App.tsx"} {
 		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
 			t.Errorf("expected %q present: %v", rel, err)
 		}
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "src/App.tsx"))
+	if err != nil {
+		t.Fatalf("read App.tsx: %v", err)
+	}
+	if !strings.Contains(string(body), "Scaffold ready") {
+		t.Errorf("M1 App.tsx should render scaffold placeholder, got %s", string(body))
 	}
 }
 
@@ -106,6 +113,13 @@ func TestWriteComponent_M3AppTSX_TemperatureTableWrapper(t *testing.T) {
 	}
 	if !strings.Contains(s, `data-testid="app-root"`) {
 		t.Error("M3 App.tsx must keep app-root testid")
+	}
+	testBody, err := os.ReadFile(filepath.Join(dir, "src/App.test.tsx"))
+	if err != nil {
+		t.Fatalf("M3 App.tsx should refresh stale App.test.tsx: %v", err)
+	}
+	if !strings.Contains(string(testBody), "temperature-table") {
+		t.Error("M3 App.test.tsx must assert the temperature table, not stale Hello world text")
 	}
 }
 

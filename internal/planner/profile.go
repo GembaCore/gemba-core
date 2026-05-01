@@ -116,6 +116,38 @@ type SessionHealth struct {
 	TimeOnTask time.Duration `json:"time_on_task_ns"`
 }
 
+// ScopeStatus is an operator-facing snapshot of the execution scope
+// backing a session. It answers the questions a user needs before
+// trusting a worktree: is Git clean, is the branch synchronized, and
+// is source analysis current for the checked-out commit?
+type ScopeStatus struct {
+	Git      *GitScopeStatus      `json:"git,omitempty"`
+	Analysis *AnalysisScopeStatus `json:"analysis,omitempty"`
+}
+
+// GitScopeStatus summarises the repository state for a scope's
+// worktree. State is one of: clean, dirty, unavailable.
+type GitScopeStatus struct {
+	State        string `json:"state"`
+	ChangedFiles int    `json:"changed_files,omitempty"`
+	Ahead        int    `json:"ahead,omitempty"`
+	Behind       int    `json:"behind,omitempty"`
+	HeadSHA      string `json:"head_sha,omitempty"`
+	Upstream     string `json:"upstream,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+}
+
+// AnalysisScopeStatus summarises source-analysis freshness for a
+// scope. State is one of: current, stale, missing, unavailable.
+type AnalysisScopeStatus struct {
+	Backend       string    `json:"backend,omitempty"`
+	State         string    `json:"state"`
+	IndexedAt     time.Time `json:"indexed_at,omitempty"`
+	IndexedCommit string    `json:"indexed_commit,omitempty"`
+	HeadSHA       string    `json:"head_sha,omitempty"`
+	Reason        string    `json:"reason,omitempty"`
+}
+
 // OperationalContext is the single read shape the planner returns
 // from `OperationalContext(session_id)` (gm-s47n.2.5). Scorers,
 // coach UI, and auto-dispatch all consume this same struct.
@@ -129,10 +161,11 @@ type SessionHealth struct {
 // snapshot serialises cleanly when the planner wants to surface a
 // degraded view.
 type OperationalContext struct {
-	Agent      *core.AgentRef   `json:"agent,omitempty"`
-	Session    *core.Session    `json:"session,omitempty"`
-	Workspace  *core.Workspace  `json:"workspace,omitempty"`
-	Assignment *core.Assignment `json:"assignment,omitempty"`
-	Profile    *SessionProfile  `json:"profile,omitempty"`
-	Health     *SessionHealth   `json:"health,omitempty"`
+	Agent       *core.AgentRef   `json:"agent,omitempty"`
+	Session     *core.Session    `json:"session,omitempty"`
+	Workspace   *core.Workspace  `json:"workspace,omitempty"`
+	Assignment  *core.Assignment `json:"assignment,omitempty"`
+	Profile     *SessionProfile  `json:"profile,omitempty"`
+	Health      *SessionHealth   `json:"health,omitempty"`
+	ScopeStatus *ScopeStatus     `json:"scope_status,omitempty"`
 }

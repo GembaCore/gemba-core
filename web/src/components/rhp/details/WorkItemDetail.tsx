@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useWorkItem, useUpdateWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useAgents, useSprints } from '@/hooks/useAgents';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { Capability, useCapabilities } from '@/capabilities';
 import { cn } from '@/lib/utils';
@@ -38,6 +39,12 @@ import { rendererFor } from '@/components/board/descriptionRenderers';
 import { canEdit } from '@/components/board/canEdit';
 import { MilestoneChildrenPanel } from '@/components/board/MilestoneChildrenPanel';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
+import { workItemsKeys } from '@/hooks/useWorkItems';
+import {
+  WorkItemBreadcrumb,
+  buildWorkItemBreadcrumb,
+  type WorkItemBreadcrumbCrumb,
+} from './WorkItemBreadcrumb';
 
 export interface WorkItemDetailProps {
   /** Workspace-prefixed bead id, e.g. `gemba/gemba/gm-1` or `gm-1`. */
@@ -84,10 +91,30 @@ interface WorkItemDetailBodyProps {
 
 function WorkItemDetailBody({ id, canGoBack, onBack, onNavigate }: WorkItemDetailBodyProps) {
   const { data, isLoading, error } = useWorkItem(id);
+  const queryClient = useQueryClient();
+  const breadcrumb = useMemo(() => {
+    if (!data) return [];
+    const cachedItems = queryClient.getQueryData<WorkItem[]>(workItemsKeys.list()) ?? [];
+    return buildWorkItemBreadcrumb(cachedItems, data);
+  }, [data, queryClient]);
+  const navigateBreadcrumb = useCallback(
+    (crumb: WorkItemBreadcrumbCrumb) => {
+      if (crumb.id !== id) onNavigate(crumb.id);
+    },
+    [id, onNavigate]
+  );
 
   return (
     <>
-      <DetailHeader id={id} title={data?.title ?? ''} canGoBack={canGoBack} onBack={onBack} item={data} />
+      <DetailHeader
+        id={id}
+        title={data?.title ?? ''}
+        canGoBack={canGoBack}
+        onBack={onBack}
+        item={data}
+        breadcrumb={breadcrumb}
+        onNavigateBreadcrumb={navigateBreadcrumb}
+      />
       <div className="flex-1 overflow-y-auto px-4 pb-10" data-testid="workitem-detail-scroll">
         {isLoading ? (
           <div className="py-8 text-sm text-neutral-500" data-testid="workitem-detail-loading">
@@ -114,12 +141,16 @@ function DetailHeader({
   canGoBack,
   onBack,
   item,
+  breadcrumb,
+  onNavigateBreadcrumb,
 }: {
   id: string;
   title: string;
   canGoBack: boolean;
   onBack: () => void;
   item: WorkItem | undefined;
+  breadcrumb: WorkItemBreadcrumbCrumb[];
+  onNavigateBreadcrumb: (crumb: WorkItemBreadcrumbCrumb) => void;
 }) {
   const [copied, setCopied] = useState(false);
   const [dispatchOpen, setDispatchOpen] = useState(false);
@@ -151,6 +182,7 @@ function DetailHeader({
         </button>
       ) : null}
       <div className="min-w-0 flex-1">
+        <WorkItemBreadcrumb crumbs={breadcrumb} onNavigate={onNavigateBreadcrumb} />
         <div className="truncate text-sm font-semibold text-neutral-900 dark:text-neutral-100">
           {title || id}
         </div>

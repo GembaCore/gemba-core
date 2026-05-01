@@ -10,6 +10,8 @@
     "test:native": "playwright test --project=acceptance-native",
     "test:gastown": "GEMBA_ACCEPTANCE_RUN_GASTOWN=1 playwright test --project=acceptance-gastown",
     "test:demo": "GEMBA_ACCEPTANCE_DEMO_MODE=1 playwright test --project=acceptance-native-demo",
+    "test:demo:real": "GEMBA_ACCEPTANCE_DEMO_MODE=1 GEMBA_ACCEPTANCE_REAL_AGENTS=1 playwright test --project=acceptance-native-demo",
+    "test:demo:claude": "GEMBA_ACCEPTANCE_DEMO_MODE=1 GEMBA_ACCEPTANCE_REAL_AGENTS=1 GEMBA_ACCEPTANCE_AGENT=claude playwright test --project=acceptance-native-demo",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

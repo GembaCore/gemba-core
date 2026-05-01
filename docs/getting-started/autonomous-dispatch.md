@@ -30,6 +30,19 @@ small to warrant a session). The kind set is enforced in
 deliberately overlaps the autodispatch routing defaults so the daemon
 and a human drag agree on what counts as "do this now."
 
+Wrapper drag cascades: dropping an `epic` or `milestone` into **In
+Progress** starts a cascade rather than assigning the wrapper to an
+agent. Gemba labels the wrapper `gemba:cascade-active`, stages backlog
+descendants, and dispatches currently unblocked runnable leaf work up to
+the pool limit for the selected agent type. As children move, ancestor
+state is reconciled back onto the wrapper: in progress when any child
+is active, done when all descendants are done.
+
+Codex pools are intentionally one-shot. The `gemba-codex-driver` runs
+`codex exec`, emits lifecycle frames, closes the bead on success, and
+then exits. Auto-dispatch therefore cold-starts Codex sessions when no
+active Codex work exists instead of trying to reuse a stale idle pane.
+
 The **scope axis** above persona is named differently per adaptor:
 
 | Adaptor | Scope axis | Editor label |

@@ -355,6 +355,8 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/work-items", r.createWorkItem)
 		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/work-items/{id}/cascade-dispatch", r.cascadeDispatchWorkItem)
+		api.With(requireConfirmNonce(r.nonceCache)).
 			Patch("/work-items/{id}", r.patchWorkItem)
 		// gm-e4.3.2: out-of-process notify endpoint. Auth-gated;
 		// NOT nonce-gated — the caller is server-internal plumbing

@@ -165,6 +165,43 @@
         }
       }
     },
+    "/api/work-items/{id}/cascade-dispatch": {
+      "post": {
+        "tags": ["work"],
+        "summary": "Start a dependency-aware dispatch cascade for an epic or milestone wrapper.",
+        "operationId": "cascadeDispatchWorkItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Epic or milestone WorkItem id.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CascadeDispatchRequest" }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Cascade accepted. Response lists leaves dispatched now and leaves blocked or skipped.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CascadeDispatchResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
     "/api/sprints": {
       "get": {
         "tags": ["work"],
@@ -779,6 +816,47 @@
             "items": { "$ref": "#/components/schemas/WorkItem" }
           },
           "total": { "type": "integer" }
+        }
+      },
+      "CascadeDispatchRequest": {
+        "type": "object",
+        "required": ["agent_type"],
+        "properties": {
+          "agent_type": { "type": "string", "examples": ["claude", "codex"] },
+          "limit": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "CascadeDispatchResponse": {
+        "type": "object",
+        "required": ["wrapper_id", "dispatched"],
+        "properties": {
+          "wrapper_id": { "type": "string" },
+          "staged": { "type": "array", "items": { "type": "string" } },
+          "dispatched": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["work_item_id"],
+              "properties": {
+                "work_item_id": { "type": "string" },
+                "session_id": { "type": "string" }
+              }
+            }
+          },
+          "blocked": { "type": "array", "items": { "type": "string" } },
+          "skipped": { "type": "array", "items": { "type": "string" } },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["work_item_id", "message"],
+              "properties": {
+                "work_item_id": { "type": "string" },
+                "message": { "type": "string" }
+              }
+            }
+          },
+          "limit": { "type": "integer" }
         }
       },
       "Sprint": {

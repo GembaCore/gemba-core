@@ -17,8 +17,9 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { SharedContext } from '../spec';
 import { waitForHttp } from './m1';
+import { demoPause, setDemoCaption } from '../helpers/demo-mode';
 
-const M2_MILESTONE_ID = 'M2';
+const M2_MILESTONE_ID = 'm2';
 
 function m2Timeout(): number {
   return process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1' ? 30 * 60_000 : 5 * 60_000;
@@ -28,7 +29,7 @@ export async function runM2Step(ctx: SharedContext): Promise<void> {
   // ─── Import + wait for daemon ───────────────────────────────
   ctx.narrator.emit('M2 ships a hello-world build', 'short');
   await ctx.importBeads('target-jsonl/m2.jsonl');
-  await ctx.waitForAllBeadsClosed(M2_MILESTONE_ID, m2Timeout());
+  await ctx.waitForAllBeadsClosed(`${ctx.beadPrefix}-${M2_MILESTONE_ID}`, m2Timeout());
 
   // ─── npm run build ──────────────────────────────────────────
   await runNpm(ctx, ['run', 'build'], {
@@ -92,6 +93,9 @@ export async function runM2Step(ctx: SharedContext): Promise<void> {
       });
       throw new Error(`M2 oracle: app-root text "${text}" !== "Hello world"`);
     }
+    ctx.narrator.emit('Hello world is live in the browser', 'medium');
+    await setDemoCaption(ctx.page, 'M2 launch: Hello world SPA is live');
+    await demoPause(2_500);
 
     // ─── npm test (vitest) ────────────────────────────────────
     await runNpm(ctx, ['test', '--', '--run'], {

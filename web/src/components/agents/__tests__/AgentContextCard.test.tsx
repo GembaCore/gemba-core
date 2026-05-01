@@ -100,6 +100,50 @@ describe('AgentContextCard', () => {
     expect(screen.queryByText('gemba/main')).toBeNull();
   });
 
+  it('renders scope status pills for worktree cleanliness, analysis freshness, and sync', () => {
+    render(
+      <AgentContextCard
+        ctx={ctx({
+          scope_status: {
+            git: {
+              state: 'dirty',
+              changed_files: 3,
+              ahead: 2,
+              behind: 0,
+              upstream: 'origin/main',
+            },
+            analysis: {
+              backend: 'gitnexus',
+              state: 'stale',
+              reason: 'GitNexus index commit differs from HEAD',
+            },
+          },
+        })}
+      />
+    );
+    const pills = screen.getByTestId('scope-status-pills');
+    expect(pills.textContent).toContain('changes 3');
+    expect(pills.textContent).toContain('ahead 2');
+    expect(pills.textContent).toContain('gitnexus stale');
+  });
+
+  it('shows scope status even when the workspace join is missing', () => {
+    render(
+      <AgentContextCard
+        ctx={ctx({
+          workspace: null,
+          scope_status: {
+            git: { state: 'clean' },
+            analysis: { backend: 'gitnexus', state: 'current' },
+          },
+        })}
+      />
+    );
+    const pills = screen.getByTestId('scope-status-pills');
+    expect(pills.textContent).toContain('clean');
+    expect(pills.textContent).toContain('gitnexus current');
+  });
+
   it('hides the health row when health is null', () => {
     render(<AgentContextCard ctx={ctx({ health: null })} />);
     expect(screen.queryByTestId('agent-context-sess-1-health')).toBeNull();

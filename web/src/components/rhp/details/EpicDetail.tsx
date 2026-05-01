@@ -29,6 +29,11 @@ import { epicChildren } from '@/components/board/epicHierarchy';
 import { EpicMilestoneDropdown } from '@/components/board/EpicMilestoneDropdown';
 import { useRegisterDetailContent } from '@/components/rhp/RhpDetail';
 import { useRhp } from '@/components/rhp/RhpContext';
+import {
+  WorkItemBreadcrumb,
+  buildWorkItemBreadcrumb,
+  type WorkItemBreadcrumbCrumb,
+} from './WorkItemBreadcrumb';
 
 const STATE_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
@@ -72,6 +77,10 @@ export function EpicDetail({ id }: EpicDetailProps) {
     [allItems, id]
   );
   const { popDetail } = useRhp();
+  const breadcrumb = useMemo(
+    () => (epicItem ? buildWorkItemBreadcrumb(allItems ?? [], epicItem) : []),
+    [allItems, epicItem]
+  );
 
   const onOpenChild = useCallback(
     (childId: string) => {
@@ -86,7 +95,15 @@ export function EpicDetail({ id }: EpicDetailProps) {
 
   return (
     <div className="flex h-full flex-col">
-      <DetailHeader id={id} epic={epicItem} />
+      <DetailHeader
+        id={id}
+        epic={epicItem}
+        breadcrumb={breadcrumb}
+        onNavigateBreadcrumb={(crumb) => {
+          if (crumb.id === id) return;
+          popDetail({ kind: crumb.kind === 'epic' ? 'epic' : 'workitem', id: crumb.id });
+        }}
+      />
       <div className="flex-1 overflow-y-auto px-6 pb-10" data-testid="epic-detail-scroll">
         {isLoading ? (
           <div className="py-8 text-sm text-neutral-500" data-testid="epic-detail-loading">
@@ -112,7 +129,17 @@ export function EpicDetail({ id }: EpicDetailProps) {
   );
 }
 
-function DetailHeader({ id, epic }: { id: string; epic: WorkItem | undefined }) {
+function DetailHeader({
+  id,
+  epic,
+  breadcrumb,
+  onNavigateBreadcrumb,
+}: {
+  id: string;
+  epic: WorkItem | undefined;
+  breadcrumb: WorkItemBreadcrumbCrumb[];
+  onNavigateBreadcrumb: (crumb: WorkItemBreadcrumbCrumb) => void;
+}) {
   const [copied, setCopied] = useState(false);
   const copyId = useCallback(async () => {
     try {
@@ -127,6 +154,7 @@ function DetailHeader({ id, epic }: { id: string; epic: WorkItem | undefined }) 
   return (
     <div className="flex items-start gap-2 border-b border-neutral-200 px-6 py-4 dark:border-neutral-800">
       <div className="min-w-0 flex-1">
+        <WorkItemBreadcrumb crumbs={breadcrumb} onNavigate={onNavigateBreadcrumb} />
         <div className="truncate text-base font-semibold text-neutral-900 dark:text-neutral-100">
           {title || id}
         </div>

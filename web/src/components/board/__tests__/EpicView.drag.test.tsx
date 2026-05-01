@@ -19,7 +19,13 @@ import type { WorkItem } from '@/types/core.gen';
 import { workItemsKeys } from '@/hooks/useWorkItems';
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import { EpicView } from '../EpicView';
-import { cellId, parseCellId, resolveRestage, shouldAutoStartSession } from '../dragToRestage';
+import {
+  cellId,
+  parseCellId,
+  resolveRestage,
+  shouldAutoStartSession,
+  shouldCascadeDispatch,
+} from '../dragToRestage';
 
 const caps: CapabilitiesResponse = {
   work_plane: {
@@ -131,8 +137,8 @@ describe('shouldAutoStartSession', () => {
     return { ...epic('demo/pc-a', state), kind };
   }
 
-  it('fires for an epic transitioning to started (regression — pre gm-root.25)', () => {
-    expect(shouldAutoStartSession(epic('demo/pc-a', 'started'))).toBe(true);
+  it('does not fire for an epic transitioning to started; wrappers cascade instead', () => {
+    expect(shouldAutoStartSession(epic('demo/pc-a', 'started'))).toBe(false);
   });
 
   it('does not fire for an epic moving to a non-started column', () => {
@@ -163,6 +169,23 @@ describe('shouldAutoStartSession', () => {
   it('does not fire for an autostart kind that lands somewhere other than started', () => {
     expect(shouldAutoStartSession(withKind('unstarted', 'task'))).toBe(false);
     expect(shouldAutoStartSession(withKind('staged', 'bug'))).toBe(false);
+  });
+});
+
+describe('shouldCascadeDispatch', () => {
+  function withKind(state: WorkItem['state_category'], kind: WorkItem['kind']): WorkItem {
+    return { ...epic('demo/pc-a', state), kind };
+  }
+
+  it('fires for epic and milestone wrappers dragged to started', () => {
+    expect(shouldCascadeDispatch(withKind('started', 'epic'))).toBe(true);
+    expect(shouldCascadeDispatch(withKind('started', 'milestone'))).toBe(true);
+  });
+
+  it('does not fire for leaf work or non-started wrapper moves', () => {
+    expect(shouldCascadeDispatch(withKind('started', 'task'))).toBe(false);
+    expect(shouldCascadeDispatch(withKind('staged', 'epic'))).toBe(false);
+    expect(shouldCascadeDispatch(withKind('completed', 'milestone'))).toBe(false);
   });
 });
 

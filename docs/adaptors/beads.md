@@ -25,6 +25,10 @@ missing.
 | `deferred`    | `backlog`            |
 | `closed`      | `completed`          |
 
+`staged` is a Gemba-level convention because Beads has no native staged
+status: the adaptor writes `status=open` plus the `staged:true` label,
+and reads that combination back as `core.StateStaged`.
+
 ## WorkItemID encoding (DD-6)
 
 `bd` ids are bare (e.g. `gm-abc`). The adaptor prefixes them with the

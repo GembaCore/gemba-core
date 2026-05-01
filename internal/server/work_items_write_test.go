@@ -579,15 +579,14 @@ func TestPatchWorkItem_ParentIDAbsentLeavesNil(t *testing.T) {
 func ptr[T any](v T) *T { return &v }
 
 // ---------------------------------------------------------------------
-// Milestone auto-close (gm-mqiz)
+// Wrapper state reconciliation (gm-mqiz, gm-1o9n)
 // ---------------------------------------------------------------------
 
 // milestoneAutocloseFixture wires a FakeWorkPlane backed by an
-// in-memory map of WorkItems so a PATCH that closes a child can
-// observe (a) whether the milestone parent got closed and
-// (b) what subsequent UpdateWorkItem calls the auto-close machinery
-// issued. The map is keyed by id and mutated by both UpdateFn and the
-// auto-close path.
+// in-memory map of WorkItems so a PATCH to a leaf can observe whether
+// epic/milestone wrappers are reconciled from descendant leaves. The
+// map is keyed by id and mutated by both UpdateFn and the reconcile
+// path.
 type milestoneAutocloseFixture struct {
 	host    *api.Host
 	router  *Router
@@ -637,35 +636,53 @@ func newMilestoneAutocloseFixture(t *testing.T, items []core.WorkItem) *mileston
 	return fx
 }
 
-// patching the LAST open child epic of a milestone closes the milestone
-// AND emits an escalation.opened event on the hub.
-func TestPatchWorkItem_AutoClosesMilestoneOnLastChildClose(t *testing.T) {
+func parentChildRel(parent, child core.WorkItemID) core.Relationship {
+	return core.Relationship{Kind: core.RelParentChild, From: parent, To: child}
+}
+
+// Patching the LAST open descendant leaf of a milestone closes the
+// containing epic and milestone, then emits an escalation.opened event.
+func TestPatchWorkItem_DerivesWrappersCompletedFromLeafClosure(t *testing.T) {
 	milestoneID := core.WorkItemID("gm-m1")
 	epicA := core.WorkItemID("gm-epic-a")
 	epicB := core.WorkItemID("gm-epic-b")
+	leafA := core.WorkItemID("gm-leaf-a")
+	leafB := core.WorkItemID("gm-leaf-b")
 
 	fx := newMilestoneAutocloseFixture(t, []core.WorkItem{
 		{
 			ID: milestoneID, Kind: core.KindMilestone, Title: "M1",
 			StateCategory: core.StateUnstarted,
 			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicA},
-				{Kind: core.RelParentChild, From: milestoneID, To: epicB},
+				parentChildRel(milestoneID, epicA),
+				parentChildRel(milestoneID, epicB),
 			},
 		},
 		{
 			ID: epicA, Kind: "epic", Title: "epic-a",
 			StateCategory: core.StateCompleted,
 			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicA},
+				parentChildRel(milestoneID, epicA),
+				parentChildRel(epicA, leafA),
 			},
 		},
 		{
 			ID: epicB, Kind: "epic", Title: "epic-b",
 			StateCategory: core.StateStarted,
 			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicB},
+				parentChildRel(milestoneID, epicB),
+				parentChildRel(epicB, leafB),
 			},
+		},
+		{
+			ID: leafA, Kind: "task", Title: "leaf-a",
+			StateCategory: core.StateCompleted,
+			Relationships: []core.Relationship{parentChildRel(epicA, leafA)},
+		},
+		{
+			ID: leafB, Kind: "task", Title: "leaf-b",
+			StateCategory: core.StateStarted,
+			Relationships: []core.Relationship{parentChildRel(epicB, leafB)},
 		},
 	})
 
@@ -675,24 +692,25 @@ func TestPatchWorkItem_AutoClosesMilestoneOnLastChildClose(t *testing.T) {
 	defer subCancel()
 	evCh := fx.router.eventsHub.Subscribe(subCtx, events.Filter{})
 
-	// Close epic-b — the only open child remaining.
+	// Close leaf-b — the only open runnable item remaining.
 	completed := core.StateCompleted
 	body := core.WorkItemPatch{StateCategory: &completed}
 	w := httptest.NewRecorder()
-	fx.router.ServeHTTP(w, patchReq(t, string(epicB), "nonce-mq-A", body))
+	fx.router.ServeHTTP(w, patchReq(t, string(leafB), "nonce-mq-A", body))
 	if w.Code != http.StatusOK {
-		t.Fatalf("PATCH epic-b: want 200, got %d; body=%q", w.Code, w.Body.String())
+		t.Fatalf("PATCH leaf-b: want 200, got %d; body=%q", w.Code, w.Body.String())
 	}
 
-	// The milestone must now be closed in the fake's storage.
+	if got := fx.items[epicB].StateCategory; got != core.StateCompleted {
+		t.Fatalf("epic-b state_category = %q, want %q", got, core.StateCompleted)
+	}
 	if got := fx.items[milestoneID].StateCategory; got != core.StateCompleted {
 		t.Fatalf("milestone state_category = %q, want %q", got, core.StateCompleted)
 	}
 
-	// The auto-close path must have issued exactly one extra
-	// UpdateWorkItem call (against the milestone) on top of the
-	// caller's PATCH.
-	wantUpdates := []core.WorkItemID{epicB, milestoneID}
+	// The reconcile path updates the leaf, then its epic wrapper, then
+	// the milestone wrapper.
+	wantUpdates := []core.WorkItemID{leafB, epicB, milestoneID}
 	if len(fx.updates) != len(wantUpdates) {
 		t.Fatalf("UpdateWorkItem call sequence = %v, want %v", fx.updates, wantUpdates)
 	}
@@ -721,35 +739,31 @@ func TestPatchWorkItem_AutoClosesMilestoneOnLastChildClose(t *testing.T) {
 	}
 }
 
-// Patching an epic that's NOT the last open child must NOT close the
-// milestone and must NOT emit a notification.
-func TestPatchWorkItem_DoesNotCloseMilestoneWhenSiblingsOpen(t *testing.T) {
+func TestPatchWorkItem_DerivesWrappersStartedWhenLeafStarts(t *testing.T) {
 	milestoneID := core.WorkItemID("gm-m1")
 	epicA := core.WorkItemID("gm-epic-a")
-	epicB := core.WorkItemID("gm-epic-b")
+	leafA := core.WorkItemID("gm-leaf-a")
 
 	fx := newMilestoneAutocloseFixture(t, []core.WorkItem{
 		{
 			ID: milestoneID, Kind: core.KindMilestone, Title: "M1",
 			StateCategory: core.StateUnstarted,
 			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicA},
-				{Kind: core.RelParentChild, From: milestoneID, To: epicB},
+				parentChildRel(milestoneID, epicA),
 			},
 		},
 		{
 			ID: epicA, Kind: "epic", Title: "epic-a",
-			StateCategory: core.StateStarted,
+			StateCategory: core.StateUnstarted,
 			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicA},
+				parentChildRel(milestoneID, epicA),
+				parentChildRel(epicA, leafA),
 			},
 		},
 		{
-			ID: epicB, Kind: "epic", Title: "epic-b",
-			StateCategory: core.StateStarted,
-			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicB},
-			},
+			ID: leafA, Kind: "task", Title: "leaf-a",
+			StateCategory: core.StateUnstarted,
+			Relationships: []core.Relationship{parentChildRel(epicA, leafA)},
 		},
 	})
 
@@ -757,23 +771,98 @@ func TestPatchWorkItem_DoesNotCloseMilestoneWhenSiblingsOpen(t *testing.T) {
 	defer subCancel()
 	evCh := fx.router.eventsHub.Subscribe(subCtx, events.Filter{})
 
-	// Close epic-a; epic-b is still open so the milestone stays open.
+	started := core.StateStarted
+	body := core.WorkItemPatch{StateCategory: &started}
+	w := httptest.NewRecorder()
+	fx.router.ServeHTTP(w, patchReq(t, string(leafA), "nonce-mq-B", body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("PATCH leaf-a: want 200, got %d", w.Code)
+	}
+
+	if got := fx.items[epicA].StateCategory; got != core.StateStarted {
+		t.Fatalf("epic state_category = %q, want %q", got, core.StateStarted)
+	}
+	if got := fx.items[milestoneID].StateCategory; got != core.StateStarted {
+		t.Fatalf("milestone state_category = %q, want %q", got, core.StateStarted)
+	}
+	wantUpdates := []core.WorkItemID{leafA, epicA, milestoneID}
+	if len(fx.updates) != len(wantUpdates) {
+		t.Fatalf("UpdateWorkItem call sequence = %v, want %v", fx.updates, wantUpdates)
+	}
+	for i, id := range wantUpdates {
+		if fx.updates[i] != id {
+			t.Fatalf("update[%d] = %q, want %q (full=%v)", i, fx.updates[i], id, fx.updates)
+		}
+	}
+	select {
+	case ev := <-evCh:
+		t.Fatalf("unexpected event published: %+v", ev)
+	case <-time.After(150 * time.Millisecond):
+	}
+}
+
+// When some leaf work is complete and some remains open, wrappers
+// remain in progress instead of prematurely completing.
+func TestPatchWorkItem_DerivesWrappersStartedWhenSiblingLeavesOpen(t *testing.T) {
+	milestoneID := core.WorkItemID("gm-m1")
+	epicA := core.WorkItemID("gm-epic-a")
+	leafA := core.WorkItemID("gm-leaf-a")
+	leafB := core.WorkItemID("gm-leaf-b")
+
+	fx := newMilestoneAutocloseFixture(t, []core.WorkItem{
+		{
+			ID: milestoneID, Kind: core.KindMilestone, Title: "M1",
+			StateCategory: core.StateUnstarted,
+			Relationships: []core.Relationship{parentChildRel(milestoneID, epicA)},
+		},
+		{
+			ID: epicA, Kind: "epic", Title: "epic-a",
+			StateCategory: core.StateUnstarted,
+			Relationships: []core.Relationship{
+				parentChildRel(milestoneID, epicA),
+				parentChildRel(epicA, leafA),
+				parentChildRel(epicA, leafB),
+			},
+		},
+		{
+			ID: leafA, Kind: "task", Title: "leaf-a",
+			StateCategory: core.StateStarted,
+			Relationships: []core.Relationship{parentChildRel(epicA, leafA)},
+		},
+		{
+			ID: leafB, Kind: "task", Title: "leaf-b",
+			StateCategory: core.StateUnstarted,
+			Relationships: []core.Relationship{parentChildRel(epicA, leafB)},
+		},
+	})
+
+	subCtx, subCancel := context.WithCancel(context.Background())
+	defer subCancel()
+	evCh := fx.router.eventsHub.Subscribe(subCtx, events.Filter{})
+
 	completed := core.StateCompleted
 	body := core.WorkItemPatch{StateCategory: &completed}
 	w := httptest.NewRecorder()
-	fx.router.ServeHTTP(w, patchReq(t, string(epicA), "nonce-mq-B", body))
+	fx.router.ServeHTTP(w, patchReq(t, string(leafA), "nonce-mq-C", body))
 	if w.Code != http.StatusOK {
-		t.Fatalf("PATCH epic-a: want 200, got %d", w.Code)
+		t.Fatalf("PATCH leaf-a: want 200, got %d", w.Code)
 	}
 
-	if got := fx.items[milestoneID].StateCategory; got != core.StateUnstarted {
-		t.Fatalf("milestone changed state to %q (siblings still open!)", got)
+	if got := fx.items[epicA].StateCategory; got != core.StateStarted {
+		t.Fatalf("epic state_category = %q, want %q", got, core.StateStarted)
 	}
-	// The only UpdateWorkItem call must be the operator's PATCH.
-	if len(fx.updates) != 1 || fx.updates[0] != epicA {
-		t.Fatalf("UpdateWorkItem calls = %v, want [%q]", fx.updates, epicA)
+	if got := fx.items[milestoneID].StateCategory; got != core.StateStarted {
+		t.Fatalf("milestone state_category = %q, want %q", got, core.StateStarted)
 	}
-	// No event should fire.
+	wantUpdates := []core.WorkItemID{leafA, epicA, milestoneID}
+	if len(fx.updates) != len(wantUpdates) {
+		t.Fatalf("UpdateWorkItem call sequence = %v, want %v", fx.updates, wantUpdates)
+	}
+	for i, id := range wantUpdates {
+		if fx.updates[i] != id {
+			t.Fatalf("update[%d] = %q, want %q (full=%v)", i, fx.updates[i], id, fx.updates)
+		}
+	}
 	select {
 	case ev := <-evCh:
 		t.Fatalf("unexpected event published: %+v", ev)
@@ -787,29 +876,43 @@ func TestPatchWorkItem_AlreadyClosedMilestoneDoesNotRefire(t *testing.T) {
 	milestoneID := core.WorkItemID("gm-m1")
 	epicA := core.WorkItemID("gm-epic-a")
 	epicB := core.WorkItemID("gm-epic-b")
+	leafA := core.WorkItemID("gm-leaf-a")
+	leafB := core.WorkItemID("gm-leaf-b")
 
 	fx := newMilestoneAutocloseFixture(t, []core.WorkItem{
 		{
 			ID: milestoneID, Kind: core.KindMilestone, Title: "M1",
 			StateCategory: core.StateCompleted, // already closed
 			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicA},
-				{Kind: core.RelParentChild, From: milestoneID, To: epicB},
+				parentChildRel(milestoneID, epicA),
+				parentChildRel(milestoneID, epicB),
 			},
 		},
 		{
 			ID: epicA, Kind: "epic", Title: "epic-a",
 			StateCategory: core.StateCompleted,
 			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicA},
+				parentChildRel(milestoneID, epicA),
+				parentChildRel(epicA, leafA),
 			},
 		},
 		{
 			ID: epicB, Kind: "epic", Title: "epic-b",
-			StateCategory: core.StateStarted,
+			StateCategory: core.StateCompleted,
 			Relationships: []core.Relationship{
-				{Kind: core.RelParentChild, From: milestoneID, To: epicB},
+				parentChildRel(milestoneID, epicB),
+				parentChildRel(epicB, leafB),
 			},
+		},
+		{
+			ID: leafA, Kind: "task", Title: "leaf-a",
+			StateCategory: core.StateCompleted,
+			Relationships: []core.Relationship{parentChildRel(epicA, leafA)},
+		},
+		{
+			ID: leafB, Kind: "task", Title: "leaf-b",
+			StateCategory: core.StateCompleted,
+			Relationships: []core.Relationship{parentChildRel(epicB, leafB)},
 		},
 	})
 
@@ -817,21 +920,21 @@ func TestPatchWorkItem_AlreadyClosedMilestoneDoesNotRefire(t *testing.T) {
 	defer subCancel()
 	evCh := fx.router.eventsHub.Subscribe(subCtx, events.Filter{})
 
-	// Close epic-b — milestone is already closed; no rollup should
+	// Close leaf-b — milestone is already closed; no rollup should
 	// trigger.
 	completed := core.StateCompleted
 	body := core.WorkItemPatch{StateCategory: &completed}
 	w := httptest.NewRecorder()
-	fx.router.ServeHTTP(w, patchReq(t, string(epicB), "nonce-mq-C", body))
+	fx.router.ServeHTTP(w, patchReq(t, string(leafB), "nonce-mq-D", body))
 	if w.Code != http.StatusOK {
-		t.Fatalf("PATCH epic-b: want 200, got %d", w.Code)
+		t.Fatalf("PATCH leaf-b: want 200, got %d", w.Code)
 	}
 
-	// Exactly one update — the caller's PATCH. The milestone must
-	// not be re-patched.
-	if len(fx.updates) != 1 || fx.updates[0] != epicB {
+	// Exactly one update — the caller's PATCH. Wrappers must not be
+	// re-patched when their derived state is unchanged.
+	if len(fx.updates) != 1 || fx.updates[0] != leafB {
 		t.Fatalf("UpdateWorkItem calls = %v, want [%q] (milestone re-patched?)",
-			fx.updates, epicB)
+			fx.updates, leafB)
 	}
 	select {
 	case ev := <-evCh:

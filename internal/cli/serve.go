@@ -800,6 +800,9 @@ func registerMockOrchestration(ctx context.Context, host *api.Host, cfg config.S
 	// pre-seed, mock-mode would require the operator to manually
 	// kick off a session via the SPA before any work flows.
 	personas := discoverPersonaNames(cfg.BeadsDir)
+	if len(personas) == 0 {
+		personas = personasFromPoolConfig(cfg.PoolConfigPath)
+	}
 	// Pass the bound workplane so the runner can fetch+close
 	// beads in-process (no shell-out to bd, no embedded-Dolt
 	// lock race with the workplane adaptor itself).
@@ -844,6 +847,36 @@ func discoverPersonaNames(projectDir string) []string {
 			continue
 		}
 		out = append(out, strings.TrimSuffix(name, ".toml"))
+	}
+	return out
+}
+
+func personasFromPoolConfig(path string) []string {
+	if path == "" {
+		return nil
+	}
+	poolCfg, err := config.LoadPoolConfig(path)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	add := func(persona string) {
+		persona = strings.TrimSpace(persona)
+		if persona == "" || seen[persona] {
+			return
+		}
+		seen[persona] = true
+		out = append(out, persona)
+	}
+	add(poolCfg.DefaultPersona)
+	for _, persona := range poolCfg.Routing {
+		add(persona)
+	}
+	for _, byPersona := range poolCfg.Pools {
+		for persona := range byPersona {
+			add(persona)
+		}
 	}
 	return out
 }

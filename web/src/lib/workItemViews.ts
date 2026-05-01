@@ -93,6 +93,7 @@ export interface WorkItemView {
 }
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 // Empty filter — most views start here and narrow via state_category.
 const noFilter: BacklogFilter = { state_category: [], kind: [], search: '' };
@@ -137,6 +138,24 @@ export const WORK_ITEM_VIEWS: readonly WorkItemView[] = [
     id: 'backlog',
     label: 'Backlog',
     baseFilter: { ...noFilter, state_category: ['backlog', 'unstarted'] },
+    defaultLayout: 'list-simple',
+  },
+  {
+    id: 'recent',
+    label: 'Recent',
+    baseFilter: noFilter,
+    postFilter: (it, ctx) => {
+      if (!it.created_at) return false;
+      const ts = Date.parse(it.created_at);
+      if (Number.isNaN(ts)) return false;
+      const now = ctx.now ?? Date.now();
+      return now - ts <= ONE_DAY_MS;
+    },
+    sort: (a, b) => {
+      const at = a.created_at ? Date.parse(a.created_at) : 0;
+      const bt = b.created_at ? Date.parse(b.created_at) : 0;
+      return bt - at;
+    },
     defaultLayout: 'list-simple',
   },
   {

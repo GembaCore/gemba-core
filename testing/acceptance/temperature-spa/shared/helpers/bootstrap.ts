@@ -29,7 +29,8 @@
 //   - testing/e2e/fixtures/realServer.ts (existing pattern reused)
 //   - internal/server/newproject.go (POST /api/v1/newproject/create)
 
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { spinRealServer, type RealServer } from '../../../../e2e/fixtures/realServer';
 
@@ -130,23 +131,47 @@ export async function bootstrapProject(
   // (gm-root.24). Pool config + persona-routed dispatch may need to
   // seed those files separately. Tracked under the acceptance-suite
   // first-run cleanup arc.
-  const server = await spinRealServer({
-    workerIndex,
-    mode: workspaceMode,
-    auth: 'open',
-    serveArgs: opts.serveArgs,
-  });
+  const previousDisableWatcher = process.env.GEMBA_DISABLE_BD_WATCHER;
+  const previousEnableTestEscalations = process.env.GEMBA_ENABLE_TEST_ESCALATIONS;
+  process.env.GEMBA_DISABLE_BD_WATCHER = '1';
+  process.env.GEMBA_ENABLE_TEST_ESCALATIONS = '1';
+  let server: RealServer;
+  try {
+    server = await spinRealServer({
+      workerIndex,
+      mode: workspaceMode,
+      auth: 'open',
+      serveArgs: opts.serveArgs,
+      serveEnv: process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1'
+        ? {
+          HOME: process.env.HOME,
+          GEMBA_ACCEPTANCE_MERGE_BEAD_WORKTREES: '1',
+        }
+        : undefined,
+      beforeServe: (workspaceDir) => {
+        seedAcceptanceEnginerPersona(workspaceDir);
+        if (process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1') {
+          seedCodexAgentRegistry(workspaceDir);
+          seedAcceptanceGitRepo(workspaceDir);
+        }
+      },
+    });
+  } finally {
+    if (previousDisableWatcher == null) {
+      delete process.env.GEMBA_DISABLE_BD_WATCHER;
+    } else {
+      process.env.GEMBA_DISABLE_BD_WATCHER = previousDisableWatcher;
+    }
+    if (previousEnableTestEscalations == null) {
+      delete process.env.GEMBA_ENABLE_TEST_ESCALATIONS;
+    } else {
+      process.env.GEMBA_ENABLE_TEST_ESCALATIONS = previousEnableTestEscalations;
+    }
+  }
   // projectName is preserved on the handle for reporting even though
   // we didn't formally create a "project" via the API — the bd
   // workspace IS the project from the acceptance test's perspective.
   void runId;
-
-  // gm-root.27.34: spinRealServer's bd init bypasses gm-root.24's
-  // auto-seed personas, so the bootstrapped project has no
-  // .gemba/personas/. Write a minimal acceptance-engineer persona
-  // so pool config can route work and the editor doesn't render
-  // empty (which is the source of gm-root.27.31's selector miss).
-  seedAcceptanceEnginerPersona(server.beadsDir);
 
   return {
     baseURL: server.baseURL,
@@ -177,7 +202,7 @@ function seedAcceptanceEnginerPersona(projectDir: string): void {
   mkdirSync(dir, { recursive: true });
   const toml = `# Acceptance test persona — written by gm-root.27.34 bootstrap helper.
 # Minimum schema for pool config + dispatch routing; actual agent
-# runtime is MockAgentRunner (gm-root.27.2), not a real claude session.
+# runtime is either mock orchestration or the native Codex driver.
 
 id = "acceptance-engineer"
 name = "Acceptance Engineer"
@@ -187,6 +212,68 @@ description = "Mocked engineer persona used by the gm-root.27 acceptance harness
 icon = "🧪"
 `;
   writeFileSync(join(dir, 'acceptance-engineer.toml'), toml, 'utf8');
+}
+
+function seedCodexAgentRegistry(projectDir: string): void {
+  const dir = join(projectDir, '.gemba');
+  mkdirSync(dir, { recursive: true });
+  const toml = `# Acceptance test agent registry — written before gemba serve boots.
+
+[[agent]]
+name             = "codex"
+binary           = "gemba-codex-driver"
+args             = ["--sandbox", "workspace-write", "--ask-for-approval", "never"]
+model            = "gpt-5.4-mini"
+preamble         = "codex_exec"
+hooks            = "none"
+interaction_mode = "balanced"
+intra_parallel   = true
+max_parallel     = 2
+
+[[agent]]
+name             = "claude"
+binary           = "claude"
+args             = ["--permission-mode", "bypassPermissions"]
+model            = "claude-opus-4-7"
+preamble         = "claude_md"
+hooks            = "claude_code"
+intra_parallel   = true
+max_parallel     = 2
+`;
+  writeFileSync(join(dir, 'agents.toml'), toml, 'utf8');
+}
+
+function seedAcceptanceGitRepo(projectDir: string): void {
+  if (existsSync(join(projectDir, '.git'))) {
+    return;
+  }
+  const gitignore = [
+    '.beads/',
+    '.dolt/',
+    '.claude/',
+    'CLAUDE.md',
+    'worktrees/',
+    'node_modules/',
+    'dist/',
+    'test-results/',
+    'm*.jsonl',
+    '.gemba/session-prompts/',
+    '',
+  ].join('\n');
+  writeFileSync(join(projectDir, '.gitignore'), gitignore, 'utf8');
+
+  runGit(projectDir, 'init', '-b', 'main');
+  runGit(projectDir, 'config', 'user.name', 'Gemba Acceptance');
+  runGit(projectDir, 'config', 'user.email', 'acceptance@gemba.local');
+  runGit(projectDir, 'add', '.gitignore', '.gemba');
+  runGit(projectDir, 'commit', '-m', 'seed acceptance workspace');
+}
+
+function runGit(projectDir: string, ...args: string[]): void {
+  execFileSync('git', args, {
+    cwd: projectDir,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
 }
 
 /**

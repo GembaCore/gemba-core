@@ -91,6 +91,10 @@ func defaultRegistry() agents.Registry {
 				Name: "shell-only", Binary: "zsh",
 				Preamble: agents.PreambleStdoutBanner, Hooks: agents.HookPromptCommand,
 			},
+			{
+				Name: "codex", Binary: "gemba-codex-driver", Model: "gpt-5.4-mini",
+				Preamble: agents.PreambleCodexExec, Hooks: agents.HookNone,
+			},
 		},
 	}
 }
@@ -122,6 +126,12 @@ func freshPrompt(beadID string, extras map[string]any) core.SessionPrompt {
 		ext[k] = v
 	}
 	return core.SessionPrompt{Extension: ext}
+}
+
+func codexPrompt(beadID string, extras map[string]any) core.SessionPrompt {
+	p := freshPrompt(beadID, extras)
+	p.Extension[extKeyAgentType] = "codex"
+	return p
 }
 
 func TestStartSessionHappyPath(t *testing.T) {
@@ -178,6 +188,58 @@ func TestStartSessionHappyPath(t *testing.T) {
 	if len(spec.Command) == 0 || spec.Command[0] != "claude" {
 		t.Errorf("command: %v", spec.Command)
 	}
+}
+
+func TestStartSessionCodexExecWritesPromptAndUsesDriver(t *testing.T) {
+	repo := initRepo(t)
+	fb := newFakeBackend()
+
+	p := NewWithConfig(Config{
+		Backend:  fb,
+		Registry: defaultRegistry(),
+		RepoRoot: repo,
+	})
+
+	sess, err := p.StartSession(context.Background(), "assign-codex", codexPrompt("gm-codex", nil))
+	if err != nil {
+		t.Fatalf("StartSession: %v", err)
+	}
+	if sess.ProviderMetadata["agent_type"] != "codex" {
+		t.Fatalf("agent_type metadata = %v", sess.ProviderMetadata["agent_type"])
+	}
+	if len(fb.spawnCalls) != 1 {
+		t.Fatalf("spawn call count: %d", len(fb.spawnCalls))
+	}
+	spec := fb.spawnCalls[0]
+	if got := filepath.Base(spec.Command[0]); got != "gemba-codex-driver" {
+		t.Fatalf("command = %+v, want gemba-codex-driver", spec.Command)
+	}
+	if !containsArg(spec.Command, "--model") || !containsArg(spec.Command, "gpt-5.4-mini") {
+		t.Fatalf("codex model args missing: %+v", spec.Command)
+	}
+	if spec.Env["GEMBA_BEAD_ID"] != "gm-codex" {
+		t.Errorf("GEMBA_BEAD_ID = %q", spec.Env["GEMBA_BEAD_ID"])
+	}
+	promptFile := spec.Env["GEMBA_CODEX_PROMPT_FILE"]
+	if promptFile == "" {
+		t.Fatal("GEMBA_CODEX_PROMPT_FILE missing")
+	}
+	b, err := os.ReadFile(promptFile)
+	if err != nil {
+		t.Fatalf("read prompt file: %v", err)
+	}
+	if !strings.Contains(string(b), "gm-codex") {
+		t.Fatalf("prompt file should mention bead id, got: %s", string(b))
+	}
+}
+
+func containsArg(args []string, want string) bool {
+	for _, a := range args {
+		if a == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestStartSessionNonceIdempotent(t *testing.T) {

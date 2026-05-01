@@ -11,12 +11,10 @@ End-to-end test that bootstraps a fresh Gemba project, imports a milestone/epic/
 ```
 shared/                        # variant-agnostic core
   helpers/                     # bootstrap, pool-via-ui, escalation, cleanup, report, bug-filer
-  runner/                      # AgentRunnerFactory: mock vs real-claude
-  oracle/                      # M1/M2/M3 + FTUX assertions
   target-jsonl/                # M1/M2/M3 bead packs
   spec.ts                      # the Playwright orchestration body (lands in gm-root.27.6)
 variants/
-  native/                      # --orchestration=native (default CI)
+  native/                      # CI-default wrapper; currently boots --orchestration=mock
   gastown/                     # --orchestration=gastown (manual / nightly)
 reports/                       # historical run reports
 ```
@@ -29,17 +27,59 @@ reports/                       # historical run reports
 
 ## Running
 
-CI default (native, mocked agents):
+CI default (mock-backed native wrapper):
 
 ```sh
-pnpm exec playwright test --config=variants/native/playwright.config.ts
+pnpm --filter gemba-acceptance-temperature-spa test:native
 ```
 
-Real-claude opt-in:
+Real-agent opt-in:
 
 ```sh
-GEMBA_ACCEPTANCE_REAL_AGENTS=1 pnpm exec playwright test ...
+GEMBA_ACCEPTANCE_REAL_AGENTS=1 pnpm --filter gemba-acceptance-temperature-spa test:native
 ```
+
+Real-agent demo capture:
+
+```sh
+pnpm --filter gemba-acceptance-temperature-spa test:demo:real
+```
+
+Claude-agent demo capture:
+
+```sh
+pnpm --filter gemba-acceptance-temperature-spa test:demo:claude
+```
+
+As of the gm-root.28 mock-adaptor reconciliation, the default native
+wrapper intentionally starts `gemba serve --orchestration=mock` so CI
+can exercise dispatch, triage, build, serve, and oracle behavior
+without API credentials. The real-agent path can use the native
+Codex driver (`preamble = "codex_exec"`): auto-dispatch cold-starts a
+fresh pool session when no idle worker exists, and the driver emits
+`gemba-state` lifecycle frames plus `bead-done` after `codex exec`
+completes.
+Set `GEMBA_ACCEPTANCE_AGENT=claude` to run the same native real-agent
+demo through Claude Code instead of Codex.
+
+Demo mode records `.webm`, emits a narration JSON timeline, and captures
+key screenshots in the Playwright output directory (board inspection,
+graph/dependency inspection, Gemba walk, escalation triage, milestone
+launches, and the final temperature table). Publishable `.mp4` should
+be generated after the run, for example:
+
+```sh
+ffmpeg -i input.webm -vf "setpts='if(lt(T,10),PTS,PTS/8)'" -an output.mp4
+```
+
+The narration JSON is a second artifact aligned to the edited timeline.
+Keep long code-generation spans compressed or removed, then regenerate /
+adjust `at_ms` values for the final MP4. Current demo guidance targets
+about two minutes so the recording can show the major surfaces: dark
+mode boot, board milestone inspection, RHP details, graph navigation,
+the first drag that starts M1, session status, cascading epic/bead
+progress, Gemba walk, escalation triage, evidence, and the M1/M2/M3
+SPA launches.
 
 Gastown variant (opt-in; requires gt CLI configured):
 

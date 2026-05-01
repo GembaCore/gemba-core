@@ -24,15 +24,16 @@ where it diverges from current reality.
 | **Project picker discovery + bind** | `gm-root.17.14` | `GET /api/v1/projects` now returns every reachable beads DB classified by `kind`: `complete` (DB + workspace.toml), `needs_workspace` (DB only, no workspace), `needs_repo` (DB + workspace, but no git repo). Picker entries with `kind !== "complete"` show a *needs setup* badge; clicking opens a **BindDialog** that runs `POST /api/v1/projects/bind` with `mode: "create"` (`git init` here) or `mode: "navigate"` (copy the beads DB into an existing repo). New `[projects].extra_roots` config lets operators register additional discovery roots. |
 | **Onboarder credential resolution** | `gm-root.17.10` (env var by `4f734f0`) | Implicit-anthropic via `ANTHROPIC_API_KEY` env var: if `[llm].provider` is unset but `ANTHROPIC_API_KEY` is exported, the Onboarder constructs an anthropic client with built-in defaults. Credentials never touch disk on this path. |
 | **Cold-start UI hygiene** | `gm-root.17.12` | On cold-start (no active project), the left sidebar's workspace-scoped panes render as muted spans instead of links. Settings stays interactive. |
-| **Sidebar consolidation** | `gm-e12.19.8` | Sidebar collapsed to six first-order panes — Plan / Review / Escalations / Insights / Agent Sessions / Settings. Secondary surfaces survive as deep-link routes and roll up under the panes' tabs as gm-e12.19.4-7 land. |
+| **Sidebar consolidation** | `gm-e12.19.8` | Sidebar collapsed to six first-order panes — Plan / Refine / Review / Triage / Sessions / Settings. Secondary surfaces survive as deep-link routes and roll up under the panes' tabs as gm-e12.19.4-7 land. |
 
 ## Why this doc exists
 
 Project creation in Gemba is the user's first interaction with the
-product. Today it is buried under `/setup#bootstrap` (gm-371's four-source
-wizard: Jira / Beads workspace / Source-code repo / Fresh) — a surface
-optimized for users importing existing work. Most new users are starting
-from scratch and want a guided conversation, not a source picker.
+product. The legacy `/bootstrap` wizard from gm-371 still carries the
+four-source import shape (Jira / Beads workspace / Source-code repo /
+Fresh), but the primary path is now the board create modal. Most new
+users are starting from scratch and want a light create flow or a guided
+conversation, not a source picker.
 
 This document locks the design for the **New project** surface — an
 always-available conversational entry point that replaces the four-source
@@ -63,8 +64,9 @@ Out of scope for this doc:
 `gm-371` (CLOSED, ratified 2026-04-21) defined a four-source Bootstrap
 wizard at `/bootstrap`. The conversational scope of `gm-371` (its "Fresh"
 path) is **superseded** by this design. The Jira / Beads workspace /
-Source-code import paths from `gm-371` remain valid but demote to a
-secondary "Import from advanced source…" surface accessible from Setup.
+Source-code import paths from `gm-371` remain valid but demote to the
+secondary `/bootstrap` advanced-import wizard until the Settings/import
+consolidation lands.
 
 ## Surfaces
 

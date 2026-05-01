@@ -15,13 +15,15 @@ Gemba at a beads rig two ways:
 Exactly one of the two must be passed (`gm-98l` enforces this at
 startup).
 
-Agent sessions (optional). Add `--orchestration=native` to the
-commands below to light up `/sessions` in the SPA with live tmux /
-iTerm2 / Terminal.app-backed dispatch — no external daemon required.
-See [`docs/adaptors/native.md`](../adaptors/native.md) for the full
-native-orchestration story. Gas Town / Gas City / LangGraph / etc.
-adaptors swap in with `--orchestration=<name>` when you want their
-specific scheduling semantics.
+Agent sessions are wired by default through native orchestration
+(`--orchestration=native` if you want to spell it explicitly): live tmux
+/ iTerm2 / Terminal.app-backed dispatch, no external daemon required.
+Pass `--orchestration=none` when you want a read-only / human-driven
+board with no session controls. See
+[`docs/adaptors/native.md`](../adaptors/native.md) for the full
+native-orchestration story. Gas Town / mock / Gas City / LangGraph /
+etc. adaptors swap in with `--orchestration=<name>` when you want their
+specific scheduling or test semantics.
 
 ## Prerequisites
 
@@ -49,7 +51,10 @@ Startup banner on stderr:
 ▶ manifest: 5 states, 3 core + <n> extension edges, feature flags: sprint=no budget=no
 ```
 
-Then open <http://127.0.0.1:7666/board> — you should land on a five-column board (Backlog / Unstarted / Started / Completed / Canceled) populated with every bead from the rig.
+Then open <http://127.0.0.1:7666/board> — you should land on the board
+populated with every bead from the rig. Gemba normalizes adaptor states
+into the execution columns **Backlog**, **Next Up**, **Staged**, **In
+Progress**, **Done**, and **Canceled**.
 
 ## Mode B — `--dolt-url` (direct Dolt SQL)
 

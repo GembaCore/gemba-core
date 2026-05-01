@@ -3,7 +3,11 @@ package native
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/GembaCore/gemba-core/core"
@@ -98,6 +102,13 @@ func (o *OrchestrationPlane) handleBeadDone(ev core.OrchestrationEvent) {
 		o.emitDirtyWorktreeEscalation(ev.SessionID, worktree, ev.At)
 		return
 	}
+	if shouldMergeAcceptanceWorktrees() && worktree != "" {
+		if err := mergeWorktreeToRepoRoot(o.cfg.RepoRoot, worktree); err != nil {
+			o.emitDirtyWorktreeEscalation(ev.SessionID, worktree, ev.At)
+			return
+		}
+		_ = copyAcceptanceRuntimeArtifacts(o.cfg.RepoRoot, worktree)
+	}
 
 	// Clean — proceed with the Working → Ready transition. Mark the
 	// session as having reached a clean bead boundary so EndSession
@@ -141,6 +152,93 @@ var worktreeIsClean = func(path string) bool {
 		return false
 	}
 	return out.Len() == 0
+}
+
+func shouldMergeAcceptanceWorktrees() bool {
+	return os.Getenv("GEMBA_ACCEPTANCE_MERGE_BEAD_WORKTREES") == "1"
+}
+
+func mergeWorktreeToRepoRoot(repoRoot, worktree string) error {
+	if repoRoot == "" || worktree == "" {
+		return nil
+	}
+	branch, err := gitOutput(worktree, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return err
+	}
+	branch = strings.TrimSpace(branch)
+	if branch == "" || branch == "HEAD" {
+		return fmt.Errorf("native: cannot merge detached or empty branch from %s", worktree)
+	}
+	if _, err := gitOutput(repoRoot, "merge", "--ff-only", branch); err != nil {
+		return err
+	}
+	return nil
+}
+
+func gitOutput(cwd string, args ...string) (string, error) {
+	cmd := exec.CommandContext(context.Background(), "git", args...)
+	cmd.Dir = cwd
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git %s: %w (%s)", strings.Join(args, " "), err, strings.TrimSpace(out.String()))
+	}
+	return out.String(), nil
+}
+
+func copyAcceptanceRuntimeArtifacts(repoRoot, worktree string) error {
+	for _, name := range []string{"node_modules"} {
+		src := filepath.Join(worktree, name)
+		dst := filepath.Join(repoRoot, name)
+		if info, err := os.Stat(src); err != nil || !info.IsDir() {
+			continue
+		}
+		_ = os.RemoveAll(dst)
+		if _, err := gitOutput(repoRoot, "checkout-index", "--all"); err != nil {
+			// Fall through to cp; checkout-index is only a cheap way to
+			// ensure the destination worktree is not mid-update.
+			_ = err
+		}
+		if err := copyDir(src, dst); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyDir(src, dst string) error {
+	return filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			link, err := os.Readlink(path)
+			if err != nil {
+				return err
+			}
+			_ = os.RemoveAll(target)
+			return os.Symlink(link, target)
+		}
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, info.Mode().Perm())
+	})
 }
 
 // emitDirtyWorktreeEscalation publishes an escalation_opened event for

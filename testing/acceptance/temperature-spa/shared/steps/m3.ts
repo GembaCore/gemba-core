@@ -24,8 +24,9 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { SharedContext } from '../spec';
 import { waitForHttp } from './m1';
+import { demoPause, setDemoCaption } from '../helpers/demo-mode';
 
-const M3_MILESTONE_ID = 'M3';
+const M3_MILESTONE_ID = 'm3';
 
 function m3Timeout(): number {
   return process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1' ? 30 * 60_000 : 5 * 60_000;
@@ -37,7 +38,7 @@ export async function runM3Step(ctx: SharedContext): Promise<void> {
     'long',
   );
   await ctx.importBeads('target-jsonl/m3.jsonl');
-  await ctx.waitForAllBeadsClosed(M3_MILESTONE_ID, m3Timeout());
+  await ctx.waitForAllBeadsClosed(`${ctx.beadPrefix}-${M3_MILESTONE_ID}`, m3Timeout());
 
   // Build.
   await runNpm(ctx, ['run', 'build'], {
@@ -159,6 +160,9 @@ export async function runM3Step(ctx: SharedContext): Promise<void> {
         throw new Error(`M3 cherry-pick row-${c}: expected ${expected}, got ${got}`);
       }
     }
+    ctx.narrator.emit('The final conversion table is live and the oracle passes', 'long');
+    await setDemoCaption(ctx.page, 'M3 launch: conversion table passes the oracle');
+    await demoPause(3_000);
 
     // ─── npm test ─────────────────────────────────────────────
     await runNpm(ctx, ['test', '--', '--run'], {

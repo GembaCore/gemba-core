@@ -138,6 +138,21 @@ export type SpinOptions = {
    */
   serveArgs?: string[];
 
+  /**
+   * Optional hook to write workspace-local config before `gemba serve`
+   * starts. Acceptance uses this to seed personas / agents.toml that
+   * native orchestration loads during boot.
+   */
+  beforeServe?: (workspaceDir: string) => void;
+
+  /**
+   * Extra environment entries for the long-lived `gemba serve`
+   * process. `bd init` always uses the fixture's fully-isolated env;
+   * these overrides exist for real-agent acceptance runs that need
+   * user-level CLI auth while still preserving BEADS_DIR isolation.
+   */
+  serveEnv?: NodeJS.ProcessEnv;
+
   // gm-5v8v.11.1 — workspace-mode fixture
   /**
    * Workspace mode to persist into `<beadsDir>/.gemba/workspace.toml`
@@ -241,6 +256,14 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
       `mode = "${opts.mode}"\n`;
     writeFileSync(workspaceTomlPath, body, { encoding: 'utf8' });
   }
+  if (opts.beforeServe) {
+    try {
+      opts.beforeServe(baseDir);
+    } catch (err) {
+      rmSyncRetry(baseDir, { recursive: true, force: true });
+      throw new Error(`beforeServe hook failed in ${baseDir}: ${(err as Error).message}`);
+    }
+  }
 
   const listen = opts.listen ?? '127.0.0.1';
   const port = await pickFreePort();
@@ -287,14 +310,21 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     args.push(...opts.serveArgs);
   }
 
+  const serveEnv = {
+    ...isolatedEnv,
+    ...(opts.serveEnv ?? {}),
+    PWD: baseDir,
+    BEADS_DIR: isolatedEnv.BEADS_DIR,
+  };
+
   const child = spawn(gembaBin, args, {
     cwd: baseDir,
     stdio: ['ignore', 'pipe', 'pipe'],
     // gm-h4n: gemba serve shells to bd internally; that bd inherits
-    // this env, so the same HOME-isolation that protects bd init
-    // protects every WorkPlane subprocess from leaking into the
-    // shared :3307 server.
-    env: isolatedEnv,
+    // BEADS_DIR from this env, so WorkPlane subprocesses stay pinned
+    // to the temp workspace even when a caller overrides HOME for
+    // real-agent CLI authentication.
+    env: serveEnv,
   });
 
   const stderrChunks: string[] = [];

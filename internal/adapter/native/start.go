@@ -16,6 +16,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/adapter/native/install"
 	"github.com/GembaCore/gemba-core/internal/adapter/native/preamble"
 	"github.com/GembaCore/gemba-core/internal/adapter/native/worktrees"
+	coreprompt "github.com/GembaCore/gemba-core/internal/core/prompt"
 	"github.com/GembaCore/gemba-core/internal/milestones"
 	"github.com/GembaCore/gemba-core/internal/persona"
 )
@@ -168,31 +169,28 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 	surface, _ := prompt.Extension[extKeySurface].(*persona.Surface)
 
 	var (
-		pane      backend.Pane
-		workspace string
+		pane                   backend.Pane
+		workspace              string
+		codexPromptFile        string
+		retiredReuseSessionIDs []string
 	)
 	if reusePaneID != "" {
 		o.mu.Lock()
-		inFlight := o.paneInFlightLocked(reusePaneID)
-		if inFlight == 0 {
+		paneSessionIDs := append([]string(nil), o.paneSessions[reusePaneID]...)
+		if len(paneSessionIDs) == 0 {
 			o.mu.Unlock()
 			return core.Session{}, core.NewAdaptorError(core.KindValidation,
 				"native: reuse_pane_id %q has no active session", reusePaneID)
 		}
-		if inFlight >= maxParallel {
-			o.mu.Unlock()
-			return core.Session{}, core.NewAdaptorError(core.KindValidation,
-				"native: pane %s at cap (%d/%d for agent %q)",
-				reusePaneID, inFlight, maxParallel, agentType)
-		}
-		anchor := o.sessions[o.paneSessions[reusePaneID][0]]
-		o.mu.Unlock()
+		anchor := o.sessions[paneSessionIDs[0]]
 		if anchor == nil {
+			o.mu.Unlock()
 			return core.Session{}, core.NewAdaptorError(core.KindAdaptorDegraded,
 				"native: pane %s has no anchor session record", reusePaneID)
 		}
 		anchorAgentType, _ := anchor.ProviderMetadata["agent_type"].(string)
 		if anchorAgentType != agentType {
+			o.mu.Unlock()
 			return core.Session{}, core.NewAdaptorError(core.KindValidation,
 				"native: pane %s runs agent %q, cannot reuse for %q",
 				reusePaneID, anchorAgentType, agentType)
@@ -200,6 +198,15 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		anchorWorkspace, _ := anchor.ProviderMetadata["worktree"].(string)
 		anchorTitle, _ := anchor.ProviderMetadata["pane_title"].(string)
 		anchorCwd, _ := anchor.ProviderMetadata["pane_cwd"].(string)
+		retiredReuseSessionIDs = o.retireReadySessionsForPaneLocked(reusePaneID)
+		inFlight := o.paneInFlightLocked(reusePaneID)
+		if inFlight >= maxParallel {
+			o.mu.Unlock()
+			return core.Session{}, core.NewAdaptorError(core.KindValidation,
+				"native: pane %s at cap (%d/%d for agent %q)",
+				reusePaneID, inFlight, maxParallel, agentType)
+		}
+		o.mu.Unlock()
 		workspace = anchorWorkspace
 		pane = backend.Pane{ID: reusePaneID, Title: anchorTitle, Cwd: anchorCwd}
 	} else {
@@ -226,14 +233,29 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 			}
 		}
 
+		if agent.Preamble == agents.PreambleCodexExec && !manualMode {
+			text, err := o.composeBeadPreamble(ctx, beadID, workspace, agent, surface)
+			if err != nil {
+				return core.Session{}, err
+			}
+			codexPromptFile, err = writeCodexPromptFile(sessionID, text)
+			if err != nil {
+				return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
+					"native: write codex prompt for %s", beadID)
+			}
+		}
+
 		// Best-effort bridge install — the per-agent installer is
 		// idempotent; a populated worktree is a supported no-op.
 		_ = installBridgeForAgent(ctx, workspace, agent)
 
-		spec, err := buildSpawnSpec(agent, workspace, sessionID, agentType, title, surface)
+		spec, err := buildSpawnSpec(agent, workspace, sessionID, agentType, title, surface, beadID)
 		if err != nil {
 			return core.Session{}, core.WrapAdaptorError(core.KindValidation, err,
 				"native: build spawn spec for %s", sessionAnchor)
+		}
+		if codexPromptFile != "" {
+			spec.Env["GEMBA_CODEX_PROMPT_FILE"] = codexPromptFile
 		}
 
 		// Layer 2 producer (gm-v8vr.1): persist the resolved surface so
@@ -338,6 +360,9 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		o.nonces[nonce] = sessionID
 	}
 	o.mu.Unlock()
+	for _, id := range retiredReuseSessionIDs {
+		o.fanout.Unregister(id)
+	}
 
 	// Surface the parallelism transition so SPA pills + the global
 	// counter update without polling. Skipped on zero-delta no-ops by
@@ -346,7 +371,7 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 
 	// Register a bridge tailer for this session so Subscribe()
 	// consumers see its events.
-	if err := o.fanout.Register(ctx, sessionID, agentType); err != nil {
+	if err := o.fanout.Register(context.Background(), sessionID, agentType); err != nil {
 		// Tailer registration failure is not fatal to StartSession —
 		// we log and continue. The SPA can still observe the pane via
 		// ListAgents + PeekSession. Without the tailer the drawer
@@ -368,38 +393,140 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 		if prompt.Text != "" {
 			go o.deliverFirstMessage(ctx, pane.ID, prompt.Text)
 		}
-	} else if o.cfg.WorkPlane != nil {
-		if item, err := o.cfg.WorkPlane.GetWorkItem(ctx, core.WorkItemID(beadID)); err == nil {
-			// Selective milestone context (gm-yyo8): walk parent_child
-			// up looking for a milestone ancestor. Errors degrade to
-			// "no milestone block" — we'd rather ship an unbound
-			// preamble than fail the session start over a transport
-			// hiccup.
-			milestone, _ := milestones.FindMilestoneAncestor(ctx, o.cfg.WorkPlane, item)
-			composed := preamble.Build(preamble.Sources{
-				RepoRoot:               o.cfg.RepoRoot,
-				WorkspaceDir:           workspace,
-				InteractionProfilePath: preamble.ResolveProfilePath(o.cfg.RepoRoot, agent.InteractionProfile),
-				InteractionMode:        agent.ResolvedInteractionMode(),
-				// Layer 1 of the cwd-constraint defense-in-depth
-				// (gm-r5vz / gm-v8vr): name the resolved surface to
-				// the model so it doesn't have to learn its bounds
-				// from PreToolUse rejections. The dispatcher resolves
-				// the surface once and threads it through the spawn
-				// extension; we reuse it here instead of re-resolving.
-				Surface:    surface,
-				SurfaceEnv: persona.EnvFromOS(os.Getenv),
-				Repository: surfaceRepoLabel(item),
-				Branch:     surfaceBranchLabel(item),
-				Milestone:  milestone,
-			}, item)
-			if strat, err := preamble.Apply(workspace, agent, composed); err == nil && strat.FirstMessage != "" {
+	} else if o.cfg.WorkPlane != nil && agent.Preamble != agents.PreambleCodexExec {
+		if text, err := o.composeBeadPreamble(ctx, beadID, workspace, agent, surface); err == nil {
+			text = withSessionLifecycleEnv(text, sessionID, agentType, beadID)
+			if strat, err := preamble.Apply(workspace, agent, coreprompt.Composed{Text: text}); err == nil && strat.FirstMessage != "" {
+				if agent.Preamble == agents.PreambleClaudeMD {
+					strat.FirstMessage = fmt.Sprintf("New assigned bead: %s. CLAUDE.md has the current bead context and lifecycle commands at the bottom. Read the latest CLAUDE.md task and begin.", beadID)
+				}
 				go o.deliverFirstMessage(ctx, pane.ID, strat.FirstMessage)
 			}
 		}
 	}
 
 	return *sess, nil
+}
+
+// retireReadySessionsForPaneLocked marks previously-idle records on a
+// reused pane terminal before assigning the next bead. The Claude/Codex
+// process in that pane cannot receive a fresh GEMBA_SESSION_ID through
+// its original environment, so each bead gets a new session row while
+// the old ready rows stop counting against intra_parallel capacity.
+func (o *OrchestrationPlane) retireReadySessionsForPaneLocked(paneID string) []string {
+	ids := o.paneSessions[paneID]
+	if len(ids) == 0 {
+		return nil
+	}
+	now := time.Now()
+	retired := make([]string, 0, len(ids))
+	kept := ids[:0]
+	for _, id := range ids {
+		sess := o.sessions[id]
+		if sess == nil {
+			continue
+		}
+		if sess.Status == core.SessionReady {
+			sess.Status = core.SessionCompleted
+			sess.EndedAt = &now
+			retired = append(retired, id)
+			continue
+		}
+		kept = append(kept, id)
+	}
+	if len(kept) == 0 {
+		delete(o.paneSessions, paneID)
+	} else {
+		o.paneSessions[paneID] = kept
+	}
+	return retired
+}
+
+func withSessionLifecycleEnv(text, sessionID, agentType, beadID string) string {
+	if text == "" || beadID == "" || sessionID == "" {
+		return text
+	}
+	prefix := fmt.Sprintf("GEMBA_SESSION_ID=%s GEMBA_AGENT_TYPE=%s ",
+		shellSingleQuote(sessionID), shellSingleQuote(agentType))
+	working := fmt.Sprintf("${GEMBA_STATE_COMMAND:-gemba-state} -bead %s working", beadID)
+	done := fmt.Sprintf("${GEMBA_STATE_COMMAND:-gemba-state} -bead %s bead-done", beadID)
+	text = strings.ReplaceAll(text, working, prefix+working)
+	text = strings.ReplaceAll(text, done, prefix+done)
+	return text
+}
+
+func shellSingleQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
+func (o *OrchestrationPlane) composeBeadPreamble(
+	ctx context.Context,
+	beadID string,
+	workspace string,
+	agent agents.AgentType,
+	surface *persona.Surface,
+) (string, error) {
+	if o.cfg.WorkPlane == nil {
+		return fmt.Sprintf("# Assigned bead: %s\n\nWork this bead. Push when the DoD is met. Escalate if blocked.\n", beadID), nil
+	}
+	item, err := o.cfg.WorkPlane.GetWorkItem(ctx, core.WorkItemID(beadID))
+	if err != nil {
+		return "", core.WrapAdaptorError(core.KindProcessFailed, err,
+			"native: load work item for preamble %s", beadID)
+	}
+	// Selective milestone context (gm-yyo8): walk parent_child up
+	// looking for a milestone ancestor. Errors degrade to "no milestone
+	// block" — we'd rather ship an unbound preamble than fail the
+	// session start over a transport hiccup.
+	milestone, _ := milestones.FindMilestoneAncestor(ctx, o.cfg.WorkPlane, item)
+	composed := preamble.Build(preamble.Sources{
+		RepoRoot:               o.cfg.RepoRoot,
+		WorkspaceDir:           workspace,
+		InteractionProfilePath: preamble.ResolveProfilePath(o.cfg.RepoRoot, agent.InteractionProfile),
+		InteractionMode:        agent.ResolvedInteractionMode(),
+		Surface:                surface,
+		SurfaceEnv:             persona.EnvFromOS(os.Getenv),
+		Repository:             surfaceRepoLabel(item),
+		Branch:                 surfaceBranchLabel(item),
+		Milestone:              milestone,
+	}, item)
+	return composed.Text, nil
+}
+
+func writeCodexPromptFile(sessionID, text string) (string, error) {
+	base, err := os.UserCacheDir()
+	if err != nil {
+		base = os.TempDir()
+	}
+	dir := filepath.Join(base, "gemba", "codex-prompts")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	name := safePromptFilename(sessionID) + ".md"
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func safePromptFilename(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_', r == '.':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "session"
+	}
+	return b.String()
 }
 
 // surfaceRepoLabel resolves the operator-visible repository name for
@@ -429,13 +556,11 @@ func surfaceBranchLabel(item core.WorkItem) string {
 }
 
 // firstMessageBootDelay is how long we wait after spawning the agent
-// pane before injecting the preamble keystrokes. Empirically, Claude
-// Code's Ink TUI takes ~1.5–2.5s to render its splash and become ready
-// to accept input on a fresh worktree; the auto-mode banner can also
-// eat a single Enter while the input handler is still wiring up.
-// Picking 2.5s leaves margin without making the operator feel the
-// dispatch is slow. gm-4jsi.
-const firstMessageBootDelay = 2500 * time.Millisecond
+// pane before injecting the preamble keystrokes. Modern Claude Code can
+// spend several seconds loading plugins, update notices, and auth-backed
+// state before the input prompt is ready; twenty seconds avoids swallowing the first
+// message during the splash screen. gm-4jsi.
+const firstMessageBootDelay = 20 * time.Second
 
 // firstMessageSubmitDelay is the gap between typing the preamble text
 // and pressing Enter. Splitting the two SendKeys calls (rather than
@@ -457,6 +582,8 @@ func (o *OrchestrationPlane) deliverFirstMessage(_ context.Context, paneID, text
 	if err := o.cfg.Backend.SendKeys(ctx, paneID, text); err != nil {
 		return
 	}
+	time.Sleep(firstMessageSubmitDelay)
+	_ = o.cfg.Backend.SendKeys(ctx, paneID, "Enter")
 	time.Sleep(firstMessageSubmitDelay)
 	_ = o.cfg.Backend.SendKeys(ctx, paneID, "Enter")
 }
@@ -494,12 +621,19 @@ func (o *OrchestrationPlane) readSession(sessionID string) *core.Session {
 // the worktree the adaptor provisioned is reachable inside the
 // container. Files the agent writes land in the worktree on the host
 // owned by the operator (UserNS == host UID of the worktree).
-func buildSpawnSpec(agent agents.AgentType, workspace, sessionID, agentType, title string, surface *persona.Surface) (backend.SpawnSpec, error) {
+func buildSpawnSpec(agent agents.AgentType, workspace, sessionID, agentType, title string, surface *persona.Surface, beadIDOpt ...string) (backend.SpawnSpec, error) {
+	beadID := ""
+	if len(beadIDOpt) > 0 {
+		beadID = beadIDOpt[0]
+	}
 	spec := backend.SpawnSpec{
 		Cwd: workspace,
 		Env: map[string]string{
 			"GEMBA_SESSION_ID":       sessionID,
 			"GEMBA_AGENT_TYPE":       agentType,
+			"GEMBA_BEAD_ID":          beadID,
+			"GEMBA_STATE_COMMAND":    resolveSiblingBinary("gemba-state"),
+			"PATH":                   prependSiblingBinaryDir(os.Getenv("PATH")),
 			"GEMBA_INTERACTION_MODE": string(agent.ResolvedInteractionMode()),
 		},
 		Command: buildAgentCommand(agent),
@@ -641,9 +775,13 @@ func parseMemory(s string) (int64, error) {
 // Claude-Code-specific flag; future agents can drop a per-agent
 // arg builder without touching this code.
 func buildAgentCommand(a agents.AgentType) []string {
-	argv := []string{a.Binary}
+	binary := a.Binary
+	if !filepath.IsAbs(binary) && strings.HasPrefix(filepath.Base(binary), "gemba-") {
+		binary = resolveSiblingBinary(binary)
+	}
+	argv := []string{binary}
 	argv = append(argv, a.Args...)
-	if a.Model != "" && a.Name == "claude" {
+	if a.Model != "" && (a.Name == "claude" || a.Preamble == agents.PreambleCodexExec) {
 		argv = append(argv, "--model", a.Model)
 	}
 	return argv
@@ -690,6 +828,14 @@ func resolveSiblingBinary(name string) string {
 		return p
 	}
 	return name
+}
+
+func prependSiblingBinaryDir(pathValue string) string {
+	dir := filepath.Dir(resolveSiblingBinary("gemba-state"))
+	if pathValue == "" {
+		return dir
+	}
+	return dir + string(os.PathListSeparator) + pathValue
 }
 
 // installerNameForHook maps an agents.HookProfile to its installer

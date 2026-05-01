@@ -33,6 +33,9 @@ type OrchestrationPlane struct {
 	// sessions holds the live Session map keyed by session id.
 	sessions map[string]core.Session
 
+	// escalations holds synthetic test-mode escalations keyed by id.
+	escalations map[string]core.EscalationRequest
+
 	// nextSessionN gives every minted session a monotonically
 	// increasing suffix so log lines stay legible.
 	nextSessionN int
@@ -99,10 +102,11 @@ func NewOrchestrationPlane(cfg Config) *OrchestrationPlane {
 		transport = core.TransportAPI
 	}
 	o := &OrchestrationPlane{
-		sessions:   make(map[string]core.Session),
-		projectDir: cfg.ProjectDir,
-		transport:  transport,
-		workPlane:  cfg.WorkPlane,
+		sessions:    make(map[string]core.Session),
+		escalations: make(map[string]core.EscalationRequest),
+		projectDir:  cfg.ProjectDir,
+		transport:   transport,
+		workPlane:   cfg.WorkPlane,
 	}
 	for _, p := range cfg.PreseedPersonas {
 		_ = o.preseedSession(p)
@@ -233,18 +237,65 @@ func (o *OrchestrationPlane) ObservedState(_ context.Context) (core.WorkspaceTop
 	return core.WorkspaceTopology{}, nil
 }
 
-// ─── Escalation stubs (the test injects synthetic via gm-root.27.22 path) ──
+// ─── Escalations ────────────────────────────────────────────────
 
 func (o *OrchestrationPlane) ListPendingRequests(_ context.Context, _ string) ([]core.EscalationRequest, error) {
-	return []core.EscalationRequest{}, nil
+	return o.ListOpenEscalations(context.Background(), core.EscalationFilter{})
 }
 
-func (o *OrchestrationPlane) ListOpenEscalations(_ context.Context, _ core.EscalationFilter) ([]core.EscalationRequest, error) {
-	return []core.EscalationRequest{}, nil
+func (o *OrchestrationPlane) ListOpenEscalations(_ context.Context, f core.EscalationFilter) ([]core.EscalationRequest, error) {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	out := make([]core.EscalationRequest, 0, len(o.escalations))
+	for _, esc := range o.escalations {
+		if esc.State != core.EscalationOpen {
+			continue
+		}
+		if f.AssignmentID != "" && esc.AssignmentID != f.AssignmentID {
+			continue
+		}
+		if f.WorkItemID != "" && esc.WorkItemID != f.WorkItemID {
+			continue
+		}
+		if f.AgentID != "" && esc.AgentID != f.AgentID {
+			continue
+		}
+		if f.Source != "" && esc.Source != f.Source {
+			continue
+		}
+		if f.Urgency != "" && esc.Urgency != f.Urgency {
+			continue
+		}
+		out = append(out, esc)
+	}
+	return out, nil
 }
 
-func (o *OrchestrationPlane) ResolveEscalation(_ context.Context, _ string, _ core.EscalationResolution, _ core.ConfirmNonce) (core.EscalationRequest, error) {
-	return core.EscalationRequest{}, unsupported("ResolveEscalation")
+func (o *OrchestrationPlane) ResolveEscalation(_ context.Context, id string, res core.EscalationResolution, _ core.ConfirmNonce) (core.EscalationRequest, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	esc, ok := o.escalations[id]
+	if !ok {
+		return core.EscalationRequest{}, core.NewAdaptorError(core.KindSessionNotFound,
+			"mock: escalation %q unknown", id)
+	}
+	esc.Resolution = &res
+	esc.State = core.EscalationResolved
+	o.escalations[id] = esc
+	return esc, nil
+}
+
+func (o *OrchestrationPlane) InjectSyntheticEscalation(esc core.EscalationRequest) error {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if esc.ID == "" {
+		return core.NewAdaptorError(core.KindValidation, "mock: synthetic escalation id is required")
+	}
+	if esc.State == "" {
+		esc.State = core.EscalationOpen
+	}
+	o.escalations[esc.ID] = esc
+	return nil
 }
 
 // ─── Subscribe stub ───────────────────────────────────────────────

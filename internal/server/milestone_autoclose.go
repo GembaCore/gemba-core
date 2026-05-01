@@ -1,17 +1,15 @@
-// Milestone auto-close (gm-mqiz).
+// Wrapper state reconciliation (gm-mqiz, gm-1o9n).
 //
-// When a child of a milestone transitions to a closed StateCategory
-// (completed/canceled) AND the milestone has no other open children
-// left, the milestone auto-closes and an escalation.opened event
-// fires through the events hub. This is the spec's locked behaviour
-// (gm-b11z) — milestone state is its own bead's status, but
-// "every child finished" is a deterministic enough signal that we
-// flip it for the operator and notify rather than let a stale-open
-// milestone clutter the surface.
+// Epic and milestone beads are wrappers: their visible board state is
+// derived from the runnable leaf work under them. A wrapper is:
 //
-// Best-effort: any failure is logged via slog and swallowed. The
-// operator's original patch is what matters; auto-close is a
-// courtesy on top.
+//   - started when any leaf is started, or when some leaves are closed
+//     and others remain open (a cascade is underway);
+//   - completed when every runnable leaf is completed/canceled;
+//   - otherwise the most advanced open state visible among the leaves.
+//
+// Best-effort: failures are logged and swallowed. The operator's
+// original patch is what matters; reconciliation is a courtesy on top.
 
 package server
 
@@ -24,128 +22,190 @@ import (
 	"github.com/GembaCore/gemba-core/internal/events"
 )
 
-// openStateCategories is the closure of "open" buckets — anything
-// not in here is treated as closed for the purpose of the rollup.
-// Mirrors the spec: backlog/unstarted/staged/started.
-var openStateCategories = map[core.StateCategory]struct{}{
-	core.StateBacklog:   {},
-	core.StateUnstarted: {},
-	core.StateStaged:    {},
-	core.StateStarted:   {},
+func isWrapperKind(kind string) bool {
+	return kind == core.KindMilestone || kind == "epic"
 }
 
-// isClosedCategory reports whether s belongs to the closed set
-// (completed/canceled). Used to gate both "did this patch close the
-// child?" and "is the milestone already closed (skip)?"
-func isClosedCategory(s core.StateCategory) bool {
-	_, open := openStateCategories[s]
-	return !open && s != ""
-}
-
-// maybeAutoCloseMilestone is invoked after a successful UpdateWorkItem.
-// `child` is the patched item as the adaptor returned it. If the item
-// just landed in a closed state and is a parent_child child of an
-// otherwise-empty (no open children) milestone, the milestone is
-// patched closed and a notification fires.
-//
-// All errors are logged and swallowed — the caller's PATCH 200 ships
-// regardless.
-func (r *Router) maybeAutoCloseMilestone(ctx context.Context, wp core.WorkPlane, child core.WorkItem) {
+// reconcileWrapperAncestors is invoked after a successful UpdateWorkItem.
+// `changed` is the patched item as the adaptor returned it. Any epic or
+// milestone ancestors are reconciled from the leaves below them, then
+// their ancestors are reconciled in turn.
+func (r *Router) reconcileWrapperAncestors(ctx context.Context, wp core.WorkPlane, changed core.WorkItem) {
 	if wp == nil {
 		return
 	}
-	if !isClosedCategory(child.StateCategory) {
-		return
-	}
-	parentID := parentMilestoneID(child)
-	if parentID == "" {
-		return
-	}
-	// Re-read the parent to learn (a) whether it's actually a
-	// milestone and (b) whether it's already closed (idempotent
-	// skip — no duplicate notifications).
-	parent, err := wp.GetWorkItem(ctx, parentID)
-	if err != nil {
-		slog.Warn("milestone autoclose: parent fetch failed",
-			"child_id", child.ID, "parent_id", parentID, "err", err)
-		return
-	}
-	if parent.Kind != core.KindMilestone {
-		return
-	}
-	if isClosedCategory(parent.StateCategory) {
-		return
-	}
-	// Count open children other than the just-closed `child`. The
-	// milestone's Relationships carry parent_child edges with
-	// From=milestone, To=child for every child the adaptor knows
-	// about. If even one is still open, leave the milestone alone.
-	hasOpen, err := milestoneHasOpenChildrenExcept(ctx, wp, parent, child.ID)
-	if err != nil {
-		slog.Warn("milestone autoclose: child enumeration failed",
-			"milestone_id", parent.ID, "err", err)
-		return
-	}
-	if hasOpen {
-		return
-	}
-	// Mirror the just-closed child's terminal category onto the
-	// milestone. Default to completed; only propagate canceled when
-	// every closed child was canceled — an over-engineering trap.
-	// Plain rule: completed wins, because "the milestone is done"
-	// is the intent the operator most often wants surfaced.
-	closed := core.StateCompleted
-	patch := core.WorkItemPatch{StateCategory: &closed}
-	updated, err := wp.UpdateWorkItem(ctx, parent.ID, patch)
-	if err != nil {
-		slog.Warn("milestone autoclose: patch failed",
-			"milestone_id", parent.ID, "err", err)
-		return
-	}
-	r.publishMilestoneClosedEscalation(ctx, updated, child.ID)
+	r.reconcileParents(ctx, wp, changed, changed.ID, map[core.WorkItemID]bool{})
 }
 
-// parentMilestoneID returns the From side of a parent_child edge that
-// points at `child` (To=child.ID). Empty when no parent edge is
-// present. We don't pre-filter on parent kind here — the caller
-// re-reads the parent and gates on KindMilestone so a misrouted
-// edge between two non-milestone kinds doesn't accidentally trigger
-// the rollup.
-func parentMilestoneID(child core.WorkItem) core.WorkItemID {
+func (r *Router) reconcileParents(
+	ctx context.Context,
+	wp core.WorkPlane,
+	child core.WorkItem,
+	lastChanged core.WorkItemID,
+	seen map[core.WorkItemID]bool,
+) {
+	for _, parentID := range parentIDs(child) {
+		if parentID == "" || seen[parentID] {
+			continue
+		}
+		seen[parentID] = true
+
+		parent, err := wp.GetWorkItem(ctx, parentID)
+		if err != nil {
+			slog.Warn("wrapper reconcile: parent fetch failed",
+				"child_id", child.ID, "parent_id", parentID, "err", err)
+			continue
+		}
+		if !isWrapperKind(parent.Kind) {
+			continue
+		}
+
+		next, ok, err := deriveWrapperState(ctx, wp, parent, map[core.WorkItemID]bool{})
+		if err != nil {
+			slog.Warn("wrapper reconcile: derive failed",
+				"wrapper_id", parent.ID, "err", err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		updated := parent
+		if parent.StateCategory != next {
+			patch := core.WorkItemPatch{StateCategory: &next}
+			updated, err = wp.UpdateWorkItem(ctx, parent.ID, patch)
+			if err != nil {
+				slog.Warn("wrapper reconcile: patch failed",
+					"wrapper_id", parent.ID, "next_state", next, "err", err)
+				continue
+			}
+			if parent.Kind == core.KindMilestone && next == core.StateCompleted {
+				r.publishMilestoneClosedEscalation(ctx, updated, lastChanged)
+			}
+		}
+		r.reconcileParents(ctx, wp, updated, lastChanged, seen)
+	}
+}
+
+func parentIDs(child core.WorkItem) []core.WorkItemID {
+	out := []core.WorkItemID{}
 	for _, rel := range child.Relationships {
 		if rel.Kind == core.RelParentChild && rel.To == child.ID && rel.From != "" {
-			return rel.From
+			out = append(out, rel.From)
 		}
 	}
-	return ""
+	return out
 }
 
-// milestoneHasOpenChildrenExcept reports whether `milestone` has any
-// child (via parent_child edges with From=milestone) currently in an
-// open state, excluding the work item `excluded` (which the caller
-// just observed as closed but may not yet have round-tripped through
-// the milestone's edge view in some adaptors).
-func milestoneHasOpenChildrenExcept(ctx context.Context, wp core.WorkPlane, milestone core.WorkItem, excluded core.WorkItemID) (bool, error) {
-	for _, rel := range milestone.Relationships {
-		if rel.Kind != core.RelParentChild || rel.From != milestone.ID || rel.To == "" {
-			continue
-		}
-		if rel.To == excluded {
-			continue
-		}
-		ch, err := wp.GetWorkItem(ctx, rel.To)
-		if err != nil {
-			// Treat a missing child as "still open" — the safe
-			// failure mode is to NOT auto-close (operator can
-			// always close manually); silently closing on a
-			// transient adaptor error would be the worse drift.
-			return true, err
-		}
-		if !isClosedCategory(ch.StateCategory) {
-			return true, nil
+func childIDs(parent core.WorkItem) []core.WorkItemID {
+	out := []core.WorkItemID{}
+	for _, rel := range parent.Relationships {
+		if rel.Kind == core.RelParentChild && rel.From == parent.ID && rel.To != "" {
+			out = append(out, rel.To)
 		}
 	}
-	return false, nil
+	return out
+}
+
+type wrapperRollup struct {
+	total    int
+	backlog  int
+	nextUp   int
+	staged   int
+	started  int
+	terminal int
+}
+
+func deriveWrapperState(
+	ctx context.Context,
+	wp core.WorkPlane,
+	wrapper core.WorkItem,
+	seen map[core.WorkItemID]bool,
+) (core.StateCategory, bool, error) {
+	rollup, err := collectLeafRollup(ctx, wp, wrapper, seen)
+	if err != nil {
+		return "", false, err
+	}
+	if rollup.total == 0 {
+		return "", false, nil
+	}
+	return rollup.derivedState(), true, nil
+}
+
+func collectLeafRollup(
+	ctx context.Context,
+	wp core.WorkPlane,
+	wrapper core.WorkItem,
+	seen map[core.WorkItemID]bool,
+) (wrapperRollup, error) {
+	var out wrapperRollup
+	if seen[wrapper.ID] {
+		return out, nil
+	}
+	seen[wrapper.ID] = true
+
+	for _, id := range childIDs(wrapper) {
+		if id == "" || seen[id] {
+			continue
+		}
+		ch, err := wp.GetWorkItem(ctx, id)
+		if err != nil {
+			return out, err
+		}
+		if isWrapperKind(ch.Kind) {
+			nested, err := collectLeafRollup(ctx, wp, ch, seen)
+			if err != nil {
+				return out, err
+			}
+			out.add(nested)
+			continue
+		}
+		out.addLeaf(ch.StateCategory)
+	}
+	return out, nil
+}
+
+func (r *wrapperRollup) add(other wrapperRollup) {
+	r.total += other.total
+	r.backlog += other.backlog
+	r.nextUp += other.nextUp
+	r.staged += other.staged
+	r.started += other.started
+	r.terminal += other.terminal
+}
+
+func (r *wrapperRollup) addLeaf(state core.StateCategory) {
+	r.total++
+	switch state {
+	case core.StateStarted:
+		r.started++
+	case core.StateStaged:
+		r.staged++
+	case core.StateUnstarted:
+		r.nextUp++
+	case core.StateBacklog:
+		r.backlog++
+	case core.StateCompleted, core.StateCanceled:
+		r.terminal++
+	}
+}
+
+func (r wrapperRollup) derivedState() core.StateCategory {
+	if r.total > 0 && r.terminal == r.total {
+		return core.StateCompleted
+	}
+	if r.started > 0 || r.terminal > 0 {
+		return core.StateStarted
+	}
+	if r.staged > 0 {
+		return core.StateStaged
+	}
+	if r.nextUp > 0 {
+		return core.StateUnstarted
+	}
+	if r.backlog > 0 {
+		return core.StateBacklog
+	}
+	return core.StateUnstarted
 }
 
 // publishMilestoneClosedEscalation fans an escalation.opened event

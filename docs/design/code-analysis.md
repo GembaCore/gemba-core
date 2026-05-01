@@ -203,6 +203,15 @@ Stale indexes surface as warnings in persona responses:
 *"analysis from 12h ago; reindex recommended before relying on
 `health_report`."*
 
+The first shipped operator-facing freshness surface is the operational
+context card's scope-status pill. For a worktree-backed session, Gemba
+reads `.gitnexus/meta.json`, compares `lastCommit` with `git rev-parse
+HEAD`, and renders GitNexus as `current`, `stale`, `missing`, or
+`unknown`. A dirty worktree forces the pill to `stale` even if
+`lastCommit == HEAD`, because uncommitted source is not represented in
+the graph. This is intentionally read-only; scheduling re-index runs
+remains a separate follow-up.
+
 ## API surface
 
 | Path | Verb | Purpose |

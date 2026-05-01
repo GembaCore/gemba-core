@@ -5,10 +5,12 @@ decision: gm-1avi
 
 # D15 — Acceptance: native + gastown end-to-end builds of a target SPA via beads
 
-> **Status:** Draft. Implementation deferred. This doc is the contract
-> for the implementation epic `gm-root.27` and the 20 child beads under it.
-> Any agent picking up a child bead reads this doc to understand the
-> contract their bead must honor.
+> **Status:** Active implementation. This doc remains the contract for
+> the `gm-root.27` acceptance harness, but the code now includes the
+> shared Playwright body, mock-backed CI default, real native-agent
+> opt-in, demo-mode video capture, narration JSON, and screenshot
+> artifacts. Keep this document in sync with
+> `testing/acceptance/temperature-spa/README.md` and the shared spec.
 >
 > **Decision:** [gm-1avi](../../) (D15)
 > **Implementation epic:** [gm-root.27](../../)
@@ -29,12 +31,25 @@ Implement a headless, fully-autonomous end-to-end acceptance test that:
 7. On any oracle failure, files a bug bead in the gemba rig (NOT the target rig) with full reproduction context.
 8. Writes a structured report (JSON + markdown) capturing the run.
 
-Two variants ship together:
+Two variants ship together, with a third execution mode for demos:
 
-- **Native** (default CI; <15 min wallclock with MockAgentRunner): pool reuse via `SessionReady` on a local claude binary.
+- **Native** (default CI): runs through `--orchestration=mock` so the
+  dispatch loop, escalation path, build/serve gates, and oracle run
+  deterministically without model credentials.
+- **Native real-agent** (opt-in): runs through the native orchestrator
+  with `GEMBA_ACCEPTANCE_REAL_AGENTS=1`. The default real-agent path is
+  Codex via `gemba-codex-driver`; set `GEMBA_ACCEPTANCE_AGENT=claude`
+  to use Claude Code.
 - **Gastown** (manual / scheduled; opt-in via env): pool reuse via `gt sling` across rigs.
+- **Demo mode** (`GEMBA_ACCEPTANCE_DEMO_MODE=1`): records video,
+  screenshots key moments, and emits narration JSON for the edited MP4.
 
-Both variants share the same Playwright spec body, target JSONL pack, oracle, and MockAgentRunner. They differ only in pool scope (`local` vs `<rig>`), server flag (`--orchestration=native` vs `--orchestration=gastown`), and bootstrap surfaces (none vs UI-driven `gt rig create` + `gt polecat create`).
+The variants share the same Playwright spec body, target JSONL pack,
+and oracle. They differ in pool scope (`local` vs `<rig>`), server flag
+(`--orchestration=mock`, `--orchestration=native`, or
+`--orchestration=gastown`), runner behavior (template mock vs real
+agent), and bootstrap surfaces (none vs UI-driven `gt rig create` +
+`gt polecat create`).
 
 ## 2. Why first-class
 
@@ -118,7 +133,13 @@ After running the template, the mock:
 
 ### 4.4 Real-vs-mock factory
 
-A single `AgentRunnerFactory` interface; `NewAgentRunner(env)` returns mock by default, real-claude when `GEMBA_ACCEPTANCE_REAL_AGENTS=1`. The real-claude branch wraps the existing native adapter spawn path — does not duplicate it.
+A single `AgentRunnerFactory` interface; `NewAgentRunner(env)` returns
+the deterministic mock runner by default and a real native-agent runner
+when `GEMBA_ACCEPTANCE_REAL_AGENTS=1`. The real path defaults to Codex
+through `gemba-codex-driver` / `codex_exec`; set
+`GEMBA_ACCEPTANCE_AGENT=claude` to exercise the same flow through Claude.
+Both branches wrap the native adaptor spawn path rather than duplicating
+session orchestration.
 
 ## 5. Target JSONL pack (D17, gm-xw8a)
 
@@ -295,16 +316,16 @@ If the editor surface ever ships without these testids, the acceptance test fail
 
 ### 8.2 Differences
 
-| | Native | Gastown |
-|---|---|---|
-| Server flag | `--orchestration=native` | `--orchestration=gastown` |
-| Pool TOML scope | `[pool.local.acceptance-engineer]` | `[pool.<rig-name>.acceptance-engineer]` |
-| Pre-server bootstrap | none beyond `gemba newproject` | UI-driven `gt rig create` + `gt polecat create` |
-| Capability probe | not required | `gt` binary version checked at startup; fail fast if too old |
-| Teardown | rm temp dir, free ports | rm temp dir, free ports, UI-driven `gt rig remove` |
-| Time budget | <15 min mocked / <90 min real | <30 min mocked / hours real |
-| CI viability | ✅ default | ❌ manual / nightly only |
-| Pool reuse path | `/done` slash → `bead-done` → `SessionReady` | `/done` slash → `bead-done` → `SessionReady` (same) |
+| | Native mock | Native real-agent | Gastown |
+|---|---|---|---|
+| Server flag | `--orchestration=mock` | `--orchestration=native` | `--orchestration=gastown` |
+| Pool TOML scope | local mock acceptance pool | `[pool.local.acceptance-engineer]` with Codex by default or Claude via `--agent claude` | `[pool.<rig-name>.acceptance-engineer]` |
+| Pre-server bootstrap | none beyond `gemba newproject` | none beyond `gemba newproject` and local agent credentials/CLI availability | UI-driven `gt rig create` + `gt polecat create` |
+| Capability probe | mock adaptor self-check | `gemba-codex-driver` / Claude driver and credentials checked before dispatch | `gt` binary version checked at startup; fail fast if too old |
+| Teardown | rm temp dir, free ports | rm temp dir, free ports, terminate native sessions | rm temp dir, free ports, UI-driven `gt rig remove` |
+| Time budget | <15 min | <90 min real agent generation | <30 min mocked / hours real |
+| CI viability | default | manual / release evidence | manual / nightly only |
+| Pool reuse path | simulated session lifecycle | Codex is one-shot per dispatch; Claude can reuse ready sessions through done-skill flow | `/done` slash → `bead-done` → `SessionReady` |
 
 ### 8.3 Done-skill pin
 
@@ -312,7 +333,11 @@ Both variants pin the `acceptance-engineer` persona's done-skill to the `/done` 
 
 ### 8.4 Concurrent runs
 
-Each variant runs against an ephemeral Dolt server on a random port. Two acceptance runs (native + gastown) on the same machine concurrently is supported. CI default runs only native; gastown is opt-in via `GEMBA_ACCEPTANCE_RUN_GASTOWN=1`.
+Each variant runs against an ephemeral Dolt server on a random port. Two
+acceptance runs (native + gastown) on the same machine concurrently is
+supported. CI default runs the mock-backed native wrapper; real native
+agents and Gastown remain opt-in through `GEMBA_ACCEPTANCE_REAL_AGENTS=1`
+and `GEMBA_ACCEPTANCE_RUN_GASTOWN=1`.
 
 ## 9. Implementation epic — wave structure
 

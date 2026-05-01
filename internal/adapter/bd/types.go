@@ -75,14 +75,17 @@ var beadsStateMap = core.StateMap{
 // the write path. The forward map is many-to-one (several bd statuses
 // fold into StateStarted); the inverse picks the representative bd
 // status the adaptor emits when a caller patches by StateCategory
-// alone. StateStaged and StateCanceled have no bd-native status —
-// UpdateWorkItem refuses those rather than silently picking a surprising
+// alone. StateStaged rides on `open` plus stagedLabel because bd has no
+// native staging status. StateCanceled has no bd-native status —
+// UpdateWorkItem refuses it rather than silently picking a surprising
 // mapping (e.g. canceled → closed would merge with completed).
 func bdStatusForCategory(cat core.StateCategory) (string, bool) {
 	switch cat {
 	case core.StateBacklog:
 		return "deferred", true
 	case core.StateUnstarted:
+		return "open", true
+	case core.StateStaged:
 		return "open", true
 	case core.StateStarted:
 		return "in_progress", true
@@ -106,6 +109,9 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 		// unreachable: adaptor startup calls StateMap.Validate and new
 		// bd statuses need a map entry first.
 		category = core.StateBacklog
+	}
+	if category == core.StateUnstarted && hasLabel(b.Labels, stagedLabel) {
+		category = core.StateStaged
 	}
 	priority := b.Priority
 	custom := map[string]any{}
@@ -219,6 +225,11 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 // when WorkItemFilter.Kinds asks only for milestones.
 const milestoneLabel = "type:milestone"
 
+// stagedLabel is the bd-side convention for core.StateStaged: bd has no
+// native "staged" status, so staged beads remain status=open with this
+// label attached.
+const stagedLabel = "staged:true"
+
 // hasLabel reports whether needle appears in haystack. Case-sensitive
 // by design: bd labels are lowercased by convention and exact match is
 // the same rule bd applies on --label filtering.
@@ -229,6 +240,29 @@ func hasLabel(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+func setStagedLabel(labels []string, staged bool) []string {
+	out := make([]string, 0, len(labels)+1)
+	seen := false
+	for _, l := range labels {
+		if l == stagedLabel {
+			continue
+		}
+		out = append(out, l)
+	}
+	if staged {
+		for _, l := range out {
+			if l == stagedLabel {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			out = append(out, stagedLabel)
+		}
+	}
+	return out
 }
 
 // buildWorkItemID composes a workspace-qualified WorkItemID from the

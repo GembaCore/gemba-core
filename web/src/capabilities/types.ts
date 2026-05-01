@@ -8,7 +8,13 @@
 
 export type Transport = 'api' | 'jsonl' | 'mcp';
 
-export type StateCategory = 'backlog' | 'unstarted' | 'started' | 'completed' | 'canceled';
+export type StateCategory =
+  | 'backlog'
+  | 'unstarted'
+  | 'staged'
+  | 'started'
+  | 'completed'
+  | 'canceled';
 
 export type GroupMode = 'static' | 'pool' | 'graph';
 

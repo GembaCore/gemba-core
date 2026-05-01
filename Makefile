@@ -54,7 +54,9 @@ build-go-only: build-sentinels ## build without rebuilding the frontend (fast de
 ## Sentinel binaries. gemba-bridge / gemba-state / gemba-ask are the
 ## shell-callable set; gemba-mcp is the MCP-tool server variant an
 ## MCP-native agent can speak to over stdio instead (gm-97w7.2);
-## gemba-bd-hook is the out-of-process notify trigger (gm-e4.3.3).
+## gemba-bd-hook is the out-of-process notify trigger (gm-e4.3.3);
+## gemba-codex-driver is the non-interactive Codex exec lifecycle
+## driver for native auto-dispatch.
 ## All ship alongside the main binary so install-bridge can place
 ## them on PATH in the session's worktree env.
 build-sentinels: ## build the sentinel CLIs + MCP server + bd hook
@@ -63,6 +65,7 @@ build-sentinels: ## build the sentinel CLIs + MCP server + bd hook
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba-ask     ./cmd/gemba-ask
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba-mcp     ./cmd/gemba-mcp
 	go build -ldflags="$(LDFLAGS)" -o bin/gemba-bd-hook ./cmd/gemba-bd-hook
+	go build -ldflags="$(LDFLAGS)" -o bin/gemba-codex-driver ./cmd/gemba-codex-driver
 
 ## --- Test / Lint ---
 

@@ -102,7 +102,7 @@ Stable terms used throughout this document and the code.
 | **Parallel-safe batch** | An independent set in the conflict graph, dispatchable concurrently. |
 | **Workspace** | The existing `core.Workspace` struct (`mayor/rig/internal/core/orchestration.go:174`): repo + branch + base SHA + isolation kind. `WorkspaceKind` enumerates `worktree, container, k8s_pod, vm, exec, subprocess`; `worktree` is the preferred dispatch target. |
 | **Operational target** | The (repo, branch, worktree-path) tuple a bead would land in. Derived from existing Workspace + the bead's `RepositoryIDs` / branch convention. Distinct from `targets[]` (which is *files*). |
-| **Operational context** | The full per-agent picture: identity (`AgentRef`), live workspace (`Workspace`: repo + branch + worktree path + isolation kind), live session (`Session`: status + heartbeat + cost), session profile (concepts + files), and session health (pressure + drift + time). Pulled together by the planner; surfaced as a single card in coach mode. |
+| **Operational context** | The full per-agent picture: identity (`AgentRef`), live workspace (`Workspace`: repo + branch + worktree path + isolation kind), live session (`Session`: status + heartbeat + cost), session profile (concepts + files), session health (pressure + drift + time), and scope status (Git cleanliness, upstream sync, source-analysis freshness). Pulled together by the planner; surfaced as a single card in coach mode. |
 | **Source analysis** | An abstract capability that, given a symbol or file, returns its dependency neighborhood. Implementations may use GitNexus, ctags, LSP, or a stub. The planner also schedules *re-indexing* of this capability — see §8. |
 | **Source analysis scan** | A re-index run of the configured source analysis tool (e.g. `gitnexus analyze`). Scheduled by the planner as a first-order activity (§8). |
 | **Turn retrospective** | A post-merge analysis that compares declared (`targets`, `concepts`) against actual (files touched, symbols changed) and updates priors. |
@@ -298,6 +298,13 @@ reads it through one query but the data lives in the right places.
   `worktree`), `repository`, `branch`, `base_sha`, `status`,
   `isolation`, `provider_metadata`, `created_at`, `released_at`.
 - `Assignment` — binds `agent → work_item → workspace → session`.
+- `ScopeStatus` — derived at read time from the worktree path (typed
+  `Workspace.worktree_path` or session provider metadata). Includes
+  Git state (`clean` / `dirty` / `unavailable`), changed-file count,
+  upstream ahead/behind counts, and GitNexus index freshness compared
+  with `HEAD`. A dirty worktree marks analysis stale even when the
+  indexed commit matches `HEAD`, because the graph cannot include
+  uncommitted source.
 
 **New: `session_profiles` table** — keyed by `session_id`, joins to
 the above and adds:
@@ -674,7 +681,9 @@ A SPA view with two halves:
   worktree path, isolation kind (with a worktree icon for the
   preferred case), session status, last heartbeat, top concepts in
   the profile, context pressure, concept drift, time-on-task,
-  pinned intent (§4 Layer 1.3), runway estimate (§4 Layer 1.4).
+  scope status pills (Git clean/dirty, upstream sync, GitNexus
+  current/stale/missing), pinned intent (§4 Layer 1.3), runway
+  estimate (§4 Layer 1.4).
   This is the operator's at-a-glance view of *who is loaded with
   what* and *where they're working*.
 - **Dispatch grid** — rows are ready beads, columns are agent cards

@@ -1,5 +1,8 @@
 import type { StateCategory, WorkItem } from '@/types/core.gen';
+import type { CSSProperties } from 'react';
 import { WorkItemCard } from './WorkItemCard';
+import { useDraggable, useDroppable } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
 
 export interface BoardColumnProps {
   category: StateCategory;
@@ -7,6 +10,11 @@ export interface BoardColumnProps {
   items: WorkItem[];
   // Forwarded to each WorkItemCard. Clicking a card fires this with the id.
   onSelect?: (id: string) => void;
+  // Optional dnd-kit target id. When set, the whole column becomes a
+  // drop zone for work-item restaging.
+  droppableID?: string;
+  // Makes each WorkItemCard a dnd-kit drag handle.
+  draggable?: boolean;
   // Open-escalation count by work-item id (gm-e11.3). Threaded by the
   // page so the lookup is O(1) per card.
   escalationCounts?: Map<string, number>;
@@ -29,13 +37,21 @@ export function BoardColumn({
   label,
   items,
   onSelect,
+  droppableID,
+  draggable = false,
   escalationCounts,
 }: BoardColumnProps) {
   const sorted = sortItems(items);
+  const droppable = useDroppable({ id: droppableID ?? `disabled|${category}`, disabled: !droppableID });
   return (
     <section
+      ref={droppable.setNodeRef}
       data-testid={`board-column-${category}`}
-      className="flex h-full min-w-[18rem] flex-1 flex-col rounded-md bg-neutral-50 dark:bg-neutral-950"
+      data-drop-over={droppable.isOver || undefined}
+      className={
+        'flex h-full min-w-[18rem] flex-1 flex-col rounded-md bg-neutral-50 transition-colors dark:bg-neutral-950 ' +
+        (droppable.isOver ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-offset-neutral-950' : '')
+      }
     >
       <header className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-600 dark:text-neutral-400">
@@ -51,14 +67,51 @@ export function BoardColumn({
       <ol className="flex-1 space-y-2 overflow-y-auto p-2">
         {sorted.map((item) => (
           <li key={item.id}>
-            <WorkItemCard
-              item={item}
-              onSelect={onSelect}
-              escalationCount={escalationCounts?.get(item.id) ?? 0}
-            />
+            {draggable ? (
+              <DraggableWorkItemCard
+                item={item}
+                onSelect={onSelect}
+                escalationCount={escalationCounts?.get(item.id) ?? 0}
+              />
+            ) : (
+              <WorkItemCard
+                item={item}
+                onSelect={onSelect}
+                escalationCount={escalationCounts?.get(item.id) ?? 0}
+              />
+            )}
           </li>
         ))}
       </ol>
     </section>
+  );
+}
+
+function DraggableWorkItemCard({
+  item,
+  onSelect,
+  escalationCount,
+}: {
+  item: WorkItem;
+  onSelect?: (id: string) => void;
+  escalationCount: number;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    opacity: isDragging ? 0.85 : undefined,
+    zIndex: isDragging ? 50 : undefined,
+    position: isDragging ? 'relative' : undefined,
+    touchAction: 'none',
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <WorkItemCard
+        item={item}
+        onSelect={onSelect}
+        escalationCount={escalationCount}
+        draggable
+      />
+    </div>
   );
 }

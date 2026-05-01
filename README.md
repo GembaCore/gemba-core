@@ -35,7 +35,7 @@ actionable feedback as they go. Gemba is built around that metaphor.
 ![Gemba board (default view)](docs/img/board2.png)
 
 Gemba features Kanban like planning, execution, and management of
-complex vibe coding projects in a single pane of glass. Oganize, review,
+complex vibe coding projects in a single pane of glass. Organize, review,
 and dispatch large, parallel batches of work and monitor real progress
 towards milestones, all with built-in coaching and drift detection.
 Start a new project with a guided conversation or import your existing
@@ -196,8 +196,10 @@ existing git repo**.
 ### Advanced: importing existing work
 
 If you have an existing Jira project, Beads workspace, or source-code
-repo you want to bring into Gemba, use the **Import from advanced
-source** path accessible from Setup (`/setup#import`).
+repo you want to bring into Gemba, use the legacy advanced import wizard
+at `/bootstrap` while the Settings/import consolidation lands. For
+existing Beads databases, the project picker's _needs setup_ bind flow is
+the current preferred path.
 
 For the common case of pointing Gemba at an existing Beads rig and
 rendering it immediately:
@@ -208,9 +210,10 @@ make build
 # -> http://127.0.0.1:7666
 ```
 
-Gemba reads the rig, renders the Kanban, and tails state changes. No
-agent sessions start because no OrchestrationPlane is wired — that's a
-supported mode, not an error.
+Gemba reads the rig, renders the Kanban, tails state changes, and wires
+the native terminal orchestrator by default. If you want a read-only /
+human-driven board with no session controls, pass
+`--orchestration=none`.
 
 End-to-end setup (both `--beads-dir` CLI mode and `--dolt-url`
 direct-SQL mode), expected banner output, and troubleshooting:
@@ -218,8 +221,8 @@ direct-SQL mode), expected banner output, and troubleshooting:
 
 ### Native terminal orchestration
 
-Add `--orchestration=native` to light up agent sessions without any
-external daemon:
+Native is the default orchestration mode. Spell it explicitly when you
+want the command to document that choice:
 
 ```bash
 ./bin/gemba serve --beads-dir <rig> --orchestration=native
@@ -227,7 +230,8 @@ external daemon:
 
 On boot, the native adaptor auto-detects an available terminal backend
 (tmux in priority order, then iTerm2, then Terminal.app) and exposes
-`/sessions` in the SPA. Clicking "New session" for a bead:
+`/sessions` in the SPA. Clicking "New session" for a bead or dragging a
+runnable bead into **In Progress**:
 
 1. Provisions a git worktree (`git worktree add -b bead/<id>`).
 2. Runs `gemba install-bridge` in the worktree (idempotent merge into
@@ -282,7 +286,8 @@ Phase 0 is the default: no `pool.toml`, no daemons, identical behavior
 to the basic flows above. Pools are opt-in.
 
 **Native quickstart** (one persona, two pool members, agents.toml
-already has `claude` with `max_parallel = 4`):
+already has `claude` with `max_parallel = 4`; add `codex` when you want
+OpenAI Codex CLI sessions):
 
 ```toml
 # pool.toml
@@ -383,18 +388,31 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 
 ## ✨ What's New
 
-### Recent (April 2026)
+### Recent (May 2026)
 
-- **`/recent` view — agent-created beads at a glance** (`gm-g5xz`) —
-  new top-level pane between **Refine** and **Review** that lists
-  beads created in a chosen window (default last 24h). Eight preset
-  stops (`1h` / `4h` / `12h` / `24h` / `3d` / `7d` / `30d` / `All`) +
-  an **Advance to now** button let the operator scrub the watermark
-  forward (drain) or backward (see more). The cutoff persists in
-  `localStorage` per browser; no per-bead "reviewed" state — the
-  watermark is the entire control surface. Backed by a new
-  `?created_since=` query param on `GET /api/work-items` that pushes
-  down to `bd list --created-after` for cheap filtering.
+- **Scope status pills on live session cards** — operational context
+  cards now show top-level health of the session scope: Git
+  clean/dirty, upstream sync (`synced`, `ahead`, `behind`,
+  `diverged`), and GitNexus analysis freshness against the checked-out
+  `HEAD`. Dirty worktrees mark analysis stale because the graph cannot
+  include uncommitted source.
+- **Codex native agent driver** — `.gemba/agents.toml` can declare a
+  `codex` agent type using `binary = "gemba-codex-driver"` and
+  `preamble = "codex_exec"`. The driver runs `codex exec --json`,
+  emits `gemba-state` lifecycle frames, and closes the bead on success.
+  It is intentionally one-shot: auto-dispatch starts a fresh Codex
+  session when no active Codex work exists rather than reusing an idle
+  pane.
+- **Wrapper cascade dispatch** — dragging an epic or milestone into
+  **In Progress** marks the wrapper active, stages backlog descendants,
+  and dispatches currently unblocked runnable leaf beads up to the
+  configured pool limit. Wrapper state reflects descendant state rather
+  than running as agent work itself.
+- **Recent is now a Board named view** (`gm-uipx.18`) — the standalone
+  `/recent` route remains as a deep link, but the sidebar no longer
+  treats Recent as a top-level concern. Use the Board's **View →
+  Recent** chip for the last-24h created-items list, or **Done · 7d**
+  for recent completions.
 - **Autonomous dispatch (sticky session pools)** (`gm-s47n.10`/`.11`/
   `.12`/`.16`) — long-lived agent sessions per `(scope, persona)` with
   `SessionReady` idle state, in-place recycle (no respawn), an idle-pane
@@ -437,16 +455,17 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   infrastructure across Epic / WorkItem / RecommendOrder views. URL
   codec with kind-replace/stack semantics for deep-link navigation;
   per-route Help tab pinned in the panel; shared `<TabBar>` component
-  for in-pane nav (`gm-e12.19.7`).
+  for in-pane nav (`gm-e12.19.7`). Epic and WorkItem details include a
+  Milestone → Epic → Work item breadcrumb when ancestry is known.
 - **Insights with `/api/v1/metrics/series` time-series proxy**
   (`gm-e12.17.1`, `gm-e9m0`) — `/insights` ships a three-tile MVP on top
   of recharts (sprint burn-down, dispatch rate, escalation rate) backed
   by a Prometheus query proxy with capability-manifest gating.
   `/api/v1/metrics/series` is the public surface; the SPA hides tiles
   when no Prometheus URL is configured.
-- **Milestones across the kanban + drawer** (`gm-98sq` / `gm-935r` /
+- **Milestones across the kanban + RHP** (`gm-98sq` / `gm-935r` /
   `gm-o2k9` / `gm-mqiz` / `gm-4se1` / `gm-yyo8`) — milestone child-epic
-  panel inside the WorkItemDrawer, drag-an-epic-onto-a- milestone to
+  panel inside the RHP detail view, drag-an-epic-onto-a-milestone to
   re-parent, milestone dropdown on epic detail, auto-close + notify when
   the last child closes, color stripe + M-pill on EpicCard, and
   selective milestone context threaded into the preamble for personas
@@ -482,15 +501,11 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 
 ### Coming soon
 
-- **Insights with Prometheus-backed time series** — sprint burn-down,
-  spawn rate, completion rate, stuck-session minutes, token spend,
-  escalation backlog. The data path was ratified as a Prometheus proxy
-  (`gm-sf51`): operators run a Prometheus instance scraping Gemba's
-  `/metrics` endpoint and the SPA queries Gemba's
-  `/api/v1/metrics/series` which translates to a Prometheus
-  `query_range`. Implementation deferred until the proxy chain lands;
-  the Insights tab is hidden from the sidebar in the meantime (`gm-flij`
-  re-enables it).
+- **Insights expansion** — the current `/insights` MVP renders three
+  Prometheus-backed tiles. Follow-up work adds more series (stuck
+  sessions, token spend, escalation backlog) and returns Insights to
+  first-order navigation once the proxy chain is mature enough for
+  everyday use.
 - **Workflow** — beads molecules surfaced as a first-class Gemba concept
   (Library / Active runs / Authoring + epic-gate enforcement). See
   [`docs/design/workflows.md`](docs/design/workflows.md) for the
@@ -505,6 +520,7 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 │   ├── gemba-bridge/             # hook-shim subprocess Claude Code (+ friends) invoke per lifecycle event
 │   ├── gemba-state/              # session-status sentinel CLI (ready / working / prompting / stalled)
 │   ├── gemba-ask/                # Coach/Manager question/blocker sentinel CLI
+│   ├── gemba-codex-driver/       # one-shot Codex exec driver for native sessions
 │   └── gemba-mcp/                # MCP-tool server variant of gemba-ask + gemba-state
 ├── core/                         # adaptor-agnostic types: WorkItem, AgentRef, Relationship, ...
 ├── internal/
@@ -517,6 +533,7 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 │       ├── noop/                 # in-memory reference (both planes)
 │       ├── bd/                   # WorkPlane: Beads (CLI + direct Dolt SQL modes)
 │       ├── native/               # OrchestrationPlane: native tmux / iTerm2 / Terminal.app (default)
+│       ├── mock/                 # OrchestrationPlane: deterministic in-process acceptance runner
 │       ├── gt/                   # OrchestrationPlane: Gas Town (optional)
 │       ├── jira/                 # WorkPlane: Jira (forcing-function)
 │       ├── langgraph/            # OrchestrationPlane: LangGraph (forcing-function)
@@ -525,8 +542,8 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 │   └── src/
 │       ├── api/                  # codegenned client + types
 │       ├── capabilities/         # capability-manifest readers + JSX gates
-│       ├── pages/                # Board, Sessions, Sprints, AgentGroups, AgentDetail, ...
-│       ├── components/           # WorkItemDrawer, Palette, AgentGroupBoard, ...
+│       ├── pages/                # Board, Refine, Sessions, Sprints, AgentGroups, AgentDetail, ...
+│       ├── components/           # Board, RHP detail tabs, sessions, project picker, ...
 │       └── extensions/           # adaptor-namespaced widgets (gated by capability manifest)
 ├── testing/                      # public conformance harness (importable as github.com/GembaCore/gemba-core/testing)
 │   ├── fixtures/                 # JSON fixtures used by the harness + scripts/

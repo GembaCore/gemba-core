@@ -33,6 +33,10 @@ This document covers v1:
   published guides, cold-start branch.
 - The detail-tab system — URL state, kind-replace / kind-stack
   semantics, deep-link, per-current-route scoping.
+- Detail content conventions — work-item and epic details include a
+  breadcrumb when lineage is known (`Milestone → Epic → Work item` or
+  `Milestone → Epic`), and breadcrumb clicks pop the matching detail
+  into the RHP.
 - The migration plan — drawer-by-drawer, with teardown at the end.
 
 Out of scope (deferred):
@@ -152,6 +156,20 @@ Two existing URL conventions need migration:
 
 The migration shim runs once on first paint of a route; it does not
 loop with `setSearchParams` causing re-renders.
+
+### Detail breadcrumbs
+
+WorkItem and Epic detail tabs render a compact breadcrumb above their
+overview section when ancestry is available in the work-item cache.
+Examples:
+
+- `Milestone → Epic → Work item`
+- `Milestone → Epic`
+
+Each ancestor crumb is clickable and calls `popDetail` with the
+appropriate kind/id so the operator can move up the hierarchy without
+leaving the panel. The current item crumb is present for context but is
+not a navigation target.
 
 ## RHP context API
 

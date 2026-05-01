@@ -12,7 +12,7 @@
 
 ### 1.1 Vibe, density, voice
 - **Aesthetic:** Playful / illustrative. Friendly, approachable, not corporate. Think GitHub when it has personality, Basecamp's warmth without the preciousness.
-- **Density:** Comfortable. Balanced whitespace; information-rich where work demands it (Grid, Insights), generous where reflection matters (Epic drawer, Gemba walk).
+- **Density:** Comfortable. Balanced whitespace; information-rich where work demands it (Board list, Insights), generous where reflection matters (RHP detail tabs, Gemba walk).
 - **Voice + tone:** Confident, friendly, precise. Copy is short. Product speaks in plain verbs. No product-marketing hedging.
 
 ### 1.2 Palette
@@ -68,18 +68,17 @@
 
 Top-to-bottom, in order:
 
-1. **Board** — home (Gemba view; absorbs the former standalone "Backlog" surface as a built-in view-mode + preset, see §4 and §5.2)
-2. **Gemba walks**
-3. **Grid**
-4. **Escalations**
-5. **Setup** — single-surface admin (adaptors / personas / packs / agents / project config / import from advanced source; see §5.20)
-6. **Settings**
+1. **Plan** — `/board`; home execution surface with board/list layouts, milestone and scope filters, and named views such as Recent and Done · 7d.
+2. **Refine** — `/refine`; backlog grooming and dispatch-status triage.
+3. **Review** — `/walk`; Gemba walk surface for work-in-progress review.
+4. **Triage** — `/escalations`; blockers, HITL, permission prompts, and degraded-adaptor attention.
+5. *(divider)*
+6. **Sessions** — `/sessions`; live runtime inventory.
+7. **Settings** — `/settings`; global/project configuration, with `/settings/pools` for pool dispatch.
 
-> **Sidebar collapse rationale (ratified 2026-04-26):** Two prior items collapse into the list above.
-> - **Board ⇐ Backlog.** Both are WorkItem views over the same data; Backlog was a state-filtered list. Board now exposes a kanban / list view-mode toggle (§4.10) plus a "Backlog & Next Up" preset (§4.11). Standalone `/backlog` route persists as a deep-link redirect to `/board?view=list&preset=backlog`.
-> - **Setup ⇐ Capability browser + Agents + Personas + Packs + Project config + Import from advanced source.** All six are configuration surfaces with low daily-traffic. They become sections within `/setup` using the single-scroll + sticky section nav pattern already specified for Project config (§5.16). Old routes deep-link to the matching section.
+> **Sidebar consolidation rationale (updated 2026-05-01):** Recent and Grid are not top-level concerns. **Recent** is a Board named view; `/recent` survives as a deep link. **Grid** folds into Board's list/power-list layout; `/grid` redirects to `/board?layout=list&power=1`. Agents, Agent groups, Graph, Capabilities, Insights, Drift, Sprints, and Coach remain routeable secondary surfaces but do not occupy first-order sidebar slots.
 
-Secondary surfaces (`/plan`, `/graph`, `/insights`, `/qa/health`, `/qa/gates`, `/checkpoints`) are NOT in the sidebar. They're reachable via:
+Secondary surfaces (`/graph`, `/insights`, `/drift`, `/coach`, `/sprints`, `/agent-groups`, `/capabilities`, `/project/config`, `/qa/health`, `/qa/gates`, `/checkpoints`) are NOT in the sidebar. They're reachable via:
 - **Cmd-K** (primary: typing the surface name jumps to it)
 - **Deep link** (URL-navigable)
 - **Inline buttons** inside related surfaces (e.g., "Insights" button on Board top-right)
@@ -116,7 +115,7 @@ No active-guardrail banner in the top bar. Guardrail violations surface inline o
 ### 2.5 Deep-link conventions
 
 - `/board` — Gemba view (home)
-- `/board/:epicId` — Epic drawer auto-opens on top of the board
+- `/board/:epicId` — Epic detail opens in the RHP on top of the board
 - `/w/:workspace/*` — prefix for when URL needs to be workspace-unambiguous
 - Workspace-in-URL is **optional** (omit uses active workspace)
 - Query params persist filter state (e.g., `?phase=building&swimlane=by-parent-epic`)
@@ -243,9 +242,9 @@ Top-to-bottom inside the card:
    - **Perspective indicator** (small persona icons, 3-max visible, faded; click opens perspective sidebar)
 
 Not in card anatomy (explicitly excluded per template):
-- Age since state change — available in drawer, not card
+- Age since state change — available in the RHP detail tab, not card
 - Assignee — not a concept
-- Labels — in drawer, not card
+- Labels — available in the RHP detail tab, not card
 
 ### 4.3 Columns
 
@@ -264,8 +263,8 @@ Swimlane switcher (top-right of board): by parent-epic / by parallel-group / by 
 ### 4.5 Interactions
 
 - **Drag:** whole-card-draggable. Between columns = state transition (nonce-gated per mode). Within column = reorder (sets `UserOrder`).
-- **Double-click:** opens Epic drawer.
-- **Right-click:** context menu (stage / start / defer / open in graph / apply checkpoint / open drawer / copy ID).
+- **Double-click:** opens Epic detail in the RHP.
+- **Right-click:** context menu (stage / start / defer / open in graph / apply checkpoint / open detail / copy ID).
 - **Space:** multi-select current card.
 - **Cmd-A:** select all visible.
 - **Enter after selection:** "Stage selected" (if selections are OnDeck) or "Start selected" (if selections are Staged).
@@ -304,7 +303,7 @@ Board exposes two visual modes over the same query result. The `view` URL param 
 | `kanban` (default) | `/board` | Six-column drag surface; the canonical Gemba view |
 | `list` | `/board?view=list` | Flat dense list with state_category + kind filter chips and client-side title search; absorbs the former `/backlog` surface |
 
-Switcher lives in the board header next to the granularity toggle. Kanban list-mode shares the same query, drawer, and selection behavior as kanban-mode — only the rendering changes. Cmd-Shift-L toggles list ↔ kanban.
+Switcher lives in the board header next to the granularity toggle. Kanban list-mode shares the same query, RHP detail, and selection behavior as kanban-mode — only the rendering changes. Cmd-Shift-L toggles list ↔ kanban.
 
 `/grid` (§5.3) is intentionally NOT a Board view-mode: Grid is the power-user TanStack table with inline edit, column presets, and bulk-action ergonomics that don't fit a board frame. It stays a standalone surface in the sidebar.
 
@@ -354,14 +353,16 @@ Selecting a preset updates filter chips but doesn't lock them — users can laye
 - Inline-edit: **click-to-edit** (single click enters edit mode on supported fields; Escape cancels; Enter commits)
 - Selection: space-to-toggle; range-select with shift-click
 
-### 5.3.1 Recent view (`/recent`)
+### 5.3.1 Recent Board named view
 
 > Added 2026-04-30 (`gm-g5xz`). User-facing guide:
 > [`docs/concepts/recent-view.md`](concepts/recent-view.md).
 
-Reading surface that lists beads created in a chosen window. Top-level
-sidebar slot between **Refine** and **Review** so the operator can scan
-fresh agent output without committing to triage.
+Reading surface that lists beads created or completed in a chosen
+window. Current implementation is a Board named view, not a sidebar
+slot: use `/board?view=recent&layout=list` for new work and the
+`done-recent` Board view for recently completed work. `/recent` remains
+a legacy deep link for bookmarks.
 
 - **Cutoff control:** eight discrete preset stops (1h / 4h / 12h / 24h
   default / 3d / 7d / 30d / All) plus an **Advance to now** button that
@@ -372,8 +373,8 @@ fresh agent output without committing to triage.
   the entire control surface.
 - **Layout:** rows grouped by parent epic / milestone when the parent
   is also in the window; orphans under a **Standalone** group. Sort:
-  newest-first inside each group. Click row → standard work-item
-  drawer (same as Plan / Refine).
+  newest-first inside each group. Click row → standard work-item detail
+  tab in the RHP (same as Plan / Refine).
 - **Empty state:** `No new beads since {relative}. Try widening the
   window or wait for agents to produce work.`
 - **Backend:** `GET /api/work-items?created_since=<ISO8601>` —
@@ -402,9 +403,11 @@ Layout: **two-pane** — agenda left, chat right. PM panel pinned to bottom as u
 - **Pause / Resume:** menu option in top-right of the walk pane ("Pause walk", "End walk"). Not a prominent button — walks should feel continuous.
 - **Active-walk indicator in chrome:** yellow-tinted banner across the top of the content area: `Gemba walk active · 4 of 11 decided · [resume / end]`
 
-### 5.5 Persona roster — Setup section (was: `/personas`)
+### 5.5 Persona roster — current `/personas` deep route
 
-> **Folded into Setup (ratified 2026-04-26).** Renders as the "Personas" section inside `/setup` (§5.20). The legacy `/personas` route is a deep-link to `/setup#personas`.
+> **Current implementation:** `/personas` remains a routeable secondary
+> surface. The Setup consolidation described in §5.20 is proposed, not
+> the current route contract.
 
 
 - Layout: **grid of cards** (3-4 per row on comfortable desktop)
@@ -412,12 +415,12 @@ Layout: **two-pane** — agenda left, chat right. PM panel pinned to bottom as u
   - Icon / role (big) / variety badge (Coach = purple, Manager = navy)
   - Enabled toggle (persistent)
   - Current model (subtle, bottom)
-- Click card → expands drawer showing: personality statement / perspective statement / purview (with active phases) / skills opt-in list / budget policy
+- Click card → opens an RHP detail tab showing: personality statement / perspective statement / purview (with active phases) / skills opt-in list / budget policy
 - Edit config: **modal with TOML editor** (monospace, syntax-highlighted); saves to `.gemba/personas/<id>.toml`
 
-### 5.6 Epic drawer (drill-down from Board/Backlog)
+### 5.6 Epic detail tab (drill-down from Board/Refine)
 
-Overlay drawer (right side, 40% viewport width).
+Right-hand panel detail tab.
 
 - **Header:** Epic title / state pill / priority / parallel-group glyph / close X
 - **Primary surface:** member WorkItems rendered as **mini-kanban** (four thin columns: Ready / In Progress / Review / Done) with stage-swimlane headers ("Stage 0", "Stage 1", ...)
@@ -425,9 +428,9 @@ Overlay drawer (right side, 40% viewport width).
 - **Tabs below mini-kanban:** Description / DoD / Activity / Comments
 - **Inline state-change on members:** click state pill on a WorkItem → popover with valid transitions
 
-### 5.7 WorkItem drawer
+### 5.7 WorkItem detail tab
 
-Similar right-side drawer. Tabs: **Summary / Description / DoD / Activity / Comments**. (Edges tab consolidated into Summary via mini-graph; user answered they don't want a dedicated tab.)
+Similar RHP detail tab. Tabs: **Summary / Description / DoD / Activity / Comments**. (Edges tab consolidated into Summary via mini-graph; user answered they don't want a dedicated tab.)
 
 - **Edges display:** typed lists under Summary (blocks / parent_child / relates_to; adaptor extensions grouped below)
 - **Evidence:** rendered as a **table** on the Summary tab (not a separate tab — Evidence is always loaded if present)
@@ -441,9 +444,11 @@ Similar right-side drawer. Tabs: **Summary / Description / DoD / Activity / Comm
 - **Per-card primary CTA:** **Resolve** (primary button) or **Hand-off** (secondary, opens mini-modal to pick a persona)
 - **Inline context:** 2-3 lines of the triggering event, plus a link to the originating bead/session
 
-### 5.9 Capability browser — Setup section (was: `/capabilities`)
+### 5.9 Capability browser — current `/capabilities` deep route
 
-> **Folded into Setup (ratified 2026-04-26).** Renders as the "Adaptors" section inside `/setup` (§5.20). The legacy `/capabilities` route is a deep-link to `/setup#adaptors`.
+> **Current implementation:** `/capabilities` remains a routeable
+> secondary surface. The Setup consolidation described in §5.20 is
+> proposed, not the current route contract.
 
 
 - Layout: **adaptor-per-row**
@@ -491,11 +496,11 @@ Similar right-side drawer. Tabs: **Summary / Description / DoD / Activity / Comm
 - **Restore UX:** confirm-dialog with typing-guard
 - **Typing-guard copy:** "Type `restore` to confirm. This will roll back every git repo, the Beads database, live session state, sidecar, and artifacts to this checkpoint. Pushed commits cannot be un-pushed."
 
-### 5.15 Import from advanced source — Setup section (was: `/bootstrap`)
+### 5.15 Import from advanced source — legacy `/bootstrap` wizard
 
-> **Superseded by `docs/design/newproject.md` (ratified 2026-04-28; amended 2026-04-28 by gm-e12.21.3 + gm-root.17.13).** The primary project-creation path is now the unified **Create-project modal** opened from `/board` (the `/new` route is a redirect that auto-opens the modal). The optional conversational planner lives at `/onboard` and is reachable from the board's empty-state CTA when an LLM client is configured. The four-source Bootstrap wizard has been retired as the primary entry point. The advanced import paths (Jira / Beads workspace / Source-code repo) remain accessible from Setup as the "Import from advanced source" section. The legacy `/bootstrap` route redirects to `/setup#import`. The "Fresh" source tile is removed — that use case is handled by the Create-project modal.
+> **Superseded by `docs/design/newproject.md` (ratified 2026-04-28; amended 2026-04-28 by gm-e12.21.3 + gm-root.17.13).** The primary project-creation path is now the unified **Create-project modal** opened from `/board` (the `/new` route is a redirect that auto-opens the modal). The optional conversational planner lives at `/onboard` and is reachable from the board's empty-state CTA when an LLM client is configured. The four-source Bootstrap wizard has been retired as the primary entry point but still exists at `/bootstrap` for advanced imports while Settings/import consolidation remains unshipped. The "Fresh" source tile is removed — that use case is handled by the Create-project modal.
 
-**Import from advanced source** (Setup section `#import`):
+**Import from advanced source** (`/bootstrap`):
 
 Steps (3): **Source → Analysis → Plan review → Ratify**
 
@@ -504,18 +509,22 @@ Steps (3): **Source → Analysis → Plan review → Ratify**
 - **Plan review:** side-by-side — generated plan on left, consistency report on right. Report format: **summary-then-details** (top-line PASS/WARN/FAIL with drill-down per finding)
 - **Ratify:** nonce-confirmed commit of the project config
 
-### 5.16 Project config — Setup section (was: `/project/config`)
+### 5.16 Project config — current `/project/config` route
 
-> **Folded into Setup (ratified 2026-04-26).** Renders as the "Project config" section inside `/setup` (§5.20) — and provides the layout pattern (single-scroll + sticky section nav) that Setup itself uses at the outer level. The legacy `/project/config` route deep-links to `/setup#project-config`.
+> **Current implementation:** `/project/config` remains a shipped
+> deep route. The single-scroll Setup consolidation in §5.20 is a
+> proposed/historical design direction, not the current route contract.
 
 
 - Layout: **single-scroll** with sticky section nav on left
 - Sections: Values / Guardrails / Goals / Personas / Adaptors / Packs / Integrations / Mode / Subscriptions / Workspace repos / Advanced
 - **Values editor:** **modal** (table of current values; add/edit/remove; priority rank; statement textarea)
 
-### 5.17 Pack browser — Setup section (was: `/packs`)
+### 5.17 Pack browser — proposed Setup section
 
-> **Folded into Setup (ratified 2026-04-26).** Renders as the "Packs" section inside `/setup` (§5.20). The legacy `/packs` route deep-links to `/setup#packs`. The marketplace-grid layout is preserved within the section.
+> **Current implementation:** pack browsing is not a primary shipped
+> sidebar surface. Treat this as proposed Setup consolidation language
+> until a `/setup` route or replacement Settings section ships.
 
 
 - Layout: marketplace-grid (installed packs highlighted) with list view toggle
@@ -525,7 +534,7 @@ Steps (3): **Source → Analysis → Plan review → Ratify**
 
 ### 5.18 Worker session detail
 
-Accessed from: Epic drawer → member WorkItem with active session, OR Insights → Active Workers, OR Escalations → session-related escalation.
+Accessed from: Epic detail → member WorkItem with active session, OR Insights → Active Workers, OR Escalations → session-related escalation.
 
 Workspace.kind-specific affordances (from template):
 
@@ -537,9 +546,16 @@ Workspace.kind-specific affordances (from template):
 | subprocess | Process tree viewer |
 | exec | Last command + exit code |
 
-### 5.20 Setup (`/setup`) — admin consolidation
+### 5.20 Settings and admin consolidation — current + proposed
 
-**Route:** `/setup` (sidebar primary nav). Default landing section: Adaptors (most operationally relevant).
+**Current route contract:** `/settings` and `/settings/pools` are
+shipped Settings surfaces. `/project/config`, `/bootstrap`,
+`/capabilities`, `/agents`, and `/personas` remain separate deep routes.
+There is no shipped `/setup` primary sidebar pane; the single-scroll
+consolidation below is retained as a proposed/historical design target.
+
+**Proposed route:** `/setup` (sidebar primary nav). Default landing
+section: Adaptors (most operationally relevant).
 
 **Layout:** **Single-scroll** with sticky section nav on left — same pattern §5.16 specifies for Project config, lifted up one level. Each section renders the surface that previously stood alone.
 
@@ -552,11 +568,11 @@ Workspace.kind-specific affordances (from template):
 | `#personas` | **Personas** | §5.5 Persona roster | grid of persona cards + TOML editor modal |
 | `#packs` | **Packs** | §5.17 Pack browser | marketplace-grid + install UX |
 | `#project-config` | **Project config** | §5.16 Project config | values / guardrails / goals / mode / subscriptions / workspace repos / advanced (the inner sticky-nav from §5.16 collapses into a single nested accordion within this Setup section) |
-| `#import` | **Import from advanced source** | §5.15 Import from advanced source | 3-step import wizard (Jira / Beads workspace / Source-code repo) renders inline in this section; `/bootstrap` redirects here. New project creation goes through the Create-project modal opened from `/board` via the `/new` redirect or the top-bar `+`. |
+| `#import` | **Import from advanced source** | §5.15 Import from advanced source | 3-step import wizard (Jira / Beads workspace / Source-code repo) would render inline in this section. Current implementation keeps it at `/bootstrap`. New project creation goes through the Create-project modal opened from `/board` via the `/new` redirect or the top-bar `+`. |
 | `#workspace` | **Workspace + repos** | (new) | repository registry, surface allow-lists (gm-v8vr), workspace mode |
 
 **Behavior:**
-- **Deep links** for every legacy route land on the matching anchor (`/personas` → `/setup#personas`, etc.). Implemented as router-level redirects, not in-app links.
+- **Deep links** for every legacy route would land on the matching anchor (`/personas` → `/setup#personas`, etc.). This is not the current implementation.
 - **Sticky nav** highlights the section currently in view as the user scrolls; clicking jumps with smooth scroll + URL hash update.
 - **Per-section actions** (e.g., "Add adaptor", "Run conformance suite", "Install pack") render in a section-local toolbar at the top of each section, not in a global Setup toolbar.
 - **Health rollup:** Setup sidebar item shows a badge when any subsection has a degraded adaptor (per §6.5), an unsigned-pack confirmation pending, or a workspace-repo write-allow-list change pending review.
@@ -584,11 +600,11 @@ Retakes lane, session history, lease dashboard: v1.1 unless a Gemba walk promote
 
 ## 6. Interaction patterns
 
-### 6.1 Modal vs drawer vs page
+### 6.1 Modal vs panel vs page
 
 - **Modal** = destructive confirmations (restore checkpoint, force-close convoy, hard-override gate), nonce-gated persona output-apply, import wizard step boundaries (§5.15), Create-project modal (opened from `/board` via the `/new` redirect or the top-bar `+`), Onboarder ratification confirm at `/onboard`, project picker `BindDialog` (gm-root.17.14), value-edit forms, TOML editor on persona config.
-- **Drawer** = Epic detail, WorkItem detail, persona config read-only view, quick persona-consult, Gemba walk agenda-item detail. Drawers are dismissible with Escape and overlay (don't navigate).
-- **Page** = top-level navigation surfaces (Board / Backlog / Grid / Gemba walks / Escalations / Project Config / Settings / all deep-linked surfaces). Changing pages changes the URL and updates history.
+- **RHP detail tab** = Epic detail, WorkItem detail, persona config read-only view, quick persona-consult, Gemba walk agenda-item detail. Tabs are opened from the right-hand panel and can be dismissed independently.
+- **Page** = top-level navigation surfaces (Board / Refine / Review / Triage / Sessions / Settings / all deep-linked surfaces). Changing pages changes the URL and updates history.
 
 ### 6.2 Confirmation patterns (per workspace mode)
 
@@ -629,7 +645,7 @@ Destructive actions ALWAYS require typing-guard, regardless of mode: restore che
 - **Global:** (no overrides beyond gm-7hj defaults)
 - **Board:** Cmd-K opens palette; J/K/H/L navigate; Space selects; Enter acts on selection; Shift-Click range-selects
 - **Grid:** J/K/Home/End navigate; Space selects; Cmd-E edits focused row
-- **Drawer:** Enter opens focused member's drawer; Escape closes
+- **RHP:** Enter opens focused member's detail tab; Escape dismisses the active transient surface when applicable
 - **Persona chat:** (no overrides; Cmd-Enter sends)
 - **Gemba walk:** Cmd-G toggles walk; J/K navigate agenda; R/M/X/D decide (Ratify/Modify/reject/Defer)
 
@@ -698,7 +714,7 @@ Destructive actions ALWAYS require typing-guard, regardless of mode: restore che
 |---|---|
 | Jira link | open-new-tab |
 | XRay link | open-new-tab (consistent with Jira) |
-| GitHub PR | embed (inline preview in the drawer; full PR opens new tab if requested) |
+| GitHub PR | embed (inline preview in the RHP detail tab; full PR opens new tab if requested) |
 
 ---
 

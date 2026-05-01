@@ -145,19 +145,35 @@ func (t *Tmux) SendKeys(ctx context.Context, paneID, keys string) error {
 	if paneID == "" {
 		return fmt.Errorf("native/backend/tmux: SendKeys requires pane id")
 	}
-	args := []string{"send-keys", "-t", paneID}
 	// Split off a trailing "Enter" literal so tmux interprets it as
 	// the Return key, not the 5-char string.
 	if strings.HasSuffix(keys, "Enter") {
 		body := strings.TrimSuffix(keys, "Enter")
 		if body != "" {
-			args = append(args, body)
+			if err := t.inputText(ctx, paneID, body); err != nil {
+				return err
+			}
 		}
-		args = append(args, "Enter")
-	} else {
-		args = append(args, keys)
+		_, err := t.run(ctx, "send-keys", "-t", paneID, "Enter")
+		return err
 	}
-	_, err := t.run(ctx, args...)
+	return t.inputText(ctx, paneID, keys)
+}
+
+func (t *Tmux) inputText(ctx context.Context, paneID, text string) error {
+	if strings.Contains(text, "\n") || len(text) > 256 {
+		return t.pasteText(ctx, paneID, text)
+	}
+	_, err := t.run(ctx, "send-keys", "-t", paneID, text)
+	return err
+}
+
+func (t *Tmux) pasteText(ctx context.Context, paneID, text string) error {
+	buffer := "gemba-" + safeTmuxBufferName(paneID)
+	if _, err := t.runWithStdin(ctx, strings.NewReader(text), "load-buffer", "-b", buffer, "-"); err != nil {
+		return err
+	}
+	_, err := t.run(ctx, "paste-buffer", "-d", "-b", buffer, "-t", paneID)
 	return err
 }
 
@@ -191,8 +207,15 @@ func (t *Tmux) Kill(ctx context.Context, paneID string) error {
 // run is the single shell-out point so tests can swap it via an
 // injected exec.Cmd factory later (gm-native.9 startup path).
 func (t *Tmux) run(ctx context.Context, args ...string) ([]byte, error) {
+	return t.runWithStdin(ctx, nil, args...)
+}
+
+func (t *Tmux) runWithStdin(ctx context.Context, stdin *strings.Reader, args ...string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, t.binary, args...)
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -200,4 +223,20 @@ func (t *Tmux) run(ctx context.Context, args ...string) ([]byte, error) {
 			strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
+}
+
+func safeTmuxBufferName(id string) string {
+	var b strings.Builder
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "pane"
+	}
+	return b.String()
 }

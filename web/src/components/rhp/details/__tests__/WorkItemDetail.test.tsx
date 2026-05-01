@@ -21,6 +21,8 @@ import type { CapabilitiesResponse } from '@/capabilities';
 import type { WorkItem } from '@/types/core.gen';
 import { RhpProvider } from '../../RhpContext';
 import { RhpPinnedContentProvider } from '../../RhpPinnedContent';
+import { workItemsKeys } from '@/hooks/useWorkItems';
+import { KIND_MILESTONE } from '@/types/core.gen';
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -123,11 +125,15 @@ const navigateTarget: WorkItem = {
 };
 
 function wrapper(
-  caps: CapabilitiesResponse = capsWith()
+  caps: CapabilitiesResponse = capsWith(),
+  seedItems: WorkItem[] = []
 ): (props: { children: ReactNode }) => JSX.Element {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    defaultOptions: { queries: { retry: false, gcTime: seedItems.length > 0 ? Infinity : 0 } },
   });
+  if (seedItems.length > 0) {
+    client.setQueryData(workItemsKeys.list(), seedItems);
+  }
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <MemoryRouter initialEntries={['/board']}>
@@ -274,6 +280,40 @@ describe('WorkItemDetail', () => {
     const btn = screen.getByTestId('workitem-detail-dispatch');
     expect(btn).toBeTruthy();
     expect((btn as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('shows the milestone > epic > work item breadcrumb when ancestors are cached', async () => {
+    const milestone: WorkItem = {
+      ...navigateTarget,
+      id: 'gm-m1',
+      kind: KIND_MILESTONE,
+      title: 'M1 Launch',
+      relationships: [],
+    };
+    const epic: WorkItem = {
+      ...navigateTarget,
+      id: 'gm-epic',
+      kind: 'epic',
+      title: 'Temperature epic',
+      relationships: [{ kind: 'parent_child', from: 'gm-m1', to: 'gm-epic' }],
+    };
+    const child: WorkItem = {
+      ...fixture,
+      relationships: [{ kind: 'parent_child', from: 'gm-epic', to: 'gm-foo' }],
+    };
+    fetchSpy.mockResolvedValueOnce(mockJSON(child));
+
+    render(<WorkItemDetail id="gm-foo" />, {
+      wrapper: wrapper(capsWith(), [milestone, epic, child]),
+    });
+
+    const breadcrumb = await screen.findByTestId('workitem-detail-breadcrumb');
+    expect(breadcrumb.textContent).toContain('Milestone');
+    expect(breadcrumb.textContent).toContain('M1 Launch');
+    expect(breadcrumb.textContent).toContain('Epic');
+    expect(breadcrumb.textContent).toContain('Temperature epic');
+    expect(breadcrumb.textContent).toContain('Work item');
+    expect(breadcrumb.textContent).toContain('Fixture bead');
   });
 
   it('relationship click navigates to target bead and back button pops the stack', async () => {

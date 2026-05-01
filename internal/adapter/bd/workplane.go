@@ -558,6 +558,10 @@ func (w *WorkPlane) UpdateWorkItem(
 ) (core.WorkItem, error) {
 	native := nativeID(w.prefix, id)
 	args := []string{"update", native, "--json"}
+	labels := append([]string(nil), patch.Labels...)
+	replaceLabels := len(labels) > 0
+	addStagedLabel := false
+	removeStagedLabel := false
 	if patch.Title != nil {
 		args = append(args, "--title", *patch.Title)
 	}
@@ -598,6 +602,28 @@ func (w *WorkPlane) UpdateWorkItem(
 				*patch.StateCategory)
 		}
 		args = append(args, "--status", bdStatus)
+		switch *patch.StateCategory {
+		case core.StateStaged:
+			if replaceLabels {
+				labels = setStagedLabel(labels, true)
+			} else {
+				current, err := w.GetWorkItem(ctx, id)
+				if err != nil {
+					return core.WorkItem{}, err
+				}
+				addStagedLabel = !hasLabel(current.Labels, stagedLabel)
+			}
+		default:
+			if replaceLabels {
+				labels = setStagedLabel(labels, false)
+			} else {
+				current, err := w.GetWorkItem(ctx, id)
+				if err != nil {
+					return core.WorkItem{}, err
+				}
+				removeStagedLabel = hasLabel(current.Labels, stagedLabel)
+			}
+		}
 	}
 	if patch.Priority != nil {
 		args = append(args, "--priority", strconv.Itoa(*patch.Priority))
@@ -628,14 +654,20 @@ func (w *WorkPlane) UpdateWorkItem(
 	// labels the caller didn't intend to touch.
 	agentExtra := agentLabels(patch.Assignee)
 	switch {
-	case len(patch.Labels) > 0:
-		merged := stripAgentLabels(patch.Labels)
+	case replaceLabels:
+		merged := stripAgentLabels(labels)
 		merged = append(merged, agentExtra...)
 		args = append(args, "--set-labels", strings.Join(merged, ","))
 	case len(agentExtra) > 0:
 		for _, l := range agentExtra {
 			args = append(args, "--add-label", l)
 		}
+	}
+	if addStagedLabel {
+		args = append(args, "--add-label", stagedLabel)
+	}
+	if removeStagedLabel {
+		args = append(args, "--remove-label", stagedLabel)
 	}
 
 	if _, err := w.run(ctx, args...); err != nil {

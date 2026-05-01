@@ -53,7 +53,7 @@ func DecodeCreateWorkItem(raw []byte) (core.WorkItem, error) {
 		return core.WorkItem{}, core.NewValidationError(core.ValidationIssue{
 			Path:   "create_work_item.item.state_category",
 			Code:   "enum",
-			Reason: "must be a valid StateCategory (backlog|unstarted|started|completed|canceled)",
+			Reason: "must be a valid StateCategory (backlog|unstarted|staged|started|completed|canceled)",
 		})
 	}
 	if wi.ID != "" {

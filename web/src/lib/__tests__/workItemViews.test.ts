@@ -29,7 +29,7 @@ function wi(patch: Partial<WorkItem> & { id: string }): WorkItem {
 }
 
 describe('WORK_ITEM_VIEWS metadata', () => {
-  it('ships the seven deduplicated views in canonical order', () => {
+  it('ships the eight deduplicated views in canonical order', () => {
     const ids = WORK_ITEM_VIEWS.map((v) => v.id);
     expect(ids).toEqual([
       'staged',
@@ -37,6 +37,7 @@ describe('WORK_ITEM_VIEWS metadata', () => {
       'blocked',
       'ready-to-stage',
       'backlog',
+      'recent',
       'done-recent',
       'mine',
     ]);
@@ -128,6 +129,17 @@ describe('applyView post-filter + sort', () => {
     const view = findView('done-recent')!;
     const out = applyView(items, view, ctx).map((i) => i.id);
     expect(out).toEqual(['newest', 'mid', 'oldest']);
+  });
+
+  it('recent filters by created_at in a 24-hour band and sorts newest first', () => {
+    const items = [
+      wi({ id: 'old', created_at: '2026-04-24T00:00:00Z' }),
+      wi({ id: 'newest', created_at: '2026-04-26T11:30:00Z' }),
+      wi({ id: 'mid', created_at: '2026-04-26T02:00:00Z' }),
+    ];
+    const view = findView('recent')!;
+    const out = applyView(items, view, ctx).map((i) => i.id);
+    expect(out).toEqual(['newest', 'mid']);
   });
 
   it('mine matches by assignee.id OR assignee.name', () => {

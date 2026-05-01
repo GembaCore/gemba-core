@@ -24,8 +24,9 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { SharedContext } from '../spec';
+import { demoPause, setDemoCaption } from '../helpers/demo-mode';
 
-const M1_MILESTONE_ID = 'M1';
+const M1_MILESTONE_ID = 'm1';
 
 const M1_REQUIRED_FILES = [
   'package.json',
@@ -33,6 +34,7 @@ const M1_REQUIRED_FILES = [
   'tsconfig.json',
   'index.html',
   'src/main.tsx',
+  'src/App.tsx',
   'node_modules',
 ];
 
@@ -55,7 +57,7 @@ export async function runM1Step(ctx: SharedContext): Promise<void> {
   const badgeProbe = pollForBadge(ctx, m1Timeout());
 
   // ─── Import the M1 bead pack ────────────────────────────────
-  ctx.narrator.emit('Mock agents claim M1 scaffolding work', 'medium');
+  ctx.narrator.emit('Agents claim M1 scaffolding work', 'medium');
   try {
     await ctx.importBeads('target-jsonl/m1.jsonl');
   } catch (err) {
@@ -69,7 +71,7 @@ export async function runM1Step(ctx: SharedContext): Promise<void> {
   }
 
   // ─── Wait for the milestone to close ────────────────────────
-  await ctx.waitForAllBeadsClosed(M1_MILESTONE_ID, m1Timeout());
+  await ctx.waitForAllBeadsClosed(`${ctx.beadPrefix}-${M1_MILESTONE_ID}`, m1Timeout());
 
   // Drop the badge watcher; it should have observed at least one
   // active session by now.
@@ -143,6 +145,13 @@ async function probeDevServer(ctx: SharedContext): Promise<void> {
       });
       throw new Error(`M1: dev server did not become reachable`);
     }
+    await ctx.page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
+    await ctx.page
+      .locator('[data-testid="app-root"], #app-root')
+      .waitFor({ state: 'visible', timeout: 15_000 });
+    ctx.narrator.emit('M1 launches the scaffolded Vite app', 'medium');
+    await setDemoCaption(ctx.page, 'M1 launch: scaffolded SPA is running');
+    await demoPause(2_500);
   } finally {
     proc.kill('SIGTERM');
     // Give vite 2s to flush.

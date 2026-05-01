@@ -28,6 +28,11 @@ const (
 	// equivalent).
 	PreambleFirstMessage PreambleStrategy = "first_message"
 
+	// PreambleCodexExec writes the composed preamble to a prompt file
+	// before spawn. A gemba-owned Codex driver then runs `codex exec`
+	// non-interactively and reports lifecycle via gemba-state.
+	PreambleCodexExec PreambleStrategy = "codex_exec"
+
 	// PreambleStdoutBanner echoes the preamble to the terminal as a
 	// markdown block; used by shell-only (no agent to read a file).
 	PreambleStdoutBanner PreambleStrategy = "stdout_banner"
@@ -392,7 +397,7 @@ func validateContainer(prefix string, c ContainerSpec) []string {
 
 func validPreamble(p PreambleStrategy) bool {
 	switch p {
-	case PreambleClaudeMD, PreambleFirstMessage, PreambleStdoutBanner:
+	case PreambleClaudeMD, PreambleFirstMessage, PreambleCodexExec, PreambleStdoutBanner:
 		return true
 	}
 	return false

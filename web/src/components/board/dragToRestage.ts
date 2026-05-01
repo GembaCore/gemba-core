@@ -56,26 +56,30 @@ export function resolveRestage({
   return { id: item.id, patch: { state_category: parsed.cat } };
 }
 
-// shouldAutoStartSession encodes the rule: a successful drag-to-restage
-// into "In Progress" on a workable bead kind is the operator saying
-// "go do this work." The EpicView fires useStartSession when this
-// returns true. Pulled out so the branch is unit-testable without
-// driving dnd-kit.
+// shouldAutoStartSession encodes the leaf rule: a successful
+// drag-to-restage into "In Progress" on a runnable bead kind is the
+// operator saying "go do this work." Wrappers use cascade dispatch
+// instead; they are never sent to an agent as the unit of work.
 //
-// gm-root.25 expanded the predicate beyond `epic` to cover the other
-// work-shaped kinds (`task`, `bug`, `feature`). `decision` is
-// documentation-shaped (no code work to dispatch) and `chore` is
-// typically too small to warrant a session — both are excluded by
-// design. The kind set deliberately overlaps the autodispatch routing
-// defaults in `internal/config/pool.go` so manual drag and the daemon
-// agree on what counts as "do this now."
-export const AUTOSTART_KINDS = ['epic', 'task', 'bug', 'feature'] as const;
+// gm-root.25 originally included `epic`; gm-1o9n moves wrapper starts
+// to shouldCascadeDispatch(), leaving this predicate for runnable leaf
+// kinds (`task`, `bug`, `feature`).
+export const AUTOSTART_KINDS = ['task', 'bug', 'feature'] as const;
+export const CASCADE_KINDS = ['epic', 'milestone'] as const;
 
 type AutoStartKind = (typeof AUTOSTART_KINDS)[number];
+type CascadeKind = (typeof CASCADE_KINDS)[number];
 
 export function shouldAutoStartSession(item: WorkItem): boolean {
   return (
     AUTOSTART_KINDS.includes(item.kind as AutoStartKind) &&
+    item.state_category === 'started'
+  );
+}
+
+export function shouldCascadeDispatch(item: WorkItem): boolean {
+  return (
+    CASCADE_KINDS.includes(item.kind as CascadeKind) &&
     item.state_category === 'started'
   );
 }

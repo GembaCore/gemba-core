@@ -200,6 +200,42 @@ export async function updateWorkItem(
   });
 }
 
+export interface CascadeDispatchRequest {
+  agent_type: string;
+  limit?: number;
+}
+
+export interface CascadeDispatchResponse {
+  wrapper_id: string;
+  staged?: string[];
+  dispatched: Array<{ work_item_id: string; session_id?: string }>;
+  blocked?: string[];
+  skipped?: string[];
+  errors?: Array<{ work_item_id: string; message: string }>;
+  limit?: number;
+}
+
+export async function cascadeDispatchWorkItem(
+  id: string,
+  body: CascadeDispatchRequest,
+  opts: { nonce?: string } = {}
+): Promise<CascadeDispatchResponse> {
+  if (!id) {
+    throw new Error('cascadeDispatchWorkItem: id is required');
+  }
+  return apiFetch<CascadeDispatchResponse>(
+    `/work-items/${encodeURIComponent(id)}/cascade-dispatch`,
+    {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: {
+        'Content-Type': 'application/json',
+        [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+      },
+    }
+  );
+}
+
 // freshNonce returns a UUID-like opaque token. crypto.randomUUID is
 // available in every browser the SPA targets and in jsdom; the
 // fallback covers older test environments without crypto wired up.
