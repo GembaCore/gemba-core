@@ -227,6 +227,33 @@ remains a separate follow-up.
 Exposed via an MCP-style server so agent polecats (not just personas) can query
 the graph — polecat work benefits from graph access too.
 
+## Onboarding and agent setup
+
+Project setup should treat source analysis as a deterministic setup
+choice, not an LLM discovery task.
+
+- New projects seed the analysis contract into `CLAUDE.md`, `AGENTS.md`,
+  and runtime bridge configuration even before meaningful code exists.
+  This lets the first implementation agents know that a source-analysis
+  MCP server may be available once code lands.
+- Existing and imported codebases prompt for a code-analysis backend and
+  default to GitNexus.
+- When GitNexus is selected, setup installs or verifies the `gitnexus`
+  CLI, writes `.gemba/codeanalysis.toml`, runs an initial
+  `gitnexus analyze --path <worktree>` for existing/imported codebases,
+  records freshness, and probes the source-analysis MCP command before
+  launching the Onboarder or other LLM runtime.
+- Setup also tests the Beads/Gemba MCP connection so the LLM can inspect
+  design decisions, epics, related beads, dependencies, and evidence.
+- Setup-file mutation must be idempotent and sentinel-scoped. Existing
+  operator-authored `CLAUDE.md`, `AGENTS.md`, `.claude/settings.local.json`,
+  `.Codex/settings.local.json`, and equivalent runtime files must not be
+  clobbered.
+- `/api/v1/onboarding/setup` is the current deterministic entry point
+  for this work. Its response includes a setup ledger, warnings, and
+  status checks such as `source_analysis`, `gemba_mcp`, and
+  `source_analysis_mcp`.
+
 ## Architectural invariants
 
 - **Pluggable, not forced.** A workspace without GitNexus (or equivalent) still

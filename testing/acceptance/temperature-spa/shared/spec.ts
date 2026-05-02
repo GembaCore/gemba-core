@@ -44,6 +44,7 @@ import {
   demoPause,
   demoDragTo,
   DEMO_MODE,
+  forceDemoDarkMode,
 } from './helpers/demo-mode';
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -247,7 +248,6 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
   ctx.narrator.emit('A fresh project boots', 'short');
   if (DEMO_MODE) {
     await setDemoCaption(ctx.page, 'Acceptance: building a SPA via beads');
-    await demoPause(2_000);
   }
 
   if (DEMO_MODE) {
@@ -279,8 +279,11 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
 
   ctx.narrator.emit('Done. Three milestones, two operator clicks', 'short');
   if (DEMO_MODE) {
-    await setDemoCaption(ctx.page, 'Done — three milestones, two operator clicks');
-    await demoPause(2_000);
+    await ctx.goto('/board?layout=list&state_category=completed');
+    await ctx.page.waitForSelector('[data-testid="board-list"]', { timeout: 15_000 });
+    await waitForDemoBoardContent(ctx.page, '[data-testid^="grid-row-"]');
+    await setDemoCaption(ctx.page, 'Done — board returns with completed milestone beads');
+    await demoPause(6_000);
   }
 
   // Narration timeline (gm-root.27.37). Build the JSON envelope; if
@@ -331,15 +334,20 @@ export async function runAcceptance(opts: RunAcceptanceOpts): Promise<Acceptance
 
 async function runDemoOpening(ctx: SharedContext): Promise<void> {
   ctx.narrator.emit(
-    'The full plan is visible before work starts: milestones, epics, and beads',
+    'Gemba means the actual place: a browser workbench where operators walk the floor of an agentic project',
     'long',
   );
-  await setDemoCaption(ctx.page, 'Loading the full plan: 3 milestones, 3 epics, 12 task beads');
+  await setDemoCaption(ctx.page, 'Gemba: the actual place where agentic software work happens');
   await ctx.importBeads('target-jsonl/decisions.jsonl');
   await ctx.importBeads('target-jsonl/m1.jsonl');
   await ctx.importBeads('target-jsonl/m2.jsonl');
   await ctx.importBeads('target-jsonl/m3.jsonl');
 
+  ctx.narrator.emit(
+    'The board connects planning and execution: milestones, epics, dependencies, sessions, and evidence in one place',
+    'long',
+  );
+  await setDemoCaption(ctx.page, 'Overview: plan, dispatch, watch sessions, handle exceptions, verify evidence');
   await ctx.goto('/board?layout=list&power=1');
   await ctx.page.waitForSelector('[data-testid="board-list"]', { timeout: 15_000 });
   await ctx.page.waitForSelector('[data-testid="board-list-count"]', { timeout: 15_000 });
@@ -348,108 +356,232 @@ async function runDemoOpening(ctx: SharedContext): Promise<void> {
     null,
     { timeout: 15_000 },
   );
-  await ctx.page.waitForSelector('[data-testid^="grid-row-"]', { timeout: 15_000 });
-  await demoPause(1_500);
+  await waitForDemoBoardContent(
+    ctx.page,
+    '[data-testid^="grid-row-"]',
+    'M1: Scaffolding',
+  );
+  await demoPause(5_000);
+
+  await showBoardDetailOverview(ctx);
+  await showGraphOverview(ctx);
+  await showRefinementOverview(ctx);
+  await showReviewOverview(ctx);
+  await showSessionsOverview(ctx);
+  await showTriageOverview(ctx);
 
   ctx.narrator.emit('The operator drags the first milestone into progress', 'medium');
   await setDemoCaption(ctx.page, 'First drag: move M1 into In Progress to start development');
   await ctx.goto('/board?layout=workitem&show_backlog=1');
   await ctx.page.waitForSelector('[data-testid="board-workitem"]', { timeout: 15_000 });
   const m1 = beadID(ctx, 'm1');
+  await waitForDemoBoardContent(ctx.page, `[data-work-item-id$="${m1}"]`, 'M1: Scaffolding');
   const source = ctx.page.locator(`[data-work-item-id$="${m1}"]`).first();
   const target = ctx.page.getByTestId('board-column-started');
   await source.waitFor({ state: 'visible', timeout: 15_000 });
   await target.waitFor({ state: 'visible', timeout: 15_000 });
   await demoDragTo(ctx.page, source, target, { steps: 18 });
   await ensureDemoCascadeStarted(ctx, m1);
-  await demoPause(1_500);
-
-  await showSessionCreatedBeadInRecent(ctx);
+  await demoPause(3_500);
 
   ctx.narrator.emit('Board view shows milestone-coloured epics', 'medium');
-  await setDemoCaption(ctx.page, 'Board view: epics grouped with milestone badges');
+  await setDemoCaption(ctx.page, 'Cascade: child epics and beads move as the milestone runs');
   await ctx.goto('/board?layout=epic&show_backlog=1');
   await ctx.page.waitForSelector('[data-testid="board-epic"]', { timeout: 15_000 });
-  await demoPause(1_500);
+  await waitForDemoBoardContent(ctx.page, '[data-epic-card="true"]');
+  await demoPause(4_500);
+}
 
+async function showBoardDetailOverview(ctx: SharedContext): Promise<void> {
   ctx.narrator.emit('Milestone detail shows the Definition of Done in the bead description', 'medium');
-  await setDemoCaption(ctx.page, 'Milestone detail: Definition of Done in the bead');
-  await ctx.goto(`/board?bead=${encodeURIComponent(beadID(ctx, 'm1'))}`);
-  await ctx.page.waitForSelector('[data-testid="workitem-detail-id"]', { timeout: 15_000 });
-  await ctx.page.waitForSelector('[data-testid="section-description"]', { timeout: 15_000 });
-  await demoPause(1_800);
+  await setDemoCaption(ctx.page, 'Board detail: milestone intent and Definition of Done stay attached to the work');
+  const m1DetailID = beadID(ctx, 'm1');
+  await ctx.goto(`/board?bead=${encodeURIComponent(m1DetailID)}`);
+  await waitForDemoWorkItemDetail(ctx.page, m1DetailID);
+  await ctx.page.getByTestId('detail-tab-description').click().catch(() => undefined);
+  await ctx.page
+    .waitForSelector('[data-testid="section-description"], [data-testid="section-overview"]', {
+      timeout: 15_000,
+    })
+    .catch(() => undefined);
+  await demoPause(5_000);
 
   ctx.narrator.emit('Epic detail shows child beads by state', 'medium');
-  await setDemoCaption(ctx.page, 'Epic detail: child beads and state are visible');
+  await setDemoCaption(ctx.page, 'Epic detail: child beads make large work inspectable at the right grain');
   await ctx.goto(`/board/${encodeURIComponent(beadID(ctx, 'e1'))}`);
   await ctx.page.waitForSelector('[data-testid="epic-detail-id"]', { timeout: 15_000 });
-  await ctx.page.waitForSelector('[data-testid="epic-section-children"]', { timeout: 15_000 });
-  await demoPause(1_800);
+  await ctx.page
+    .waitForSelector('[data-testid="epic-section-children"], [data-testid="epic-section-state"]', {
+      timeout: 15_000,
+    })
+    .catch(() => undefined);
+  await demoPause(4_500);
+}
 
-  ctx.narrator.emit('Refinement shows backlog triage work', 'medium');
-  await setDemoCaption(ctx.page, 'Refinement: backlog triage surface');
+async function showGraphOverview(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit('The graph makes dependency order visible before agents start executing', 'long');
+  await setDemoCaption(ctx.page, 'Graph: dependency order explains what can run now and what must wait');
+  await ctx.goto('/graph');
+  await ctx.page.waitForSelector('[data-testid="graph-page"]', { timeout: 15_000 });
+  await ctx.page.waitForSelector('[data-testid="graph-canvas-host"]', { timeout: 15_000 });
+  await ctx.page
+    .waitForSelector('[data-testid^="graph-node-"]', { timeout: 20_000 })
+    .catch(() => undefined);
+  await demoPause(5_000);
+
+  const m1Node = ctx.page
+    .locator('[data-testid^="graph-node-"]')
+    .filter({ hasText: 'M1' })
+    .first();
+  if ((await m1Node.count()) > 0) {
+    await setDemoCaption(ctx.page, 'Graph navigation: click a node to inspect its dependencies and details');
+    await m1Node.click().catch(() => undefined);
+    await demoPause(3_500);
+  }
+}
+
+async function showRefinementOverview(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit('Refinement keeps upstream backlog decisions separate from execution flow', 'medium');
+  await setDemoCaption(ctx.page, 'Refine: triage backlog quality before it reaches the execution board');
   await ctx.goto('/refine');
   await ctx.page.waitForSelector('[data-testid="refine-page"]', { timeout: 15_000 });
-  await demoPause(1_500);
+  await demoPause(4_000);
+}
+
+async function showReviewOverview(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit('Gemba walks give leaders a review surface for decisions and work in progress', 'medium');
+  await setDemoCaption(ctx.page, 'Review: Gemba walks preserve human judgment while agents do the execution');
+  await ctx.goto('/walk');
+  await ctx.page.waitForSelector('[data-testid="walk-page"]', { timeout: 15_000 });
+  await demoPause(4_000);
+}
+
+async function showSessionsOverview(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit('Sessions expose the live agent runtime instead of hiding work in terminals', 'medium');
+  await setDemoCaption(ctx.page, 'Sessions: active agents, status, and assigned work are visible in the SPA');
+  await ctx.goto('/sessions');
+  await ctx.page.waitForSelector('[data-testid="sessions-page"]', { timeout: 15_000 });
+  await demoPause(4_000);
+}
+
+async function showTriageOverview(ctx: SharedContext): Promise<void> {
+  ctx.narrator.emit('Triage turns blocking agent questions into explicit operator decisions', 'medium');
+  await setDemoCaption(ctx.page, 'Triage: escalations become visible decisions instead of hidden terminal prompts');
+  await ctx.goto('/escalations');
+  await ctx.page.waitForSelector('[data-testid="escalations-page"]', { timeout: 15_000 });
+  await demoPause(4_000);
 }
 
 async function showSessionCreatedBeadInRecent(ctx: SharedContext): Promise<void> {
   ctx.narrator.emit(
-    'A running session files a follow-up bead, and propulsion pulls it into scope',
+    'Board filters let the operator inspect newly surfaced work',
     'medium',
   );
-  await setDemoCaption(ctx.page, 'Session-created bead: auto-staged by the active M1 cascade');
-  const created = await createSessionFollowUpBead(ctx);
-  await waitForWorkItemCategory(ctx, created.id, ['staged', 'started', 'completed'], 10_000);
+  await setDemoCaption(ctx.page, 'Board list: filter newly surfaced work for inspection');
   await demoPause(1_000);
 
-  ctx.narrator.emit('Recent shows the new bead for inspection', 'medium');
-  await setDemoCaption(ctx.page, 'Recent: inspect the bead the session just created');
-  await ctx.goto('/recent');
-  await ctx.page.getByTestId('recent-preset-1h').click();
-  const row = ctx.page.getByTestId(`recent-row-${created.id}`);
+  ctx.narrator.emit('Recent and list views make new work inspectable', 'medium');
+  await setDemoCaption(ctx.page, 'Recent/list: inspect a bead without leaving the Board');
+  await ctx.goto('/board?layout=list&view=recent');
+  await ctx.page.waitForSelector('[data-testid="board-list"]', { timeout: 15_000 });
+  let row = ctx.page.getByTestId(`grid-row-${beadID(ctx, '1')}`);
+  if ((await row.count()) === 0) {
+    await ctx.goto('/board?layout=list&q=Session-created%20follow-up');
+    await ctx.page.waitForSelector('[data-testid="board-list"]', { timeout: 15_000 });
+    await waitForDemoBoardContent(ctx.page, '[data-testid^="grid-row-"]').catch(() => undefined);
+    row = ctx.page.getByTestId(`grid-row-${beadID(ctx, '1')}`);
+  }
+  if ((await row.count()) === 0) {
+    await setDemoCaption(ctx.page, 'Recent: list filters let the operator inspect newly surfaced work');
+    await ctx.goto('/board?layout=list&power=1');
+    await ctx.page.waitForSelector('[data-testid="board-list"]', { timeout: 15_000 });
+    await waitForDemoBoardContent(ctx.page, '[data-testid^="grid-row-"]', 'npm install');
+    row = ctx.page.getByTestId(`grid-row-${beadID(ctx, '3')}`);
+    if ((await row.count()) === 0) {
+      row = ctx.page.getByTestId(`grid-row-gemba/gemba/${beadID(ctx, '3')}`);
+    }
+  }
   await row.waitFor({ state: 'visible', timeout: 15_000 });
   await demoPause(1_200);
-  await row.click();
-  await ctx.page.waitForSelector('[data-testid="workitem-detail-id"]', { timeout: 15_000 });
+  const detailID = (await row.getAttribute('data-testid'))?.replace(/^grid-row-/, '') ?? beadID(ctx, '1');
+  await ctx.goto(`/board?bead=${encodeURIComponent(detailID)}`);
+  await waitForDemoWorkItemDetail(ctx.page, detailID);
   await demoPause(1_800);
 }
 
+async function waitForDemoBoardContent(
+  page: Page,
+  selector: string,
+  text?: string,
+): Promise<void> {
+  await page
+    .waitForSelector('[data-testid="board-loading"]', { state: 'detached', timeout: 15_000 })
+    .catch(() => undefined);
+  await page
+    .waitForSelector('[data-testid="board-skeleton-card"]', { state: 'detached', timeout: 15_000 })
+    .catch(() => undefined);
+  await page.waitForSelector(selector, { state: 'visible', timeout: 15_000 });
+  if (!text) return;
+  await page.waitForFunction(
+    ({ css, expected }: { css: string; expected: string }) =>
+      Array.from(document.querySelectorAll(css)).some((el) =>
+        (el.textContent ?? '').includes(expected),
+      ),
+    { css: selector, expected: text },
+    { timeout: 15_000 },
+  );
+}
+
+async function waitForDemoWorkItemDetail(page: Page, id: string): Promise<void> {
+  await page.waitForSelector('[data-testid="workitem-detail-id"]', { timeout: 15_000 });
+  await page.waitForFunction(
+    (expected: string) =>
+      (document.querySelector('[data-testid="workitem-detail-id"]')?.textContent ?? '').includes(expected),
+    id,
+    { timeout: 15_000 },
+  );
+}
+
 async function createSessionFollowUpBead(ctx: SharedContext): Promise<RawIssue> {
-  const nonceBase = process.env.GEMBA_E2E_CONFIRM_NONCE ?? 'acceptance-test';
-  const res = await fetch(`${ctx.baseURL}/api/work-items`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-GEMBA-Confirm': `${nonceBase}-session-followup-${Date.now()}`,
-    },
-    body: JSON.stringify({
-      item: {
-        title: 'Session-created follow-up: record scaffold evidence',
-        kind: 'task',
-        status: 'open',
-        state_category: 'backlog',
-        description:
-          '---\n' +
-          'template: noop\n' +
-          '---\n\n' +
-          '# Goal\n' +
-          'A running agent noticed a small follow-up while M1 was active and filed it under the current epic.\n\n' +
-          '# Definition of Done\n' +
-          '- The bead appears in Recent.\n' +
-          '- The active M1 cascade moves it from backlog into staged or in progress automatically.\n',
-        labels: ['acceptance', 'milestone:m1', 'created-by:session', 'template:noop'],
-        relationships: [
-          { kind: 'parent_child', from: beadID(ctx, 'e1'), to: '' },
-        ],
-      },
-    }),
-  });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`demo session follow-up create failed ${res.status}: ${txt}`);
-  }
-  return (await res.json()) as RawIssue;
+  const item: RawIssue & {
+    issue_type: string;
+    title: string;
+    description: string;
+    priority: number;
+    labels: string[];
+    created_at: string;
+    updated_at: string;
+  } = {
+    id: beadID(ctx, 'e1.1'),
+    issue_type: 'task',
+    kind: 'task',
+    title: 'Session-created follow-up: record scaffold evidence',
+    status: 'open',
+    state_category: 'backlog',
+    priority: 2,
+    labels: ['acceptance', 'milestone:m1', 'created-by:session', 'template:noop'],
+    dependencies: [
+      { issue_id: beadID(ctx, 'e1.1'), depends_on_id: beadID(ctx, 'e1'), type: 'parent-child' },
+    ],
+    relationships: [
+      { kind: 'parent_child', from: beadID(ctx, 'e1'), to: beadID(ctx, 'e1.1') },
+    ],
+    description:
+      '---\n' +
+      'template: noop\n' +
+      '---\n\n' +
+      '# Goal\n' +
+      'A running agent noticed a small follow-up while M1 was active and filed it under the current epic.\n\n' +
+      '# Definition of Done\n' +
+      '- The bead appears in Recent.\n' +
+      '- The active M1 cascade moves it from backlog into staged or in progress automatically.\n',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  const out = path.join(ctx.projectDir, 'session-follow-up.jsonl');
+  writeFileSync(out, JSON.stringify(item) + '\n', 'utf8');
+  await importBeadsCLI(ctx.projectDir, out, ctx.beadPrefix);
+  return item;
 }
 
 async function showAgentStatus(ctx: SharedContext, caption: string): Promise<void> {
@@ -482,18 +614,21 @@ async function ensureDemoCascadeStarted(ctx: SharedContext, wrapperID: string): 
       throw new Error(`demo fallback PATCH ${wrapperID} -> started failed ${patch.status}: ${txt}`);
     }
   }
-  const cascade = await fetch(`${ctx.baseURL}/api/work-items/${encodeURIComponent(wrapperID)}/cascade-dispatch`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-GEMBA-Confirm': `${nonceBase}-cascade-${Date.now()}`,
-    },
-    body: JSON.stringify({ agent_type: process.env.GEMBA_ACCEPTANCE_AGENT ?? 'claude' }),
-  });
-  if (!cascade.ok && cascade.status !== 409) {
-    const txt = await cascade.text().catch(() => '');
-    throw new Error(`demo fallback cascade-dispatch ${wrapperID} failed ${cascade.status}: ${txt}`);
+  let lastError = '';
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const cascade = await fetch(`${ctx.baseURL}/api/work-items/${encodeURIComponent(wrapperID)}/cascade-dispatch`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-GEMBA-Confirm': `${nonceBase}-cascade-${Date.now()}-${attempt}`,
+      },
+      body: JSON.stringify({ agent_type: process.env.GEMBA_ACCEPTANCE_AGENT ?? 'claude' }),
+    });
+    if (cascade.ok || cascade.status === 409) return;
+    lastError = `${cascade.status}: ${await cascade.text().catch(() => '')}`;
+    await sleep(750 * attempt);
   }
+  throw new Error(`demo fallback cascade-dispatch ${wrapperID} failed after retries ${lastError}`);
 }
 
 async function importBeadsOnce(
@@ -592,7 +727,9 @@ const defaultEscalationInjector: EscalationInjector = {
 
 async function navigate(page: Page, baseURL: string, route: string): Promise<void> {
   const url = `${baseURL}${route.startsWith('/') ? route : `/${route}`}`;
+  await forceDemoDarkMode(page);
   await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await forceDemoDarkMode(page);
 }
 
 // ─── Bead-state polling ───────────────────────────────────────────
@@ -774,9 +911,6 @@ async function importBeadsCLI(
         | 'decisions';
       const rendered = renderPack(kind, beadPrefix, projectDir);
       abs = rendered.path;
-      if (DEMO_MODE && kind === 'm1') {
-        abs = writeDemoManualGateM1(abs, beadPrefix, projectDir);
-      }
     } else {
       throw new Error(
         `bead pack not found: ${abs} (no .jsonl or .jsonl.tmpl)`,

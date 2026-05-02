@@ -791,8 +791,8 @@ func TestOnboarderProbe_Unavailable(t *testing.T) {
 // ─── gm-root.24: FTUX seed (agents.toml + personas + CLAUDE.md) ─────
 
 // TestRatify_FTUXSeed_VirginRatify asserts a fresh ratify lands the
-// three FTUX seed files: .gemba/agents.toml, .gemba/personas/<3>.toml,
-// CLAUDE.md at the project root.
+// FTUX seed files: .gemba/agents.toml, .gemba/personas/<3>.toml,
+// CLAUDE.md, and AGENTS.md at the project root.
 func TestRatify_FTUXSeed_VirginRatify(t *testing.T) {
 	tmp := t.TempDir()
 	stub := newStubRunner()
@@ -854,6 +854,24 @@ func TestRatify_FTUXSeed_VirginRatify(t *testing.T) {
 	if !bytes.Contains(claudeBody, []byte("## Conventions")) {
 		t.Errorf("CLAUDE.md missing Conventions section; body=%q", claudeBody)
 	}
+	if !bytes.Contains(claudeBody, []byte("GitNexus is the default backend")) {
+		t.Errorf("CLAUDE.md missing source-analysis guidance; body=%q", claudeBody)
+	}
+	if !bytes.Contains(claudeBody, []byte("Beads is the source of truth")) {
+		t.Errorf("CLAUDE.md missing Beads guidance; body=%q", claudeBody)
+	}
+
+	// AGENTS.md — Codex-friendly setup file mirrors the Gemba runtime context.
+	agentsMD, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	if !bytes.Contains(agentsMD, []byte("# demo Agent Instructions")) {
+		t.Errorf("AGENTS.md missing project-name header; body=%q", agentsMD)
+	}
+	if !bytes.Contains(agentsMD, []byte("gemba")) || !bytes.Contains(agentsMD, []byte("GitNexus")) {
+		t.Errorf("AGENTS.md missing MCP/source-analysis guidance; body=%q", agentsMD)
+	}
 }
 
 // TestRatify_FTUXSeed_IdempotentSkip asserts the seed steps do not
@@ -876,6 +894,10 @@ func TestRatify_FTUXSeed_IdempotentSkip(t *testing.T) {
 	preClaude := []byte(`# operator-managed CLAUDE.md — DO NOT TOUCH`)
 	if err := os.WriteFile(filepath.Join(target, "CLAUDE.md"), preClaude, 0o644); err != nil {
 		t.Fatalf("seed claude: %v", err)
+	}
+	preAgentsMD := []byte(`# operator-managed AGENTS.md — DO NOT TOUCH`)
+	if err := os.WriteFile(filepath.Join(target, "AGENTS.md"), preAgentsMD, 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
 	}
 	prePersona := []byte(`id = "operator-curated"`)
 	if err := os.WriteFile(
@@ -900,6 +922,9 @@ func TestRatify_FTUXSeed_IdempotentSkip(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(filepath.Join(target, "CLAUDE.md")); !bytes.Equal(got, preClaude) {
 		t.Errorf("CLAUDE.md mutated; got %q want %q", got, preClaude)
+	}
+	if got, _ := os.ReadFile(filepath.Join(target, "AGENTS.md")); !bytes.Equal(got, preAgentsMD) {
+		t.Errorf("AGENTS.md mutated; got %q want %q", got, preAgentsMD)
 	}
 	// The non-empty personas dir must be untouched: only the operator's
 	// file should remain — the bundled three must NOT have been added.

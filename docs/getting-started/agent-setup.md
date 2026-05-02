@@ -20,7 +20,10 @@ picker reads that file at boot.
 > declared (intra-parallel, max 4). You only need to hand-edit the
 > file when adding a second agent type or tuning the parallelism
 > caps. The schema below is the contract; the seeded file is a
-> minimal version of it.
+> minimal version of it. Fresh projects also seed `CLAUDE.md` and
+> `AGENTS.md` with the Gemba runtime contract: Beads is authoritative
+> for work state and decisions, and source analysis defaults to
+> GitNexus when available.
 
 This guide covers the most common agents people drop into Gemba.
 For the full schema (including the `[agent.container]` stanza for
@@ -95,6 +98,11 @@ sessions still work, you just don't get the live progress badges.
 
 The first-class path. Claude Code reads `CLAUDE.md` automatically
 and exposes a Hooks API that gemba-bridge plugs straight into.
+`gemba install-bridge --agent=claude` also registers the `gemba` MCP
+server in `.claude/settings.local.json`. The seeded `CLAUDE.md` tells
+Claude to use Beads/Gemba for milestones, epics, beads, design
+decisions, dependencies, and evidence, and to prefer GitNexus/source
+analysis for code-impact questions when the index is fresh.
 
 **Install**: <https://claude.com/claude-code> (`brew install claude-code`).
 
@@ -123,6 +131,16 @@ preamble to a prompt file, runs `codex exec --json` non-interactively,
 exposes the session-scoped `gemba-mcp` server to Codex, reports
 fallback `working` / `bead-done` through `gemba-state`, and closes the
 bead when Codex exits successfully.
+
+Codex also reads `AGENTS.md` in the worktree. Gemba seeds that file so
+Codex knows that Beads is the source of truth for project work state
+and that GitNexus/source analysis should be used for impact and module
+questions when configured. The session-scoped MCP config supplied by
+`gemba-codex-driver` is the live tool channel; `AGENTS.md` is the
+durable reminder of what those tools mean. The `/onboard` deterministic
+setup gate also writes `.Codex/settings.local.json` with a `gemba`
+MCP server entry for native Codex environments that honor workspace
+settings.
 
 **Install**: `npm install -g @openai/codex` (or per their README).
 

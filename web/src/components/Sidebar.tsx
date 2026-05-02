@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutGrid,
   Terminal,
@@ -52,24 +52,48 @@ type Item = {
   label: string;
   Icon: LucideIcon;
   workspaceScoped?: boolean;
+  activePaths?: string[];
 };
 
 // Core panes — the operator's daily verbs. Refine sits between Plan
 // and Review (gm-3ofd) — it's the upstream triage surface for backlog
 // work, distinct from Plan's execution kanban.
 const items: Item[] = [
-  { to: '/board', label: 'Plan', Icon: LayoutGrid, workspaceScoped: true },
-  { to: '/refine', label: 'Refine', Icon: Filter, workspaceScoped: true },
-  { to: '/walk', label: 'Review', Icon: Footprints, workspaceScoped: true },
-  { to: '/escalations', label: 'Triage', Icon: AlertTriangle, workspaceScoped: true },
+  {
+    to: '/board',
+    label: 'Plan',
+    Icon: LayoutGrid,
+    workspaceScoped: true,
+    activePaths: ['/board', '/grid', '/graph', '/sprints'],
+  },
+  { to: '/refine', label: 'Refine', Icon: Filter, workspaceScoped: true, activePaths: ['/refine', '/backlog'] },
+  { to: '/walk', label: 'Review', Icon: Footprints, workspaceScoped: true, activePaths: ['/walk', '/walks'] },
+  {
+    to: '/escalations',
+    label: 'Triage',
+    Icon: AlertTriangle,
+    workspaceScoped: true,
+    activePaths: ['/escalations', '/drift'],
+  },
 ];
 
 // Secondary / utility surfaces — bottom-anchored under a divider.
 // Sessions is a runtime view rather than a daily destination; Settings
 // is configuration. Both belong below the core verbs.
 const secondaryItems: Item[] = [
-  { to: '/sessions', label: 'Sessions', Icon: Terminal, workspaceScoped: true },
-  { to: '/settings', label: 'Settings', Icon: SettingsIcon },
+  {
+    to: '/sessions',
+    label: 'Sessions',
+    Icon: Terminal,
+    workspaceScoped: true,
+    activePaths: ['/sessions', '/agents', '/agent-groups', '/coach'],
+  },
+  {
+    to: '/settings',
+    label: 'Settings',
+    Icon: SettingsIcon,
+    activePaths: ['/settings', '/capabilities', '/project/config', '/health'],
+  },
 ];
 
 const COLD_START_TITLE = 'Available after creating or switching to a project.';
@@ -121,9 +145,13 @@ export function Sidebar() {
 
 function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
   const { to, label, Icon, workspaceScoped } = item;
+  const { pathname } = useLocation();
   const muted = coldStart && Boolean(workspaceScoped);
   const testId = `sidebar-item-${to.replace(/^\//, '')}`;
   const isEscalations = to === '/escalations';
+  const active = isActivePath(pathname, item);
+  const activeClass =
+    'border border-cyan-400/70 border-l-4 bg-cyan-50 font-semibold text-cyan-950 shadow-sm dark:border-cyan-400/70 dark:bg-cyan-950/60 dark:text-cyan-50';
 
   if (muted) {
     // gm-root.17.12: muted styling indicates "operational on a workspace
@@ -139,13 +167,15 @@ function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
       <span
         role="link"
         aria-disabled="true"
+        aria-current={active ? 'page' : undefined}
         title={COLD_START_TITLE}
         data-testid={testId}
         data-disabled="true"
+        data-active={active ? 'true' : undefined}
         className={cn(
-          'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm italic',
+          'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm',
           'cursor-not-allowed select-none',
-          'text-neutral-500 dark:text-neutral-500'
+          active ? activeClass : 'italic text-neutral-500 dark:text-neutral-500'
         )}
       >
         <Icon className="h-4 w-4" aria-hidden />
@@ -155,21 +185,26 @@ function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
   }
 
   return (
-    <NavLink
+    <Link
       to={to}
       data-testid={testId}
-      className={({ isActive }) =>
-        cn(
-          'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors',
-          isActive
-            ? 'bg-neutral-200 text-neutral-900 dark:bg-neutral-800 dark:text-white'
-            : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-white'
-        )
-      }
+      aria-current={active ? 'page' : undefined}
+      data-active={active ? 'true' : undefined}
+      className={cn(
+        'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors',
+        active
+          ? activeClass
+          : 'text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-400 dark:hover:bg-neutral-900 dark:hover:text-white'
+      )}
     >
       <Icon className="h-4 w-4" aria-hidden />
       <span>{label}</span>
       {isEscalations && <EscalationBadge />}
-    </NavLink>
+    </Link>
   );
+}
+
+function isActivePath(pathname: string, item: Item): boolean {
+  const candidates = item.activePaths ?? [item.to];
+  return candidates.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }

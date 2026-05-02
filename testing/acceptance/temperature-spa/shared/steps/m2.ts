@@ -17,7 +17,7 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { SharedContext } from '../spec';
 import { waitForHttp } from './m1';
-import { demoPause, setDemoCaption } from '../helpers/demo-mode';
+import { demoPause, setDemoCaption, styleDemoTargetPage } from '../helpers/demo-mode';
 
 const M2_MILESTONE_ID = 'm2';
 
@@ -75,6 +75,7 @@ export async function runM2Step(ctx: SharedContext): Promise<void> {
 
     // ─── Playwright load + testid assertion ───────────────────
     await ctx.page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
+    await styleDemoTargetPage(ctx.page);
     const root = ctx.page.locator('[data-testid="app-root"]');
     await root.waitFor({ state: 'visible', timeout: 15_000 }).catch(async () => {
       await ctx.fileBugBead({
@@ -93,9 +94,10 @@ export async function runM2Step(ctx: SharedContext): Promise<void> {
       });
       throw new Error(`M2 oracle: app-root text "${text}" !== "Hello world"`);
     }
+    await styleDemoTargetPage(ctx.page);
     ctx.narrator.emit('Hello world is live in the browser', 'medium');
     await setDemoCaption(ctx.page, 'M2 launch: Hello world SPA is live');
-    await demoPause(2_500);
+    await demoPause(5_000);
 
     // ─── npm test (vitest) ────────────────────────────────────
     await runNpm(ctx, ['test', '--', '--run'], {

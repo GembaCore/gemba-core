@@ -959,6 +959,18 @@ intra_parallel = true
 max_parallel   = 4
 `
 
+// agentSetupGuidance is shared between CLAUDE.md and AGENTS.md so the
+// agent-native setup files agree about Gemba, Beads, and source
+// analysis. Keep this short: session preambles still carry the bead-
+// specific details.
+const agentSetupGuidance = `## Gemba Runtime Context
+
+- Beads is the source of truth for milestones, epics, work items, design decisions, dependencies, and evidence. Prefer Gemba/Beads tools over guessing from memory when you need project intent, related decisions, or current work state.
+- Gemba installs a session bridge and MCP server for native agents when available. Use the ` + "`gemba`" + ` MCP server for status, questions, blockers, skill outputs, and Beads-aware context when your runtime exposes it.
+- Source analysis is part of the workspace contract. GitNexus is the default backend for codebase analysis; when an index exists, prefer it for call graph, impact, dependency, and module-boundary questions before making broad code changes.
+- If GitNexus or the source-analysis MCP server is unavailable, say so and continue with file-level inspection rather than pretending graph evidence exists.
+`
+
 // claudeMDSkeleton returns a short CLAUDE.md skeleton for a fresh
 // project. <project-name> is interpolated from the workspace ratify
 // input. The body is deliberately tiny — it exists so native dispatch's
@@ -979,15 +991,30 @@ _Add commit-message style, branch naming, code-review expectations, etc._
 
 _Document the commands a fresh agent would run to verify their work._
 
+%s
+
 ## Links
 
 - Beads workflow: run `+"`bd prime`"+` for command reference.
 - Gemba: open the kanban with `+"`gemba serve`"+`.
-`, projectName)
+`, projectName, agentSetupGuidance)
 }
 
-// seedFTUXFiles runs the three best-effort first-time-user-experience
-// seed steps (gm-root.24) against the just-ratified project dir.
+// agentsMDSkeleton returns a Codex-friendly workspace instruction file.
+// Codex reads AGENTS.md automatically, while Claude Code reads
+// CLAUDE.md; both point at the same Gemba/Beads/source-analysis
+// contract.
+func agentsMDSkeleton(projectName string) string {
+	return fmt.Sprintf(`# %s Agent Instructions
+
+This project is managed by Gemba.
+
+%s
+`, projectName, agentSetupGuidance)
+}
+
+// seedFTUXFiles runs the best-effort first-time-user-experience seed
+// steps (gm-root.24 plus gm-ddpy.7) against the just-ratified project dir.
 // Returns a slice of human-readable warnings — empty when every step
 // succeeded or skipped. Never panics; never aborts the parent
 // transaction.
@@ -1004,6 +1031,9 @@ func (r *ratifier) seedFTUXFiles(target, projectName string) []string {
 		warnings = append(warnings, w)
 	}
 	if w := r.seedClaudeMD(target, projectName); w != "" {
+		warnings = append(warnings, w)
+	}
+	if w := r.seedAgentsMD(target, projectName); w != "" {
 		warnings = append(warnings, w)
 	}
 	return warnings
@@ -1104,6 +1134,22 @@ func (r *ratifier) seedClaudeMD(target, projectName string) string {
 	}
 	if err := r.fs.WriteFile(path, []byte(claudeMDSkeleton(projectName)), 0o644); err != nil {
 		return fmt.Sprintf("CLAUDE.md: write failed: %v", err)
+	}
+	return ""
+}
+
+// seedAgentsMD writes AGENTS.md for runtimes such as Codex that read
+// it as their workspace setup file. Skips silently if the file already
+// exists so operator-authored instructions are never clobbered.
+func (r *ratifier) seedAgentsMD(target, projectName string) string {
+	path := filepath.Join(target, "AGENTS.md")
+	if _, err := r.fs.Stat(path); err == nil {
+		return ""
+	} else if !os.IsNotExist(err) {
+		return fmt.Sprintf("AGENTS.md: stat failed: %v", err)
+	}
+	if err := r.fs.WriteFile(path, []byte(agentsMDSkeleton(projectName)), 0o644); err != nil {
+		return fmt.Sprintf("AGENTS.md: write failed: %v", err)
 	}
 	return ""
 }

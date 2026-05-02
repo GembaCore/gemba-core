@@ -50,11 +50,25 @@ func detect() registry.DetectResult {
 	}
 }
 
+const probeTimeoutEnv = "GEMBA_BD_PROBE_TIMEOUT"
+
 // probeTimeout bounds how long we'll wait for `bd` to answer. The Dolt
 // server bd talks to is the most common failure mode (gm-b1 DoD: killing
 // the daemon must surface a banner, not a hang), so a short cap is the
 // point — a slow reply is functionally the same as no reply for the UI.
 var probeTimeout = 2 * time.Second
+
+func effectiveProbeTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv(probeTimeoutEnv))
+	if raw == "" {
+		return probeTimeout
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return probeTimeout
+	}
+	return d
+}
 
 // probe: runtime health check used by /api/adaptors. Runs a cheap `bd`
 // subcommand that requires the Dolt daemon to answer, with a short
@@ -72,7 +86,7 @@ func probe() registry.DetectResult {
 		return d
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), effectiveProbeTimeout())
 	defer cancel()
 
 	// `bd list --limit 1 --json` forces a round-trip to Dolt but asks for

@@ -22,6 +22,7 @@ where it diverges from current reality.
 | **Light-form vs conversational split** | `gm-root.17.13` | Project creation does NOT require an LLM. Added `POST /api/v1/newproject/create` (lightweight: `{project_name, description}` → atomic ratify with empty plan tree, no Onboarder spawn). Added `GET /api/v1/onboarder/probe`. The conversational planner moved to `/onboard`; the board's empty-state offers an opt-in **Plan with the Onboarder →** CTA gated behind the probe. |
 | **Unified Create-project modal** | `gm-e12.21.3` | The standalone `/new` page has been retired in favor of a single Create-project modal opened from `/board`. `/new` is now a redirect to `/board?createProject=…`. The modal is the canonical entry for every (DB, repo) combination — fresh create, adopt existing beads DB, clone from git URL. The lightweight `/create` endpoint (gm-root.17.13) backs the "fresh create" arm. |
 | **Project picker discovery + bind** | `gm-root.17.14` | `GET /api/v1/projects` now returns every reachable beads DB classified by `kind`: `complete` (DB + workspace.toml), `needs_workspace` (DB only, no workspace), `needs_repo` (DB + workspace, but no git repo). Picker entries with `kind !== "complete"` show a *needs setup* badge; clicking opens a **BindDialog** that runs `POST /api/v1/projects/bind` with `mode: "create"` (`git init` here) or `mode: "navigate"` (copy the beads DB into an existing repo). New `[projects].extra_roots` config lets operators register additional discovery roots. |
+| **Deterministic setup before LLM coaching** | `gm-ddpy.7` | `/onboard` now starts with a deterministic coaching setup gate. The operator chooses new / existing / import, project name, GitHub project identity, orchestration layer, native worktree or Gas Town location, and source-analysis backend before any Onboarder LLM session is launched. Existing codebases default to GitNexus. Gemba owns setup questions and side effects; the Onboarder owns plan coaching after setup. |
 | **Onboarder credential resolution** | `gm-root.17.10` (env var by `4f734f0`) | Implicit-anthropic via `ANTHROPIC_API_KEY` env var: if `[llm].provider` is unset but `ANTHROPIC_API_KEY` is exported, the Onboarder constructs an anthropic client with built-in defaults. Credentials never touch disk on this path. |
 | **Cold-start UI hygiene** | `gm-root.17.12` | On cold-start (no active project), the left sidebar's workspace-scoped panes render as muted spans instead of links. Settings stays interactive. |
 | **Sidebar consolidation** | `gm-e12.19.8` | Sidebar collapsed to six first-order panes — Plan / Refine / Review / Triage / Sessions / Settings. Secondary surfaces survive as deep-link routes and roll up under the panes' tabs as gm-e12.19.4-7 land. |
@@ -124,6 +125,41 @@ The full-page conversational layout the original design ratified at
 | Conversation | Message history with the `newproject` skill. User types prompts; the skill replies with proposals and questions. |
 | Plan preview | Live-updated tree of emerging Milestones → Epics → Beads + draft project description. Editable in-place; edits feed back to the skill. |
 
+A deterministic setup gate renders before those panes. It collects:
+
+- project source: new, existing, or imported;
+- project name;
+- GitHub project identity;
+- orchestration layer: native or Gas Town;
+- native worktree path or Gas Town location;
+- source-analysis backend: GitNexus by default, or explicit skip.
+
+The LLM-backed `POST /api/v1/newproject/start` call must not happen
+until this gate is complete. The SPA first POSTs to
+`/api/v1/onboarding/setup` with a nonce. That deterministic setup
+transaction prepares or adopts the worktree, initializes
+`.gemba/workspace.toml` when missing, initializes a local Beads database
+when possible, syncs clean existing worktrees with `git fetch --prune`
+and `git pull --ff-only`, and skips pull with an operator-visible
+warning when the worktree is dirty.
+
+The same transaction updates LLM-readable setup files (`CLAUDE.md`,
+`AGENTS.md`, `.claude/settings.local.json`, and
+`.Codex/settings.local.json`) without clobbering operator-authored
+content. These files advertise Beads/Gemba MCP usage and GitNexus
+source-analysis expectations. When GitNexus is selected, setup verifies
+or best-effort installs the CLI, writes `.gemba/codeanalysis.toml`, runs
+`gitnexus analyze --path <worktree>` for existing/imported codebases,
+and probes both `gemba-mcp` and `gitnexus mcp --help`. New projects
+record the GitNexus contract immediately and defer the first index
+until code exists.
+
+Known boundary: GitHub repository creation/push and full Gas Town boot
+initialization are not yet driven by this endpoint; those are surfaced
+as setup warnings rather than silently delegated to the LLM. The final
+`/api/v1/newproject/:id/ratify` transaction still owns the generated
+plan commit path.
+
 A persistent **Ratify** button at the bottom-right opens the final
 nonce-confirmed commit modal showing the full tree + draft
 `docs/project.md` for review. On nonce-confirm the SPA POSTs to
@@ -161,6 +197,65 @@ transaction. This path exists so ssh-only operators can bootstrap
 without a browser.
 
 ## Conversation flow
+
+### Deterministic setup before conversation
+
+Gemba owns the branching logic that is factual, stateful, or tied to
+external side effects. These questions and actions belong in the
+coaching panel before any LLM is launched:
+
+| Decision / action | Deterministic owner | Notes |
+| --- | --- | --- |
+| Is this project new, existing, or imported? | SPA/server setup flow | Required first branch. |
+| What is the project name? | SPA/server setup flow | Used for beads DB name, repo naming, and display. |
+| Create or adopt beads database | Server setup transaction | New projects create it; existing/imported projects adopt or sync it. |
+| Native or Gas Town orchestration? | SPA/server setup flow | Determines runtime host and subsequent location questions. |
+| GitHub project identity and remote | Server setup transaction | Verify intended owner/repo, create when needed, then push. |
+| Native worktree location | Server setup transaction | Native does not imply a default location; ask or use configured default. |
+| Gas Town location and boot state | Server setup transaction | CWD to the town/root, ensure Gas Town is booted, initialize project with beads DB name and remote URL. |
+| Mayor vs crew host | Orchestration setup policy | Project-level onboarding attaches to mayor or a crew according to the session-hosting design. |
+| Existing project sync/adopt | Server setup transaction | Native should sync from remote after confirming worktree; Gas Town should adopt the project location. |
+| Source analysis backend | SPA/server setup flow | Default to GitNexus for existing/imported codebases; allow explicit skip. |
+| GitNexus install and initial analysis | Server setup transaction | Verify or best-effort install if missing, run `gitnexus analyze --path <worktree>` for existing/imported codebases, and record freshness/status. |
+| Beads + source-analysis MCP test | Server setup transaction | Verify the LLM can reach both servers before launch; surface failures in the coaching panel. |
+| LLM setup-file updates | Server setup transaction | Update `CLAUDE.md`, `AGENTS.md`, `.claude/settings.local.json`, `.Codex/settings.local.json`, and equivalent runtime files where supported. |
+| Display existing beads | SPA/server setup flow | If beads exist, show them before asking the LLM for recommended next steps. |
+
+The LLM owns only the parts where synthesis is useful:
+
+| LLM responsibility | Output |
+| --- | --- |
+| Coach the user through vague product intent | Clarifying questions, assumptions, and tradeoffs. |
+| Synthesize project state | Project narrative and draft `docs/project.md`. |
+| Propose milestones, epics, and beads | Typed `NewProjectState` tree. |
+| Recommend next steps once existing work is visible | Suggested milestone/epic/bead creation or refinement actions. |
+| Explain consequences of user edits | Diff-aware replies and downstream plan adjustments. |
+
+This keeps irreversible setup actions auditable and makes the LLM a
+planner, not an implicit infrastructure operator.
+
+### LLM setup-file contract
+
+Every supported runtime should receive the same durable facts through
+its native setup files:
+
+- Beads is the project state source of truth for milestones, epics,
+  beads, design decisions, dependencies, and evidence.
+- A Beads/Gemba MCP server is available when the runtime supports MCP,
+  and agents should use it to inspect design decisions, related beads,
+  and current work state.
+- Source analysis is available through the configured backend. GitNexus
+  is the default for codebases; agents should prefer it for impact,
+  call-graph, module-boundary, and dependency questions when the index
+  is fresh.
+- If the MCP connection or analysis index is unavailable, agents should
+  say so and fall back to file-level inspection.
+
+For Claude Code, this lands in `CLAUDE.md` plus
+`.claude/settings.local.json`. For Codex, this lands in `AGENTS.md` and
+the session-scoped MCP configuration passed by `gemba-codex-driver`.
+Other runtimes should follow the same content contract in their native
+setup file or first-message preamble.
 
 ### State machine
 
@@ -481,6 +576,7 @@ Conversational planner (Onboarder, `/onboard`):
 
 | Path | Verb | Purpose |
 | --- | --- | --- |
+| `POST /api/v1/onboarding/setup` | nonce-confirmed deterministic setup before LLM launch |
 | `POST /api/v1/newproject/start` | open a conversation, return a session ID |
 | `POST /api/v1/newproject/:id/turn` | submit an operator message, return the updated state + skill reply |
 | `POST /api/v1/newproject/:id/ratify` | nonce-confirmed atomic commit |

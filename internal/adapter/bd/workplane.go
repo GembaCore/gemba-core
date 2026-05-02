@@ -253,6 +253,9 @@ func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([
 	if f.Limit > 0 {
 		args = append(args, "--limit", strconv.Itoa(f.Limit))
 	}
+	if listNeedsAll(f) {
+		args = append(args, "--all")
+	}
 	// Push the IDs filter down to bd via --id <comma-list> when set.
 	// Without this, the default 50-row limit truncates the result
 	// before the client-side matchesFilter can see the wanted ids —
@@ -313,6 +316,22 @@ func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([
 		items = append(items, wi)
 	}
 	return items, nil
+}
+
+func listNeedsAll(f core.WorkItemFilter) bool {
+	for _, c := range f.StateCategory {
+		if c == core.StateCompleted || c == core.StateCanceled {
+			return true
+		}
+	}
+	if len(f.Statuses) > 1 {
+		for _, s := range f.Statuses {
+			if s == "closed" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // matchesFilter applies the filter predicates bd couldn't push down to

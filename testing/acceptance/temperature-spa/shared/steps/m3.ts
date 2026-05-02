@@ -24,7 +24,7 @@ import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { SharedContext } from '../spec';
 import { waitForHttp } from './m1';
-import { demoPause, setDemoCaption } from '../helpers/demo-mode';
+import { demoPause, setDemoCaption, styleDemoTargetPage } from '../helpers/demo-mode';
 
 const M3_MILESTONE_ID = 'm3';
 
@@ -77,6 +77,7 @@ export async function runM3Step(ctx: SharedContext): Promise<void> {
     }
 
     await ctx.page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
+    await styleDemoTargetPage(ctx.page);
 
     // ─── Table existence ──────────────────────────────────────
     const table = ctx.page.locator('[data-testid="temperature-table"]');
@@ -161,8 +162,9 @@ export async function runM3Step(ctx: SharedContext): Promise<void> {
       }
     }
     ctx.narrator.emit('The final conversion table is live and the oracle passes', 'long');
+    await styleDemoTargetPage(ctx.page);
     await setDemoCaption(ctx.page, 'M3 launch: conversion table passes the oracle');
-    await demoPause(3_000);
+    await demoPause(8_000);
 
     // ─── npm test ─────────────────────────────────────────────
     await runNpm(ctx, ['test', '--', '--run'], {

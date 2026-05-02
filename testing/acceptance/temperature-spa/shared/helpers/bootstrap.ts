@@ -142,12 +142,18 @@ export async function bootstrapProject(
       mode: workspaceMode,
       auth: 'open',
       serveArgs: opts.serveArgs,
-      serveEnv: process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1'
-        ? {
-          HOME: process.env.HOME,
-          GEMBA_ACCEPTANCE_MERGE_BEAD_WORKTREES: '1',
-        }
-        : undefined,
+      serveEnv: {
+        // The demo drives imports, dispatch, and board polling in quick
+        // succession. Give the Beads health probe enough room to avoid a
+        // false degraded banner while still surfacing genuinely hung bd.
+        GEMBA_BD_PROBE_TIMEOUT: '10s',
+        ...(process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1'
+          ? {
+            HOME: process.env.HOME,
+            GEMBA_ACCEPTANCE_MERGE_BEAD_WORKTREES: '1',
+          }
+          : {}),
+      },
       beforeServe: (workspaceDir) => {
         seedAcceptanceEnginerPersona(workspaceDir);
         if (process.env.GEMBA_ACCEPTANCE_REAL_AGENTS === '1') {

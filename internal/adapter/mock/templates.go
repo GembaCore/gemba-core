@@ -77,6 +77,18 @@ func npmInstall(ctx TemplateContext, _ Frontmatter) error {
 			return err2
 		}
 	}
+	if err := verifyNodeModules(ctx.ProjectDir); err != nil {
+		ctx.log(fmt.Sprintf("npm-install: detected incomplete install, repairing: %v", err))
+		if rmErr := os.RemoveAll(filepath.Join(ctx.ProjectDir, "node_modules")); rmErr != nil {
+			return rmErr
+		}
+		if err2 := runCmd(ctx.ProjectDir, "npm", "install", "--prefer-online", "--force", "--silent"); err2 != nil {
+			return err2
+		}
+		if err3 := verifyNodeModules(ctx.ProjectDir); err3 != nil {
+			return err3
+		}
+	}
 	return nil
 }
 
@@ -153,6 +165,29 @@ func writeProjectFile(projectDir, rel, body string) error {
 		return err
 	}
 	return os.WriteFile(abs, []byte(body), 0o644)
+}
+
+func verifyNodeModules(projectDir string) error {
+	required := []string{
+		"node_modules/react/index.js",
+		"node_modules/react-dom/index.js",
+		"node_modules/react-dom/client.js",
+		"node_modules/vite/bin/vite.js",
+		"node_modules/typescript/bin/tsc",
+		"node_modules/vitest/vitest.mjs",
+	}
+	for _, rel := range required {
+		if _, err := os.Stat(filepath.Join(projectDir, rel)); err != nil {
+			return fmt.Errorf("missing installed file %s: %w", rel, err)
+		}
+	}
+	if err := runCmd(projectDir, "node", "-e", "require.resolve('react-dom/client'); require.resolve('@testing-library/react'); require.resolve('jsdom'); require.resolve('@vitejs/plugin-react'); require.resolve('vite'); require.resolve('vitest'); require.resolve('typescript');"); err != nil {
+		return err
+	}
+	if err := runCmd(projectDir, "npm", "exec", "--", "vitest", "--version"); err != nil {
+		return err
+	}
+	return nil
 }
 
 func hasLabel(labels []string, want string) bool {

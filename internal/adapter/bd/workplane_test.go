@@ -35,6 +35,7 @@ type fakeBd struct {
 	// directly (gm-gsbj `--parent` round-trip). Indexed by bd id; older
 	// entries are overwritten on re-update.
 	updateArgs map[string][]string
+	listArgs   []string
 }
 
 func newFakeBd(t *testing.T) *fakeBd {
@@ -71,8 +72,10 @@ func (f *fakeBd) run(_ context.Context, args ...string) ([]byte, error) {
 }
 
 func (f *fakeBd) handleList(args []string) ([]byte, error) {
+	f.listArgs = append([]string(nil), args...)
 	statusFilter := ""
 	limit := 0
+	includeAll := false
 	var labelFilter []string
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -86,6 +89,8 @@ func (f *fakeBd) handleList(args []string) ([]byte, error) {
 		case "--label":
 			labelFilter = strings.Split(args[i+1], ",")
 			i++
+		case "--all":
+			includeAll = true
 		case "--json":
 			// default
 		}
@@ -107,6 +112,9 @@ func (f *fakeBd) handleList(args []string) ([]byte, error) {
 	}
 	out := make([]bd.Bead, 0, len(f.beads))
 	for _, b := range f.beads {
+		if !includeAll && statusFilter == "" && b.Status == "closed" {
+			continue
+		}
 		if statusFilter != "" && b.Status != statusFilter {
 			continue
 		}
@@ -238,6 +246,15 @@ func removeFakeLabel(labels []string, target string) []string {
 		}
 	}
 	return out
+}
+
+func stringSliceContains(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 // fakeExitError lets the fake report a non-zero bd exit with a stderr
@@ -824,6 +841,32 @@ func TestBeadsListWorkItemsFilterKindsEmpty(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Errorf("empty filter: got %d items, want 2 (Kinds nil must not narrow)", len(got))
+	}
+}
+
+func TestBeadsListWorkItemsCompletedStateIncludesClosedBeads(t *testing.T) {
+	fake := newFakeBd(t)
+	fake.beads["gm-open"] = &bd.Bead{
+		ID: "gm-open", Title: "open", Status: "open", Priority: 2,
+		IssueType: "task",
+	}
+	fake.beads["gm-done"] = &bd.Bead{
+		ID: "gm-done", Title: "done", Status: "closed", Priority: 2,
+		IssueType: "task",
+	}
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+
+	got, err := impl.ListWorkItems(context.Background(), core.WorkItemFilter{
+		StateCategory: []core.StateCategory{core.StateCompleted},
+	})
+	if err != nil {
+		t.Fatalf("ListWorkItems: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != "gemba/gemba/gm-done" {
+		t.Fatalf("completed filter: got %+v, want only gm-done", got)
+	}
+	if !stringSliceContains(fake.listArgs, "--all") {
+		t.Fatalf("completed filter did not pass --all to bd list; args=%v", fake.listArgs)
 	}
 }
 

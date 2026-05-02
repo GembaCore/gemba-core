@@ -62,9 +62,9 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function renderSidebar() {
+function renderSidebar(initialEntry = '/new') {
   return render(
-    <MemoryRouter initialEntries={['/new']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <ProjectPickerProvider>
         <Sidebar />
       </ProjectPickerProvider>
@@ -122,6 +122,35 @@ describe('Sidebar', () => {
     expect(screen.queryByRole('link', { name: 'Recent' })).toBeNull();
   });
 
+  it('marks parent panes active for their rolled-up routes', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({
+        projects: [{ name: 'demo', path: '/tmp/demo', active: true }],
+        total: 1,
+      })
+    );
+    renderSidebar('/graph');
+
+    const plan = await screen.findByRole('link', { name: 'Plan' });
+    expect(plan.getAttribute('data-active')).toBe('true');
+    expect(plan.getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'Refine' }).getAttribute('data-active')).toBeNull();
+  });
+
+  it('marks Sessions active for agent detail routes', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({
+        projects: [{ name: 'demo', path: '/tmp/demo', active: true }],
+        total: 1,
+      })
+    );
+    renderSidebar('/agents/session-1');
+
+    const sessions = await screen.findByRole('link', { name: 'Sessions' });
+    expect(sessions.getAttribute('data-active')).toBe('true');
+    expect(sessions.getAttribute('aria-current')).toBe('page');
+  });
+
   it('cold-start: workspace-scoped items render as aria-disabled spans', async () => {
     fetchSpy.mockResolvedValue(jsonResponse({ projects: [], total: 0 }));
     renderSidebar();
@@ -141,6 +170,18 @@ describe('Sidebar', () => {
       // Crucially NOT a real link.
       expect(wrap?.tagName.toLowerCase()).toBe('span');
     }
+  });
+
+  it('cold-start: the current workspace pane is still visibly active', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ projects: [], total: 0 }));
+    renderSidebar('/graph');
+
+    await screen.findByRole('link', { name: 'Settings' });
+    const plan = screen.getByTestId('sidebar-item-board');
+    expect(plan.tagName.toLowerCase()).toBe('span');
+    expect(plan.getAttribute('aria-disabled')).toBe('true');
+    expect(plan.getAttribute('data-active')).toBe('true');
+    expect(plan.getAttribute('aria-current')).toBe('page');
   });
 
   it('cold-start: Settings stays interactive', async () => {

@@ -224,6 +224,35 @@ export interface OnboarderProbeResponse {
   reason?: string;
 }
 
+export type OnboardingOrigin = 'new' | 'existing' | 'import';
+export type OnboardingOrchestration = 'native' | 'gastown';
+export type SourceAnalysisTool = 'gitnexus' | 'none';
+
+export interface OnboardingSetupRequest {
+  origin: OnboardingOrigin;
+  project_name: string;
+  github_project: string;
+  orchestration: OnboardingOrchestration;
+  worktree_path?: string;
+  gastown_location?: string;
+  source_analysis_tool: SourceAnalysisTool;
+}
+
+export interface OnboardingSetupFrame {
+  seq: number;
+  line: string;
+  level: 'info' | 'warn' | 'error' | string;
+  done: boolean;
+}
+
+export interface OnboardingSetupResponse {
+  setup_id: string;
+  project_path?: string;
+  frames: OnboardingSetupFrame[];
+  warnings?: string[];
+  checks?: Record<string, string>;
+}
+
 // ── Client functions ────────────────────────────────────────────────
 
 // startNewProject — POST /api/v1/newproject/start. Mints a fresh
@@ -235,6 +264,24 @@ export async function startNewProject(): Promise<StartNewProjectResponse> {
     method: 'POST',
     body: '{}',
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+// prepareOnboardingSetup — POST /api/v1/onboarding/setup. This is the
+// deterministic gate before the Onboarder LLM launches: create/adopt
+// the worktree contract, initialize Gemba/Beads metadata, seed agent
+// setup files, and verify source-analysis/MCP commands where possible.
+export async function prepareOnboardingSetup(
+  body: OnboardingSetupRequest,
+  opts: { nonce?: string } = {}
+): Promise<OnboardingSetupResponse> {
+  return apiFetch<OnboardingSetupResponse>('/v1/onboarding/setup', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+    },
   });
 }
 

@@ -439,6 +439,40 @@
         }
       }
     },
+    "/api/v1/onboarding/setup": {
+      "post": {
+        "tags": ["newproject"],
+        "summary": "Deterministic onboarding setup before launching the Onboarder LLM. Prepares or adopts the worktree, initializes Gemba/Beads metadata, seeds runtime guidance files, and verifies source-analysis/MCP commands where possible.",
+        "operationId": "prepareOnboardingSetup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OnboardingSetupRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Setup completed. Warnings are non-fatal and are included in the response ledger.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OnboardingSetupResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "500": {
+            "description": "Setup failed while mutating disk or shelling out.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/newproject/start": {
       "post": {
         "tags": ["newproject"],
@@ -1260,6 +1294,77 @@
             "description": "Monotonic turn counter. Starts at 0; incremented on every successful turn. The ratify endpoint uses this as a stale-modal guard."
           },
           "LastChange": { "$ref": "#/components/schemas/ChangeRef" }
+        }
+      },
+      "OnboardingSetupRequest": {
+        "type": "object",
+        "description": "Body for `POST /api/v1/onboarding/setup`. This deterministic gate runs before any Onboarder LLM session starts.",
+        "required": ["origin", "project_name", "github_project", "orchestration", "source_analysis_tool"],
+        "properties": {
+          "origin": {
+            "type": "string",
+            "enum": ["new", "existing", "import"],
+            "description": "Project source branch selected by the operator."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Gemba display name and local project identity."
+          },
+          "github_project": {
+            "type": "string",
+            "description": "Intended GitHub owner/repo identity."
+          },
+          "orchestration": {
+            "type": "string",
+            "enum": ["native", "gastown"],
+            "description": "Runtime orchestration layer."
+          },
+          "worktree_path": {
+            "type": "string",
+            "description": "Absolute native worktree path. Required when orchestration is native."
+          },
+          "gastown_location": {
+            "type": "string",
+            "description": "Absolute Gas Town location. Required when orchestration is gastown."
+          },
+          "source_analysis_tool": {
+            "type": "string",
+            "enum": ["gitnexus", "none"],
+            "description": "Source-analysis backend. Existing/imported codebases default to gitnexus in the SPA."
+          }
+        }
+      },
+      "OnboardingSetupFrame": {
+        "type": "object",
+        "description": "One operator-visible setup ledger line.",
+        "required": ["seq", "line", "level", "done"],
+        "properties": {
+          "seq": { "type": "integer", "minimum": 1 },
+          "line": { "type": "string" },
+          "level": { "type": "string", "enum": ["info", "warn", "error"] },
+          "done": { "type": "boolean" }
+        }
+      },
+      "OnboardingSetupResponse": {
+        "type": "object",
+        "description": "Returned by `POST /api/v1/onboarding/setup` after deterministic setup completes or completes with warnings.",
+        "required": ["setup_id", "frames"],
+        "properties": {
+          "setup_id": { "type": "string" },
+          "project_path": { "type": "string" },
+          "frames": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/OnboardingSetupFrame" }
+          },
+          "warnings": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "checks": {
+            "type": "object",
+            "additionalProperties": { "type": "string" },
+            "description": "Best-effort setup statuses such as git_sync, workspace, beads, source_analysis, gemba_mcp, and source_analysis_mcp."
+          }
         }
       },
       "StartNewProjectResponse": {

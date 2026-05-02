@@ -606,6 +606,13 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/projects/bind", r.bindProject)
 
+		// gm-ddpy: deterministic onboarding setup runs before the
+		// Onboarder LLM is launched. It prepares or adopts the worktree,
+		// initializes Gemba/Beads metadata, installs agent guidance, and
+		// verifies source-analysis/MCP availability where possible.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/onboarding/setup", r.onboardingSetup)
+
 		// gm-root.17.3: conversational new-project flow. All three
 		// endpoints are post-only; /start and /turn are fire-and-forget
 		// (low blast radius); /ratify is nonce-gated because it writes to

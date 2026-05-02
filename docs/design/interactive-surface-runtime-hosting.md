@@ -53,11 +53,16 @@ The first implementation slice is in place:
   project/milestone/epic/escalation/walk interactions route to the
   mayor, while leaf work-item interactions route to crew. The server
   now applies the same rule from the active OrchestrationPlane manifest.
+- `/onboard` uses the shared transcript component and gates the
+  Onboarder LLM behind deterministic setup collection. It asks for
+  new/existing/import, project name, GitHub project, orchestration
+  layer, native/Gas Town location, and source-analysis backend before calling
+  `/api/v1/newproject/start`.
 
 Remaining implementation work includes backend persistence/API
-integration, full Status-mode mechanics, Onboarder component extraction,
-Gas Town session-request handoff, and migrating escalation/walk/PM
-flows to the shared interaction model.
+integration, full setup side-effect execution for GitHub/beads/Gas
+Town, Gas Town session-request handoff, and completing the PM/walk
+runtime migration.
 
 ## Problem
 
@@ -258,6 +263,33 @@ there is no board context for an RHP. It can remain full-page, but its
 conversation pane, plan preview, transcript model, ratify controls, and
 state machine should become reusable Interaction components.
 
+The Onboarder full-page exception still has an important boundary:
+branching questions that can be answered deterministically must be
+asked before the LLM launches. Gemba asks whether the user is creating
+a new project, adopting an existing project, or importing a project;
+then collects the project name, GitHub project identity, orchestration
+layer, native worktree or Gas Town location, and source-analysis
+backend. Existing/imported codebases default to GitNexus. Only after
+that setup is explicit and required setup checks have completed should
+the Onboarder LLM coach the user through project intent, milestones,
+epics, beads, acceptance criteria, risks, and next actions.
+
+Ownership split:
+
+| Setup concern | Owner |
+| --- | --- |
+| New / existing / import branch | Gemba deterministic setup UI |
+| Beads database create/adopt/sync | Gemba server setup transaction |
+| GitHub repo verify/create/push | Gemba server setup transaction |
+| Native worktree path and sync | Gemba server setup transaction |
+| Gas Town location, boot, project init | Gas Town adaptor through Gemba setup transaction |
+| Mayor vs crew mounting | Active OrchestrationPlane policy |
+| GitNexus install/analyze for existing code | Gemba server setup transaction |
+| Beads and source-analysis MCP connection test | Gemba server setup transaction |
+| LLM setup-file updates for Beads and analysis | Gemba server setup transaction |
+| Product intent and plan synthesis | Onboarder LLM |
+| Milestone/epic/bead proposal | Onboarder LLM, validated by Gemba |
+
 ## Gas Town Mayor and Crew Session Hosting
 
 When Gemba runs with the Gas Town adaptor:
@@ -332,6 +364,25 @@ The RHP should hide unavailable controls, not render dead buttons.
 - Rehome scoped PM and escalation interactions into the RHP.
 - Reconcile `/coach` and `/walk` with the Interaction model without
   removing useful full-page overview modes.
+
+## Integration Checklist
+
+New interactive surfaces should pass this checklist before shipping:
+
+| Check | Requirement |
+| --- | --- |
+| Scope | The interaction has a concrete scope: project, milestone, epic, bead, session, escalation, or walk. |
+| Determinism | Factual branching, local paths, repo identity, runtime selection, and setup side effects are handled by Gemba before any LLM is launched. |
+| Beads awareness | Runtime setup files tell the LLM that Beads is authoritative for milestones, epics, beads, decisions, dependencies, and evidence. |
+| Source analysis | Existing codebases prompt for analysis backend, default to GitNexus, run initial analysis, and test the source-analysis MCP before launch. |
+| New project setup | Fresh projects still seed Beads and source-analysis MCP guidance so agents know where to look once code exists. |
+| LLM boundary | The LLM is limited to coaching, synthesis, recommendations, and structured proposal generation. |
+| Host | Scoped interactions default to RHP tabs; full-page routes are reserved for pre-project, broad dashboard, or wide comparison modes. |
+| Runtime | The active OrchestrationPlane selects the runtime host; Gas Town work must not silently spawn native panes. |
+| Capabilities | Controls render from capabilities and unavailable actions explain the missing contract. |
+| Transcript | Transcript-bearing UI uses shared Interaction components. |
+| Actions | Suggested actions are typed, nonce-gated when destructive, and persist evidence/decisions when applied. |
+| Tests | Unit or integration tests assert the host, runtime routing, and no-premature-LLM-launch rules. |
 
 ## Design Decision
 

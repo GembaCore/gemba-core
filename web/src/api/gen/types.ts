@@ -106,6 +106,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/work-items/{id}/cascade-dispatch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start a dependency-aware dispatch cascade for an epic or milestone wrapper. */
+        post: operations["cascadeDispatchWorkItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sprints": {
         parameters: {
             query?: never;
@@ -168,6 +185,23 @@ export interface paths {
         get: operations["listSessions"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/interactions:ensure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create or return the process-local interaction for a scoped operator exchange. */
+        post: operations["ensureInteraction"];
         delete?: never;
         options?: never;
         head?: never;
@@ -341,6 +375,23 @@ export interface paths {
         get: operations["getPlannerCoach"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/onboarding/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Deterministic onboarding setup before launching the Onboarder LLM. Prepares or adopts the worktree, initializes Gemba/Beads metadata, seeds runtime guidance files, and verifies source-analysis/MCP commands where possible. */
+        post: operations["prepareOnboardingSetup"];
         delete?: never;
         options?: never;
         head?: never;
@@ -557,6 +608,29 @@ export interface components {
             items: components["schemas"]["WorkItem"][];
             total: number;
         };
+        CascadeDispatchRequest: {
+            /**
+             * @example claude
+             * @example codex
+             */
+            agent_type: string;
+            limit?: number;
+        };
+        CascadeDispatchResponse: {
+            wrapper_id: string;
+            staged?: string[];
+            dispatched: {
+                work_item_id: string;
+                session_id?: string;
+            }[];
+            blocked?: string[];
+            skipped?: string[];
+            errors?: {
+                work_item_id: string;
+                message: string;
+            }[];
+            limit?: number;
+        };
         Sprint: {
             id: string;
             name: string;
@@ -601,6 +675,77 @@ export interface components {
         };
         SessionListEnvelope: {
             sessions: components["schemas"]["Session"][];
+        };
+        InteractionScope: {
+            /** @enum {string} */
+            type: "project" | "milestone" | "epic" | "workitem" | "session" | "escalation" | "walk";
+            id: string;
+            title?: string;
+            breadcrumb?: components["schemas"]["InteractionCrumb"][];
+        };
+        InteractionCrumb: {
+            type: string;
+            id: string;
+            label: string;
+        };
+        EnsureInteractionRequest: {
+            /** @enum {string} */
+            kind?: "project_onboarding" | "pm_consult" | "escalation_triage" | "gemba_walk" | "session_supervision" | "evidence_review" | "decision_review";
+            scope: components["schemas"]["InteractionScope"];
+        };
+        InteractionSession: {
+            id: string;
+            kind: string;
+            status: string;
+            /** @enum {string} */
+            ui_host: "rhp" | "page" | "modal";
+            /** @enum {string} */
+            runtime_host: "native" | "codex" | "claude" | "gastown_mayor" | "gastown_crew" | "server_persona" | "manual";
+            runtime_label: string;
+            scope: components["schemas"]["InteractionScope"];
+            messages: components["schemas"]["InteractionMessage"][];
+            suggested_actions: components["schemas"]["InteractionSuggestedAction"][];
+            draft?: components["schemas"]["InteractionDraft"];
+            evidence?: components["schemas"]["InteractionEvidence"][];
+            decision_log?: components["schemas"]["InteractionDecision"][];
+            capabilities: string[];
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        InteractionMessage: {
+            id: string;
+            /** @enum {string} */
+            role: "operator" | "assistant" | "system" | "tool";
+            body: string;
+            /** Format: date-time */
+            at?: string;
+        };
+        InteractionSuggestedAction: {
+            id: string;
+            label: string;
+            description: string;
+            disabled_reason?: string;
+        };
+        InteractionDraft: {
+            title: string;
+            summary: string;
+            bullets?: string[];
+        };
+        InteractionEvidence: {
+            id: string;
+            label: string;
+            href?: string;
+        };
+        InteractionDecision: {
+            id: string;
+            summary: string;
+            rationale?: string;
+            /** @enum {string} */
+            outcome: "accepted" | "rejected" | "deferred";
+            /** Format: date-time */
+            decided_at?: string;
         };
         Escalation: {
             id: string;
@@ -723,6 +868,51 @@ export interface components {
             /** @description Monotonic turn counter. Starts at 0; incremented on every successful turn. The ratify endpoint uses this as a stale-modal guard. */
             Turn: number;
             LastChange: components["schemas"]["ChangeRef"];
+        };
+        /** @description Body for `POST /api/v1/onboarding/setup`. This deterministic gate runs before any Onboarder LLM session starts. */
+        OnboardingSetupRequest: {
+            /**
+             * @description Project source branch selected by the operator.
+             * @enum {string}
+             */
+            origin: "new" | "existing" | "import";
+            /** @description Gemba display name and local project identity. */
+            project_name: string;
+            /** @description Intended GitHub owner/repo identity. */
+            github_project: string;
+            /**
+             * @description Runtime orchestration layer.
+             * @enum {string}
+             */
+            orchestration: "native" | "gastown";
+            /** @description Absolute native worktree path. Required when orchestration is native. */
+            worktree_path?: string;
+            /** @description Absolute Gas Town location. Required when orchestration is gastown. */
+            gastown_location?: string;
+            /**
+             * @description Source-analysis backend. Existing/imported codebases default to gitnexus in the SPA.
+             * @enum {string}
+             */
+            source_analysis_tool: "gitnexus" | "none";
+        };
+        /** @description One operator-visible setup ledger line. */
+        OnboardingSetupFrame: {
+            seq: number;
+            line: string;
+            /** @enum {string} */
+            level: "info" | "warn" | "error";
+            done: boolean;
+        };
+        /** @description Returned by `POST /api/v1/onboarding/setup` after deterministic setup completes or completes with warnings. */
+        OnboardingSetupResponse: {
+            setup_id: string;
+            project_path?: string;
+            frames: components["schemas"]["OnboardingSetupFrame"][];
+            warnings?: string[];
+            /** @description Best-effort setup statuses such as git_sync, workspace, beads, source_analysis, gemba_mcp, and source_analysis_mcp. */
+            checks?: {
+                [key: string]: string;
+            };
         };
         /** @description Returned by `POST /api/v1/newproject/start`. */
         StartNewProjectResponse: {
@@ -1042,6 +1232,36 @@ export interface operations {
             503: components["responses"]["AdaptorUnavailable"];
         };
     };
+    cascadeDispatchWorkItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Epic or milestone WorkItem id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CascadeDispatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Cascade accepted. Response lists leaves dispatched now and leaves blocked or skipped. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CascadeDispatchResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
     listSprints: {
         parameters: {
             query?: never;
@@ -1124,6 +1344,31 @@ export interface operations {
                 };
             };
             503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    ensureInteraction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnsureInteractionRequest"];
+            };
+        };
+        responses: {
+            /** @description Interaction session. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InteractionSession"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
         };
     };
     listEscalations: {
@@ -1315,6 +1560,40 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    prepareOnboardingSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OnboardingSetupRequest"];
+            };
+        };
+        responses: {
+            /** @description Setup completed. Warnings are non-fatal and are included in the response ledger. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OnboardingSetupResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Setup failed while mutating disk or shelling out. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
             };
         };
     };

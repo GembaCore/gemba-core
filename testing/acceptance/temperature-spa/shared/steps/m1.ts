@@ -24,7 +24,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 import type { SharedContext } from '../spec';
-import { demoPause, setDemoCaption } from '../helpers/demo-mode';
+import { demoPause, setDemoCaption, styleDemoTargetPage } from '../helpers/demo-mode';
 
 const M1_MILESTONE_ID = 'm1';
 
@@ -146,12 +146,14 @@ async function probeDevServer(ctx: SharedContext): Promise<void> {
       throw new Error(`M1: dev server did not become reachable`);
     }
     await ctx.page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'domcontentloaded' });
+    await styleDemoTargetPage(ctx.page);
     await ctx.page
       .locator('[data-testid="app-root"], #app-root')
       .waitFor({ state: 'visible', timeout: 15_000 });
+    await styleDemoTargetPage(ctx.page);
     ctx.narrator.emit('M1 launches the scaffolded Vite app', 'medium');
     await setDemoCaption(ctx.page, 'M1 launch: scaffolded SPA is running');
-    await demoPause(2_500);
+    await demoPause(4_000);
   } finally {
     proc.kill('SIGTERM');
     // Give vite 2s to flush.

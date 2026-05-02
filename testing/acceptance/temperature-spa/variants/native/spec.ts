@@ -20,6 +20,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { cpSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { test } from '@playwright/test';
 import { bootstrapProject } from '../../shared/helpers/bootstrap';
 import { runAcceptance } from '../../shared/spec';
@@ -95,6 +96,20 @@ test.describe('temperature-spa @native', () => {
         narrationVideoPath: DEMO_MODE ? testInfo.outputPath('temperature-spa-demo.mp4') : undefined,
       });
     } finally {
+      if (DEMO_MODE && existsSync(project.projectDir)) {
+        const snapshot = testInfo.outputPath('target-project');
+        rmSync(snapshot, { recursive: true, force: true });
+        cpSync(project.projectDir, snapshot, {
+          recursive: true,
+          filter: (src) => !src.includes('/node_modules') && !src.includes('/.git/objects'),
+        });
+        const marker = testInfo.outputPath('target-project-snapshot.txt');
+        writeFileSync(marker, `${snapshot}\n`, 'utf8');
+        testInfo.attach('target-project-snapshot', {
+          path: marker,
+          contentType: 'text/plain',
+        });
+      }
       await project.cleanup();
     }
   });

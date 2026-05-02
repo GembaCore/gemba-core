@@ -2,8 +2,13 @@
 // /new (gm-root.17.3) as part of gm-root.17.13 so /new can be a
 // lightweight non-LLM project-creation form. /onboard is reachable
 // from the board empty-state CTA when an LLM client is configured,
-// or by direct navigation. The flow itself is unchanged from the
-// original design — the route just moved.
+// or by direct navigation.
+//
+// gm-ddpy: deterministic setup gates the Onboarder. The operator
+// chooses new/existing/imported project, project identity, GitHub
+// project, orchestration layer, and runtime location before the LLM
+// session starts. Resource creation/import handoff is backend-owned;
+// the LLM only coaches the plan tree after setup is explicit.
 //
 // Two-pane layout per docs/design/newproject.md "Surfaces" section:
 //
@@ -30,6 +35,7 @@
 // (gm-root.17.5), transient Onboarder persona (gm-root.17.10), and
 // atomic-ratify backend (gm-root.17.6) through:
 //
+//   POST /api/v1/onboarding/setup
 //   POST /api/v1/newproject/start
 //   POST /api/v1/newproject/:id/turn
 //   POST /api/v1/newproject/:id/ratify
@@ -38,7 +44,7 @@
 // may still mock or stub the endpoints/turner for deterministic UI
 // coverage, but this page is no longer a frontend-only stub.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import {
   EMPTY_STATE,
@@ -47,9 +53,14 @@ import {
   submitTurn,
   type ConversationMessage,
   type NewProjectState,
+  type OnboardingSetupResponse,
   type RatifyResponse,
 } from '@/api/newproject';
 import { ConversationPane } from '@/components/newproject/ConversationPane';
+import {
+  OnboardingSetupPane,
+  type OnboardingSetup,
+} from '@/components/newproject/OnboardingSetupPane';
 import { PlanPreviewPane } from '@/components/newproject/PlanPreviewPane';
 import { RatifyModal } from '@/components/newproject/RatifyModal';
 import { RatifyDoneScreen } from '@/components/newproject/RatifyDoneScreen';
@@ -66,6 +77,7 @@ const INITIAL: SessionState = {
 
 export function OnboardPage(): JSX.Element {
   const [session, setSession] = useState<SessionState>(INITIAL);
+  const [setup, setSetup] = useState<OnboardingSetup | null>(null);
   // Track in-place plan edits the operator has made since the last
   // /turn so the next message carries them as `edits`. Cleared after
   // every successful turn.
@@ -80,17 +92,21 @@ export function OnboardPage(): JSX.Element {
   // layout (gm-root.17.7).
   const [ratifyResult, setRatifyResult] = useState<RatifyResponse | null>(null);
 
-  // Start a fresh session on mount. One-shot — refresh starts a new
-  // session because the server's in-memory state went away with the
-  // old request lifecycle.
-  useEffect(() => {
+  const launchOnboarder = useCallback((nextSetup: OnboardingSetup, setupResult: OnboardingSetupResponse) => {
     let cancelled = false;
+    setSetup(nextSetup);
     setSession((s) => ({ ...s, phase: 'starting', error: null }));
     startNewProject()
       .then((res) => {
         if (cancelled) return;
         const transcript: ConversationMessage[] = res.greeting
           ? [
+              {
+                id: 'setup-complete',
+                role: 'assistant',
+                content: setupSummary(nextSetup, setupResult),
+                at: new Date().toISOString(),
+              },
               {
                 id: 'greeting',
                 role: 'assistant',
@@ -243,6 +259,18 @@ export function OnboardPage(): JSX.Element {
 
   // Starting / error states render a centered banner so the operator
   // sees what happened before the panes paint.
+  if (!setup && session.phase === 'idle') {
+    return (
+      <div
+        data-testid="onboard-page"
+        data-phase="setup"
+        className="flex h-full min-h-0 flex-col"
+      >
+        <OnboardingSetupPane onComplete={launchOnboarder} />
+      </div>
+    );
+  }
+
   if (session.phase === 'starting') {
     return (
       <div
@@ -342,4 +370,24 @@ export function OnboardPage(): JSX.Element {
       />
     </div>
   );
+}
+
+function setupSummary(setup: OnboardingSetup, result: OnboardingSetupResponse): string {
+  const origin =
+    setup.origin === 'new'
+      ? 'new project'
+      : setup.origin === 'existing'
+        ? 'existing project'
+        : 'imported project';
+  const location =
+    setup.orchestration === 'gastown'
+      ? `Gas Town location ${setup.gastownLocation}`
+      : `worktree ${setup.worktreePath}`;
+  const analysis =
+    setup.sourceAnalysisTool === 'gitnexus'
+      ? 'GitNexus source analysis and Beads MCP awareness are part of the setup contract.'
+      : 'Source analysis was explicitly skipped; Beads awareness still applies.';
+  const verified = result.checks ? Object.entries(result.checks).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
+  const checks = verified ? ` Setup checks: ${verified}.` : '';
+  return `Setup complete for ${origin} "${setup.projectName}". GitHub project: ${setup.githubProject}. Runtime: ${setup.orchestration}; ${location}. ${analysis}${checks} I will use this setup as fixed context while we shape milestones, epics, and beads.`;
 }

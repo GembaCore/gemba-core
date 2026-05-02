@@ -11,6 +11,7 @@ vi.mock('@/api/newproject', async () => {
     await vi.importActual<typeof import('@/api/newproject')>('@/api/newproject');
   return {
     ...actual,
+    prepareOnboardingSetup: vi.fn(),
     startNewProject: vi.fn(),
     submitTurn: vi.fn(),
     ratifyNewProject: vi.fn(),
@@ -40,6 +41,9 @@ vi.mock('lucide-react', async () => {
     CheckCircle2: ({ className, ...rest }: Record<string, unknown>) => (
       <span className={String(className ?? '')} {...rest} />
     ),
+    Loader2: ({ className, ...rest }: Record<string, unknown>) => (
+      <span className={String(className ?? '')} {...rest} />
+    ),
     Map: ({ className, ...rest }: Record<string, unknown>) => (
       <span className={String(className ?? '')} {...rest} />
     ),
@@ -51,6 +55,7 @@ vi.mock('lucide-react', async () => {
 
 import {
   EMPTY_STATE,
+  prepareOnboardingSetup,
   ratifyNewProject,
   startNewProject,
   submitTurn,
@@ -110,6 +115,22 @@ const seededState = {
 
 describe('OnboardPage', () => {
   beforeEach(() => {
+    (prepareOnboardingSetup as ReturnType<typeof vi.fn>).mockResolvedValue({
+      setup_id: 'setup-1',
+      project_path: '/tmp/demo',
+      frames: [
+        {
+          seq: 1,
+          line: 'Setup complete. The Onboarder can now coach milestones, epics, and beads with this context fixed.',
+          level: 'info',
+          done: true,
+        },
+      ],
+      checks: {
+        source_analysis: 'configured',
+        gemba_mcp: 'verified',
+      },
+    });
     (startNewProject as ReturnType<typeof vi.fn>).mockResolvedValue({
       session_id: 'sess-1',
       state: EMPTY_STATE,
@@ -133,14 +154,42 @@ describe('OnboardPage', () => {
     vi.clearAllMocks();
   });
 
-  it('renders starting state then transitions to active with greeting', async () => {
+  async function completeSetup() {
+    fireEvent.change(screen.getByTestId('onboard-setup-project-name'), {
+      target: { value: 'demo' },
+    });
+    fireEvent.change(screen.getByTestId('onboard-setup-github'), {
+      target: { value: 'GembaCore/demo' },
+    });
+    fireEvent.change(screen.getByTestId('onboard-setup-worktree'), {
+      target: { value: '/tmp/demo' },
+    });
+    fireEvent.click(screen.getByTestId('onboard-setup-continue'));
+    await waitFor(() => expect(prepareOnboardingSetup).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(startNewProject).toHaveBeenCalledTimes(1));
+  }
+
+  it('renders deterministic setup first and does not launch the Onboarder until complete', async () => {
     render(wrap());
-    expect(screen.getByTestId('newproject-starting')).toBeTruthy();
+    expect(screen.getByTestId('onboard-page').getAttribute('data-phase')).toBe('setup');
+    expect(screen.getByTestId('onboard-setup-pane')).toBeTruthy();
+    expect(screen.getByTestId('onboard-setup-activity').textContent).toContain('GitNexus');
+    expect(startNewProject).not.toHaveBeenCalled();
+    await completeSetup();
+    expect(prepareOnboardingSetup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_name: 'demo',
+        source_analysis_tool: 'gitnexus',
+      })
+    );
     await waitFor(() =>
       expect(screen.getByTestId("onboard-page").getAttribute('data-phase')).toBe('active')
     );
     // greeting message landed in the transcript.
     expect(screen.getByTestId('newproject-message-greeting')).toBeTruthy();
+    expect(screen.getByTestId('newproject-message-setup-complete').textContent).toContain(
+      'GitNexus source analysis'
+    );
     // both panes painted.
     expect(screen.getByTestId('newproject-conversation-pane')).toBeTruthy();
     expect(screen.getByTestId('newproject-plan-pane')).toBeTruthy();
@@ -149,6 +198,7 @@ describe('OnboardPage', () => {
 
   it('Ratify button is disabled when no milestones exist', async () => {
     render(wrap());
+    await completeSetup();
     await waitFor(() => screen.getByTestId('newproject-ratify'));
     const btn = screen.getByTestId('newproject-ratify') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
@@ -156,6 +206,7 @@ describe('OnboardPage', () => {
 
   it('submitting a turn appends transcript and populates the plan tree', async () => {
     render(wrap());
+    await completeSetup();
     await waitFor(() => screen.getByTestId('newproject-input'));
     const input = screen.getByTestId('newproject-input') as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: 'build a CRM' } });
@@ -170,6 +221,7 @@ describe('OnboardPage', () => {
 
   it('opens ratify modal, confirms, and shows the handoff screen', async () => {
     render(wrap());
+    await completeSetup();
     await waitFor(() => screen.getByTestId('newproject-input'));
     fireEvent.change(screen.getByTestId('newproject-input'), {
       target: { value: 'build a CRM' },
@@ -198,6 +250,7 @@ describe('OnboardPage', () => {
 
   it('cancel from the modal returns to active without committing', async () => {
     render(wrap());
+    await completeSetup();
     await waitFor(() => screen.getByTestId('newproject-input'));
     fireEvent.change(screen.getByTestId('newproject-input'), {
       target: { value: 'build a CRM' },
@@ -222,6 +275,7 @@ describe('OnboardPage', () => {
       new Error('llm unconfigured')
     );
     render(wrap());
+    await completeSetup();
     await waitFor(() => screen.getByTestId('newproject-start-error'));
     expect(screen.queryByTestId('newproject-conversation-pane')).toBeNull();
   });

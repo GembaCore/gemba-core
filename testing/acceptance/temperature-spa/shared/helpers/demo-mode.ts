@@ -25,7 +25,36 @@ const BANNER_ID = 'gemba-demo-caption';
 
 const INIT_SCRIPT = `
 (() => {
+  const root = document.documentElement;
+  root.classList.add('dark');
+  root.dataset.theme = 'dark';
+  root.style.colorScheme = 'dark';
+  try {
+    window.localStorage.setItem('gemba-theme', 'dark');
+  } catch {
+    // Storage can be blocked during early browser bootstrap; the class
+    // above still keeps the recorded frame dark.
+  }
+
+  const installBanner = () => {
+  if (!document.getElementById('gemba-demo-style')) {
+    const style = document.createElement('style');
+    style.id = 'gemba-demo-style';
+    style.textContent = [
+      '[data-testid="adaptor-banner"]{display:none!important;}',
+      'html,body{background:#0a0a0a!important;color:#f4f4f5!important;}',
+      '@supports selector(body:has(*)){',
+      'body:not(:has([data-testid="sidebar-nav"])){padding:32px!important;font:18px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;}',
+      'body:not(:has([data-testid="sidebar-nav"])) #root,body:not(:has([data-testid="sidebar-nav"])) [data-testid="app-root"]{min-height:calc(100vh - 64px)!important;color:#f4f4f5!important;}',
+      'body:not(:has([data-testid="sidebar-nav"])) table{border-collapse:collapse!important;min-width:420px!important;margin-top:12px!important;background:#111827!important;color:#f4f4f5!important;border:1px solid #334155!important;}',
+      'body:not(:has([data-testid="sidebar-nav"])) th,body:not(:has([data-testid="sidebar-nav"])) td{padding:8px 14px!important;border-bottom:1px solid #334155!important;text-align:right!important;}',
+      'body:not(:has([data-testid="sidebar-nav"])) th:first-child,body:not(:has([data-testid="sidebar-nav"])) td:first-child{text-align:left!important;}',
+      '}',
+    ].join('');
+    (document.head || document.documentElement).appendChild(style);
+  }
   if (document.getElementById('${BANNER_ID}')) return;
+  if (!document.body) return;
   const banner = document.createElement('div');
   banner.id = '${BANNER_ID}';
   banner.style.cssText = [
@@ -47,6 +76,12 @@ const INIT_SCRIPT = `
   ].join(';');
   banner.textContent = '';
   document.body.appendChild(banner);
+  };
+
+  installBanner();
+  if (!document.body) {
+    document.addEventListener('DOMContentLoaded', installBanner, { once: true });
+  }
 })();
 `;
 
@@ -56,10 +91,64 @@ const INIT_SCRIPT = `
  */
 export async function installDemoBanner(page: Page): Promise<void> {
   if (!DEMO_MODE) return;
+  await page.emulateMedia({ colorScheme: 'dark' });
   await page.addInitScript(INIT_SCRIPT);
   // Also inject into the current document (addInitScript only runs
   // on next navigation; install now too so the first goto sees it).
   await page.evaluate(INIT_SCRIPT).catch(() => undefined);
+  await forceDemoDarkMode(page);
+}
+
+export async function forceDemoDarkMode(page: Page): Promise<void> {
+  if (!DEMO_MODE) return;
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page
+    .evaluate(() => {
+      const root = document.documentElement;
+      root.classList.add('dark');
+      root.dataset.theme = 'dark';
+      root.style.colorScheme = 'dark';
+      if (document.body) {
+        document.body.style.backgroundColor = '#0a0a0a';
+        document.body.style.color = '#f4f4f5';
+      }
+      window.localStorage.setItem('gemba-theme', 'dark');
+    })
+    .catch(() => undefined);
+}
+
+export async function styleDemoTargetPage(page: Page): Promise<void> {
+  if (!DEMO_MODE) return;
+  await page
+    .evaluate(() => {
+      const root = document.documentElement;
+      root.style.backgroundColor = '#0a0a0a';
+      root.style.colorScheme = 'dark';
+      if (document.body) {
+        document.body.style.backgroundColor = '#0a0a0a';
+        document.body.style.color = '#f4f4f5';
+      }
+      const mount = document.querySelector<HTMLElement>('#root, [data-testid="app-root"]');
+      if (mount) {
+        mount.style.color = '#f4f4f5';
+        mount.style.minHeight = 'calc(100vh - 64px)';
+      }
+      const appRoot = document.querySelector<HTMLElement>('[data-testid="app-root"]');
+      if (appRoot && appRoot.textContent?.trim() === 'Hello world') {
+        appRoot.style.display = 'inline-flex';
+        appRoot.style.alignItems = 'center';
+        appRoot.style.justifyContent = 'center';
+        appRoot.style.minWidth = '360px';
+        appRoot.style.minHeight = '160px';
+        appRoot.style.border = '1px solid #334155';
+        appRoot.style.borderRadius = '12px';
+        appRoot.style.background = '#111827';
+        appRoot.style.boxShadow = '0 18px 50px rgba(0,0,0,0.35)';
+        appRoot.style.fontSize = '32px';
+        appRoot.style.fontWeight = '700';
+      }
+    })
+    .catch(() => undefined);
 }
 
 /**

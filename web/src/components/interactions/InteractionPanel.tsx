@@ -1,5 +1,6 @@
 import { Bot, CheckCircle2, CircleDot, FileText, GitBranch, MessagesSquare, Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { TranscriptPane } from './TranscriptPane';
 import type { InteractionSession } from '@/interactions/types';
 
 const STATUS_LABELS: Record<InteractionSession['status'], string> = {
@@ -47,24 +48,11 @@ export function InteractionPanel({
 
       <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
         <Section title="Conversation">
-          <div className="space-y-3" data-testid="interaction-transcript">
-            {session.messages.map((message) => (
-              <article
-                key={message.id}
-                className={cn(
-                  'rounded-md border px-3 py-2',
-                  message.role === 'operator'
-                    ? 'border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100'
-                    : 'border-neutral-200 bg-white text-neutral-800 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200'
-                )}
-              >
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
-                  {message.role}
-                </div>
-                <p className="whitespace-pre-wrap text-sm leading-5">{message.body}</p>
-              </article>
-            ))}
-          </div>
+          <TranscriptPane
+            messages={session.messages}
+            emptyLabel="No transcript frames yet."
+            testid="interaction-transcript"
+          />
         </Section>
 
         {session.draft ? (
