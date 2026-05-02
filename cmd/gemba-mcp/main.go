@@ -120,7 +120,7 @@ type RaiseBlockerInput struct {
 
 // ReportStateInput mirrors gemba-state's positional + flag API.
 type ReportStateInput struct {
-	State  string `json:"state" jsonschema:"initializing | ready | working | prompting | stalled"`
+	State  string `json:"state" jsonschema:"initializing | ready | working | prompting | stalled | bead-done"`
 	BeadID string `json:"bead_id,omitempty" jsonschema:"bead id; recommended for state=working"`
 	Note   string `json:"note,omitempty" jsonschema:"free-form note for the operator log"`
 }
@@ -144,6 +144,7 @@ var validStates = map[string]bool{
 	"working":      true,
 	"prompting":    true,
 	"stalled":      true,
+	"bead-done":    true,
 }
 var validRoles = map[string]bool{"coach": true, "manager": true}
 var validModes = map[string]bool{"dangerous": true, "balanced": true, "cautious": true}
@@ -177,7 +178,7 @@ func run() error {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name: "report_state",
 		Description: "Report the agent's observable session status. Mirrors the gemba-state CLI. " +
-			"Call at every state boundary (ready / working / prompting / stalled).",
+			"Call at every state boundary (ready / working / prompting / stalled / bead-done).",
 	}, handleReportState)
 
 	mcp.AddTool(srv, &mcp.Tool{
@@ -218,7 +219,7 @@ func handleReportState(
 	_ context.Context, _ *mcp.CallToolRequest, in ReportStateInput,
 ) (*mcp.CallToolResult, any, error) {
 	if !validStates[in.State] {
-		return toolError(fmt.Errorf("invalid state %q; want one of initializing|ready|working|prompting|stalled", in.State)), nil, nil
+		return toolError(fmt.Errorf("invalid state %q; want one of initializing|ready|working|prompting|stalled|bead-done", in.State)), nil, nil
 	}
 	if err := writeState(in.State, in.BeadID, in.Note); err != nil {
 		return toolError(err), nil, nil

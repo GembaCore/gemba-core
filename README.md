@@ -399,7 +399,9 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 - **Codex native agent driver** — `.gemba/agents.toml` can declare a
   `codex` agent type using `binary = "gemba-codex-driver"` and
   `preamble = "codex_exec"`. The driver runs `codex exec --json`,
-  emits `gemba-state` lifecycle frames, and closes the bead on success.
+  exposes session-scoped `gemba-mcp` tools for cooperative status,
+  escalation, and skill-output telemetry, emits fallback `gemba-state`
+  lifecycle frames, and closes the bead on success.
   It is intentionally one-shot: auto-dispatch starts a fresh Codex
   session when no active Codex work exists rather than reusing an idle
   pane.

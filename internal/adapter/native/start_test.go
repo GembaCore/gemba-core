@@ -220,6 +220,9 @@ func TestStartSessionCodexExecWritesPromptAndUsesDriver(t *testing.T) {
 	if spec.Env["GEMBA_BEAD_ID"] != "gm-codex" {
 		t.Errorf("GEMBA_BEAD_ID = %q", spec.Env["GEMBA_BEAD_ID"])
 	}
+	if spec.Env["GEMBA_MCP_COMMAND"] == "" {
+		t.Error("GEMBA_MCP_COMMAND missing")
+	}
 	promptFile := spec.Env["GEMBA_CODEX_PROMPT_FILE"]
 	if promptFile == "" {
 		t.Fatal("GEMBA_CODEX_PROMPT_FILE missing")
@@ -230,6 +233,12 @@ func TestStartSessionCodexExecWritesPromptAndUsesDriver(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "gm-codex") {
 		t.Fatalf("prompt file should mention bead id, got: %s", string(b))
+	}
+	if !strings.Contains(string(b), "Codex Gemba MCP tools") {
+		t.Fatalf("prompt file should include Codex MCP guidance, got: %s", string(b))
+	}
+	if !strings.Contains(string(b), "report_state") {
+		t.Fatalf("prompt file should name report_state, got: %s", string(b))
 	}
 }
 

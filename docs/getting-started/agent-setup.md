@@ -26,6 +26,8 @@ This guide covers the most common agents people drop into Gemba.
 For the full schema (including the `[agent.container]` stanza for
 sandboxed runs), see
 [`internal/adapter/native/agents/registry.go`](https://github.com/GembaCore/gemba-core/blob/main/internal/adapter/native/agents/registry.go).
+For the architectural comparison across Claude, Codex, and Gas Town
+session integrations, see [Session runtime integration patterns](../design/session-runtime-integration).
 
 ## The schema in one screen
 
@@ -118,7 +120,8 @@ stalled" pill, transcript tab.
 The `codex` CLI from `openai/codex` works best in Gemba through the
 native `gemba-codex-driver`. The driver writes the composed bead
 preamble to a prompt file, runs `codex exec --json` non-interactively,
-reports `working` / `bead-done` through `gemba-state`, and closes the
+exposes the session-scoped `gemba-mcp` server to Codex, reports
+fallback `working` / `bead-done` through `gemba-state`, and closes the
 bead when Codex exits successfully.
 
 **Install**: `npm install -g @openai/codex` (or per their README).
@@ -149,8 +152,19 @@ Notes:
 - `hooks = "none"` because there is no Codex equivalent of Claude
   Code's hook API. Lifecycle still appears in the SPA because the
   driver emits `gemba-state` frames.
+- Codex also receives a session-scoped MCP server named `gemba`.
+  The prompt instructs Codex to call `report_state`, `ask_question`,
+  `raise_blocker`, and `emit_skill_output` for cooperative semantic
+  telemetry. These tool calls enrich the Status pane and escalation
+  surfaces, but they are not a replacement for the driver's fallback
+  lifecycle frames.
 - Set `OPENAI_API_KEY` in your shell env before launching `gemba
   serve` — child sessions inherit it.
+
+Codex MCP telemetry is cooperative: the model must choose to call the
+tool. The driver remains the source of hard lifecycle guarantees
+because it owns the `codex exec` process, timeout, failure state,
+bead close, dirty-worktree commit, and final `bead-done` fallback.
 
 ### GitHub Copilot CLI
 

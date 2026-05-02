@@ -238,6 +238,7 @@ func (o *OrchestrationPlane) StartSession(ctx context.Context, assignmentID stri
 			if err != nil {
 				return core.Session{}, err
 			}
+			text = withCodexMCPInstructions(text, beadID)
 			codexPromptFile, err = writeCodexPromptFile(sessionID, text)
 			if err != nil {
 				return core.Session{}, core.WrapAdaptorError(core.KindProcessFailed, err,
@@ -455,6 +456,23 @@ func withSessionLifecycleEnv(text, sessionID, agentType, beadID string) string {
 	return text
 }
 
+func withCodexMCPInstructions(text, beadID string) string {
+	var b strings.Builder
+	b.WriteString(strings.TrimRight(text, "\n"))
+	b.WriteString("\n\n## Codex Gemba MCP tools\n\n")
+	b.WriteString("This Codex session is launched with a session-scoped MCP server named `gemba`. Prefer these MCP tools over shelling out to `gemba-state` or `gemba-ask` when they are available.\n\n")
+	b.WriteString("- Call `report_state` with `state=\"working\"` and this bead id when you begin substantive work.\n")
+	b.WriteString("- Call `report_state` with `state=\"prompting\"` before raising an operator question, and use `ask_question` for non-blocking judgment calls.\n")
+	b.WriteString("- Use `raise_blocker` only when progress must stop until the operator responds.\n")
+	b.WriteString("- Use `emit_skill_output` for structured persona or skill results instead of writing ad hoc transcript sections.\n")
+	b.WriteString("- Call `report_state` with `state=\"stalled\"` if execution fails or you cannot proceed.\n")
+	b.WriteString("- Only call `report_state` with `state=\"bead-done\"` after the bead is closed and the git worktree is clean. The driver also emits a fallback `bead-done` after successful `codex exec`, bead close, and commit.\n\n")
+	if beadID != "" {
+		fmt.Fprintf(&b, "Current bead id: `%s`.\n", beadID)
+	}
+	return b.String()
+}
+
 func shellSingleQuote(s string) string {
 	if s == "" {
 		return "''"
@@ -632,6 +650,7 @@ func buildSpawnSpec(agent agents.AgentType, workspace, sessionID, agentType, tit
 			"GEMBA_SESSION_ID":       sessionID,
 			"GEMBA_AGENT_TYPE":       agentType,
 			"GEMBA_BEAD_ID":          beadID,
+			"GEMBA_MCP_COMMAND":      resolveSiblingBinary("gemba-mcp"),
 			"GEMBA_STATE_COMMAND":    resolveSiblingBinary("gemba-state"),
 			"PATH":                   prependSiblingBinaryDir(os.Getenv("PATH")),
 			"GEMBA_INTERACTION_MODE": string(agent.ResolvedInteractionMode()),

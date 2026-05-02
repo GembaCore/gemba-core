@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -27,6 +28,8 @@ func run(ctx context.Context, argv []string) error {
 		beadID     = fs.String("bead", getenv("GEMBA_BEAD_ID", ""), "bead id to close and report")
 		model      = fs.String("model", "", "Codex model")
 		codexBin   = fs.String("codex-bin", "codex", "Codex CLI binary")
+		mcpCommand = fs.String("mcp-command", getenv("GEMBA_MCP_COMMAND", ""), "optional gemba-mcp command exposed to codex exec")
+		mcpName    = fs.String("mcp-name", getenv("GEMBA_MCP_NAME", "gemba"), "MCP server name for Codex config overrides")
 		sandbox    = fs.String("sandbox", "workspace-write", "Codex sandbox mode")
 		approval   = fs.String("ask-for-approval", "never", "Codex approval mode")
 		lastMsg    = fs.String("output-last-message", "", "optional Codex last-message output path")
@@ -51,21 +54,18 @@ func run(ctx context.Context, argv []string) error {
 
 	runCtx, cancel := context.WithTimeout(ctx, *timeout)
 	defer cancel()
-	args := []string{
-		"exec",
-		"--json",
-		"--sandbox", *sandbox,
-		"--ask-for-approval", *approval,
-		"--skip-git-repo-check",
-		"--ephemeral",
-		"-",
+	resolvedMCPCommand := resolveMCPCommand(*mcpCommand)
+	if strings.TrimSpace(*mcpCommand) != "" && resolvedMCPCommand == "" {
+		fmt.Fprintf(os.Stderr, "gemba-codex-driver: warning: gemba MCP command %q not found; continuing without MCP tools\n", *mcpCommand)
 	}
-	if *model != "" {
-		args = append([]string{"exec", "--json", "--model", *model}, args[2:]...)
-	}
-	if *lastMsg != "" {
-		args = append(args[:len(args)-1], "--output-last-message", *lastMsg, "-")
-	}
+	args := buildCodexExecArgs(codexExecOptions{
+		Model:       *model,
+		Sandbox:     *sandbox,
+		Approval:    *approval,
+		LastMessage: *lastMsg,
+		MCPName:     *mcpName,
+		MCPCommand:  resolvedMCPCommand,
+	})
 	cmd := exec.CommandContext(runCtx, *codexBin, args...)
 	cmd.Stdin = strings.NewReader(string(prompt))
 	cmd.Stdout = os.Stdout
@@ -86,6 +86,96 @@ func run(ctx context.Context, argv []string) error {
 		return err
 	}
 	return nil
+}
+
+type codexExecOptions struct {
+	Model       string
+	Sandbox     string
+	Approval    string
+	LastMessage string
+	MCPName     string
+	MCPCommand  string
+}
+
+func buildCodexExecArgs(o codexExecOptions) []string {
+	args := []string{"exec", "--json"}
+	if o.Model != "" {
+		args = append(args, "--model", o.Model)
+	}
+	if strings.TrimSpace(o.MCPCommand) != "" {
+		name := strings.TrimSpace(o.MCPName)
+		if name == "" {
+			name = "gemba"
+		}
+		args = append(args, codexMCPOverrides(name, o.MCPCommand)...)
+	}
+	args = append(args,
+		"--sandbox", defaultString(o.Sandbox, "workspace-write"),
+		"--ask-for-approval", defaultString(o.Approval, "never"),
+		"--skip-git-repo-check",
+		"--ephemeral",
+	)
+	if o.LastMessage != "" {
+		args = append(args, "--output-last-message", o.LastMessage)
+	}
+	return append(args, "-")
+}
+
+func codexMCPOverrides(name, command string) []string {
+	prefix := "mcp_servers." + name
+	overrides := map[string]string{
+		prefix + ".command":                        command,
+		prefix + ".env.GEMBA_SESSION_ID":           os.Getenv("GEMBA_SESSION_ID"),
+		prefix + ".env.GEMBA_AGENT_TYPE":           defaultString(os.Getenv("GEMBA_AGENT_TYPE"), "codex"),
+		prefix + ".env.GEMBA_BEAD_ID":              os.Getenv("GEMBA_BEAD_ID"),
+		prefix + ".env.GEMBA_INTERACTION_MODE":     defaultString(os.Getenv("GEMBA_INTERACTION_MODE"), "balanced"),
+		prefix + ".env.GEMBA_STATE_COMMAND":        os.Getenv("GEMBA_STATE_COMMAND"),
+		prefix + ".env.GEMBA_MCP_SESSION_SCOPED":   "1",
+		prefix + ".env.GEMBA_CODEX_DRIVER_VERSION": "1",
+	}
+	keys := []string{
+		prefix + ".command",
+		prefix + ".env.GEMBA_SESSION_ID",
+		prefix + ".env.GEMBA_AGENT_TYPE",
+		prefix + ".env.GEMBA_BEAD_ID",
+		prefix + ".env.GEMBA_INTERACTION_MODE",
+		prefix + ".env.GEMBA_STATE_COMMAND",
+		prefix + ".env.GEMBA_MCP_SESSION_SCOPED",
+		prefix + ".env.GEMBA_CODEX_DRIVER_VERSION",
+	}
+	args := make([]string, 0, len(keys)*2)
+	for _, key := range keys {
+		value := overrides[key]
+		if value == "" {
+			continue
+		}
+		args = append(args, "-c", key+"="+strconv.Quote(value))
+	}
+	return args
+}
+
+func defaultString(v, fallback string) string {
+	if strings.TrimSpace(v) == "" {
+		return fallback
+	}
+	return v
+}
+
+func resolveMCPCommand(command string) string {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return ""
+	}
+	if strings.ContainsRune(command, os.PathSeparator) {
+		if info, err := os.Stat(command); err == nil && !info.IsDir() {
+			return command
+		}
+		return ""
+	}
+	if p, err := exec.LookPath(command); err == nil {
+		return p
+	}
+	return ""
 }
 
 func reportState(ctx context.Context, state, beadID, note string) error {

@@ -148,6 +148,29 @@ func TestReportStateHappyPath(t *testing.T) {
 	}
 }
 
+// report_state also accepts the bead-done pseudo-state so MCP-capable
+// agents can use the same completion signal as the gemba-state CLI.
+func TestReportStateBeadDone(t *testing.T) {
+	path := setupSession(t, "balanced")
+	res, _, err := handleReportState(context.Background(), &mcp.CallToolRequest{}, ReportStateInput{
+		State:  "bead-done",
+		BeadID: "gm-42",
+		Note:   "complete through MCP",
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("unexpected error: err=%v res=%+v", err, res)
+	}
+	f := readSoleFrame(t, path)
+	if f.Hook != "GembaState" {
+		t.Errorf("hook: %q", f.Hook)
+	}
+	var p statePayload
+	_ = json.Unmarshal(f.Payload, &p)
+	if p.State != "bead-done" || p.BeadID != "gm-42" || p.Note != "complete through MCP" {
+		t.Errorf("state payload: %+v", p)
+	}
+}
+
 // Invalid state name → IsError; dangerous mode does NOT block state
 // reports (only ask/blocker).
 func TestReportStateInvalidState(t *testing.T) {
