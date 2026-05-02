@@ -2,9 +2,9 @@
 /bin/
 /dist/
 /tmp/
-web/dist/*
-!web/dist/.keep
+web/dist/
 web/node_modules/
+testing/acceptance/temperature-spa/demo-artifacts/
 
 # Go
 *.test
