@@ -1,21 +1,50 @@
 // specs/newproject/newproject.spec.ts — gm-root.17.3
 //
-// /onboard full-page conversational project creation surface (see
-// docs/design/newproject.md). Two panes (conversation + plan
-// preview), persistent Ratify button, nonce-confirmed commit modal,
-// one-shot session.
+// /onboard full-page project onboarding surface (see
+// docs/design/newproject.md). Deterministic setup gates the
+// conversational Onboarder; once setup completes, the page shows the
+// two-pane conversation + plan preview, persistent Ratify button,
+// nonce-confirmed commit modal, and one-shot session.
 //
-// Backend handlers (`newproject` skill — gm-root.17.5; Onboarder
-// persona — gm-root.17.10; atomic ratify — gm-root.17.6) DO NOT exist
-// yet. The fake-mode dispatcher in fixtures/server.ts mocks the API
-// surface so this spec proves the SPA flow end-to-end without the
-// backend. Real-mode coverage lands when the backend beads do.
+// Fake mode mocks the setup and Onboarder APIs so this spec proves the
+// SPA route without requiring a real LLM, gh, gt, GitNexus, or MCP
+// binaries. Deep specs cover the real setup transaction separately.
 
 import { test, expect } from '../../fixtures/server';
 
+async function completeSetup(page: import('@playwright/test').Page): Promise<void> {
+  await page.getByTestId('onboard-setup-project-name').fill('fake-new-project');
+  await page.getByTestId('onboard-setup-github').fill('GembaCore/fake-new-project');
+  await page.getByTestId('onboard-setup-worktree').fill('/tmp/fake-projects/fake-new-project');
+  await page.getByTestId('onboard-setup-continue').click();
+  await expect(page.getByTestId('newproject-message-setup-complete')).toBeVisible();
+  await expect(page.getByTestId('newproject-message-greeting')).toBeVisible();
+}
+
 test.describe('/onboard (newproject — gm-root.17.3) @route', () => {
+  test('renders deterministic setup first and does not start the Onboarder before setup', async ({ page }) => {
+    let startCalls = 0;
+    page.on('request', (req) => {
+      if (req.url().includes('/api/v1/newproject/start') && req.method() === 'POST') {
+        startCalls += 1;
+      }
+    });
+
+    await page.goto('/onboard');
+    await expect(page.getByTestId('onboard-page')).toHaveAttribute('data-phase', 'setup');
+    await expect(page.getByTestId('onboard-setup-pane')).toBeVisible();
+    await expect(page.getByTestId('onboard-setup-continue')).toBeDisabled();
+    await expect(page.getByTestId('newproject-conversation-pane')).toBeHidden();
+    expect(startCalls).toBe(0);
+
+    await completeSetup(page);
+    await expect(page.getByTestId('onboard-page')).toHaveAttribute('data-phase', 'active');
+    expect(startCalls).toBe(1);
+  });
+
   test('renders both panes and the persistent Ratify button', async ({ page }) => {
     await page.goto('/onboard');
+    await completeSetup(page);
     await expect(page.getByTestId("onboard-page")).toBeVisible();
     await expect(page.getByTestId('newproject-conversation-pane')).toBeVisible();
     await expect(page.getByTestId('newproject-plan-pane')).toBeVisible();
@@ -28,6 +57,7 @@ test.describe('/onboard (newproject — gm-root.17.3) @route', () => {
 
   test('greeting from the skill lands in the transcript on first paint', async ({ page }) => {
     await page.goto('/onboard');
+    await completeSetup(page);
     await expect(page.getByTestId('newproject-message-greeting')).toBeVisible();
     await expect(page.getByTestId('newproject-message-greeting')).toContainText(
       'Onboarder'
@@ -36,6 +66,7 @@ test.describe('/onboard (newproject — gm-root.17.3) @route', () => {
 
   test('submitting a turn populates the plan tree and enables Ratify', async ({ page }) => {
     await page.goto('/onboard');
+    await completeSetup(page);
     await expect(page.getByTestId('newproject-input')).toBeVisible();
     await page.getByTestId('newproject-input').fill('build a CRM for small teams');
     await page.getByTestId('newproject-send').click();
@@ -49,6 +80,7 @@ test.describe('/onboard (newproject — gm-root.17.3) @route', () => {
 
   test('mid-conversation in-place edits update the plan preview', async ({ page }) => {
     await page.goto('/onboard');
+    await completeSetup(page);
     await page.getByTestId('newproject-input').fill('build a CRM');
     await page.getByTestId('newproject-send').click();
     await expect(page.getByTestId('newproject-milestone-0')).toBeVisible();
@@ -82,6 +114,7 @@ test.describe('/onboard (newproject — gm-root.17.3) @route', () => {
     });
 
     await page.goto('/onboard');
+    await completeSetup(page);
     await page.getByTestId('newproject-input').fill('build a CRM');
     await page.getByTestId('newproject-send').click();
     await expect(page.getByTestId('newproject-ratify')).toBeEnabled();
@@ -114,6 +147,7 @@ test.describe('/onboard (newproject — gm-root.17.3) @route', () => {
     });
 
     await page.goto('/onboard');
+    await completeSetup(page);
     await page.getByTestId('newproject-input').fill('build a CRM');
     await page.getByTestId('newproject-send').click();
     await expect(page.getByTestId('newproject-ratify')).toBeEnabled();
@@ -126,14 +160,15 @@ test.describe('/onboard (newproject — gm-root.17.3) @route', () => {
 
   test('refresh discards the session (one-shot persistence)', async ({ page }) => {
     await page.goto('/onboard');
+    await completeSetup(page);
     await page.getByTestId('newproject-input').fill('build a CRM');
     await page.getByTestId('newproject-send').click();
     await expect(page.getByTestId('newproject-milestone-0')).toBeVisible();
     // Refresh — the design doc is explicit: refresh discards the
     // session, no resume affordance, no draft autosave.
     await page.reload();
-    await expect(page.getByTestId('newproject-plan-empty')).toBeVisible();
-    // Greeting reappears as the fresh session's first transcript entry.
-    await expect(page.getByTestId('newproject-message-greeting')).toBeVisible();
+    await expect(page.getByTestId('onboard-page')).toHaveAttribute('data-phase', 'setup');
+    await expect(page.getByTestId('onboard-setup-pane')).toBeVisible();
+    await expect(page.getByTestId('newproject-plan-pane')).toBeHidden();
   });
 });

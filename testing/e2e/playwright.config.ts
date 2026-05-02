@@ -278,6 +278,7 @@ const projects: Project[] = [
             'board/**/*.spec.ts',
             'drawers/**/*.spec.ts',
             'grid/**/*.spec.ts',
+            'newproject/**/*.spec.ts',
             'sessions/**/*.spec.ts',
           ],
           grep: /@deep/,

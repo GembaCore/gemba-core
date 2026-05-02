@@ -186,6 +186,12 @@ func (t *onboardingSetupTxn) run(ctx context.Context) error {
 	}
 	t.configureSourceAnalysis(ctx, target)
 	t.testMCP(ctx, target)
+	if t.req.Origin == onboardingOriginNew {
+		t.publishNewProject(ctx, target)
+	}
+	if t.req.Orchestration == onboardingOrchestrationGastown {
+		t.setupGasTown(ctx)
+	}
 	t.info("Setup complete. The Onboarder can now coach milestones, epics, and beads with this context fixed.")
 	return nil
 }
@@ -219,9 +225,6 @@ func (t *onboardingSetupTxn) prepareNewProject(ctx context.Context, target strin
 		return err
 	}
 	t.ensureBeads(ctx, target)
-	if t.req.Orchestration == onboardingOrchestrationGastown {
-		t.warn("Gas Town boot/project initialization is not yet shell-driven by this endpoint; setup files were prepared at the selected location.")
-	}
 	return nil
 }
 
@@ -332,6 +335,129 @@ func (t *onboardingSetupTxn) testMCP(ctx context.Context, target string) {
 		t.info("GitNexus MCP command verified.")
 		t.checks["source_analysis_mcp"] = "verified"
 	}
+}
+
+func (t *onboardingSetupTxn) publishNewProject(ctx context.Context, target string) {
+	remoteURL := githubRemoteURL(t.req.GitHubProject)
+	if remoteURL == "" {
+		t.warn("GitHub project %q could not be converted to a remote URL; skipping repository publish.", t.req.GitHubProject)
+		t.checks["github"] = "invalid"
+		return
+	}
+	t.info("Preparing GitHub repository %s.", t.req.GitHubProject)
+	if _, err := t.runner(ctx, target, "gh", "repo", "view", t.req.GitHubProject, "--json", "name"); err != nil {
+		if _, createErr := t.runner(ctx, target, "gh", "repo", "create", t.req.GitHubProject, "--private"); createErr != nil {
+			t.warn("GitHub repository create failed: %v", createErr)
+			t.checks["github"] = "create-failed"
+		} else {
+			t.info("Created GitHub repository %s.", t.req.GitHubProject)
+			t.checks["github"] = "created"
+		}
+	} else {
+		t.info("GitHub repository %s already exists.", t.req.GitHubProject)
+		t.checks["github"] = "already-present"
+	}
+	t.ensureOrigin(ctx, target, remoteURL)
+	t.commitSetupSnapshot(ctx, target)
+	if _, err := t.runner(ctx, target, "git", "branch", "-M", "main"); err != nil {
+		t.warn("Could not set main as the default branch: %v", err)
+	}
+	if _, err := t.runner(ctx, target, "git", "push", "-u", "origin", "main"); err != nil {
+		t.warn("Initial git push failed: %v", err)
+		t.checks["git_push"] = "failed"
+		return
+	}
+	t.info("Pushed initial onboarding setup to origin/main.")
+	t.checks["git_push"] = "pushed"
+}
+
+func (t *onboardingSetupTxn) ensureOrigin(ctx context.Context, target, remoteURL string) {
+	out, err := t.runner(ctx, target, "git", "remote", "get-url", "origin")
+	if err != nil {
+		if _, addErr := t.runner(ctx, target, "git", "remote", "add", "origin", remoteURL); addErr != nil {
+			t.warn("Could not add git origin %s: %v", remoteURL, addErr)
+			t.checks["git_remote"] = "failed"
+			return
+		}
+		t.info("Added git origin %s.", remoteURL)
+		t.checks["git_remote"] = "added"
+		return
+	}
+	if strings.TrimSpace(string(out)) == remoteURL {
+		t.info("Git origin already points at %s.", remoteURL)
+		t.checks["git_remote"] = "already-present"
+		return
+	}
+	if _, setErr := t.runner(ctx, target, "git", "remote", "set-url", "origin", remoteURL); setErr != nil {
+		t.warn("Could not update git origin to %s: %v", remoteURL, setErr)
+		t.checks["git_remote"] = "set-url-failed"
+		return
+	}
+	t.info("Updated git origin to %s.", remoteURL)
+	t.checks["git_remote"] = "updated"
+}
+
+func (t *onboardingSetupTxn) commitSetupSnapshot(ctx context.Context, target string) {
+	out, err := t.runner(ctx, target, "git", "status", "--porcelain")
+	if err != nil {
+		t.warn("Could not inspect setup commit status: %v", err)
+		t.checks["git_commit"] = "status-failed"
+		return
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		t.info("No onboarding setup changes need committing.")
+		t.checks["git_commit"] = "clean"
+		return
+	}
+	if _, err := t.runner(ctx, target, "git", "add", "."); err != nil {
+		t.warn("Could not stage onboarding setup files: %v", err)
+		t.checks["git_commit"] = "stage-failed"
+		return
+	}
+	if _, err := t.runner(ctx, target, "git", "commit", "-m", "chore: initialize gemba onboarding"); err != nil {
+		t.warn("Could not commit onboarding setup files: %v", err)
+		t.checks["git_commit"] = "commit-failed"
+		return
+	}
+	t.info("Committed onboarding setup files.")
+	t.checks["git_commit"] = "committed"
+}
+
+func (t *onboardingSetupTxn) setupGasTown(ctx context.Context) {
+	remoteURL := githubRemoteURL(t.req.GitHubProject)
+	if remoteURL == "" {
+		t.warn("Gas Town setup needs a GitHub owner/repo or remote URL; skipping rig initialization.")
+		t.checks["gastown"] = "invalid-remote"
+		return
+	}
+	if err := os.MkdirAll(t.req.GastownLocation, 0o755); err != nil {
+		t.warn("Could not create Gas Town location %s: %v", t.req.GastownLocation, err)
+		t.checks["gastown"] = "location-failed"
+		return
+	}
+	rig := gasTownRigName(t.req.ProjectName)
+	t.info("Ensuring Gas Town rig %s is available.", rig)
+	if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "list", "--json"); err != nil {
+		t.warn("Gas Town CLI did not list rigs cleanly: %v", err)
+		t.checks["gastown"] = "gt-unavailable"
+		return
+	}
+	if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "add", rig, remoteURL); err != nil {
+		if _, createErr := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "create", rig); createErr != nil {
+			t.warn("Gas Town rig initialization failed: %v", err)
+			t.checks["gastown"] = "rig-init-failed"
+			return
+		}
+		t.info("Created Gas Town rig %s.", rig)
+	} else {
+		t.info("Added or reused Gas Town rig %s for %s.", rig, remoteURL)
+	}
+	if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "polecat", "create", rig, "onboarder"); err != nil {
+		t.warn("Gas Town polecat creation was skipped or failed: %v", err)
+	} else {
+		t.info("Created Gas Town onboarding polecat for %s.", rig)
+	}
+	t.checks["gastown"] = "initialized"
 }
 
 func (t *onboardingSetupTxn) gitDirty(ctx context.Context, target string) (bool, error) {
@@ -505,4 +631,28 @@ path = %q
 backend = "gitnexus"
 `, repoName, repoPath)
 	return os.WriteFile(path, []byte(body), 0o644)
+}
+
+func githubRemoteURL(project string) string {
+	trimmed := strings.TrimSpace(project)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "https://") ||
+		strings.HasPrefix(trimmed, "git@") ||
+		strings.HasPrefix(trimmed, "ssh://") {
+		return trimmed
+	}
+	if strings.Count(trimmed, "/") != 1 {
+		return ""
+	}
+	return "https://github.com/" + trimmed + ".git"
+}
+
+func gasTownRigName(projectName string) string {
+	name := bdPrefixFor(projectName)
+	if name == "" {
+		return "gemba"
+	}
+	return name
 }

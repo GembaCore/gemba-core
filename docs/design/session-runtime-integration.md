@@ -1,3 +1,8 @@
+---
+title: "Session runtime integration patterns"
+decision: none
+---
+
 # Session Runtime Integration Patterns
 
 Status: design guidance
@@ -357,4 +362,3 @@ Use three named integration tiers:
 Future integrations should explicitly choose one tier. If a runtime
 does not fit one of these tiers, design the tier first rather than
 forcing the runtime into the Claude or Codex shape.
-

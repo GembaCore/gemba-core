@@ -100,25 +100,24 @@ test('drag helper module imports without throwing @board', async ({ page, workPl
   await expect(board.workItemBoard.or(page.getByTestId('board-epic'))).toBeVisible();
 });
 
-// gm-root.25 — drag-to-spawn now fires for `epic`, `task`, `bug`, and
-// `feature` kinds when dropped into "In Progress". The predicate lives
-// in web/src/components/board/dragToRestage.ts (`shouldAutoStartSession`
-// + `AUTOSTART_KINDS`); unit-level coverage in
-// web/src/components/board/__tests__/EpicView.drag.test.tsx exhausts
+// gm-root.25 / gm-1o9n — drag-to-start has split responsibilities:
+// wrapper kinds (`epic`, `milestone`) call cascade dispatch, while leaf
+// kinds (`task`, `bug`, `feature`) start a single session. The predicate
+// lives in web/src/components/board/dragToRestage.ts; unit-level coverage
+// in web/src/components/board/__tests__/EpicView.drag.test.tsx exhausts
 // the matrix.
 //
 // The fake-mode smoke below drives the dnd-kit pointer sequence on an
 // epic card to the started cell and asserts the SPA fires
-// POST /api/sessions with the bead's id. This pins the existing
-// epic-only drag-to-spawn path against regression now that the
-// predicate has grown.
+// POST /api/work-items/:id/cascade-dispatch. This pins wrapper
+// propulsion against regressing back into a direct single-session start.
 //
 // Coverage for `task` / `bug` / `feature` via a real drag is blocked on
 // the flat WorkItemBoard wiring dnd-kit — see the fixme at the top of
 // this file. Until it lands, the predicate change is exercised at the
 // unit layer (vitest matrix above) and will inherit this spec's
 // scaffolding once the flat board grows draggable cards.
-test('drag-to-spawn: epic dropped on In Progress fires POST /api/sessions @board', async ({
+test('wrapper drag-to-start: epic dropped on In Progress fires cascade dispatch @board', async ({
   page,
   workPlane,
 }) => {
@@ -155,9 +154,33 @@ test('drag-to-spawn: epic dropped on In Progress fires POST /api/sessions @board
     await route.fallback();
   });
 
-  // Capture POST /api/sessions calls. The fake dispatcher (fixtures/
-  // server.ts) responds with a synthetic session record; we just need
-  // to observe the request body to assert the SPA wired the bead id.
+  // Capture wrapper cascade POSTs and make sure the old direct session
+  // path does not fire for epics.
+  const cascadePosts: Array<Record<string, unknown>> = [];
+  await page.route(
+    `**/api/work-items/${encodeURIComponent(seeded.id)}/cascade-dispatch`,
+    async (route) => {
+      if (route.request().method() === 'POST') {
+        try {
+          cascadePosts.push(JSON.parse(route.request().postData() ?? '{}'));
+        } catch {
+          cascadePosts.push({});
+        }
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          wrapper_id: seeded.id,
+          staged: [],
+          dispatched: [],
+          blocked: [],
+          skipped: [],
+          errors: [],
+        }),
+      });
+    }
+  );
   const sessionPosts: Array<Record<string, unknown>> = [];
   await page.route('**/api/sessions', async (route) => {
     if (route.request().method() === 'POST') {
@@ -186,9 +209,11 @@ test('drag-to-spawn: epic dropped on In Progress fires POST /api/sessions @board
   const { dragTo } = await import('../../helpers/dragdrop');
   await dragTo(page, source, target);
 
-  // Wait for the SPA's onDragEnd → useUpdateWorkItem → useStartSession
-  // chain to resolve. The mutation queue is fast under the fake
-  // backend; a short polled expect keeps this resilient.
-  await expect.poll(() => sessionPosts.length, { timeout: 5_000 }).toBeGreaterThan(0);
-  expect(sessionPosts[0]).toMatchObject({ bead_id: seeded.id });
+  // Wait for the SPA's onDragEnd → useUpdateWorkItem →
+  // useCascadeDispatchWorkItem chain to resolve. The mutation queue is
+  // fast under the fake backend; a short polled expect keeps this
+  // resilient.
+  await expect.poll(() => cascadePosts.length, { timeout: 5_000 }).toBeGreaterThan(0);
+  expect(cascadePosts[0]).toMatchObject({ agent_type: expect.any(String) });
+  expect(sessionPosts).toEqual([]);
 });

@@ -13,7 +13,7 @@ function inColumn(cat: StateCategory, n: number) {
   return Array.from({ length: n }, () => workItem({ state_category: cat }));
 }
 
-test('flat board renders six columns in the canonical order @board', async ({
+test('flat board renders collapsed display columns in the canonical order @board', async ({
   page,
   workPlane,
 }) => {
@@ -35,6 +35,7 @@ test('column counts reflect seeded state_category distribution @board', async ({
   workPlane.seed([
     ...inColumn('backlog', 3),
     ...inColumn('unstarted', 2),
+    ...inColumn('staged', 1),
     ...inColumn('started', 4),
     ...inColumn('completed', 1),
   ]);
@@ -43,11 +44,10 @@ test('column counts reflect seeded state_category distribution @board', async ({
   // surface for the count assertion.
   await board.gotoWorkItemView({ showBacklog: true });
   await board.expectColumnCount('backlog', 3);
-  await board.expectColumnCount('unstarted', 2);
-  await board.expectColumnCount('staged', 0);
+  // Ready is a display lane: it combines unstarted + staged beads.
+  await board.expectColumnCount('ready', 3);
   await board.expectColumnCount('started', 4);
   await board.expectColumnCount('completed', 1);
-  await board.expectColumnCount('canceled', 0);
 });
 
 test('empty board renders the New work item CTA @board', async ({ page, workPlane }) => {

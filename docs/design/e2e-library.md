@@ -120,6 +120,7 @@ testing/e2e/specs/
   grid/         # /grid specifics
   graph/        # /graph specifics
   drawers/      # WorkItemDrawer / EpicDrawer / AgentDetailDrawer
+  newproject/   # /onboard deterministic setup, conversation, ratify handoff
   sessions/     # /sessions + /agents
   realtime/     # SSE-driven UI invalidation
   modes/        # workspace-mode confirmation UX

@@ -30,6 +30,7 @@ testing/e2e/
     grid/                     # gm-5v8v.6
     graph/                    # gm-5v8v.7
     drawers/                  # gm-5v8v.8
+    newproject/               # /onboard setup + ratify route coverage
     sessions/                 # gm-5v8v.9
     realtime/                 # gm-5v8v.10
     modes/                    # gm-5v8v.11
@@ -80,8 +81,8 @@ appear as `pending('...')` placeholders.
 | `smoke-fake` | smoke | fake | gm-5v8v.3 |
 | `smoke-deep` | smoke | real | gm-5v8v.3 (gated) |
 | `chrome-fake` | chrome | fake | gm-5v8v.4 |
-| `route-fake` | route | fake | gm-5v8v.5/6/8/9 |
-| `route-deep` | route | real | gm-5v8v.5/6/8/9 (gated) |
+| `route-fake` | route | fake | gm-5v8v.5/6/8/9 + onboarding route specs |
+| `route-deep` | route | real | gm-5v8v.5/6/8/9 + onboarding setup (gated) |
 | `realtime-fake` | realtime | fake | gm-5v8v.10 |
 | `realtime-deep` | realtime | real | gm-5v8v.10 (gated) |
 | `modes-fake` | modes | fake | gm-5v8v.11 |
@@ -95,6 +96,13 @@ appear as `pending('...')` placeholders.
 `chrome-deep` is intentionally absent — chrome specs are pure SPA-shell
 assertions; the AdaptorBanner integration that *would* matter against a
 real backend is already covered by `realtime-deep`. Removed in gm-5v8v.18.
+
+`newproject/` has both fake and deep coverage. Fake route specs drive
+the deterministic setup pane, canned Onboarder conversation, ratify
+modal, and handoff screen without a real LLM. The `@deep` setup spec
+calls `POST /api/v1/onboarding/setup` against a real `gemba serve` and
+asserts the native worktree guidance files are written before any LLM
+session is launched.
 
 ## Tag convention
 

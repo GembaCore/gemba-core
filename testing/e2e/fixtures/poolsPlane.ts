@@ -8,15 +8,65 @@
 //   - GET  /api/personas           -> PersonaFileListEnvelope
 //   - GET  /api/orchestration/state -> OrchestrationState
 //
-// The store mirrors the wire shapes from web/src/api/poolConfig.ts so
-// specs can reach for typed seeds without re-declaring envelope fields.
+// The store mirrors the wire shapes from web/src/api/poolConfig.ts.
+// Keep the small type declarations local so the e2e typecheck does
+// not have to resolve the SPA's Vite aliases.
 
-import type {
-  PoolConfigEnvelope,
-  PoolConfigJSON,
-  PersonaFile,
-  OrchestrationState,
-} from '../../../web/src/api/poolConfig';
+export interface PoolEntryRow {
+  size: number;
+  agent_type?: string;
+  floor: number;
+  recycle_after_beads: number;
+  idle_ceiling_minutes: number;
+  min_interval_per_session_seconds: number;
+  max_concurrent: number;
+}
+
+export interface PoolConfigJSON {
+  default_size: number;
+  default_persona?: string;
+  default_floor: number;
+  reserved_for_manual: number;
+  routing?: Record<string, string>;
+  pools?: Record<string, Record<string, PoolEntryRow>>;
+}
+
+export interface PoolConfigEnvelope {
+  path: string;
+  body: string;
+  parsed: PoolConfigJSON;
+  max_parallel: number;
+  reserved_for_manual: number;
+}
+
+export interface PersonaFile {
+  id: string;
+  name: string;
+  agent_type: string;
+  skills?: string[];
+}
+
+export type ScopeKind = 'rig' | 'local';
+
+export interface OrchestrationScope {
+  id: string;
+  kind: ScopeKind;
+  personas: string[];
+}
+
+export interface OrchestrationPolecat {
+  scope: string;
+  persona: string;
+  name: string;
+  state?: string;
+}
+
+export interface OrchestrationState {
+  adaptor_id: string;
+  scopes: OrchestrationScope[];
+  agent_types?: string[];
+  polecats?: OrchestrationPolecat[];
+}
 
 const EMPTY_CFG: PoolConfigJSON = {
   default_size: 0,

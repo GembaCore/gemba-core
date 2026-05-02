@@ -161,7 +161,7 @@ export function StatusBody() {
                 className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
               >
                 <span className="font-medium">{adaptor.name}</span>
-                {adaptor.reason ? <span className="text-amber-800/80 dark:text-amber-200/80">: {adaptor.reason}</span> : null}
+                {adaptor.reason ? <span className="text-amber-900 dark:text-amber-100">: {adaptor.reason}</span> : null}
               </div>
             ))}
           </div>
@@ -301,7 +301,7 @@ function EscalationRow({
         <span className="block truncate text-xs font-medium text-amber-950 dark:text-amber-100">
           {escalation.title}
         </span>
-        <span className="mt-0.5 block truncate text-[11px] text-amber-800/80 dark:text-amber-200/80">
+        <span className="mt-0.5 block truncate text-[11px] text-amber-900 dark:text-amber-100">
           {escalation.source} · {relativeTime(escalation.created_at)}
         </span>
       </span>

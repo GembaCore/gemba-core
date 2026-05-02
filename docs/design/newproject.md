@@ -141,7 +141,9 @@ transaction prepares or adopts the worktree, initializes
 `.gemba/workspace.toml` when missing, initializes a local Beads database
 when possible, syncs clean existing worktrees with `git fetch --prune`
 and `git pull --ff-only`, and skips pull with an operator-visible
-warning when the worktree is dirty.
+warning when the worktree is dirty. For new projects it also
+best-effort verifies or creates the GitHub repository with `gh`,
+configures `origin`, commits a setup snapshot, and pushes `main`.
 
 The same transaction updates LLM-readable setup files (`CLAUDE.md`,
 `AGENTS.md`, `.claude/settings.local.json`, and
@@ -154,9 +156,10 @@ and probes both `gemba-mcp` and `gitnexus mcp --help`. New projects
 record the GitNexus contract immediately and defer the first index
 until code exists.
 
-Known boundary: GitHub repository creation/push and full Gas Town boot
-initialization are not yet driven by this endpoint; those are surfaced
-as setup warnings rather than silently delegated to the LLM. The final
+For Gas Town onboarding the same setup transaction best-effort verifies
+or creates the selected rig with `gt` and asks Gas Town for an
+onboarding polecat. CLI failures are returned as setup warnings rather
+than silently delegated to the LLM. The final
 `/api/v1/newproject/:id/ratify` transaction still owns the generated
 plan commit path.
 

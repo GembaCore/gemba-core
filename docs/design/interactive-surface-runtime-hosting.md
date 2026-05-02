@@ -1,6 +1,11 @@
+---
+title: "Interactive surface and runtime hosting model"
+decision: gm-5n6o
+---
+
 # Interactive Surface and Runtime Hosting Model
 
-Status: accepted; implementation started
+Status: accepted; current implementation complete for gm-ddpy
 
 Date: 2026-05-01
 
@@ -33,6 +38,10 @@ The first implementation slice is in place:
 - `web/src/components/interactions/InteractionPanel.tsx` renders the
   shared transcript, draft, suggested-action, evidence, and capability
   regions.
+- `web/src/components/interactions/NewProjectDraftPreview.tsx` and
+  `web/src/components/interactions/NewProjectRatifyModal.tsx` provide
+  the reusable Onboarder preview and ratification controls while
+  leaving `/onboard` full-page before a project exists.
 - `web/src/components/rhp/details/InteractionDetail.tsx` registers an
   `interaction` RHP detail kind.
 - `web/src/components/rhp/StatusTab.tsx` registers the default RHP
@@ -43,6 +52,9 @@ The first implementation slice is in place:
   is the normalized InteractionSession shape the SPA renders.
 - Work item and epic detail headers expose a **Discuss** action that
   opens the scoped RHP interaction.
+- Session rows, escalation cards, and active Gemba Walk items expose
+  scoped RHP interaction actions for session supervision, escalation
+  triage, and walk review.
 - The interaction **Dispatch runtime** action opens the existing
   session launcher for the scoped bead/epic when an orchestration plane
   is bound; unavailable actions explain the missing backend contract.
@@ -58,11 +70,22 @@ The first implementation slice is in place:
   new/existing/import, project name, GitHub project, orchestration
   layer, native/Gas Town location, and source-analysis backend before calling
   `/api/v1/newproject/start`.
+- `POST /api/v1/onboarding/setup` executes the deterministic setup
+  transaction for the selected path. It creates or adopts the worktree,
+  initializes local Beads metadata where possible, syncs clean existing
+  repos, seeds Claude/Codex setup files with Beads and source-analysis
+  MCP guidance, verifies or best-effort installs GitNexus, runs initial
+  GitNexus analysis for existing/imported codebases, probes MCP
+  commands, and for new projects best-effort creates/verifies the GitHub
+  repo, configures `origin`, commits a setup snapshot, pushes `main`,
+  and asks Gas Town to add/create the rig and an onboarding polecat when
+  Gas Town orchestration is selected.
 
-Remaining implementation work includes backend persistence/API
-integration, full setup side-effect execution for GitHub/beads/Gas
-Town, Gas Town session-request handoff, and completing the PM/walk
-runtime migration.
+Remaining follow-on work is primarily hardening rather than product
+contract completion: replace the process-local interaction store with
+durable persistence, graduate the CLI-backed GitHub/Gas Town setup
+calls into adaptor-native APIs where available, and deepen transcript
+streaming from runtime hosts.
 
 ## Problem
 
@@ -259,9 +282,9 @@ Even when a full page remains, it should use the same Interaction
 components and API concepts as the RHP.
 
 `/onboard` is the key exception today: before project ratification,
-there is no board context for an RHP. It can remain full-page, but its
+there is no board context for an RHP. It remains full-page, while its
 conversation pane, plan preview, transcript model, ratify controls, and
-state machine should become reusable Interaction components.
+state machine use reusable Interaction components.
 
 The Onboarder full-page exception still has an important boundary:
 branching questions that can be answered deterministically must be
@@ -308,6 +331,13 @@ When Gemba runs with the Gas Town adaptor:
 This preserves the authority boundary: Gas Town owns its polecats,
 crews, mayor coordination, and tmux/session layout; Gemba owns the
 operator cockpit and normalized product state.
+
+The current onboarding setup implementation uses the installed `gt`
+CLI as a conservative handoff boundary: it verifies or creates the
+rig from the selected GitHub remote when possible and creates an
+onboarding polecat for the project. Failures are returned as setup
+warnings so the operator sees an honest boundary instead of the LLM
+silently taking over infrastructure work.
 
 ## Capability Model
 

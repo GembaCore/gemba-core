@@ -8,6 +8,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import { RhpProvider } from '@/components/rhp/RhpContext';
 import { SessionsPage } from '../SessionsPage';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -24,7 +25,9 @@ function wrapper(): (props: { children: ReactNode }) => JSX.Element {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
-        <MemoryRouter>{children}</MemoryRouter>
+        <MemoryRouter>
+          <RhpProvider>{children}</RhpProvider>
+        </MemoryRouter>
       </QueryClientProvider>
     );
   };

@@ -8,26 +8,21 @@
 import { expect, type Locator, type Page } from '@playwright/test';
 import { AppShell } from './AppShell';
 
-// COLUMN_ORDER mirrors web/src/types/core.gen.ts STATE_CATEGORIES.
-// The bead's spec calls out the LABEL order ("Backlog → Next Up → …")
-// — keep in lockstep with web/src/pages/BoardPage.tsx COLUMN_LABELS.
+// COLUMN_ORDER mirrors the board's display columns, not every raw bead
+// state. Ready intentionally combines unstarted + staged beads.
 export const COLUMN_ORDER = [
   'backlog',
-  'unstarted',
-  'staged',
+  'ready',
   'started',
   'completed',
-  'canceled',
 ] as const;
 export type ColumnId = (typeof COLUMN_ORDER)[number];
 
 export const COLUMN_LABEL: Record<ColumnId, string> = {
   backlog: 'Backlog',
-  unstarted: 'Next Up',
-  staged: 'Staged',
+  ready: 'Ready',
   started: 'In Progress',
   completed: 'Done',
-  canceled: 'Canceled',
 };
 
 export class BoardPage extends AppShell {
@@ -76,7 +71,7 @@ export class BoardPage extends AppShell {
   // calls this the "alternate" view; the default is Epic-primary.
   //
   // gm-5ekd dropped Backlog from the default kanban (triage now lives
-  // on /refine). Specs that need to assert the full six-column
+  // on /refine). Specs that need to assert the full display-column
   // contract pin show_backlog=1 so the Backlog column renders.
   async gotoWorkItemView({ showBacklog }: { showBacklog?: boolean } = {}): Promise<void> {
     const params = new URLSearchParams({ layout: 'workitem' });
@@ -96,15 +91,14 @@ export class BoardPage extends AppShell {
     await expect(this.listView).toBeVisible();
   }
 
-  // column locator by state category. Both views render the columns
+  // column locator by display column. Both views render the columns
   // with the same testid pattern (`board-column-${cat}`).
   column(cat: ColumnId): Locator {
     return this.page.getByTestId(`board-column-${cat}`);
   }
 
-  // expectColumnOrder asserts the six columns render in the canonical
-  // sequence the bead pins (Backlog → Next Up → Staged → In Progress →
-  // Done → Canceled).
+  // expectColumnOrder asserts the canonical visual sequence
+  // (Backlog → Ready → In Progress → Done).
   async expectColumnOrder(): Promise<void> {
     // Match `board-column-<state>` exactly — there's a sibling
     // `board-column-<state>-count` testid that the prefix selector

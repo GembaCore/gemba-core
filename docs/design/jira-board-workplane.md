@@ -1,3 +1,8 @@
+---
+title: "Jira Cloud Board as a Gemba WorkPlane"
+decision: none
+---
+
 # Jira Cloud Board as a Gemba WorkPlane
 
 Status: product/design proposal
@@ -512,4 +517,3 @@ Gemba owns agentic execution.
 10. Startup validation reports missing fields, missing statuses,
    unmapped board columns, unavailable transitions, and insufficient
    permissions before dispatch is enabled.
-

@@ -51,11 +51,10 @@ import { createSessionStore, type SessionStore } from './sessionStore';
 import { createEscalationStore, type EscalationStore } from './escalationStore';
 import { createAgentStore, type AgentStore } from './agentStore';
 import { createCapabilitiesPlane, type CapabilitiesPlane } from './capabilitiesPlane';
-import { createPoolsPlane, type PoolsPlane } from './poolsPlane';
+import { createPoolsPlane, type PoolConfigJSON, type PoolsPlane } from './poolsPlane';
 import { createModeHandle, DEFAULT_MODE, type ModeHandle } from './modes';
 import { createAuthHandle, type AuthHandle } from './auth';
 import type { WorkItem } from '../../../web/src/types/core.gen';
-import type { PoolConfigJSON } from '../../../web/src/api/poolConfig';
 
 export type Backend = 'fake' | 'real';
 
@@ -752,12 +751,39 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   }
 
   // /api/v1/newproject/* (gm-root.17.3 — see docs/design/newproject.md).
-  // The /new SPA route runs a conversational project-creation flow
-  // against the `newproject` skill. The skill (gm-root.17.5) and the
-  // Onboarder persona host (gm-root.17.10) DO NOT exist yet — this
-  // dispatcher returns canned responses so the SPA renders +
-  // transitions + commits end-to-end. Real-mode coverage lands when
-  // the backend beads do.
+  // The /onboard SPA route now runs deterministic setup before the
+  // conversational Onboarder session. Fake mode returns canned
+  // responses so route specs can prove the UI flow without requiring
+  // a real LLM, gh, gt, GitNexus, or MCP binaries.
+  if (path === '/api/v1/onboarding/setup' && method === 'POST') {
+    const body = parseBody(route.request().postData());
+    const projectName = typeof body.project_name === 'string' ? body.project_name : 'fake-new-project';
+    const worktree = typeof body.worktree_path === 'string' ? body.worktree_path : `/tmp/fake-projects/${projectName}`;
+    const sourceAnalysis =
+      body.source_analysis_tool === 'none' ? 'skipped' : 'configured';
+    return json({
+      setup_id: 'fake-setup-1',
+      project_path: worktree,
+      frames: [
+        {
+          seq: 1,
+          line: `Prepared deterministic setup for ${projectName}.`,
+          level: 'info',
+          done: true,
+        },
+        {
+          seq: 2,
+          line: 'Setup complete. The Onboarder can now coach milestones, epics, and beads with this context fixed.',
+          level: 'info',
+          done: true,
+        },
+      ],
+      checks: {
+        source_analysis: sourceAnalysis,
+        gemba_mcp: 'verified',
+      },
+    });
+  }
   if (path === '/api/v1/newproject/start' && method === 'POST') {
     return json({
       session_id: 'fake-newproject-1',

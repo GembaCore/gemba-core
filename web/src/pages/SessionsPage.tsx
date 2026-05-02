@@ -7,13 +7,16 @@
 // (bead id + optional title), last event, open-escalation count, End.
 
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Play, StopCircle } from 'lucide-react';
+import { AlertTriangle, MessageSquare, Play, StopCircle } from 'lucide-react';
 import { useSessions, useEndSession } from '@/hooks/useSessions';
 import { useEscalations } from '@/hooks/useEscalations';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
 import { EscalationPanel } from '@/components/sessions/EscalationPanel';
 import { ParallelismPill } from '@/components/sessions/ParallelismPill';
 import { useSessionParallelism } from '@/hooks/useSessionParallelism';
+import { useRhp } from '@/components/rhp/RhpContext';
+import { INTERACTION_DETAIL_KIND } from '@/components/rhp/details/InteractionDetail';
+import { encodeInteractionTarget } from '@/interactions/types';
 import type { Session } from '@/api/sessions';
 
 export function SessionsPage() {
@@ -24,6 +27,7 @@ export function SessionsPage() {
   // panel uses its own scoped query (faster polling) when open.
   const { data: allEscalations = [] } = useEscalations();
   const endMut = useEndSession();
+  const { popDetail } = useRhp();
 
   // Map from session id → open escalation count. Escalations carry
   // assignment_id, not session_id today (gm-native.13's index keys on
@@ -112,6 +116,12 @@ export function SessionsPage() {
                   ending={endMut.isPending}
                   escalationCount={escalationCount.get(s.assignment_id) ?? 0}
                   onOpenEscalations={() => setEscalationSessionId(s.id)}
+                  onOpenInteraction={() =>
+                    popDetail({
+                      kind: INTERACTION_DETAIL_KIND,
+                      id: encodeInteractionTarget({ type: 'session', id: s.id }),
+                    })
+                  }
                 />
               ))}
             </tbody>
@@ -137,12 +147,14 @@ function Row({
   ending,
   escalationCount,
   onOpenEscalations,
+  onOpenInteraction,
 }: {
   s: Session;
   onEnd: () => void;
   ending: boolean;
   escalationCount: number;
   onOpenEscalations: () => void;
+  onOpenInteraction: () => void;
 }) {
   const terminal = isTerminal(s);
   const worktree = typeof s.provider_metadata?.worktree === 'string' ? s.provider_metadata.worktree : '';
@@ -209,6 +221,15 @@ function Row({
       </Td>
       <Td>{formatTime(s.started_at)}</Td>
       <Td>
+        <button
+          type="button"
+          onClick={onOpenInteraction}
+          data-testid={`session-row-${s.id}-interact`}
+          className="mr-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-900"
+        >
+          <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+          Discuss
+        </button>
         {!terminal && (
           <button
             type="button"

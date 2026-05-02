@@ -70,6 +70,7 @@ export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: 
   const personas: Persona[] = DEFAULT_PERSONAS;
 
   const start = useStartSession();
+  const resetStart = start.reset;
 
   // Reset on every open. prefilledBeadId hydrates bead mode; otherwise
   // operators get a blank slate.
@@ -82,12 +83,12 @@ export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: 
       setRepositoryId('');
       setPrompt('');
       setMode('bead');
-      start.reset();
+      resetStart();
     } else if (prefilledBeadId) {
       setBeadId(prefilledBeadId);
       setMode('bead');
     }
-  }, [open, prefilledBeadId, start]);
+  }, [open, prefilledBeadId, resetStart]);
 
   const beadOptions = useMemo(() => {
     const q = search.trim().toLowerCase();

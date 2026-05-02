@@ -142,6 +142,116 @@ func TestOnboardingSetup_ExistingProject_DirtySkipsPull(t *testing.T) {
 	}
 }
 
+func TestOnboardingSetup_NewProject_PublishesRepository(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "demo")
+	var calls []string
+	runner := func(_ context.Context, dir, name string, args ...string) ([]byte, error) {
+		call := name + " " + strings.Join(args, " ")
+		calls = append(calls, call)
+		switch call {
+		case "gh repo view GembaCore/demo --json name":
+			return nil, errors.New("not found")
+		case "git remote get-url origin":
+			return nil, errors.New("no origin")
+		case "git status --porcelain":
+			return []byte("?? AGENTS.md\n"), nil
+		default:
+			return []byte("ok"), nil
+		}
+	}
+	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	t.Cleanup(r.Close)
+	r.AttachProjects(AttachConfig{GitInitRunner: runner})
+
+	body := map[string]any{
+		"origin":               "new",
+		"project_name":         "demo",
+		"github_project":       "GembaCore/demo",
+		"orchestration":        "native",
+		"worktree_path":        dir,
+		"source_analysis_tool": "none",
+	}
+	rec := httptest.NewRecorder()
+	req := newProjectReq(t, http.MethodPost, "/api/v1/onboarding/setup", body)
+	req.Header.Set(ConfirmHeader, "setup-new")
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp onboardingSetupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Checks["github"] != "created" {
+		t.Fatalf("github check=%q", resp.Checks["github"])
+	}
+	if resp.Checks["git_push"] != "pushed" {
+		t.Fatalf("git_push check=%q", resp.Checks["git_push"])
+	}
+	joined := strings.Join(calls, "\n")
+	for _, want := range []string{
+		"gh repo create GembaCore/demo --private",
+		"git remote add origin https://github.com/GembaCore/demo.git",
+		"git add .",
+		"git commit -m chore: initialize gemba onboarding",
+		"git push -u origin main",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing runner call %q in:\n%s", want, joined)
+		}
+	}
+}
+
+func TestOnboardingSetup_GasTownInitializesRig(t *testing.T) {
+	dir := t.TempDir()
+	var calls []string
+	runner := func(_ context.Context, dir, name string, args ...string) ([]byte, error) {
+		call := name + " " + strings.Join(args, " ")
+		calls = append(calls, call)
+		if call == "git status --porcelain" {
+			return []byte("?? .gemba/workspace.toml\n"), nil
+		}
+		return []byte("ok"), nil
+	}
+	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	t.Cleanup(r.Close)
+	r.AttachProjects(AttachConfig{GitInitRunner: runner})
+
+	body := map[string]any{
+		"origin":               "new",
+		"project_name":         "demo",
+		"github_project":       "GembaCore/demo",
+		"orchestration":        "gastown",
+		"gastown_location":     dir,
+		"source_analysis_tool": "none",
+	}
+	rec := httptest.NewRecorder()
+	req := newProjectReq(t, http.MethodPost, "/api/v1/onboarding/setup", body)
+	req.Header.Set(ConfirmHeader, "setup-gastown")
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var resp onboardingSetupResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Checks["gastown"] != "initialized" {
+		t.Fatalf("gastown check=%q warnings=%v", resp.Checks["gastown"], resp.Warnings)
+	}
+	joined := strings.Join(calls, "\n")
+	for _, want := range []string{
+		"gt rig list --json",
+		"gt rig add demo https://github.com/GembaCore/demo.git",
+		"gt polecat create demo onboarder",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing runner call %q in:\n%s", want, joined)
+		}
+	}
+}
+
 func mustMkdir(t *testing.T, path string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {

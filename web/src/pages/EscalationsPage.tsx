@@ -39,6 +39,7 @@ import {
   Inbox,
   ListChecks,
   MessageSquareWarning,
+  MessageSquare,
   PauseCircle,
   Search,
   ShieldCheck,
@@ -60,6 +61,9 @@ import type { ConsultSummary } from '@/api/consults';
 import type { PersonaSummary } from '@/api/personas';
 import { relativeTime } from '@/components/board/relativeTime';
 import { useWalk } from '@/components/walk/WalkContext';
+import { useRhp } from '@/components/rhp/RhpContext';
+import { INTERACTION_DETAIL_KIND } from '@/components/rhp/details/InteractionDetail';
+import { encodeInteractionTarget } from '@/interactions/types';
 
 // HANDOFF_SKILL_ID maps to internal/skills/escalation_handoff/. The
 // skill is registered with the dispatcher at server startup; the
@@ -507,6 +511,7 @@ export function EscalationsPage(): JSX.Element {
   const { data: escalations = [], isLoading, error } = useEscalations();
   const respond = useRespondEscalation();
   const { active: walkActive, addItem: addWalkItem } = useWalk();
+  const { popDetail } = useRhp();
 
   // ── Selection state (gm-e11.8.3) ────────────────────────────────────────
   const [selection, setSelection] = useState<Set<string>>(new Set());
@@ -757,6 +762,12 @@ export function EscalationsPage(): JSX.Element {
                           escalation={esc}
                           selected={selection.has(esc.id)}
                           onToggleSelect={toggleSelect}
+                          onOpenInteraction={() =>
+                            popDetail({
+                              kind: INTERACTION_DETAIL_KIND,
+                              id: encodeInteractionTarget({ type: 'escalation', id: esc.id }),
+                            })
+                          }
                         />
                       </li>
                     ))}
@@ -874,9 +885,15 @@ interface EscalationCardProps {
   escalation: EscalationRequest;
   selected: boolean;
   onToggleSelect: (id: string) => void;
+  onOpenInteraction: () => void;
 }
 
-function EscalationCard({ escalation, selected, onToggleSelect }: EscalationCardProps) {
+function EscalationCard({
+  escalation,
+  selected,
+  onToggleSelect,
+  onOpenInteraction,
+}: EscalationCardProps) {
   const [resolveOpen, setResolveOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const Icon = KIND_ICON[escalation.source] ?? AlertTriangle;
@@ -974,6 +991,15 @@ function EscalationCard({ escalation, selected, onToggleSelect }: EscalationCard
           )}
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenInteraction}
+            data-testid={`escalation-card-${escalation.id}-interact`}
+            className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-600 dark:text-neutral-300 dark:hover:bg-neutral-800"
+          >
+            <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+            Triage
+          </button>
           <button
             type="button"
             onClick={() => setHandoffOpen(true)}

@@ -5,11 +5,14 @@
 // SuggestedAction buttons (gm-4p6 / gm-uf7) are rendered when the
 // persona's turn payload includes them; absent for v1.
 
-import { Check, MessageSquareDashed, Pause, SendHorizontal, Square, X } from 'lucide-react';
+import { Check, MessageSquare, MessageSquareDashed, Pause, SendHorizontal, Square, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useHotkey } from '@/hotkeys';
 import { cn } from '@/lib/utils';
 import { useWalk } from './WalkContext';
+import { useRhp } from '@/components/rhp/RhpContext';
+import { INTERACTION_DETAIL_KIND } from '@/components/rhp/details/InteractionDetail';
+import { encodeInteractionTarget } from '@/interactions/types';
 import type { AgendaItem, Decision, WalkTurn } from './types';
 
 export function ChatPane(): JSX.Element {
@@ -43,15 +46,34 @@ export function ChatPane(): JSX.Element {
 }
 
 function ActiveItemFrame({ item, index }: { item: AgendaItem; index: number }): JSX.Element {
+  const walk = useWalk();
+  const { popDetail } = useRhp();
+  const walkID = walk.walk?.id ?? 'active';
   return (
     <header
       data-testid="walk-chat-active-frame"
-      className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"
+      className="flex items-start justify-between gap-3 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800"
     >
-      <div className="text-[11px] uppercase tracking-wide text-neutral-500">
-        Agenda #{index + 1} · {item.source.kind.replace('_', ' ')}
+      <div className="min-w-0">
+        <div className="text-[11px] uppercase tracking-wide text-neutral-500">
+          Agenda #{index + 1} · {item.source.kind.replace('_', ' ')}
+        </div>
+        <h2 className="mt-1 truncate text-base font-semibold">{item.topic}</h2>
       </div>
-      <h2 className="mt-1 text-base font-semibold">{item.topic}</h2>
+      <button
+        type="button"
+        data-testid="walk-chat-active-interact"
+        onClick={() =>
+          popDetail({
+            kind: INTERACTION_DETAIL_KIND,
+            id: encodeInteractionTarget({ type: 'walk', id: `${walkID}:${item.id}` }),
+          })
+        }
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+      >
+        <MessageSquare className="h-3.5 w-3.5" aria-hidden />
+        Review
+      </button>
     </header>
   );
 }

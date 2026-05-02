@@ -9,6 +9,7 @@ import { useEnsureInteraction } from '@/hooks/useInteractions';
 import {
   decodeInteractionTarget,
   runtimeHostForScope,
+  type InteractionKind,
   type InteractionSession,
   type InteractionScope,
 } from '@/interactions/types';
@@ -36,13 +37,14 @@ export function InteractionDetail({ id }: { id: string }) {
   const workItemId = isWorkItemScope(decoded.type) ? decoded.id : undefined;
   const { data: item } = useWorkItem(workItemId);
   const { orchestrationPlane } = useCapabilities();
-  const ensured = useEnsureInteraction(decoded);
+  const kind = kindForScope(decoded);
+  const ensured = useEnsureInteraction(decoded, kind);
   const navigate = useNavigate();
   const [dispatchOpen, setDispatchOpen] = useState(false);
 
   const fallbackSession = useMemo(
-    () => buildInteractionSession(decoded, item, orchestrationPlane),
-    [decoded, item, orchestrationPlane]
+    () => buildInteractionSession(decoded, item, orchestrationPlane, kind),
+    [decoded, item, orchestrationPlane, kind]
   );
   const session = ensured.data ?? fallbackSession;
 
@@ -73,7 +75,8 @@ function isWorkItemScope(type: InteractionScope['type']): boolean {
 function buildInteractionSession(
   scope: InteractionScope,
   item: WorkItem | undefined,
-  orchestrationPlane: ReturnType<typeof useCapabilities>['orchestrationPlane']
+  orchestrationPlane: ReturnType<typeof useCapabilities>['orchestrationPlane'],
+  kind: InteractionKind
 ): InteractionSession {
   const resolvedScope = scopeFromItem(scope, item);
   const runtime = runtimeHostForScope(resolvedScope, orchestrationPlane);
@@ -81,7 +84,7 @@ function buildInteractionSession(
 
   return {
     id: `${resolvedScope.type}:${resolvedScope.id}:interaction`,
-    kind: resolvedScope.type === 'escalation' ? 'escalation_triage' : 'pm_consult',
+    kind,
     status: 'waiting_on_operator',
     uiHost: 'rhp',
     runtimeHost: runtime.host,
@@ -142,6 +145,19 @@ function buildInteractionSession(
     decisionLog: [],
     capabilities: capabilitiesForRuntime(runtime.host),
   };
+}
+
+function kindForScope(scope: InteractionScope): InteractionKind {
+  switch (scope.type) {
+    case 'escalation':
+      return 'escalation_triage';
+    case 'walk':
+      return 'gemba_walk';
+    case 'session':
+      return 'session_supervision';
+    default:
+      return 'pm_consult';
+  }
 }
 
 function scopeFromItem(scope: InteractionScope, item: WorkItem | undefined): InteractionScope {

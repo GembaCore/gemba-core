@@ -32,6 +32,11 @@ async function ratifyProject(
   ]);
 
   await page.goto('/onboard');
+  await page.getByTestId('onboard-setup-project-name').fill('fake-new-project');
+  await page.getByTestId('onboard-setup-github').fill('GembaCore/fake-new-project');
+  await page.getByTestId('onboard-setup-worktree').fill('/tmp/fake-projects/fake-new-project');
+  await page.getByTestId('onboard-setup-continue').click();
+  await expect(page.getByTestId('newproject-message-setup-complete')).toBeVisible();
   // Wait for the greeting from the fake skill.
   await expect(page.getByTestId('newproject-message-greeting')).toBeVisible();
   // Submit a turn to populate the plan tree + enable the Ratify button.
