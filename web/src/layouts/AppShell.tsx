@@ -29,11 +29,13 @@ import { RhpShell } from '@/components/rhp/RhpShell';
 // RhpPinnedContentProvider is the lightweight context that bridges the
 // two without touching the public RhpAPI.
 import { HelpTab } from '@/components/rhp/HelpTab';
+import { StatusTab } from '@/components/rhp/StatusTab';
 import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 // gm-root.22.5: WorkItem detail-tab kind registration. WorkItemDetailRegistration
 // registers the 'workitem' kind with the RHP detail-content registry so
 // popDetail({kind: 'workitem', id}) renders WorkItemDetail inside the tab.
 import { WorkItemDetailRegistration } from '@/components/rhp/details/WorkItemDetailRegistration';
+import { InteractionDetailRegistration } from '@/components/rhp/details/InteractionDetail';
 // gm-root.26 item 2: minimal in-house toast system. Used by the
 // session launcher to surface "session running in pane <id>" with a
 // link to /sessions so first-time users discover the surface.
@@ -70,8 +72,10 @@ export function AppShell() {
               </main>
             </div>
             <RhpShell />
+            <StatusTab />
             <HelpTab />
             <WorkItemDetailRegistration />
+            <InteractionDetailRegistration />
             <AppHotkeys />
             <Palette />
             <PmPanel />

@@ -13,7 +13,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Copy, Layers, Play, Plus, Send, Terminal } from 'lucide-react';
+import { Check, Copy, Layers, MessageSquare, Play, Plus, Send, Terminal } from 'lucide-react';
 import { useUpdateWorkItem, useWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
@@ -29,6 +29,8 @@ import { epicChildren } from '@/components/board/epicHierarchy';
 import { EpicMilestoneDropdown } from '@/components/board/EpicMilestoneDropdown';
 import { useRegisterDetailContent } from '@/components/rhp/RhpDetail';
 import { useRhp } from '@/components/rhp/RhpContext';
+import { INTERACTION_DETAIL_KIND } from '@/components/rhp/details/InteractionDetail';
+import { encodeInteractionTarget } from '@/interactions/types';
 import {
   WorkItemBreadcrumb,
   buildWorkItemBreadcrumb,
@@ -187,6 +189,7 @@ function EpicActions({ epic }: { epic: WorkItem }) {
   const mutation = useUpdateWorkItem();
   const navigate = useNavigate();
   const { orchestrationPlane } = useCapabilities();
+  const { popDetail } = useRhp();
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const [newChildOpen, setNewChildOpen] = useState(false);
   const agentClaimable = epic.derived?.agent_claimable === true;
@@ -246,6 +249,18 @@ function EpicActions({ epic }: { epic: WorkItem }) {
         onClick={onStart}
         disabledReason={startDisabledReason}
         testid="epic-detail-start"
+      />
+      <ActionButton
+        label="Discuss"
+        icon={<MessageSquare className="h-3 w-3" />}
+        onClick={() =>
+          popDetail({
+            kind: INTERACTION_DETAIL_KIND,
+            id: encodeInteractionTarget({ type: 'epic', id: epic.id }),
+          })
+        }
+        disabledReason={null}
+        testid="epic-detail-interact"
       />
       <ActionButton
         label="Dispatch"

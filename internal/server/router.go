@@ -138,6 +138,11 @@ type Router struct {
 	newProjectTurner   SkillTurner
 	newProjectRatifier NewProjectRatifier
 
+	// interactionStore backs /api/v1/interactions:* (gm-ddpy). It is
+	// intentionally process-local for the first slice: interactions
+	// are operator cockpit state until ratified into WorkPlane records.
+	interactionStore *interactionStore
+
 	// attachPinger / attachGitRunner / attachNow back the
 	// /api/v1/projects/attach handler (gm-xwa8). All three are zero-
 	// value safe — nil falls back to the production defaults
@@ -199,6 +204,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		instanceID: newInstanceID(),
 		nonceCache: NewNonceCache(0, 0), // defaults: 1024 entries / 5min TTL
 	}
+	r.interactionStore = newInteractionStore()
 	r.healthBus = registry.NewHealthBus(healthBusInterval, r.boundAdaptorStatuses)
 	r.eventsHub = events.NewHub(events.Config{})
 	r.notifyDeduper = newNotifyDeduper(0)
@@ -333,6 +339,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// gm-e7.3: live snapshot of a running session — currently a
 		// transcript tail from the backing pane. Read-only; no nonce.
 		api.Get("/sessions/{id}/peek", r.peekSession)
+		api.Post("/interactions:ensure", r.ensureInteraction)
 		// gm-s47n.5.4: operational-context aggregator. Single read
 		// returning the join — Agent + Session + Workspace +
 		// Assignment + Profile + Health — that the planner, the
@@ -528,6 +535,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Delete("/v1/sessions/{id}", r.endSession)
 		api.Get("/v1/sessions/{id}/peek", r.peekSession)
+		api.Post("/v1/interactions:ensure", r.ensureInteraction)
 		api.Get("/v1/escalations", r.listEscalations)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/escalations/{id}/respond", r.respondEscalation)

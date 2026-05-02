@@ -21,6 +21,7 @@ import {
   ArrowUp,
   Check,
   Copy,
+  MessageSquare,
   Pencil,
   Plus,
   Terminal,
@@ -40,6 +41,9 @@ import { canEdit } from '@/components/board/canEdit';
 import { MilestoneChildrenPanel } from '@/components/board/MilestoneChildrenPanel';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
 import { workItemsKeys } from '@/hooks/useWorkItems';
+import { useRhp } from '@/components/rhp/RhpContext';
+import { INTERACTION_DETAIL_KIND } from '@/components/rhp/details/InteractionDetail';
+import { encodeInteractionTarget } from '@/interactions/types';
 import {
   WorkItemBreadcrumb,
   buildWorkItemBreadcrumb,
@@ -155,6 +159,7 @@ function DetailHeader({
   const [copied, setCopied] = useState(false);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const navigate = useNavigate();
+  const { popDetail } = useRhp();
   const copyId = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(id);
@@ -201,6 +206,31 @@ function DetailHeader({
           </button>
         </div>
       </div>
+      <button
+        type="button"
+        disabled={!item}
+        title={item ? 'Open interactive PM surface for this bead' : 'Loading…'}
+        onClick={() => {
+          if (!item) return;
+          popDetail({
+            kind: INTERACTION_DETAIL_KIND,
+            id: encodeInteractionTarget({
+              type: item.kind === KIND_MILESTONE ? 'milestone' : item.kind === 'epic' ? 'epic' : 'workitem',
+              id: item.id,
+            }),
+          });
+        }}
+        data-testid="workitem-detail-interact"
+        className={cn(
+          'mt-1 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium',
+          !item
+            ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-600'
+            : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
+        )}
+      >
+        <MessageSquare className="h-3 w-3" aria-hidden />
+        Discuss
+      </button>
       <DispatchButton item={item} onOpen={() => setDispatchOpen(true)} />
       {item && dispatchOpen ? (
         <NewSessionDialog

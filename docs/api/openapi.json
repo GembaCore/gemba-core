@@ -20,6 +20,7 @@
     { "name": "work", "description": "WorkItems, sprints, repositories." },
     { "name": "agents", "description": "Agents, agent groups, sessions." },
     { "name": "ops", "description": "Escalations, capabilities, adaptors." },
+    { "name": "interactions", "description": "Shared operator interaction sessions hosted by the RHP or broad pages." },
     { "name": "newproject", "description": "Conversational project-creation flow (gm-root.17)." },
     { "name": "stub", "description": "Routes documented at the URL level only; full request/response schemas land in follow-up beads." }
   ],
@@ -271,6 +272,32 @@
             }
           },
           "503": { "$ref": "#/components/responses/AdaptorUnavailable" }
+        }
+      }
+    },
+    "/api/v1/interactions:ensure": {
+      "post": {
+        "tags": ["interactions"],
+        "summary": "Create or return the process-local interaction for a scoped operator exchange.",
+        "operationId": "ensureInteraction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/EnsureInteractionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Interaction session.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/InteractionSession" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" }
         }
       }
     },
@@ -939,6 +966,127 @@
             "type": "array",
             "items": { "$ref": "#/components/schemas/Session" }
           }
+        }
+      },
+      "InteractionScope": {
+        "type": "object",
+        "required": ["type", "id"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["project", "milestone", "epic", "workitem", "session", "escalation", "walk"]
+          },
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "breadcrumb": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InteractionCrumb" }
+          }
+        }
+      },
+      "InteractionCrumb": {
+        "type": "object",
+        "required": ["type", "id", "label"],
+        "properties": {
+          "type": { "type": "string" },
+          "id": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      },
+      "EnsureInteractionRequest": {
+        "type": "object",
+        "required": ["scope"],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": ["project_onboarding", "pm_consult", "escalation_triage", "gemba_walk", "session_supervision", "evidence_review", "decision_review"]
+          },
+          "scope": { "$ref": "#/components/schemas/InteractionScope" }
+        }
+      },
+      "InteractionSession": {
+        "type": "object",
+        "required": ["id", "kind", "status", "ui_host", "runtime_host", "runtime_label", "scope", "messages", "suggested_actions", "capabilities"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "status": { "type": "string" },
+          "ui_host": { "type": "string", "enum": ["rhp", "page", "modal"] },
+          "runtime_host": {
+            "type": "string",
+            "enum": ["native", "codex", "claude", "gastown_mayor", "gastown_crew", "server_persona", "manual"]
+          },
+          "runtime_label": { "type": "string" },
+          "scope": { "$ref": "#/components/schemas/InteractionScope" },
+          "messages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InteractionMessage" }
+          },
+          "suggested_actions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InteractionSuggestedAction" }
+          },
+          "draft": { "$ref": "#/components/schemas/InteractionDraft" },
+          "evidence": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InteractionEvidence" }
+          },
+          "decision_log": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/InteractionDecision" }
+          },
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InteractionMessage": {
+        "type": "object",
+        "required": ["id", "role", "body"],
+        "properties": {
+          "id": { "type": "string" },
+          "role": { "type": "string", "enum": ["operator", "assistant", "system", "tool"] },
+          "body": { "type": "string" },
+          "at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "InteractionSuggestedAction": {
+        "type": "object",
+        "required": ["id", "label", "description"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "description": { "type": "string" },
+          "disabled_reason": { "type": "string" }
+        }
+      },
+      "InteractionDraft": {
+        "type": "object",
+        "required": ["title", "summary"],
+        "properties": {
+          "title": { "type": "string" },
+          "summary": { "type": "string" },
+          "bullets": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "InteractionEvidence": {
+        "type": "object",
+        "required": ["id", "label"],
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "href": { "type": "string" }
+        }
+      },
+      "InteractionDecision": {
+        "type": "object",
+        "required": ["id", "summary", "outcome"],
+        "properties": {
+          "id": { "type": "string" },
+          "summary": { "type": "string" },
+          "rationale": { "type": "string" },
+          "outcome": { "type": "string", "enum": ["accepted", "rejected", "deferred"] },
+          "decided_at": { "type": "string", "format": "date-time" }
         }
       },
       "Escalation": {
