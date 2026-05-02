@@ -12,6 +12,7 @@ import { ActiveWalkBanner } from '@/components/walk/ActiveWalkBanner';
 import { AppWalkBindings } from '@/components/walk/AppWalkBindings';
 import { WalkProvider, useWalk } from '@/components/walk/WalkContext';
 import { PmPanelProvider, usePmPanel } from '@/components/pm/PmPanelContext';
+import { RhpProvider } from '@/components/rhp/RhpContext';
 import { HotkeysProvider } from '@/hotkeys';
 import type { Walk } from '@/api/walks';
 
@@ -31,8 +32,10 @@ function wrap(children: ReactNode): JSX.Element {
         <HotkeysProvider>
           <PmPanelProvider>
             <WalkProvider>
-              <AppWalkBindings />
-              {children}
+              <RhpProvider>
+                <AppWalkBindings />
+                {children}
+              </RhpProvider>
             </WalkProvider>
           </PmPanelProvider>
         </HotkeysProvider>

@@ -38,6 +38,7 @@ import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { EscalationsPage } from '../EscalationsPage';
 import type { EscalationRequest } from '@/api/escalations';
+import { RhpProvider } from '@/components/rhp/RhpContext';
 
 // ── Walk context stub ─────────────────────────────────────────────────────────
 // We stub the walk context module to control `active` and spy on `addItem`.
@@ -67,7 +68,9 @@ function wrapper(): (props: { children: ReactNode }) => JSX.Element {
   return function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={client}>
-        <MemoryRouter>{children}</MemoryRouter>
+        <MemoryRouter>
+          <RhpProvider>{children}</RhpProvider>
+        </MemoryRouter>
       </QueryClientProvider>
     );
   };
