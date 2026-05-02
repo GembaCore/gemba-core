@@ -236,19 +236,24 @@ describe('WalkPage', () => {
 
   it('clicking a queued card promotes it to active', async () => {
     render(wrap(<WalkPage />));
-    // findByTestId retries with the testing-library timeout; the
-    // sync getByTestId variant raced React's effect schedule on CI
-    // (passed locally, intermittent fail on slower runners).
-    const card = await screen.findByTestId('walk-agenda-item-b');
-    await act(async () => {
-      card.click();
-    });
-    await waitFor(() =>
-      expect(screen.getByTestId('walk-agenda-item-b').dataset.lane).toBe('active')
+    // Wait for the first item to settle into the active lane before
+    // promoting another card. On slower CI runners the start mutation
+    // and the follow-up walk query can otherwise briefly race the click.
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('walk-agenda-item-a').dataset.lane).toBe('active'),
+      { timeout: 5000 }
     );
-    await waitFor(() =>
-      expect(screen.getByTestId('walk-agenda-item-a').dataset.lane).toBe('queued')
+    await waitFor(
+      async () => {
+        await act(async () => {
+          screen.getByTestId('walk-agenda-item-b').click();
+        });
+        expect(screen.getByTestId('walk-agenda-item-b').dataset.lane).toBe('active');
+      },
+      { timeout: 5000, interval: 50 }
     );
+    expect(screen.getByTestId('walk-agenda-item-a').dataset.lane).toBe('queued');
   });
 
   it('mounting /walk starts the walk and flips PM panel walkActive', async () => {
