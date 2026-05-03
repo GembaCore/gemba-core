@@ -12,11 +12,12 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import type { UseQueryResult } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, type UseQueryResult } from '@tanstack/react-query';
 import { Sidebar } from '../Sidebar';
 import { ProjectPickerProvider } from '../projectpicker/ProjectPickerContext';
 import type { EscalationRequest } from '@/api/escalations';
 import type { ApiError } from '@/api/client';
+import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 
 // Mock useEscalations so badge tests don't depend on network.
 vi.mock('@/hooks/useEscalations', () => ({
@@ -62,12 +63,31 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+const caps: CapabilitiesResponse = {
+  work_plane: {
+    adaptor_name: 'fake',
+    adaptor_version: '0.1.0',
+    protocol_version: '0.1.0',
+    transport: 'api',
+    state_map: { open: 'unstarted', in_progress: 'started', closed: 'completed' },
+    sprint_native: false,
+    token_budget_enforced: false,
+    evidence_synthesis_required: false,
+  },
+  orchestration_plane: null,
+};
+
 function renderSidebar(initialEntry = '/new') {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <ProjectPickerProvider>
-        <Sidebar />
-      </ProjectPickerProvider>
+      <QueryClientProvider client={client}>
+        <CapabilitiesProvider initial={caps}>
+          <ProjectPickerProvider>
+            <Sidebar />
+          </ProjectPickerProvider>
+        </CapabilitiesProvider>
+      </QueryClientProvider>
     </MemoryRouter>
   );
 }

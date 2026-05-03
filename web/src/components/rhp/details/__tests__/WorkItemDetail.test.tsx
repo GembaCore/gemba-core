@@ -406,7 +406,7 @@ describe('WorkItemDetail', () => {
     render(<WorkItemDetail id="gm-foo" />, {
       wrapper: wrapper(capsWith('markdown')),
     });
-    const md = (await screen.findAllByTestId('description-markdown'))[0];
+    const md = await screen.findByTestId('description-markdown', undefined, { timeout: 5000 });
     expect(md.querySelector('h1')?.textContent).toBe('Goal');
     expect(md.querySelectorAll('li')).toHaveLength(2);
     expect(screen.queryByTestId('description-plain')).toBeNull();

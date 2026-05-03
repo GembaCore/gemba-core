@@ -17,11 +17,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { useEffect } from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HelpCircle } from 'lucide-react';
 import { RhpProvider, useRhp } from '../RhpContext';
 import { RhpPinnedContentProvider, useRhpPinnedContent } from '../RhpPinnedContent';
 import { HelpTab } from '../HelpTab';
 import { ProjectPickerProvider } from '@/components/projectpicker/ProjectPickerContext';
+import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -34,6 +36,20 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+const caps: CapabilitiesResponse = {
+  work_plane: {
+    adaptor_name: 'fake',
+    adaptor_version: '0.1.0',
+    protocol_version: '0.1.0',
+    transport: 'api',
+    state_map: { open: 'unstarted', in_progress: 'started', closed: 'completed' },
+    sprint_native: false,
+    token_budget_enforced: false,
+    evidence_synthesis_required: false,
+  },
+  orchestration_plane: null,
+};
+
 // Test wrapper: router + providers required by HelpTab.
 function Wrapper({
   initialPath = '/board',
@@ -42,16 +58,21 @@ function Wrapper({
   initialPath?: string;
   children?: React.ReactNode;
 }) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
     <MemoryRouter initialEntries={[initialPath]}>
-      <ProjectPickerProvider>
-        <RhpProvider>
-          <RhpPinnedContentProvider>
-            <HelpTab />
-            {children}
-          </RhpPinnedContentProvider>
-        </RhpProvider>
-      </ProjectPickerProvider>
+      <QueryClientProvider client={client}>
+        <CapabilitiesProvider initial={caps}>
+          <ProjectPickerProvider>
+            <RhpProvider>
+              <RhpPinnedContentProvider>
+                <HelpTab />
+                {children}
+              </RhpPinnedContentProvider>
+            </RhpProvider>
+          </ProjectPickerProvider>
+        </CapabilitiesProvider>
+      </QueryClientProvider>
     </MemoryRouter>
   );
 }
