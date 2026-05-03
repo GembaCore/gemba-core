@@ -121,6 +121,8 @@ Stable terms used throughout this document and the code.
 | **Session runway** | An estimate of how much *productive work* the current session has left before recycle: derived from context-pressure + concept-drift + time-on-task plus a calibration bias from completed-vs-promised cycles in this session (§4 Layer 1.4). |
 | **Owner / claim** | The agent currently working a bead (in_progress + assignee from bd). Selection treats a claimed bead as soft-conflicted against any other session, so two agents in a fleet don't race the same bead (§4 Layer 5). |
 | **Recommendation calibration** | The retrospective signal that grades planner *recommendations* against operator *picks*: when the planner says "do X" and the operator picks Y instead, the delta is recorded so the score weights can re-tune (§7.5). |
+| **Work complexity** | A structured estimate of a bead's technical depth and context span, with risk / ambiguity / verification modifiers. It is consumed by capability-fit before Selection ranks candidates. See [Complexity-aware dispatch](complexity-aware-dispatch). |
+| **Capability envelope** | The routing contract on an agent profile: maximum depth/span/band, cost tier, tool access, model/provider, context window, and observed success by band. |
 
 ## 3.5 Selection vs. scoring — the load-bearing distinction
 
@@ -1182,6 +1184,44 @@ layer reads them. Steps 16-18 are *compute*: they need the data
 from 12-15 plus the existing scoring substrate. Step 19 is the
 *feedback loop*: it grades the system from steps 18 down. Step 20
 is the *surface*.
+
+### Work Planning 3.0 — complexity-aware capability fit
+
+WP3 adds a pre-selection **complexity-fit** step for mixed fleets of
+premium, standard, and local/open-source agent profiles. The existing
+two axes still do their jobs: the target axis decides which beads can
+run in parallel, and the concept axis decides which sessions are warm.
+Complexity-fit answers a third question before Selection ranks the
+survivors: **is this agent/model profile capable enough for this bead,
+and is it cost-rational to use it?**
+
+The full contract is in [Complexity-aware dispatch](complexity-aware-dispatch).
+At a high level:
+
+1. Estimate each bead's `depth` and `span`, then apply risk,
+   ambiguity, and verification modifiers.
+2. Derive a band: `trivial`, `routine`, `skilled`, `expert`, or
+   `decompose`.
+3. Compare the band and required tools against each agent profile's
+   capability envelope.
+4. Exclude underqualified / missing-tool profiles in auto-dispatch;
+   warn but allow operator override in coach mode.
+5. Cost-demote overqualified premium profiles when a cheaper capable
+   profile is available.
+6. Persist the complexity-fit snapshot in dispatch decisions so the
+   retrospective can calibrate both the estimator and profile success
+   rates by band.
+
+Sequencing:
+
+| Step | Builds | Value at this stop |
+|------|--------|--------------------|
+| 21 | WorkItem complexity extras + deterministic estimator CLI/API | Operators can inspect depth/span/risk without behavior change. |
+| 22 | Agent profile capability envelopes in config/registry | Profiles become routable by capability, not only persona/model. |
+| 23 | Pure complexity-fit function + Justification lines | Coach mode can explain fit, overqualification, underqualification, and missing tools. |
+| 24 | Auto-dispatch filter/demotion integration | Mixed-cost fleets avoid underqualified dispatch and premium overuse. |
+| 25 | Board/RHP/status pills + settings controls | Operators can see and tune routing policy. |
+| 26 | Retrospective calibration by complexity band and profile | Estimates and profile envelopes improve from observed outcomes. |
 
 ## 11. Open questions
 

@@ -36,6 +36,9 @@ alternatives, and the invariants downstream code can rely on.
   capability.
 - **[Work planning](work-planning)** — the planning loop: from
   freeform intent to bead graphs.
+- **[Complexity-aware dispatch](complexity-aware-dispatch)** —
+  estimates work depth/span and matches beads to agent/model
+  capability envelopes before selection.
 
 ## Operational
 
