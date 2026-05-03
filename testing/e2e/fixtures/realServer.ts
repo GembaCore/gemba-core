@@ -139,13 +139,15 @@ export type SpinOptions = {
   serveArgs?: string[];
   /** Start gemba serve in --beads-only mode. */
   beadsOnly?: boolean;
+  /** Start gemba serve in explicit --beads-read-only mode. */
+  beadsReadOnly?: boolean;
 
   /**
    * Optional hook to write workspace-local config before `gemba serve`
    * starts. Acceptance uses this to seed personas / agents.toml that
    * native orchestration loads during boot.
    */
-  beforeServe?: (workspaceDir: string) => void;
+  beforeServe?: (workspaceDir: string, env: NodeJS.ProcessEnv) => void;
 
   /**
    * Extra environment entries for the long-lived `gemba serve`
@@ -260,7 +262,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   }
   if (opts.beforeServe) {
     try {
-      opts.beforeServe(baseDir);
+      opts.beforeServe(baseDir, isolatedEnv);
     } catch (err) {
       rmSyncRetry(baseDir, { recursive: true, force: true });
       throw new Error(`beforeServe hook failed in ${baseDir}: ${(err as Error).message}`);
@@ -286,6 +288,9 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   }
   if (opts.beadsOnly) {
     args.push('--beads-only');
+  }
+  if (opts.beadsReadOnly) {
+    args.push('--beads-read-only');
   }
   // gemba serve defaults to --orchestration=native, which auto-detects
   // its terminal backend from TMUX or TERM_PROGRAM. Linux CI runners

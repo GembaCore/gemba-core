@@ -38,6 +38,9 @@ type workItemDeleter interface {
 // Adaptor errors flow through the shared httperr mapper with the same
 // kind→status mapping patchWorkItem uses.
 func (r *Router) createWorkItem(w http.ResponseWriter, req *http.Request) {
+	if r.rejectBeadsReadOnly(w) {
+		return
+	}
 	if r.host == nil {
 		httperr.Write(w, http.StatusServiceUnavailable,
 			"adaptor_not_configured", "no WorkPlane adaptor registered")
@@ -109,6 +112,9 @@ func (r *Router) createWorkItem(w http.ResponseWriter, req *http.Request) {
 //	core.KindSessionNotFound → 404 session_not_found
 //	(untagged)               → 500 internal             (Conformance Group F violation)
 func (r *Router) patchWorkItem(w http.ResponseWriter, req *http.Request) {
+	if r.rejectBeadsReadOnly(w) {
+		return
+	}
 	raw := chi.URLParam(req, "id")
 	if raw == "" {
 		httperr.Write(w, http.StatusBadRequest, "bad_request", "missing work item id")
@@ -191,6 +197,9 @@ func (r *Router) patchWorkItem(w http.ResponseWriter, req *http.Request) {
 // execution-oriented adaptors can reject the operation without growing
 // the core WorkPlane contract prematurely.
 func (r *Router) deleteWorkItem(w http.ResponseWriter, req *http.Request) {
+	if r.rejectBeadsReadOnly(w) {
+		return
+	}
 	raw := chi.URLParam(req, "id")
 	if raw == "" {
 		httperr.Write(w, http.StatusBadRequest, "bad_request", "missing work item id")
@@ -244,6 +253,15 @@ func (r *Router) deleteWorkItem(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, deleted)
+}
+
+func (r *Router) rejectBeadsReadOnly(w http.ResponseWriter) bool {
+	if !r.cfg.BeadsReadOnly {
+		return false
+	}
+	httperr.WriteError(w, core.NewAdaptorError(core.KindReadOnly,
+		"beads-read-only mode blocks Beads mutations"))
+	return true
 }
 
 // decodePatchBody reads the JSON body into patch. An empty body is

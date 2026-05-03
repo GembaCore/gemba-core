@@ -8,7 +8,8 @@ items, configuring agent runtimes, and tuning parallelism.
 - **[Running Gemba against your work items](running-against-your-work-items)** — the
   fastest path from `make build` to a Kanban in the browser.
   Covers both `--beads-dir` (CLI) and `--dolt-url` (direct-SQL) modes,
-  Beads-only mode, expected banner output, and troubleshooting.
+  Beads-only and Beads-read-only modes, expected banner output, and
+  troubleshooting.
 - **[Agent setup](agent-setup)** — the `.gemba/agents.toml` schema
   and per-agent recipes for Claude Code, OpenAI Codex CLI, GitHub
   Copilot CLI, Aider (OpenAI / Anthropic / Ollama), Ollama, and

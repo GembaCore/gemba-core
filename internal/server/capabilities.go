@@ -23,6 +23,7 @@ type capabilitiesResponse struct {
 	InstanceID         string                                `json:"instance_id"`
 	RuntimeMode        string                                `json:"runtime_mode"`
 	BeadsOnly          bool                                  `json:"beads_only"`
+	BeadsReadOnly      bool                                  `json:"beads_read_only"`
 	BeadsSource        any                                   `json:"beads_source,omitempty"`
 	BeadsHistoryPath   string                                `json:"beads_history_path,omitempty"`
 	WorkPlane          *core.CapabilityManifest              `json:"work_plane"`
@@ -66,6 +67,7 @@ func (r *Router) capabilities(w http.ResponseWriter, req *http.Request) {
 		InstanceID:       r.instanceID,
 		RuntimeMode:      mode,
 		BeadsOnly:        r.cfg.BeadsOnly,
+		BeadsReadOnly:    r.cfg.BeadsReadOnly,
 		BeadsSource:      r.cfg.BeadsSource(),
 		BeadsHistoryPath: r.cfg.BeadsOnlyManifest(),
 		WorkPlane:        &workManifest,

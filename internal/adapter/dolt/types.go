@@ -171,6 +171,9 @@ func (r *issueRow) toWorkItem(prefix string) core.WorkItem {
 	if !ok {
 		category = core.StateBacklog
 	}
+	if category == core.StateUnstarted && hasDoltLabel(r.Labels, stagedLabel) {
+		category = core.StateStaged
+	}
 	priority := r.Priority
 	custom := map[string]any{}
 	if r.IssueType != "" {
@@ -189,16 +192,22 @@ func (r *issueRow) toWorkItem(prefix string) core.WorkItem {
 		custom["beads:dependents"] = edgeRowsToJSON(r.Dependents, "depends_on_id", r.ID)
 	}
 	id := buildWorkItemID(prefix, r.ID)
+	descClean, dod := extractDoltDoD(nullString(r.Description))
+	kind := r.IssueType
+	if hasDoltLabel(r.Labels, milestoneLabel) {
+		kind = core.KindMilestone
+	}
 	wi := core.WorkItem{
 		ID:            id,
-		Kind:          r.IssueType,
+		Kind:          kind,
 		Title:         r.Title,
-		Description:   nullString(r.Description),
+		Description:   descClean,
 		Status:        r.Status,
 		StateCategory: category,
 		Priority:      &priority,
 		Labels:        append([]string(nil), r.Labels...),
 		Relationships: relationshipsFromRows(r, id, prefix),
+		DoD:           dod,
 		CreatedAt:     r.CreatedAt,
 		UpdatedAt:     r.UpdatedAt,
 		Custom:        custom,
@@ -215,6 +224,17 @@ func (r *issueRow) toWorkItem(prefix string) core.WorkItem {
 			ID:   core.AgentID(r.Assignee.String),
 			Name: r.Assignee.String,
 			Kind: core.AgentKindAgent,
+		}
+		for _, l := range r.Labels {
+			switch {
+			case strings.HasPrefix(l, labelAgentRolePrefix):
+				wi.Assignee.Role = strings.TrimPrefix(l, labelAgentRolePrefix)
+			case strings.HasPrefix(l, labelAgentParentPrefix):
+				pid := core.AgentID(strings.TrimPrefix(l, labelAgentParentPrefix))
+				if pid != "" {
+					wi.Assignee.ParentID = &pid
+				}
+			}
 		}
 	}
 	return wi

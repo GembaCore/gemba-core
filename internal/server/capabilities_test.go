@@ -78,6 +78,7 @@ func TestCapabilitiesEndpoint_ReturnsWorkPlaneManifest(t *testing.T) {
 	var env struct {
 		WorkPlane          *core.CapabilityManifest              `json:"work_plane"`
 		OrchestrationPlane *core.OrchestrationCapabilityManifest `json:"orchestration_plane"`
+		BeadsReadOnly      bool                                  `json:"beads_read_only"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
@@ -108,6 +109,33 @@ func TestCapabilitiesEndpoint_ReturnsWorkPlaneManifest(t *testing.T) {
 	// Orchestration is not registered in this test — null is expected.
 	if env.OrchestrationPlane != nil {
 		t.Fatalf("want orchestration_plane=null; got %+v", env.OrchestrationPlane)
+	}
+	if env.BeadsReadOnly {
+		t.Fatal("beads_read_only must default false")
+	}
+}
+
+func TestCapabilitiesEndpoint_IncludesBeadsReadOnly(t *testing.T) {
+	host := newCapabilitiesHost(t, beadsLikeManifest(), nil)
+	h := NewRouter(config.ServeConfig{BeadsOnly: true, BeadsReadOnly: true}, fakeSPA(), host)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/capabilities", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	var env struct {
+		RuntimeMode   string `json:"runtime_mode"`
+		BeadsOnly     bool   `json:"beads_only"`
+		BeadsReadOnly bool   `json:"beads_read_only"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v; body=%q", err, rec.Body.String())
+	}
+	if env.RuntimeMode != "beads_only" || !env.BeadsOnly || !env.BeadsReadOnly {
+		t.Fatalf("readonly capabilities mismatch: %+v", env)
 	}
 }
 

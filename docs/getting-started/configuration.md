@@ -38,10 +38,12 @@ the resolution falls through to user-level config when none is passed.
 | Flag | Default | Notes |
 |---|---|---|
 | `--beads-dir` | unset | Path to the Beads workspace; bd subprocesses spawn with this as cwd. |
-| `--dolt-url` | unset | `mysql://user[:pass]@host:port/dbname` — direct read-only Dolt SQL connection (faster than the bd CLI path). |
+| `--dolt-url` | unset | `mysql://user[:pass]@host:port/dbname` — direct Dolt SQL connection. Reads and writes are enabled when the Dolt user can write. |
 | `--beads-url` | unset | Alias for `--dolt-url`, intended for Beads-only/container-style boot. |
 | `--beads-only` | `false` | Run without project or orchestration requirements. Shows Beads management surfaces only. |
+| `--beads-read-only` | `false` | Implies `--beads-only` and blocks all Beads mutations. URL mode is not read-only unless this flag is set or the Dolt user itself lacks write permission. |
 | `--beads-history` | unset | JSONL session manifest path for Beads-only history. Defaults under the Beads workspace when possible. |
+| `--restart` | `false` | Allows `gemba serve` to restart local helper services when a mode needs it. With `--beads-read-only --beads-dir`, Gemba restarts local bd Dolt with `bd --readonly dolt start`; without it, Gemba still blocks mutations at the server/adaptor boundary. |
 | `--noop` | `false` | Bind in-memory reference adaptors for both planes. Forces `--orchestration=noop`. Mutually exclusive with `--beads-dir` / `--dolt-url`. |
 
 ### Orchestration plane
@@ -79,6 +81,7 @@ variables for credentials and side-channel wiring.
 | `GEMBA_MODE=beads_only` | gemba serve | Enables Beads-only mode without passing `--beads-only`. |
 | `GEMBA_BEADS_URL` | gemba serve | Beads/Dolt URL used as the WorkPlane source in Beads-only mode. |
 | `GEMBA_BEADS_DIR` | gemba serve | Local Beads workspace used as the WorkPlane source in Beads-only mode. |
+| `GEMBA_BEADS_READ_ONLY` | gemba serve | Enables explicit Beads-read-only mode (`true`, `1`, `yes`, or `on`). |
 | `GEMBA_BEADS_ONLY_MANIFEST` | gemba serve | JSONL manifest path for the RHP Beads history ledger. |
 
 ## Layer 3 — Per-workspace `.gemba/`

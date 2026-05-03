@@ -50,13 +50,13 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
-function wrapper(): (props: { children: React.ReactNode }) => JSX.Element {
+function wrapper(initialCaps: CapabilitiesResponse = caps): (props: { children: React.ReactNode }) => JSX.Element {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <MemoryRouter>
         <QueryClientProvider client={client}>
-          <CapabilitiesProvider initial={caps}>
+          <CapabilitiesProvider initial={initialCaps}>
             <RhpProvider>
               <RhpPinnedContentProvider>{children}</RhpPinnedContentProvider>
             </RhpProvider>
@@ -200,5 +200,22 @@ describe('StatusTab', () => {
     expect(screen.getByTestId('rhp-status-beads-health')).toBeTruthy();
     expect(screen.getByText('Current DB')).toBeTruthy();
     expect(screen.getByText('Adaptors healthy')).toBeTruthy();
+  });
+
+  it('labels explicit Beads read-only mode in status', async () => {
+    mockStatusFetch(fetchSpy);
+    const readonlyCaps: CapabilitiesResponse = {
+      ...caps,
+      runtime_mode: 'beads_only',
+      beads_only: true,
+      beads_read_only: true,
+      work_plane: caps.work_plane ? { ...caps.work_plane, read_only: true } : null,
+      orchestration_plane: null,
+    };
+
+    render(<StatusBody />, { wrapper: wrapper(readonlyCaps) });
+
+    await waitFor(() => expect(screen.getByText('Beads-read-only')).toBeTruthy());
+    expect(screen.getByText('beads-read-only')).toBeTruthy();
   });
 });

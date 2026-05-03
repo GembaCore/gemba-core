@@ -54,6 +54,11 @@ type Config struct {
 	// GitHubRepo is "owner/name" passed to the synthesizer's GitHub PR
 	// + CI collectors. Empty disables PR / CI synthesis.
 	GitHubRepo string
+
+	// ReadOnly makes this adaptor reject mutations before spawning a
+	// subprocess. Reads still use ordinary bd commands; lower-layer
+	// enforcement is handled by serving bd Dolt in readonly mode.
+	ReadOnly bool
 }
 
 // WorkPlane is the Beads-backed core.WorkPlane implementation
@@ -84,6 +89,7 @@ type WorkPlane struct {
 	synth      *evidence.Synthesizer
 	repoPath   string
 	githubRepo string
+	readOnly   bool
 }
 
 // NewWorkPlane returns a WorkPlane shelling to the `bd` binary on PATH.
@@ -119,6 +125,7 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 		beadsDir:          beadsDir,
 		repoPath:          cfg.RepoPath,
 		githubRepo:        cfg.GitHubRepo,
+		readOnly:          cfg.ReadOnly,
 	}
 	// Wire the synthesizer only when at least one collector has the
 	// context it needs. Skips spawning a no-op coordinator on bare
@@ -166,6 +173,7 @@ var _ core.WorkPlane = (*WorkPlane)(nil)
 func (w *WorkPlane) Describe(context.Context) (core.CapabilityManifest, error) {
 	m := beadsManifest
 	m.DescriptionFormat = w.descriptionFormat
+	m.ReadOnly = w.readOnly
 	return m, nil
 }
 
@@ -468,6 +476,9 @@ func (w *WorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.W
 // Rule: mutations MUST go through the backend's public CLI (DD-9).
 // Writing .beads/*.db directly is a conformance failure.
 func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.WorkItem, error) {
+	if w.readOnly {
+		return core.WorkItem{}, bdReadOnlyError("CreateWorkItem")
+	}
 	args := []string{"create", wi.Title, "--json"}
 	// gm-root.3.4: KindMilestone is Gemba-native. bd has no milestone
 	// issue type, so we encode it as `-t epic -l type:milestone`
@@ -575,6 +586,9 @@ func decodeCreateOutput(out []byte) (*Bead, error) {
 func (w *WorkPlane) UpdateWorkItem(
 	ctx context.Context, id core.WorkItemID, patch core.WorkItemPatch,
 ) (core.WorkItem, error) {
+	if w.readOnly {
+		return core.WorkItem{}, bdReadOnlyError("UpdateWorkItem")
+	}
 	native := nativeID(w.prefix, id)
 	args := []string{"update", native, "--json"}
 	labels := append([]string(nil), patch.Labels...)
@@ -728,6 +742,9 @@ func (w *WorkPlane) UpdateWorkItem(
 // immediately before deletion. This is intentionally a hard-delete
 // operation; closing/dismissing work remains UpdateWorkItem.
 func (w *WorkPlane) DeleteWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error) {
+	if w.readOnly {
+		return core.WorkItem{}, bdReadOnlyError("DeleteWorkItem")
+	}
 	native := nativeID(w.prefix, id)
 	before, err := w.GetWorkItem(ctx, id)
 	if err != nil {
@@ -749,7 +766,15 @@ func (w *WorkPlane) DeleteWorkItem(ctx context.Context, id core.WorkItemID) (cor
 // a capability-denied op at the port; the adaptor-side check is
 // defense in depth (docs/adaptors/workplane.md §Adaptor-side fail-fast).
 func (w *WorkPlane) AttachEvidence(_ context.Context, _ core.WorkItemID, _ core.Evidence) error {
+	if w.readOnly {
+		return bdReadOnlyError("AttachEvidence")
+	}
 	return core.EnforceCapability(beadsManifest, core.OpAttachEvidence)
+}
+
+func bdReadOnlyError(op string) error {
+	return core.NewAdaptorError(core.KindReadOnly,
+		"beads: %s is not available in --beads-read-only mode", op)
 }
 
 // ListSprints returns capability_denied: Beads has no native sprint

@@ -55,6 +55,7 @@ export function CapabilitiesProvider({ children, initial }: CapabilitiesProvider
       orchestrationPlane: resolved?.orchestration_plane ?? null,
       runtimeMode: resolved?.runtime_mode ?? (resolved?.beads_only ? 'beads_only' : 'full'),
       beadsOnly: Boolean(resolved?.beads_only || resolved?.runtime_mode === 'beads_only'),
+      beadsReadOnly: Boolean(resolved?.beads_read_only || resolved?.work_plane?.read_only),
       beadsSource: resolved?.beads_source ?? null,
       beadsHistoryPath: resolved?.beads_history_path ?? '',
       loading: initial === undefined && isLoading,

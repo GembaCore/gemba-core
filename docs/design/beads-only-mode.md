@@ -102,6 +102,8 @@ Implemented boot-time controls:
 gemba serve --beads-only --beads-url mysql://root@127.0.0.1:3307/gemba
 gemba serve --beads-only --beads-dir /workspace/project
 gemba serve --beads-only --beads-history /data/session-manifest.jsonl
+gemba serve --beads-read-only --beads-url mysql://reader@127.0.0.1:3307/gemba
+gemba serve --beads-read-only --beads-dir /workspace/project --restart
 ```
 
 Container-style environment variables are also honored:
@@ -110,6 +112,7 @@ Container-style environment variables are also honored:
 GEMBA_MODE=beads_only
 GEMBA_BEADS_URL=mysql://root@127.0.0.1:3307/gemba
 GEMBA_BEADS_DIR=/workspace/project
+GEMBA_BEADS_READ_ONLY=true
 GEMBA_BEADS_ONLY_MANIFEST=/data/session-manifest.jsonl
 ```
 
@@ -156,7 +159,8 @@ Suggested status fields:
   },
   "project_required": false,
   "orchestration_required": false,
-  "manifest_path": ".gemba/session-manifest.jsonl"
+  "manifest_path": ".gemba/session-manifest.jsonl",
+  "beads_read_only": false
 }
 ```
 
@@ -166,8 +170,17 @@ The Status panel should include a prominent pill:
 Beads-only
 ```
 
+When `--beads-read-only` is set, the pill changes to:
+
+```text
+Beads-read-only
+```
+
 It should also show source health, read/write capability, last sync, and
-manifest write status.
+manifest write status. A Dolt URL source is not intrinsically read-only:
+it is writable when the configured Dolt user can write. Read-only is an
+explicit Gemba runtime posture (`--beads-read-only`) or a lower-layer
+credential/server policy.
 
 ## 5. Capability Gating
 
@@ -256,8 +269,9 @@ in this mode:
 - manifest write status.
 
 The top status pills collapse to the mode signal: **Beads-only** is the
-active WorkPlane pill, while orchestration is shown as not applicable
-instead of degraded.
+active WorkPlane pill in writable mode, while **Beads-read-only** is the
+active pill when explicit read-only mode is enabled. Orchestration is
+shown as not applicable instead of degraded.
 
 ## 6. Session Manifest
 
@@ -378,7 +392,10 @@ pills:
 ## 9. Board State Hooks
 
 Dragging a card in Beads-only mode still changes Beads state when the
-active work plane allows it. It must not start sessions.
+active work plane allows it. It must not start sessions. In
+Beads-read-only mode, the same attempted drag is rejected with
+`read_only`, the card remains in its original state, and no manifest
+entry is appended.
 
 Flow:
 
@@ -412,8 +429,8 @@ Container-specific needs:
 
 - source can be supplied by environment variable;
 - manifest path can be mounted to persistent storage;
-- read-only Beads sources are allowed, but create/edit controls are
-  hidden or disabled by capability;
+- read-only Beads mode is allowed, but create/edit controls are hidden
+  by capability and API mutations return `read_only`;
 - startup errors should be visible in the SPA source-selection state.
 
 ## 11. API and Implementation Notes
@@ -421,7 +438,15 @@ Container-specific needs:
 Implemented points:
 
 - CLI/server config parsing for `--beads-only`, `--beads-url`,
-  `--beads-dir`, `--beads-history`, and matching environment variables.
+  `--beads-dir`, `--beads-history`, `--beads-read-only`, and matching
+  environment variables.
+- Dolt URL mode is explicitly writable by default; the direct SQL
+  adaptor creates, updates, deletes, labels, parents, and state changes
+  through transactions unless `--beads-read-only` is active.
+- Beads-read-only mode implies Beads-only, hides write controls through
+  the manifest, and hard-blocks mutations before adaptor dispatch.
+  Reads continue through the normal source-specific read path; optional
+  `--restart` asks local bd Dolt to enforce readonly beneath Gemba.
 - Runtime status and capability endpoints expose mode, source, and
   manifest path.
 - Orchestration is not bound in Beads-only mode, and session/cascade
@@ -447,16 +472,21 @@ clients, and future container use all share the same ledger.
 Unit/API:
 
 - parse `--beads-only` with URL, Beads dir, and history variants;
+- parse `--beads-read-only`, ensure it implies Beads-only, and expose
+  `beads_read_only` through capabilities;
 - resolve container-style environment variables;
 - skip the bd CLI probe for Beads-only Dolt URL mode;
 - expose `mode=beads_only` in config/capabilities;
 - append manifest events for create, edit, delete, and state change
   actions;
 - do not append manifest entries on failed Beads writes.
+- verify Dolt URL create/update/delete works when writable and returns
+  `read_only` only when explicitly configured read-only.
 
 SPA:
 
-- Status panel shows Beads-only pill and source details;
+- Status panel shows Beads-only or Beads-read-only pill and source
+  details;
 - Beads surfaces are visible;
 - orchestration/session/review surfaces are hidden;
 - Beads history tab renders empty, populated, malformed, and append
@@ -495,15 +525,12 @@ Implementation epic: `gm-4u4l`
 
 ## 14. Open Questions
 
-1. Should a read-only Beads URL still emit a local manifest when the
-   user only navigates and filters, or only when they attempt write
-   actions?
-2. Should manifest files be scoped per browser session, per Beads
+1. Should manifest files be scoped per browser session, per Beads
    source, or per server process?
-3. Should Beads history include read/navigation events, or stay limited
+2. Should Beads history include read/navigation events, or stay limited
    to mutating actions?
-4. Should source selection be implemented as a deterministic Help/RHP
+3. Should source selection be implemented as a deterministic Help/RHP
    panel flow, or should the existing Bootstrap source selector become
    the canonical Beads-only source selector?
-5. Should dependency graph edits get first-class manifest events once
+4. Should dependency graph edits get first-class manifest events once
    the SPA exposes relationship editing outside work-item PATCH?

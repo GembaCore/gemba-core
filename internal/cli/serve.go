@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -115,8 +116,8 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 			"(required unless --dolt-url is set; mutually exclusive with it)")
 
 	cmd.Flags().StringVar(&cfg.DoltURL, "dolt-url", "",
-		"mysql://user[:pass]@host:port/dbname of a Dolt server to read "+
-			"beads directly (read-only; required unless --beads-dir is "+
+		"mysql://user[:pass]@host:port/dbname of a Dolt server to read/write "+
+			"beads directly (required unless --beads-dir is "+
 			"set; mutually exclusive with it)")
 
 	cmd.Flags().BoolVar(&cfg.Noop, "noop", false,
@@ -127,11 +128,15 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 	cmd.Flags().BoolVar(&cfg.BeadsOnly, "beads-only", false,
 		"run as a Beads-only viewer/manager: no project or orchestration required; "+
 			"mutations append a JSONL Beads history manifest")
+	cmd.Flags().BoolVar(&cfg.BeadsReadOnly, "beads-read-only", false,
+		"run Beads-only with every Beads mutation blocked")
 	cmd.Flags().StringVar(&cfg.BeadsOnlyManifestPath, "beads-history", "",
 		"path to the Beads-only JSONL manifest "+
 			"(default: <beads-dir>/.gemba/session-manifest.jsonl)")
 	cmd.Flags().StringVar(&cfg.DoltURL, "beads-url", "",
 		"alias for --dolt-url; Beads/Dolt URL to use as the work source")
+	cmd.Flags().BoolVar(&cfg.Restart, "restart", false,
+		"allow gemba serve to restart local helper services when required by the selected mode")
 
 	// gm-e9m0: upstream Prometheus URL for the
 	// /api/v1/metrics/series proxy. Empty (the default) means
@@ -165,6 +170,7 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 
 func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bool, bannerOut io.Writer) error {
 	applyServeEnvDefaults(&cfg)
+	normalizeServeMode(&cfg)
 
 	if err := cfg.ValidateBindPolicy(); err != nil {
 		return err
@@ -215,6 +221,11 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		slog.Info("beads-only Dolt URL mode: skipping bd CLI startup probe")
 	}
 	cfg.BeadsDir = resolvedBeadsDir
+	if cfg.BeadsReadOnly && cfg.Restart && cfg.BeadsDir != "" {
+		if err := restartBdReadonly(ctx, cfg.BeadsDir); err != nil {
+			return err
+		}
+	}
 	if cfg.DangerouslySkipPermissions {
 		slog.Warn("DANGEROUSLY-SKIP-PERMISSIONS IS ACTIVE",
 			"note", "mutations will not require confirmation for this session")
@@ -562,6 +573,9 @@ func applyServeEnvDefaults(cfg *config.ServeConfig) {
 	if !cfg.BeadsOnly && strings.EqualFold(strings.TrimSpace(os.Getenv("GEMBA_MODE")), "beads_only") {
 		cfg.BeadsOnly = true
 	}
+	if truthyEnv(os.Getenv("GEMBA_BEADS_READ_ONLY")) {
+		cfg.BeadsReadOnly = true
+	}
 	if cfg.DoltURL == "" {
 		if v := strings.TrimSpace(os.Getenv("GEMBA_BEADS_URL")); v != "" {
 			cfg.DoltURL = v
@@ -579,6 +593,52 @@ func applyServeEnvDefaults(cfg *config.ServeConfig) {
 	}
 }
 
+func normalizeServeMode(cfg *config.ServeConfig) {
+	if cfg == nil {
+		return
+	}
+	if cfg.BeadsReadOnly {
+		cfg.BeadsOnly = true
+	}
+}
+
+func truthyEnv(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func restartBdReadonly(ctx context.Context, dir string) error {
+	slog.Info("beads-read-only: restarting local bd Dolt server in readonly mode",
+		"beads_dir", dir)
+	if out, err := runBdCommand(ctx, dir, "dolt", "stop"); err != nil {
+		slog.Warn("beads-read-only: bd dolt stop failed; attempting readonly start",
+			"err", err,
+			"output", strings.TrimSpace(string(out)))
+	}
+	if out, err := runBdCommand(ctx, dir, "--readonly", "dolt", "start"); err != nil {
+		return fmt.Errorf("beads-read-only: start bd Dolt server readonly: %w\n%s",
+			err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func runBdCommand(ctx context.Context, dir string, args ...string) ([]byte, error) {
+	path, err := exec.LookPath("bd")
+	if err != nil {
+		return nil, core.WrapAdaptorError(core.KindAdaptorDegraded, err,
+			"beads: bd CLI not on PATH")
+	}
+	cmd := exec.CommandContext(ctx, path, args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	return cmd.CombinedOutput()
+}
+
 func shouldProbeBd(cfg config.ServeConfig) bool {
 	if cfg.BeadsOnly && cfg.DoltURL != "" && cfg.BeadsDir == "" {
 		return false
@@ -594,7 +654,7 @@ func shouldProbeBd(cfg config.ServeConfig) bool {
 //
 // Two adaptor paths, selected by flag:
 //   - --beads-dir (or default cwd): shell to the bd CLI (writes OK)
-//   - --dolt-url: direct read-only Dolt SQL (writes return KindReadOnly)
+//   - --dolt-url: direct Dolt SQL (writes OK unless --beads-read-only)
 //
 // ValidateWorkPlaneFlags already guaranteed they're not both set, so
 // we only have to decide between "dolt-url present" and "everything
@@ -740,7 +800,7 @@ func buildShader(cfg config.ServeConfig) (core.Shader, error) {
 }
 
 func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig, sh core.Shader) (*workPlaneReg, error) {
-	adaptor, err := bd.NewWorkPlane(bd.Config{BeadsDir: cfg.BeadsDir})
+	adaptor, err := bd.NewWorkPlane(bd.Config{BeadsDir: cfg.BeadsDir, ReadOnly: cfg.BeadsReadOnly})
 	if err != nil {
 		return nil, fmt.Errorf("beads workplane: %w", err)
 	}
@@ -758,6 +818,7 @@ func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.Serv
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
+		"read_only", cfg.BeadsReadOnly,
 		"beads_dir", cfg.BeadsDir)
 	return &workPlaneReg{
 		Host:       host,
@@ -769,7 +830,7 @@ func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.Serv
 }
 
 func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.ServeConfig, sh core.Shader) (*workPlaneReg, error) {
-	adaptor, err := dolt.NewWorkPlane(dolt.Config{URL: cfg.DoltURL})
+	adaptor, err := dolt.NewWorkPlane(dolt.Config{URL: cfg.DoltURL, ReadOnly: cfg.BeadsReadOnly})
 	if err != nil {
 		return nil, fmt.Errorf("dolt workplane: %w", err)
 	}
@@ -798,7 +859,7 @@ func registerDoltWorkPlane(ctx context.Context, host *api.Host, cfg config.Serve
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
-		"read_only", true,
+		"read_only", cfg.BeadsReadOnly,
 		"dolt_url", redacted)
 	return &workPlaneReg{
 		Host:       host,

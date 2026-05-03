@@ -37,6 +37,22 @@ func newMock(t *testing.T) (*dolt.WorkPlane, sqlmock.Sqlmock, func()) {
 	return wp, mock, cleanup
 }
 
+func newReadOnlyMock(t *testing.T) (*dolt.WorkPlane, sqlmock.Sqlmock, func()) {
+	t.Helper()
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	wp := dolt.NewReadOnlyWorkPlaneFromDB(db, "gemba/gemba", "gemba")
+	cleanup := func() {
+		if err := mock.ExpectationsWereMet(); err != nil {
+			t.Errorf("unmet mock expectations: %v", err)
+		}
+		_ = db.Close()
+	}
+	return wp, mock, cleanup
+}
+
 // oneRow returns a sqlmock.Rows with a single canned issue tuple,
 // useful across the Get/List paths. Test helpers populate only the
 // fields the assertions actually care about.
@@ -47,7 +63,7 @@ func oneRow(now time.Time) *sqlmock.Rows {
 	)
 }
 
-func TestDescribe_ReadOnlyManifest(t *testing.T) {
+func TestDescribe_WritableManifestByDefault(t *testing.T) {
 	wp, _, cleanup := newMock(t)
 	defer cleanup()
 
@@ -55,8 +71,8 @@ func TestDescribe_ReadOnlyManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
-	if !manifest.ReadOnly {
-		t.Error("manifest.ReadOnly must be true for the dolt adaptor")
+	if manifest.ReadOnly {
+		t.Error("manifest.ReadOnly must be false for writable dolt URL mode")
 	}
 	if manifest.AdaptorName != "beads-dolt" {
 		t.Errorf("AdaptorName: got %q want %q", manifest.AdaptorName, "beads-dolt")
@@ -69,6 +85,19 @@ func TestDescribe_ReadOnlyManifest(t *testing.T) {
 	if manifest.DescriptionFormat != core.DescriptionFormatMarkdown {
 		t.Errorf("DescriptionFormat: got %q want %q",
 			manifest.DescriptionFormat, core.DescriptionFormatMarkdown)
+	}
+}
+
+func TestDescribe_ReadOnlyManifestWhenConfigured(t *testing.T) {
+	wp, _, cleanup := newReadOnlyMock(t)
+	defer cleanup()
+
+	manifest, err := wp.Describe(context.Background())
+	if err != nil {
+		t.Fatalf("Describe: %v", err)
+	}
+	if !manifest.ReadOnly {
+		t.Error("manifest.ReadOnly must be true when configured read-only")
 	}
 }
 
@@ -205,10 +234,9 @@ func TestGetWorkItem_HappyPath(t *testing.T) {
 	}
 }
 
-// The three write methods share the same contract: fail fast with
-// KindReadOnly. Table-driving keeps the repetition short.
-func TestWrites_AllReturnReadOnly(t *testing.T) {
-	wp, _, cleanup := newMock(t)
+// Explicit read-only mode gates every write method before SQL.
+func TestWrites_ReturnReadOnlyWhenConfigured(t *testing.T) {
+	wp, _, cleanup := newReadOnlyMock(t)
 	defer cleanup()
 	ctx := context.Background()
 
@@ -224,6 +252,60 @@ func TestWrites_AllReturnReadOnly(t *testing.T) {
 		err := wp.AttachEvidence(ctx, "gemba/gemba/gm-0fd", core.Evidence{ID: "e1"})
 		assertReadOnly(t, err)
 	})
+}
+
+func TestCreateWorkItem_WritesDoltSQL(t *testing.T) {
+	wp, mock, cleanup := newMock(t)
+	defer cleanup()
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM issues WHERE id = \?`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO issues`).
+		WithArgs(sqlmock.AnyArg(), "New bead", "desc", "open", 1, "task",
+			sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`DELETE FROM labels WHERE issue_id = \?`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`INSERT IGNORE INTO labels`).
+		WithArgs(sqlmock.AnyArg(), "area:test").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectQuery(`SELECT .* FROM issues WHERE id = \?`).
+		WillReturnRows(sqlmock.NewRows(issueColumns).AddRow(
+			"gm-created", "New bead", "desc", "open", 1, "task",
+			nil, nil, now, "gemba", now, "",
+		))
+	mock.ExpectQuery(`SELECT issue_id, label FROM labels`).
+		WithArgs("gm-created").
+		WillReturnRows(sqlmock.NewRows([]string{"issue_id", "label"}).AddRow("gm-created", "area:test"))
+	mock.ExpectQuery(`SELECT issue_id, depends_on_id, type FROM dependencies WHERE issue_id`).
+		WithArgs("gm-created").
+		WillReturnRows(sqlmock.NewRows([]string{"issue_id", "depends_on_id", "type"}))
+	mock.ExpectQuery(`SELECT issue_id, depends_on_id, type FROM dependencies WHERE depends_on_id`).
+		WithArgs("gm-created").
+		WillReturnRows(sqlmock.NewRows([]string{"issue_id", "depends_on_id", "type"}))
+
+	created, err := wp.CreateWorkItem(ctx, core.WorkItem{
+		Title:       "New bead",
+		Description: "desc",
+		Kind:        "task",
+		Status:      "open",
+		Priority:    ptr(1),
+		Labels:      []string{"area:test"},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+	if created.ID != "gemba/gemba/gm-created" || created.Title != "New bead" {
+		t.Fatalf("created item mismatch: %+v", created)
+	}
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
 
 func assertReadOnly(t *testing.T, err error) {

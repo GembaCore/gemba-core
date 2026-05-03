@@ -107,7 +107,10 @@ For teams that only need Beads viewing and management, `gemba serve
 --beads-only` starts a deliberately smaller mode: no project, GitHub, or
 agent runtime required. It opens the Beads board in a Flat list by
 default, keeps Cascade and Graph views available, and records create /
-edit / delete / state-change actions in a Beads history ledger.
+edit / delete / state-change actions in a Beads history ledger. Add
+`--beads-read-only` when the same views should be inspection-only:
+Gemba shows a Beads-read-only status pill and rejects every mutation
+before it reaches the Beads adaptor.
 **Native terminal orchestration is bundled** so operators who want agent
 sessions don't need to install anything extra:
 `gemba serve --orchestration=native` drives tmux / iTerm2 / Terminal.app
@@ -129,9 +132,10 @@ its specific scheduling or isolation semantics.
 - **WorkPlane is required.** Gemba won't boot without one — the SPA has
   nothing to render.
 - **OrchestrationPlane is optional.** Running without it is a supported
-  mode: Gemba becomes a read-only / human-driven Kanban over the
-  WorkPlane. Starting sessions, surfacing escalations, and agent
-  dispatch light up when an adaptor is wired.
+  mode: Gemba becomes a human-driven Kanban over the WorkPlane.
+  Starting sessions, surfacing escalations, and agent dispatch light up
+  when an adaptor is wired. Use `--beads-read-only` when the WorkPlane
+  itself should reject writes.
 - **Native is the default OrchestrationPlane.**
   `gemba serve --orchestration=native` is the happy path and needs no
   external daemon; it drives terminal sessions directly.
@@ -220,8 +224,9 @@ the native terminal orchestrator by default. If you want a read-only /
 human-driven board with no session controls, pass
 `--orchestration=none`.
 
-End-to-end setup (both `--beads-dir` CLI mode and `--dolt-url`
-direct-SQL mode), expected banner output, and troubleshooting:
+End-to-end setup (both `--beads-dir` CLI mode and writable `--dolt-url`
+direct-SQL mode), explicit `--beads-read-only`, expected banner output,
+and troubleshooting:
 [Running Gemba against your work items](https://gembacore.github.io/gemba-core/getting-started/running-against-your-work-items/).
 
 ### Native terminal orchestration
@@ -410,7 +415,10 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   Status shows Beads health and remote setup actions, while the RHP adds
   a **Beads history** tab backed by a JSONL session manifest. Create,
   edit, hard-delete, milestone wrapper, decision tag, and milestone tag
-  authoring all stay available.
+  authoring all stay available. `--beads-read-only` is the
+  inspection-only variant: it implies Beads-only, switches the Status
+  pill to **Beads-read-only**, hides write affordances, and hard-blocks
+  create/edit/delete/state mutations.
 - **Codex native agent driver** — `.gemba/agents.toml` can declare a
   `codex` agent type using `binary = "gemba-codex-driver"` and
   `preamble = "codex_exec"`. The driver runs `codex exec --json`,

@@ -11,6 +11,7 @@ export interface CapabilityState {
   orchestrationPlane: OrchestrationManifest | null;
   runtimeMode: 'full' | 'beads_only';
   beadsOnly: boolean;
+  beadsReadOnly: boolean;
   beadsSource: { kind: string; label?: string; detail?: string } | null;
   beadsHistoryPath: string;
   // loading: true on the very first fetch only; subsequent background

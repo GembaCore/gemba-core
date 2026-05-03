@@ -196,8 +196,8 @@ the fake doesn't faithfully reproduce**. Concretely:
 - Spec drives an SSE round-trip end-to-end (issue mutation in tab
   A, observe SSE invalidation in tab B) → `@deep`.
 - Spec exercises adaptor-specific behaviour (`bd close` translates
-  to `state_category=completed`; the dolt-url read-only adaptor
-  returns 405) → `@deep`.
+  to `state_category=completed`; explicit Beads-read-only mode returns
+  405; Dolt URL writes persist through SQL) → `@deep`.
 - Spec asserts an empty-state envelope when no adaptor is bound →
   **not** `@deep`. The fake handles that.
 - Spec asserts on UI rendering of a fixture-supplied list →

@@ -43,7 +43,7 @@ export function StatusBody() {
   const { data: sessions = [], isLoading: sessionsLoading } = useSessions();
   const { data: escalations = [] } = useEscalations();
   const { data: workItems = [] } = useWorkItems();
-  const { orchestrationPlane, workPlane, beadsOnly, beadsSource, beadsHistoryPath } =
+  const { orchestrationPlane, workPlane, beadsOnly, beadsReadOnly, beadsSource, beadsHistoryPath } =
     useCapabilities();
   const queryClient = useQueryClient();
   const { data: adaptors } = useQuery<AdaptorsResponse>({
@@ -91,7 +91,13 @@ export function StatusBody() {
           <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Status</h2>
           <div className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
             <Pill
-              label={beadsOnly ? 'Beads-only' : (workPlane?.adaptor_name ?? 'No work plane')}
+              label={
+                beadsReadOnly
+                  ? 'Beads-read-only'
+                  : beadsOnly
+                    ? 'Beads-only'
+                    : (workPlane?.adaptor_name ?? 'No work plane')
+              }
               tone={workPlane ? 'ok' : 'warn'}
             />
             {beadsOnly ? (
@@ -182,7 +188,10 @@ export function StatusBody() {
       <section className="mt-5 space-y-2" data-testid="rhp-status-runtime">
         <SectionHeader title="Runtime" />
         <RuntimeRow label="Work plane" value={workPlane?.adaptor_name ?? 'not configured'} />
-        <RuntimeRow label="Mode" value={beadsOnly ? 'beads-only' : 'full'} />
+        <RuntimeRow
+          label="Mode"
+          value={beadsReadOnly ? 'beads-read-only' : beadsOnly ? 'beads-only' : 'full'}
+        />
         {beadsOnly ? (
           <>
             <RuntimeRow
@@ -196,7 +205,7 @@ export function StatusBody() {
           label="Orchestration"
           value={
             beadsOnly
-              ? 'hidden in beads-only'
+              ? `hidden in ${beadsReadOnly ? 'beads-read-only' : 'beads-only'}`
               : (orchestrationPlane?.adaptor_id ?? 'not configured')
           }
         />

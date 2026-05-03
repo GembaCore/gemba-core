@@ -191,9 +191,9 @@ type CapabilityManifest struct {
 	// ReadOnly — adaptor cannot service mutations. CreateWorkItem,
 	// UpdateWorkItem, and AttachEvidence all fail with KindReadOnly;
 	// the UI MUST hide write controls rather than disable them. Used
-	// by the --dolt-url direct SQL connector (gm-0fd); the bd CLI
-	// adapter leaves this false because it mediates mutations through
-	// bd's public API.
+	// by explicit read-only runtime modes and lower-layer read-only
+	// adaptors. Dolt URL mode leaves this false unless
+	// --beads-read-only is active.
 	ReadOnly bool `json:"read_only"`
 
 	// DescriptionFormat declares the content type of WorkItem.Description

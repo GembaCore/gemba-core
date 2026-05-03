@@ -1203,10 +1203,16 @@
       },
       "CapabilitiesResponse": {
         "type": "object",
-        "description": "One entry per registered transport plane (`workplane`, `orchestration`).",
+        "description": "Registered transport planes plus runtime mode metadata.",
         "properties": {
-          "workplane": { "$ref": "#/components/schemas/CapabilityManifest" },
-          "orchestration": { "$ref": "#/components/schemas/CapabilityManifest" }
+          "instance_id": { "type": "string" },
+          "runtime_mode": { "type": "string", "enum": ["full", "beads_only"] },
+          "beads_only": { "type": "boolean" },
+          "beads_read_only": { "type": "boolean" },
+          "beads_source": { "$ref": "#/components/schemas/BeadsSource" },
+          "beads_history_path": { "type": "string" },
+          "work_plane": { "$ref": "#/components/schemas/CapabilityManifest" },
+          "orchestration_plane": { "$ref": "#/components/schemas/CapabilityManifest" }
         }
       },
       "AdaptorStatus": {

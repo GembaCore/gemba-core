@@ -196,6 +196,27 @@ func TestCreateWorkItem_ValidationError(t *testing.T) {
 	}
 }
 
+func TestCreateWorkItem_BeadsReadOnlyBlocksBeforeAdaptor(t *testing.T) {
+	host, calls := newCreateHost(t)
+	h := NewRouter(config.ServeConfig{BeadsOnly: true, BeadsReadOnly: true}, fakeSPA(), host)
+
+	body := map[string]any{
+		"item": map[string]any{
+			"title": "x", "kind": "task",
+			"status": "open", "state_category": "backlog",
+		},
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, postCreateReq(t, "nonce-RO", body))
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("want 405, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("read-only mode must not call adaptor; saw %d calls", len(*calls))
+	}
+}
+
 // Milestone create auto-prefixes the title with `M<n>` (gm-lw6h).
 // Numbering is monotonic against the existing milestone set.
 func TestCreateWorkItem_MilestoneAutoPrefixes(t *testing.T) {
@@ -393,13 +414,13 @@ func TestPatchWorkItem_ReplayReturnsCached(t *testing.T) {
 	}
 }
 
-// Adaptor returns KindReadOnly (the dolt-url path) → 405. The shared
+// Adaptor returns KindReadOnly (explicit read-only path) → 405. The shared
 // httperr mapper handles the conversion; this test pins the gate.
 func TestPatchWorkItem_ReadOnlyAdaptor_Returns405(t *testing.T) {
 	host, rec := newPatchHost(t)
 	rec.updateRet = func(_ core.WorkItemID, _ core.WorkItemPatch) (core.WorkItem, error) {
 		return core.WorkItem{}, core.NewAdaptorError(core.KindReadOnly,
-			"adaptor is --dolt-url read-only")
+			"adaptor is explicitly read-only")
 	}
 	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
 

@@ -44,6 +44,12 @@ export type AuthServerOptions = {
    * layout (no .gemba/ in the tempdir).
    */
   mode?: WorkspaceMode;
+  /** Start the per-test server in explicit --beads-read-only mode. */
+  beadsReadOnly?: boolean;
+  /** Extra serve argv to append for one-off deep server contracts. */
+  serveArgs?: string[];
+  /** Hook for seeding the isolated workspace before gemba serve starts. */
+  beforeServe?: (workspaceDir: string, env: NodeJS.ProcessEnv) => void;
 };
 import { BdClient } from './bdClient';
 import { createWorkPlane, type WorkPlaneStore } from './workplane';
@@ -471,6 +477,14 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   const path = url.pathname;
   const method = route.request().method();
   const json = (data: unknown) => route.fulfill({ json: data });
+  const readOnly = () =>
+    route.fulfill({
+      status: 405,
+      json: {
+        error: 'read_only',
+        message: 'beads-read-only mode blocks Beads mutations',
+      },
+    });
   const notFound = (code: string, message: string) =>
     route.fulfill({ status: 404, json: { error: code, message } });
   const sse = (body: string) =>
@@ -501,6 +515,7 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   if (itemMatch) {
     const id = decodeURIComponent(itemMatch[1] ?? '');
     if (route.request().method() === 'PATCH') {
+      if (isBeadsReadOnly(capabilitiesPlane)) return readOnly();
       // Mutations: echo the seeded item back so optimistic update
       // settles. A richer fake (apply patch to store) is a follow-up.
       const existing = workPlane.get(id);
@@ -530,6 +545,7 @@ function dispatch(route: Route, stores: FakeStores): unknown {
       return notFound('session_not_found', `work item ${id} not found`);
     }
     if (route.request().method() === 'DELETE') {
+      if (isBeadsReadOnly(capabilitiesPlane)) return readOnly();
       const deleted = workPlane.remove(id);
       if (!deleted) return notFound('session_not_found', `work item ${id} not found`);
       if (capabilitiesPlane.get().beads_only) {
@@ -565,6 +581,7 @@ function dispatch(route: Route, stores: FakeStores): unknown {
       items = items.filter((it) => kinds.includes(it.kind));
     }
     if (route.request().method() === 'POST') {
+      if (isBeadsReadOnly(capabilitiesPlane)) return readOnly();
       // Pretend the create succeeded with a synthetic id; specs that
       // assert on persistence tag themselves @deep so this branch
       // only runs in fake mode.
@@ -1018,6 +1035,11 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   // Anything else under /api/* — the smoke tier hasn't pinned a
   // shape, so empty-object is enough for rendering.
   return json({});
+}
+
+function isBeadsReadOnly(capabilitiesPlane: CapabilitiesPlane): boolean {
+  const caps = capabilitiesPlane.get();
+  return Boolean(caps.beads_read_only || caps.work_plane?.read_only);
 }
 
 // Matches `${prefix}`, `${prefix}/...`, or `${prefix}?...`.

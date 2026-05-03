@@ -46,8 +46,9 @@ type ServeConfig struct {
 	// DoltURL is a mysql://user[:password]@host:port/dbname connection
 	// string pointing at a Dolt server that already hosts a beads
 	// database. When set, the server skips the bd CLI path and opens
-	// a direct read-only SQL connection instead (gm-0fd). Mutually
-	// exclusive with BeadsDir.
+	// a direct SQL connection instead (gm-0fd). Mutually exclusive with
+	// BeadsDir. Writes are enabled unless BeadsReadOnly is true or the
+	// Dolt user/server denies them.
 	DoltURL string
 
 	// BeadsURLSource records where the resolved DoltURL came from after
@@ -79,6 +80,15 @@ type ServeConfig struct {
 	// actions append an informational JSONL manifest instead of dispatching
 	// sessions.
 	BeadsOnly bool
+
+	// BeadsReadOnly implies BeadsOnly and blocks every Beads mutation at
+	// the server and adaptor boundary. URL sources are otherwise writable
+	// when the configured Dolt user has write permissions.
+	BeadsReadOnly bool
+
+	// Restart permits serve to restart local helper processes when needed
+	// to enforce a selected mode, for example bd Dolt readonly posture.
+	Restart bool
 
 	// BeadsOnlyManifestPath optionally overrides the JSONL manifest path
 	// used by BeadsOnly mode. Empty defaults to .gemba/session-manifest.jsonl
@@ -293,14 +303,14 @@ func (c ServeConfig) ValidateWorkPlaneFlags() error {
 			"--beads-dir and --dolt-url are mutually exclusive; " +
 				"pass one or the other\n" +
 				"  --beads-dir routes reads+writes through the bd CLI\n" +
-				"  --dolt-url opens a direct read-only SQL connection to Dolt")
+				"  --dolt-url opens a direct SQL connection to Dolt")
 	}
 	if c.BeadsDir == "" && c.DoltURL == "" {
 		return fmt.Errorf(
 			"no WorkPlane selected; pass --beads-dir <path>, " +
 				"--dolt-url <mysql://...>, or --noop\n" +
 				"  --beads-dir <path>          route through the bd CLI (reads + writes)\n" +
-				"  --dolt-url <mysql://...>    direct read-only SQL to a Dolt server\n" +
+				"  --dolt-url <mysql://...>    direct SQL to a Dolt server\n" +
 				"  --noop                      bind in-memory reference adaptors (dev/demo)")
 	}
 	return nil

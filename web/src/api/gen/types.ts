@@ -777,10 +777,17 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        /** @description One entry per registered transport plane (`workplane`, `orchestration`). */
+        /** @description Registered transport planes plus runtime mode metadata. */
         CapabilitiesResponse: {
-            workplane?: components["schemas"]["CapabilityManifest"];
-            orchestration?: components["schemas"]["CapabilityManifest"];
+            instance_id?: string;
+            /** @enum {string} */
+            runtime_mode?: "full" | "beads_only";
+            beads_only?: boolean;
+            beads_read_only?: boolean;
+            beads_source?: components["schemas"]["BeadsSource"];
+            beads_history_path?: string;
+            work_plane?: components["schemas"]["CapabilityManifest"];
+            orchestration_plane?: components["schemas"]["CapabilityManifest"];
         };
         AdaptorStatus: {
             adaptor_id: string;

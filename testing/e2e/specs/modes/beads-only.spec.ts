@@ -1,4 +1,5 @@
 import { expect, test } from "../../fixtures/server";
+import { execFileSync } from "node:child_process";
 import { epic, parentChild, workItem } from "../../builders/workitem";
 import { workPlaneManifest } from "../../fixtures/capabilitiesPlane";
 import { BoardPage } from "../../pages/BoardPage";
@@ -112,5 +113,68 @@ test.describe("@modes beads-only", () => {
 
     await page.goto("/sessions");
     await expect(page.getByTestId("beads-only-unavailable")).toBeVisible();
+  });
+
+  test("@deep launches Beads-read-only and rejects mutations without changing the bead", async ({
+    authServer,
+    backend,
+  }) => {
+    test.skip(backend !== "real", "requires a real gemba serve launch in --beads-read-only mode");
+
+    let seededId = "";
+    const srv = await authServer({
+      beadsReadOnly: true,
+      beforeServe: (workspaceDir, env) => {
+        seededId = execFileSync(
+          "bd",
+          [
+            "create",
+            "Read-only seeded bead",
+            "--type",
+            "task",
+            "--description",
+            "Original description",
+            "--silent",
+          ],
+          { cwd: workspaceDir, env, encoding: "utf8" },
+        ).trim();
+      },
+    });
+    expect(seededId).toMatch(/^e2e\d+-/);
+
+    const beforeRes = await fetch(
+      `${srv.baseURL}/api/work-items/${encodeURIComponent(seededId)}`,
+    );
+    expect(beforeRes.status).toBe(200);
+    const before = await beforeRes.json();
+    expect(before.title).toBe("Read-only seeded bead");
+    expect(before.state_category).toBe("unstarted");
+
+    const patchRes = await fetch(
+      `${srv.baseURL}/api/work-items/${encodeURIComponent(seededId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "X-GEMBA-Confirm": `readonly-${Date.now()}`,
+        },
+        body: JSON.stringify({
+          title: "This mutation must not land",
+          state_category: "started",
+        }),
+      },
+    );
+    expect(patchRes.status).toBe(405);
+    const error = await patchRes.json();
+    expect(error.error).toBe("read_only");
+
+    const afterRes = await fetch(
+      `${srv.baseURL}/api/work-items/${encodeURIComponent(seededId)}`,
+    );
+    expect(afterRes.status).toBe(200);
+    const after = await afterRes.json();
+    expect(after.title).toBe("Read-only seeded bead");
+    expect(after.state_category).toBe("unstarted");
+    expect(after.updated_at).toBe(before.updated_at);
   });
 });

@@ -2,10 +2,13 @@ package dolt
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
+	"os/user"
 	"strings"
 	"time"
 
@@ -49,6 +52,10 @@ type Config struct {
 	// core.DescriptionFormatMarkdown, matching the bd adaptor since the
 	// underlying beads database stores markdown either way.
 	DescriptionFormat string
+
+	// ReadOnly forces mutation methods to fail with KindReadOnly. URL
+	// mode is otherwise writable when the Dolt user has permission.
+	ReadOnly bool
 }
 
 // defaultPrefix mirrors the bd adaptor so the two work-planes can
@@ -61,14 +68,16 @@ const (
 	adaptorVersion        = "0.1.0"
 )
 
-// WorkPlane is the read-only Dolt SQL implementation of
-// core.WorkPlane. It opens a single pooled *sql.DB against the
-// configured Dolt server; mutations fail with KindReadOnly.
+// WorkPlane is the direct Dolt SQL implementation of core.WorkPlane.
+// It opens a single pooled *sql.DB against the configured Dolt server.
+// Mutations are SQL transactions unless Config.ReadOnly is set.
 type WorkPlane struct {
 	db                *sql.DB
 	prefix            string
 	dbName            string
 	descriptionFormat string
+	readOnly          bool
+	emitter           *core.WorkPlaneEmitter
 }
 
 var _ core.WorkPlane = (*WorkPlane)(nil)
@@ -125,7 +134,14 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 	if format == "" {
 		format = core.DescriptionFormatMarkdown
 	}
-	return &WorkPlane{db: db, prefix: prefix, dbName: dbName, descriptionFormat: format}, nil
+	return &WorkPlane{
+		db:                db,
+		prefix:            prefix,
+		dbName:            dbName,
+		descriptionFormat: format,
+		readOnly:          cfg.ReadOnly,
+		emitter:           core.NewWorkPlaneEmitter(),
+	}, nil
 }
 
 // NewWorkPlaneFromDB is the constructor tests use to inject a
@@ -141,7 +157,16 @@ func NewWorkPlaneFromDB(db *sql.DB, prefix, dbName string) *WorkPlane {
 		prefix:            prefix,
 		dbName:            dbName,
 		descriptionFormat: core.DescriptionFormatMarkdown,
+		emitter:           core.NewWorkPlaneEmitter(),
 	}
+}
+
+// NewReadOnlyWorkPlaneFromDB mirrors NewWorkPlaneFromDB but marks the
+// injected adaptor read-only for tests and explicit --beads-read-only mode.
+func NewReadOnlyWorkPlaneFromDB(db *sql.DB, prefix, dbName string) *WorkPlane {
+	wp := NewWorkPlaneFromDB(db, prefix, dbName)
+	wp.readOnly = true
+	return wp
 }
 
 // Close releases the underlying connection pool. Safe to call more
@@ -165,13 +190,13 @@ func (w *WorkPlane) DB() *sql.DB {
 	return w.db
 }
 
-// Describe returns the capability manifest for the Dolt read-only
-// adaptor. ReadOnly=true is the semantically important bit; the
-// rest mirrors the bd sibling so the SPA does not have to special-
-// case beads when served via SQL.
+// Describe returns the capability manifest for the Dolt adaptor. The
+// rest mirrors the bd sibling so the SPA does not have to special-case
+// beads when served via SQL.
 func (w *WorkPlane) Describe(context.Context) (core.CapabilityManifest, error) {
 	m := doltManifest
 	m.DescriptionFormat = w.descriptionFormat
+	m.ReadOnly = w.readOnly
 	return m, nil
 }
 
@@ -192,7 +217,7 @@ var doltManifest = core.CapabilityManifest{
 	SprintNative:              false,
 	TokenBudgetEnforced:       false,
 	EvidenceSynthesisRequired: false,
-	ReadOnly:                  true,
+	ReadOnly:                  false,
 }
 
 // beadsStateMap is intentionally duplicated from the bd adaptor so
@@ -321,25 +346,309 @@ func (w *WorkPlane) GetWorkItem(ctx context.Context, id core.WorkItemID) (core.W
 	return r.toWorkItem(w.prefix), nil
 }
 
-// CreateWorkItem, UpdateWorkItem, AttachEvidence: every mutation is
-// a KindReadOnly error. The manifest's ReadOnly=true already tells
-// the UI to hide these controls; the adaptor-side fail-fast here is
-// defense in depth for transports that bypass the manifest check
-// (direct adaptor usage in tests, adaptor composition, etc.).
+// CreateWorkItem inserts a bead through the Dolt SQL surface and returns
+// the persisted row. It follows the same milestone, staged, parent, DoD,
+// and agent-label conventions as the bd CLI adaptor.
+func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.WorkItem, error) {
+	if w.readOnly {
+		return core.WorkItem{}, readOnlyError("CreateWorkItem")
+	}
+	if strings.TrimSpace(wi.Title) == "" {
+		return core.WorkItem{}, core.NewAdaptorError(core.KindValidation,
+			"dolt: CreateWorkItem requires title")
+	}
+	id, err := w.nextID(ctx)
+	if err != nil {
+		return core.WorkItem{}, err
+	}
+	status := wi.Status
+	if status == "" {
+		if wi.StateCategory != "" {
+			var ok bool
+			status, ok = doltStatusForCategory(wi.StateCategory)
+			if !ok {
+				return core.WorkItem{}, core.NewAdaptorError(core.KindValidation,
+					"dolt: state_category %q has no beads status", wi.StateCategory)
+			}
+		} else {
+			status = "open"
+		}
+	}
+	kind := wi.Kind
+	addMilestoneLabel := false
+	if kind == core.KindMilestone {
+		kind = "epic"
+		addMilestoneLabel = true
+	}
+	if kind == "" {
+		kind = "task"
+	}
+	priority := 2
+	if wi.Priority != nil {
+		priority = *wi.Priority
+	}
+	labels := stripDoltAgentLabels(wi.Labels)
+	if wi.Assignee != nil {
+		labels = append(labels, doltAgentLabels(wi.Assignee)...)
+	}
+	if addMilestoneLabel && !hasDoltLabel(labels, milestoneLabel) {
+		labels = append(labels, milestoneLabel)
+	}
+	if wi.StateCategory == core.StateStaged && !hasDoltLabel(labels, stagedLabel) {
+		labels = append(labels, stagedLabel)
+	}
+	assignee := sql.NullString{}
+	if wi.Assignee != nil && wi.Assignee.ID != "" {
+		assignee = sql.NullString{String: string(wi.Assignee.ID), Valid: true}
+	}
+	owner := sql.NullString{}
+	if wi.Owner != nil && wi.Owner.ID != "" {
+		owner = sql.NullString{String: string(wi.Owner.ID), Valid: true}
+	}
+	now := time.Now().UTC()
+	actor := currentActor()
+	desc := embedDoltDoD(wi.Description, wi.DoD)
 
-// CreateWorkItem always fails with KindReadOnly.
-func (w *WorkPlane) CreateWorkItem(context.Context, core.WorkItem) (core.WorkItem, error) {
-	return core.WorkItem{}, readOnlyError("CreateWorkItem")
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.WorkItem{}, wrapQueryError(err, "issues")
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx,
+		"INSERT INTO issues (id, title, description, design, acceptance_criteria, notes, status, priority, issue_type, assignee, owner, created_at, created_by, updated_at) VALUES (?, ?, ?, '', '', '', ?, ?, ?, ?, ?, ?, ?, ?)",
+		id, wi.Title, desc, status, priority, string(kind), assignee, owner, now, actor, now,
+	); err != nil {
+		return core.WorkItem{}, wrapQueryError(err, "issues")
+	}
+	if err := replaceLabels(ctx, tx, id, labels); err != nil {
+		return core.WorkItem{}, err
+	}
+	if parent := parentOnDoltCreate(wi.Relationships); parent != "" {
+		if _, err := tx.ExecContext(ctx,
+			"INSERT INTO dependencies (issue_id, depends_on_id, type, created_by) VALUES (?, ?, ?, ?)",
+			id, nativeID(w.prefix, parent), "parent-child", actor,
+		); err != nil {
+			return core.WorkItem{}, wrapQueryError(err, "dependencies")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return core.WorkItem{}, wrapQueryError(err, "issues")
+	}
+	out, err := w.GetWorkItem(ctx, buildWorkItemID(w.prefix, id))
+	if err != nil {
+		return core.WorkItem{}, err
+	}
+	w.emit(core.WorkItemEventCreated, out)
+	return out, nil
 }
 
-// UpdateWorkItem always fails with KindReadOnly.
-func (w *WorkPlane) UpdateWorkItem(context.Context, core.WorkItemID, core.WorkItemPatch) (core.WorkItem, error) {
-	return core.WorkItem{}, readOnlyError("UpdateWorkItem")
+// UpdateWorkItem applies a WorkItemPatch via SQL and re-reads the row
+// so callers see persisted state.
+func (w *WorkPlane) UpdateWorkItem(ctx context.Context, id core.WorkItemID, patch core.WorkItemPatch) (core.WorkItem, error) {
+	if w.readOnly {
+		return core.WorkItem{}, readOnlyError("UpdateWorkItem")
+	}
+	native := nativeID(w.prefix, id)
+	var (
+		sets []string
+		args []any
+	)
+	labels := append([]string(nil), patch.Labels...)
+	shouldReplaceLabels := len(labels) > 0
+	addStagedLabel := false
+	removeStagedLabel := false
+
+	if patch.Title != nil {
+		sets = append(sets, "title = ?")
+		args = append(args, *patch.Title)
+	}
+	if patch.Description != nil && patch.DoD != nil {
+		sets = append(sets, "description = ?")
+		args = append(args, embedDoltDoD(*patch.Description, patch.DoD))
+	} else if patch.Description != nil {
+		sets = append(sets, "description = ?")
+		args = append(args, *patch.Description)
+	} else if patch.DoD != nil {
+		current, err := w.GetWorkItem(ctx, id)
+		if err != nil {
+			return core.WorkItem{}, err
+		}
+		sets = append(sets, "description = ?")
+		args = append(args, embedDoltDoD(current.Description, patch.DoD))
+	}
+	if patch.Status != nil {
+		sets = append(sets, "status = ?")
+		args = append(args, *patch.Status)
+	} else if patch.StateCategory != nil {
+		status, ok := doltStatusForCategory(*patch.StateCategory)
+		if !ok {
+			return core.WorkItem{}, core.NewAdaptorError(core.KindValidation,
+				"dolt: state_category %q has no beads status; send an explicit status instead",
+				*patch.StateCategory)
+		}
+		sets = append(sets, "status = ?")
+		args = append(args, status)
+		switch *patch.StateCategory {
+		case core.StateStaged:
+			if shouldReplaceLabels {
+				labels = setDoltStagedLabel(labels, true)
+			} else {
+				current, err := w.GetWorkItem(ctx, id)
+				if err != nil {
+					return core.WorkItem{}, err
+				}
+				addStagedLabel = !hasDoltLabel(current.Labels, stagedLabel)
+			}
+		default:
+			if shouldReplaceLabels {
+				labels = setDoltStagedLabel(labels, false)
+			} else {
+				current, err := w.GetWorkItem(ctx, id)
+				if err != nil {
+					return core.WorkItem{}, err
+				}
+				removeStagedLabel = hasDoltLabel(current.Labels, stagedLabel)
+			}
+		}
+	}
+	if patch.Priority != nil {
+		sets = append(sets, "priority = ?")
+		args = append(args, *patch.Priority)
+	}
+	if patch.Owner != nil {
+		sets = append(sets, "owner = ?")
+		args = append(args, string(patch.Owner.ID))
+	}
+	if patch.Assignee != nil {
+		sets = append(sets, "assignee = ?")
+		args = append(args, string(patch.Assignee.ID))
+	}
+	agentExtra := doltAgentLabels(patch.Assignee)
+	if shouldReplaceLabels {
+		labels = stripDoltAgentLabels(labels)
+		labels = append(labels, agentExtra...)
+	}
+	sets = append(sets, "updated_at = ?")
+	args = append(args, time.Now().UTC())
+
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.WorkItem{}, wrapQueryError(err, "issues")
+	}
+	defer tx.Rollback()
+	if len(sets) > 0 {
+		args = append(args, native)
+		res, err := tx.ExecContext(ctx,
+			"UPDATE issues SET "+strings.Join(sets, ", ")+" WHERE id = ?",
+			args...,
+		)
+		if err != nil {
+			return core.WorkItem{}, wrapQueryError(err, "issues")
+		}
+		if rows, err := res.RowsAffected(); err == nil && rows == 0 {
+			return core.WorkItem{}, core.NewAdaptorError(core.KindSessionNotFound,
+				"dolt: bead %q not found", native)
+		}
+	}
+	if shouldReplaceLabels {
+		if err := replaceLabels(ctx, tx, native, labels); err != nil {
+			return core.WorkItem{}, err
+		}
+	} else {
+		for _, l := range agentExtra {
+			if err := insertLabel(ctx, tx, native, l); err != nil {
+				return core.WorkItem{}, err
+			}
+		}
+		if addStagedLabel {
+			if err := insertLabel(ctx, tx, native, stagedLabel); err != nil {
+				return core.WorkItem{}, err
+			}
+		}
+		if removeStagedLabel {
+			if _, err := tx.ExecContext(ctx,
+				"DELETE FROM labels WHERE issue_id = ? AND label = ?",
+				native, stagedLabel,
+			); err != nil {
+				return core.WorkItem{}, wrapQueryError(err, "labels")
+			}
+		}
+	}
+	if patch.Parent != nil {
+		if _, err := tx.ExecContext(ctx,
+			"DELETE FROM dependencies WHERE issue_id = ? AND type IN ('parent-child', 'parent_child')",
+			native,
+		); err != nil {
+			return core.WorkItem{}, wrapQueryError(err, "dependencies")
+		}
+		if *patch.Parent != "" {
+			if _, err := tx.ExecContext(ctx,
+				"INSERT INTO dependencies (issue_id, depends_on_id, type, created_by) VALUES (?, ?, ?, ?)",
+				native, nativeID(w.prefix, core.WorkItemID(*patch.Parent)), "parent-child", currentActor(),
+			); err != nil {
+				return core.WorkItem{}, wrapQueryError(err, "dependencies")
+			}
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return core.WorkItem{}, wrapQueryError(err, "issues")
+	}
+	out, err := w.GetWorkItem(ctx, id)
+	if err != nil {
+		return core.WorkItem{}, err
+	}
+	kind := core.WorkItemEventUpdated
+	if out.StateCategory == core.StateCompleted || out.StateCategory == core.StateCanceled {
+		kind = core.WorkItemEventClosed
+	}
+	w.emit(kind, out)
+	return out, nil
 }
 
-// AttachEvidence always fails with KindReadOnly.
+// AttachEvidence remains a capability-denied operation: Beads evidence is
+// synthesized from labels/transport artifacts, matching the bd adaptor.
 func (w *WorkPlane) AttachEvidence(context.Context, core.WorkItemID, core.Evidence) error {
-	return readOnlyError("AttachEvidence")
+	if w.readOnly {
+		return readOnlyError("AttachEvidence")
+	}
+	return core.EnforceCapability(doltManifest, core.OpAttachEvidence)
+}
+
+// DeleteWorkItem permanently deletes a bead and its edge/label rows.
+func (w *WorkPlane) DeleteWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error) {
+	if w.readOnly {
+		return core.WorkItem{}, readOnlyError("DeleteWorkItem")
+	}
+	native := nativeID(w.prefix, id)
+	before, err := w.GetWorkItem(ctx, id)
+	if err != nil {
+		return core.WorkItem{}, err
+	}
+	tx, err := w.db.BeginTx(ctx, nil)
+	if err != nil {
+		return core.WorkItem{}, wrapQueryError(err, "issues")
+	}
+	defer tx.Rollback()
+	for _, stmt := range []string{
+		"DELETE FROM labels WHERE issue_id = ?",
+		"DELETE FROM dependencies WHERE issue_id = ? OR depends_on_id = ?",
+		"DELETE FROM issues WHERE id = ?",
+	} {
+		var args []any
+		if strings.Contains(stmt, "depends_on_id") {
+			args = []any{native, native}
+		} else {
+			args = []any{native}
+		}
+		if _, err := tx.ExecContext(ctx, stmt, args...); err != nil {
+			return core.WorkItem{}, wrapQueryError(err, "issues")
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return core.WorkItem{}, wrapQueryError(err, "issues")
+	}
+	w.emit(core.WorkItemEventClosed, before)
+	return before, nil
 }
 
 // ListSprints: beads has no native sprint concept, so this mirrors
@@ -355,20 +664,84 @@ func (w *WorkPlane) ReadBudgetRollup(context.Context, string) (core.BudgetRollup
 	return core.BudgetRollup{}, core.EnforceCapability(doltManifest, core.OpReadBudgetRollup)
 }
 
-// Subscribe returns KindUnsupported — the Dolt read-only adaptor has
-// no mutation path, so there is nothing to emit. The server-side
-// AttachWorkPlaneStream pump treats Unsupported as "no events from
-// this plane" and drops silently. gm-e4.3.1.
-func (w *WorkPlane) Subscribe(context.Context, core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
-	return nil, core.NewAdaptorError(core.KindUnsupported,
-		"dolt: Subscribe is not supported (read-only adaptor emits no mutation events)")
+// Subscribe streams events for mutations performed through this adaptor
+// instance. External SQL writers still require polling/refresh.
+func (w *WorkPlane) Subscribe(ctx context.Context, f core.WorkPlaneSubscribeFilter) (<-chan core.WorkPlaneEvent, error) {
+	return w.emitter.Subscribe(ctx, f), nil
 }
 
 // readOnlyError builds the KindReadOnly envelope the three write
 // methods share.
 func readOnlyError(op string) error {
 	return core.NewAdaptorError(core.KindReadOnly,
-		"dolt: %s is not available; --dolt-url opens a read-only Dolt connection", op)
+		"dolt: %s is not available in --beads-read-only mode", op)
+}
+
+func (w *WorkPlane) nextID(ctx context.Context) (string, error) {
+	for range 16 {
+		var buf [3]byte
+		if _, err := rand.Read(buf[:]); err != nil {
+			return "", core.WrapAdaptorError(core.KindProcessFailed, err,
+				"dolt: generate bead id")
+		}
+		id := "gm-" + hex.EncodeToString(buf[:])
+		var exists int
+		if err := w.db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM issues WHERE id = ?", id,
+		).Scan(&exists); err != nil {
+			return "", wrapQueryError(err, "issues")
+		}
+		if exists == 0 {
+			return id, nil
+		}
+	}
+	return "", core.NewAdaptorError(core.KindProcessFailed,
+		"dolt: could not allocate a unique bead id")
+}
+
+func (w *WorkPlane) emit(kind string, wi core.WorkItem) {
+	w.emitter.Publish(core.WorkPlaneEvent{
+		ID:         fmt.Sprintf("%s:%s:%d", kind, wi.ID, time.Now().UnixNano()),
+		Kind:       kind,
+		At:         time.Now().UTC(),
+		WorkItemID: wi.ID,
+		Payload: map[string]any{
+			"item": wi,
+		},
+	})
+}
+
+func replaceLabels(ctx context.Context, tx *sql.Tx, issueID string, labels []string) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM labels WHERE issue_id = ?", issueID); err != nil {
+		return wrapQueryError(err, "labels")
+	}
+	for _, l := range labels {
+		if err := insertLabel(ctx, tx, issueID, l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func insertLabel(ctx context.Context, tx *sql.Tx, issueID, label string) error {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx,
+		"INSERT IGNORE INTO labels (issue_id, label) VALUES (?, ?)",
+		issueID, label,
+	); err != nil {
+		return wrapQueryError(err, "labels")
+	}
+	return nil
+}
+
+func currentActor() string {
+	if u, err := user.Current(); err == nil && u.Username != "" {
+		return u.Username
+	}
+	return "gemba"
 }
 
 // parseDoltURL converts the user-facing mysql:// URL into the DSN

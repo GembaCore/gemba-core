@@ -8,9 +8,9 @@ Gemba at a beads rig two ways:
 
 - **Mode A — `--beads-dir`**: Gemba shells out to the `bd` CLI for
   every read. Slower but portable; works anywhere you can run `bd`.
-- **Mode B — `--dolt-url`**: Gemba opens a direct read-only SQL
-  connection to your Dolt server. Faster and no `bd` dependency, but
-  needs a reachable Dolt instance.
+- **Mode B — `--dolt-url`**: Gemba opens a direct SQL connection to your
+  Dolt server. Faster and no `bd` dependency; reads and writes are
+  enabled when the Dolt user has write permission.
 - **Beads-only**: add `--beads-only` when you want only Beads viewing
   and management. Gemba does not require a project, GitHub repository,
   native agent setup, or Gas Town orchestration in this mode.
@@ -82,7 +82,11 @@ The dbname is the snake_case rig name — e.g. `gemba`, `lume_spark_api`, `secon
 ▶ manifest: 5 states, 3 core + <n> extension edges, feature flags: sprint=no budget=no
 ```
 
-Any password in the URL is redacted from the banner and logs. Mode B is read-only — mutations will surface as `read_only` adaptor errors on the API side; that's by design until a Dolt-write path lands.
+Any password in the URL is redacted from the banner and logs. Mode B is
+writable by default: create, edit, delete, state changes, labels, parents,
+milestones, and decision beads go through the Dolt SQL adaptor. To force a
+no-write posture, add `--beads-read-only`; the Status pane will show
+**Beads-read-only** and the API will return `read_only` for every mutation.
 
 ## Beads-only mode
 
@@ -94,6 +98,7 @@ dispatch.
 gemba serve --beads-only --beads-dir ~/gt/gemba --auth none
 gemba serve --beads-only --beads-url 'mysql://root@127.0.0.1:3307/gemba' --auth none
 gemba serve --beads-only --beads-dir ~/gt/gemba --beads-history .gemba/session-manifest.jsonl
+gemba serve --beads-read-only --beads-url 'mysql://reader@127.0.0.1:3307/gemba' --auth none
 ```
 
 The SPA opens on `/board` in **Flat** view. Flat shows milestones,
@@ -117,6 +122,36 @@ Available Beads-only actions:
 - review the RHP **Beads history** tab, which renders the JSONL session
   manifest in plain English;
 - use the Graph view for dependency and relationship inspection.
+
+### Beads-read-only mode
+
+`--beads-read-only` is a stricter variant of Beads-only. It is for
+publishing, review, audits, shared screenshots, and Docker/container
+deployments where operators should inspect Beads without changing them.
+
+What stays available:
+
+- Flat and Cascade Beads views;
+- Graph dependency inspection;
+- Status, Beads health, current DB/source, and remote setup checks;
+- Beads history display for any existing manifest entries;
+- deep links to bead, epic, milestone, and decision detail tabs.
+
+What is blocked:
+
+- create, edit, hard-delete, drag-to-state-change, and wrapper/tag
+  authoring writes;
+- JSONL history append for failed write attempts;
+- all session, dispatch, Gemba Walk, review/triage, and orchestration
+  surfaces, because read-only implies Beads-only.
+
+The Status pane shows **Beads-read-only** instead of **Beads-only**.
+URL sources are not intrinsically read-only; use Dolt credentials or the
+Gemba flag to choose that posture explicitly. With a local `--beads-dir`,
+adding `--restart` lets Gemba restart bd's Dolt server with `bd --readonly
+dolt start` so the lower layer also enforces the policy. Without
+`--restart`, Gemba still applies a hard server/adaptor write gate while
+ordinary Beads reads continue through the standard `bd` commands.
 
 Sessions, agent status, dispatch controls, Gemba Walk, review/triage,
 and orchestration setup are hidden because they require an execution

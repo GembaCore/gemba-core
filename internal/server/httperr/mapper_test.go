@@ -78,10 +78,10 @@ func TestWriteError_TaggedAdaptorErrors(t *testing.T) {
 		},
 		{
 			name:        "read_only",
-			err:         core.NewAdaptorError(core.KindReadOnly, "adaptor is --dolt-url read-only"),
+			err:         core.NewAdaptorError(core.KindReadOnly, "adaptor is explicitly read-only"),
 			wantStatus:  http.StatusMethodNotAllowed,
 			wantCode:    "read_only",
-			wantMessage: "adaptor is --dolt-url read-only",
+			wantMessage: "adaptor is explicitly read-only",
 		},
 		{
 			name:        "adaptor_degraded",
