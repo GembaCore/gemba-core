@@ -1,0 +1,21 @@
+services:
+  gemba:
+    build:
+      context: .
+      dockerfile: Dockerfile.quickstart
+      args:
+        VERSION: local
+        COMMIT: local
+        DATE: local
+    image: gemba-core-quickstart:local
+    ports:
+      - "7666:7666"
+    volumes:
+      - gemba-quickstart-data:/data
+    environment:
+      GEMBA_LISTEN: 0.0.0.0:7666
+      GEMBA_AUTH: token
+      GEMBA_DEMO_PREFIX: mp
+
+volumes:
+  gemba-quickstart-data:

@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docs docs-dev docs-install install-hooks uninstall-hooks acceptance-purge
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only quickstart-image quickstart-run docs docs-dev docs-install install-hooks uninstall-hooks acceptance-purge
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -183,6 +183,7 @@ release-dry: release ## alias for `make release` (snapshot, no publish)
 
 KO_DOCKER_REPO ?= ghcr.io/mikebengtson/gemba-server
 KO_TAGS        ?= $(COMMIT),latest
+GEMBA_QUICKSTART_IMAGE ?= gemba-core-quickstart:local
 
 # Inject the same ldflags ko consumes via templating in .ko.yaml.
 KO_ENV := VERSION=$(VERSION) COMMIT=$(COMMIT) DATE=$(DATE) KO_DOCKER_REPO=$(KO_DOCKER_REPO)
@@ -205,6 +206,22 @@ image-push: frontend-build ## build + push multi-arch image to KO_DOCKER_REPO
 image-build-only: dist-sentinel ## smoke-test ko config (single-arch, local, no push)
 	@command -v ko >/dev/null 2>&1 || { echo "install ko: go install github.com/google/ko@latest"; exit 1; }
 	$(KO_ENV) ko build --bare --tags=$(COMMIT) --push=false --platform=linux/amd64 ./cmd/gemba
+
+quickstart-image: ## build the self-contained Docker quickstart image (Gemba + bd + sample Beads)
+	@command -v docker >/dev/null 2>&1 || { echo "install Docker: https://docs.docker.com/get-docker/"; exit 1; }
+	docker build \
+	  -f Dockerfile.quickstart \
+	  -t $(GEMBA_QUICKSTART_IMAGE) \
+	  --build-arg VERSION=$(VERSION) \
+	  --build-arg COMMIT=$(COMMIT) \
+	  --build-arg DATE=$(DATE) \
+	  .
+
+quickstart-run: quickstart-image ## run the quickstart image on http://localhost:7666
+	docker run --rm -it \
+	  -p 7666:7666 \
+	  -v gemba-quickstart-data:/data \
+	  $(GEMBA_QUICKSTART_IMAGE)
 
 ## --- Docs site (gm-e14.4) ---
 ##

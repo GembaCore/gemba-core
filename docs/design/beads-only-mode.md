@@ -411,27 +411,31 @@ no manifest event is appended.
 
 ## 10. Docker Readiness
 
-This decision does not require shipping the Docker image, but the design
-should support it cleanly.
+This mode now has a self-contained Docker quickstart image in addition
+to the minimal production server image.
 
-Expected container model:
+Quickstart model:
 
 ```bash
-docker run \
-  -p 17891:17891 \
-  -e GEMBA_MODE=beads_only \
-  -e GEMBA_BEADS_URL=dolt://example/gemba \
-  -v gemba-history:/data \
-  gemba-core:latest
+docker compose -f docker-compose.quickstart.yml up --build
 ```
 
-Container-specific needs:
+The quickstart image:
 
-- source can be supplied by environment variable;
-- manifest path can be mounted to persistent storage;
-- read-only Beads mode is allowed, but create/edit controls are hidden
-  by capability and API mutations return `read_only`;
-- startup errors should be visible in the SPA source-selection state.
+- includes the `gemba` binary and `bd` CLI;
+- seeds `examples/my-project/seed.json` into `/data/example-project`
+  when neither `GEMBA_BEADS_DIR` nor `GEMBA_BEADS_URL` is supplied;
+- persists the Beads database, auth token, and history manifest in
+  `/data`;
+- starts `gemba serve --beads-only` against that source;
+- accepts `GEMBA_BEADS_READ_ONLY=true` to start the same container in
+  Beads-read-only mode;
+- accepts `GEMBA_BEADS_DIR=/work` for a mounted local Beads worktree or
+  `GEMBA_BEADS_URL=mysql://...` for direct Dolt URL mode.
+
+The minimal server image remains the `ko`/distroless image documented in
+`docs/install.md`; it does not include `bd` and is intended for explicit
+operator-configured deployments.
 
 ## 11. API and Implementation Notes
 
@@ -520,7 +524,7 @@ Implementation epic: `gm-4u4l`
 | `gm-4u4l.4` | RHP Beads history tab |
 | `gm-4u4l.5` | Beads authoring preserves numbering and tag pills |
 | `gm-4u4l.6` | Board, refinement, detail, and graph parity |
-| `gm-4u4l.7` | Docker-oriented Beads-only packaging docs |
+| `gm-4u4l.7` | Docker-oriented Beads-only packaging and quickstart image |
 | `gm-4u4l.8` | Automated coverage for Beads-only mode |
 
 ## 14. Open Questions

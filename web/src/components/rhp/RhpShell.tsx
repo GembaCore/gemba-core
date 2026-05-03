@@ -18,6 +18,7 @@ import {
   useContext,
   useEffect,
   useRef,
+  useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
@@ -34,6 +35,22 @@ import { useRhpPinnedContent } from './RhpPinnedContent';
 import { RhpFallbackRegistration } from './RhpDetail';
 
 const RAIL_WIDTH_PX = 40;
+const SIDEBAR_WIDTH_PX = 224;
+const MAIN_MIN_WIDTH_PX = 360;
+
+function useViewportWidth(): number {
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? Number.POSITIVE_INFINITY : window.innerWidth
+  );
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  return viewportWidth;
+}
 
 export function RhpShell() {
   const {
@@ -49,6 +66,7 @@ export function RhpShell() {
 
   const railRef = useRef<HTMLDivElement | null>(null);
   const activeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const viewportWidth = useViewportWidth();
 
   // Active tab kept in view via scrollIntoView({block: 'nearest'}).
   // Per design doc this fires on focus change.
@@ -116,7 +134,13 @@ export function RhpShell() {
   // placeholder ("This tab has no content registered yet").
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const railWidth = RAIL_WIDTH_PX;
-  const totalWidth = collapsed ? railWidth : Math.max(width, RHP_WIDTH_MIN);
+  const desiredExpandedWidth = Math.max(width, RHP_WIDTH_MIN);
+  const maxWidthThatPreservesMain = viewportWidth - SIDEBAR_WIDTH_PX - MAIN_MIN_WIDTH_PX;
+  const responsiveRailOnly = !collapsed && maxWidthThatPreservesMain < RHP_WIDTH_MIN;
+  const effectiveCollapsed = collapsed || responsiveRailOnly;
+  const totalWidth = effectiveCollapsed
+    ? railWidth
+    : Math.min(desiredExpandedWidth, Math.max(RHP_WIDTH_MIN, maxWidthThatPreservesMain));
 
   // Insert a separator between pinned and detail tabs (per design
   // doc: 1px line). We compute the index where the first detail tab
@@ -126,7 +150,8 @@ export function RhpShell() {
   return (
     <aside
       data-testid="rhp-shell"
-      data-collapsed={collapsed ? 'true' : 'false'}
+      data-collapsed={effectiveCollapsed ? 'true' : 'false'}
+      data-responsive-collapsed={responsiveRailOnly ? 'true' : 'false'}
       className={cn(
         'relative flex h-full shrink-0 border-l',
         'border-neutral-200 bg-white',
@@ -142,7 +167,7 @@ export function RhpShell() {
       {/* Drag handle — sits flush with the panel's left edge. Only
           interactive when not collapsed; the rail's caret is the
           collapse toggle and the handle would be confusing otherwise. */}
-      {!collapsed ? (
+      {!effectiveCollapsed ? (
         <div
           data-testid="rhp-drag-handle"
           role="separator"
@@ -174,8 +199,8 @@ export function RhpShell() {
         <button
           type="button"
           data-testid="rhp-collapse-toggle"
-          aria-label={collapsed ? 'Expand right-hand panel' : 'Collapse right-hand panel'}
-          aria-expanded={!collapsed}
+          aria-label={effectiveCollapsed ? 'Expand right-hand panel' : 'Collapse right-hand panel'}
+          aria-expanded={!effectiveCollapsed}
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
             'flex h-9 w-full items-center justify-center',
@@ -183,7 +208,7 @@ export function RhpShell() {
             'dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-100'
           )}
         >
-          {collapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
+          {effectiveCollapsed ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
         </button>
 
         {tabs.map((tab, idx) => (
@@ -200,7 +225,7 @@ export function RhpShell() {
       </div>
 
       {/* Body — only rendered when expanded. */}
-      {!collapsed ? (
+      {!effectiveCollapsed ? (
         <div
           data-testid="rhp-body"
           className="flex min-w-0 flex-1 flex-col overflow-hidden"

@@ -121,6 +121,17 @@ export function StatusBody() {
         actionPending={healthAction.isPending}
       />
 
+      {beadsReadOnly ? (
+        <section className="mt-5 space-y-2" data-testid="rhp-status-read-only">
+          <SectionHeader title="Read-only mode" />
+          <div className="rounded-md border border-neutral-200 bg-white px-3 py-2 text-xs leading-5 text-neutral-600 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-300">
+            Inspect Flat and Cascade views, open bead details, use Graph, sort and filter the
+            database, refresh Beads health, and review Beads history. Creates, edits, deletes,
+            drags, dispatch, and session actions are blocked for this run.
+          </div>
+        </section>
+      ) : null}
+
       {!beadsOnly ? (
         <section className="mt-5 space-y-2" data-testid="rhp-status-sessions">
           <SectionHeader

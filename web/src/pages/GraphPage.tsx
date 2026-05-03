@@ -74,6 +74,8 @@ const HIGHLIGHT_CRITICAL = '#f59e0b';
 // nodes render under ~60px wide on a 200px layout — too small to
 // read titles. Above it items stay individually legible.
 const AUTO_GRANULARITY_ZOOM_THRESHOLD = 0.3;
+const NARROW_CANVAS_WIDTH = 420;
+const NARROW_CANVAS_OVERVIEW_ZOOM = 0.9;
 
 export function GraphPage() {
   const { data: items = [], isLoading, error } = useWorkItems();
@@ -87,7 +89,9 @@ export function GraphPage() {
   // on the canvas host as data-focused-node so specs can assert
   // the selection without inspecting the React Flow viewport state.
   const instanceRef = useRef<ReactFlowInstance | null>(null);
+  const canvasHostRef = useRef<HTMLDivElement | null>(null);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [canvasWidth, setCanvasWidth] = useState(Number.POSITIVE_INFINITY);
   // gm-sfbh (post-RHP): the legacy WorkItemDrawer's onClose used to
   // clear focusedId + re-fit the camera in one step (Escape, ×, click-
   // outside all funneled through it). The drawer is gone — its content
@@ -115,10 +119,13 @@ export function GraphPage() {
   // auto via the Auto button.
   const [granularityOverride, setGranularityOverride] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(1);
+  const narrowCanvas = canvasWidth < NARROW_CANVAS_WIDTH;
   const effectiveGranularity = useMemo<'items' | 'epics'>(() => {
     if (granularityOverride) return granularity;
-    return currentZoom < AUTO_GRANULARITY_ZOOM_THRESHOLD ? 'epics' : 'items';
-  }, [granularity, granularityOverride, currentZoom]);
+    return narrowCanvas || currentZoom < AUTO_GRANULARITY_ZOOM_THRESHOLD
+      ? 'epics'
+      : 'items';
+  }, [granularity, granularityOverride, currentZoom, narrowCanvas]);
   const renderItems = useMemo(
     () =>
       effectiveGranularity === 'epics' ? deriveAggregatedItems(items) : items,
@@ -178,6 +185,23 @@ export function GraphPage() {
     [graph.nodeIds, graph.structuralEdges]
   );
 
+  useEffect(() => {
+    const el = canvasHostRef.current;
+    if (!el) return;
+    const readWidth = () => {
+      const next = el.clientWidth || el.getBoundingClientRect().width;
+      setCanvasWidth(next || Number.POSITIVE_INFINITY);
+    };
+    readWidth();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', readWidth);
+      return () => window.removeEventListener('resize', readWidth);
+    }
+    const observer = new ResizeObserver(readWidth);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // ReactFlow's `fitView` prop only fits once on mount. When the
   // initial render happens during the items-loading phase, ReactFlow
   // mounts with nodes=[] and parks its camera at the empty origin —
@@ -192,6 +216,38 @@ export function GraphPage() {
   // The flag lets onMove ignore the auto-fit's emitted zoom event so
   // currentZoom only tracks operator-initiated zoom/pan.
   const suppressMoveZoom = useRef(false);
+  const fitOverview = useCallback(() => {
+    const inst = instanceRef.current;
+    if (!inst) return;
+    if (narrowCanvas && graph.nodeIds.length > 0) {
+      const centerFirstNode = () => {
+        const node = inst.getNode(graph.nodeIds[0]);
+        if (!node) return false;
+        const w = node.width ?? 200;
+        const h = node.height ?? 60;
+        const zoom = Math.min(
+          NARROW_CANVAS_OVERVIEW_ZOOM,
+          Math.max(0.6, (canvasWidth - 16) / w)
+        );
+        suppressMoveZoom.current = true;
+        void inst.setCenter(node.position.x + w / 2, node.position.y + h / 2, {
+          zoom,
+        });
+        suppressMoveZoom.current = false;
+        return true;
+      };
+      if (!centerFirstNode()) {
+        requestAnimationFrame(() => {
+          centerFirstNode();
+        });
+      }
+      return;
+    }
+    suppressMoveZoom.current = true;
+    void inst.fitView({ padding: 0.1 });
+    suppressMoveZoom.current = false;
+  }, [canvasWidth, graph.nodeIds, narrowCanvas]);
+
   useEffect(() => {
     const count = items.length;
     if (count > 0 && count !== lastFitCount.current) {
@@ -202,8 +258,7 @@ export function GraphPage() {
       const id = requestAnimationFrame(() => {
         const inst = instanceRef.current;
         if (!inst) return;
-        suppressMoveZoom.current = true;
-        inst.fitView();
+        fitOverview();
         // gm-vubw: capture the post-fit zoom on first fit so the
         // auto-granularity decision sees the real fitted zoom (the
         // 320-node workspace lands at ~0.02). On later fits we
@@ -212,15 +267,22 @@ export function GraphPage() {
           const vp = inst.getViewport?.();
           if (vp && typeof vp.zoom === 'number') setCurrentZoom(vp.zoom);
         }
-        // d3-zoom fires its 'zoom' event synchronously inside the
-        // fitView call above, so by the time we get here onMove has
-        // already been invoked (and skipped). Releasing the flag
-        // synchronously lets the next operator gesture drive zoom.
-        suppressMoveZoom.current = false;
       });
       return () => cancelAnimationFrame(id);
     }
-  }, [items.length]);
+  }, [fitOverview, items.length]);
+
+  useEffect(() => {
+    if (items.length === 0 || granularityOverride) return;
+    const id = requestAnimationFrame(() => fitOverview());
+    return () => cancelAnimationFrame(id);
+  }, [effectiveGranularity, fitOverview, granularityOverride, items.length]);
+
+  useEffect(() => {
+    if (!narrowCanvas || items.length === 0 || graph.nodeIds.length === 0) return;
+    const id = window.setTimeout(() => fitOverview(), 50);
+    return () => window.clearTimeout(id);
+  }, [effectiveGranularity, fitOverview, graph.nodeIds.length, items.length, narrowCanvas]);
 
   // gm-sfbh (post-RHP migration): mirror the legacy onClose behavior —
   // when the workitem detail tab transitions from open to closed
@@ -498,6 +560,7 @@ export function GraphPage() {
       </header>
 
       <div
+        ref={canvasHostRef}
         className="relative min-h-0 flex-1"
         data-testid="graph-canvas-host"
         data-focused-node={focusedId ?? undefined}
@@ -520,8 +583,6 @@ export function GraphPage() {
             nodes={nodes}
             edges={edges}
             nodeTypes={NODE_TYPES}
-            fitView
-            fitViewOptions={{ padding: 0.1 }}
             nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable
@@ -822,4 +883,3 @@ function deriveAggregatedItems(items: WorkItem[]): WorkItem[] {
       return { ...epic, relationships: rels } as WorkItem;
     });
 }
-

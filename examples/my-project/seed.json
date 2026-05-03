@@ -162,8 +162,8 @@
     { "from_key": "b3", "to_key": "b4", "type": "blocks" },
     { "from_key": "b3", "to_key": "b5", "type": "blocks" },
 
-    { "_comment": "Tiny cycle so the Graph view's cycle highlight has something to render: design-system tokens want layout decisions, but the layout in turn wants tokens.",
+    { "_comment": "Design-system tokens want layout decisions, while the layout also references tokens. Keep one side as a non-blocking relationship so modern bd accepts the graph as a DAG.",
       "from_key": "ds1", "to_key": "f2", "type": "blocks" },
-    { "from_key": "f2",  "to_key": "ds1","type": "blocks" }
+    { "from_key": "f2",  "to_key": "ds1","type": "relates_to" }
   ]
 }

@@ -133,14 +133,76 @@ sudo make uninstall              # removes /usr/local/bin/gemba and the unit
 
 ## Container install
 
-Gemba publishes a multi-arch (linux/amd64 + linux/arm64) container image
-to GitHub Container Registry on every tagged release. The image is built
-with [ko](https://ko.build) — no Dockerfile, distroless base
+Gemba has two container shapes:
+
+| Image | Purpose | Includes |
+| --- | --- | --- |
+| Quickstart | First run, demos, Beads-only exploration | Gemba, `bd`, embedded sample project seeder, writable `/data` volume |
+| Server | Production-style deployment | Gemba only, distroless base, smallest runtime surface |
+
+### Quickstart image
+
+The quickstart image is self-contained so a user can get a populated
+Gemba without installing Go, Node, pnpm, `bd`, or Dolt on the host:
+
+```bash
+make quickstart-run
+```
+
+That builds `Dockerfile.quickstart`, starts Gemba on
+`http://localhost:7666`, seeds the sample project into the named Docker
+volume `gemba-quickstart-data`, and runs in Beads-only mode. The image
+binds `0.0.0.0:7666` inside the container, so it uses token auth by
+default. The token is printed on first start and persisted under the
+`/data` volume as Gemba's normal token hash file.
+
+Equivalent manual commands:
+
+```bash
+docker build -f Dockerfile.quickstart -t gemba-core-quickstart:local .
+docker run --rm -it \
+  -p 7666:7666 \
+  -v gemba-quickstart-data:/data \
+  gemba-core-quickstart:local
+```
+
+Or use Compose:
+
+```bash
+docker compose -f docker-compose.quickstart.yml up --build
+```
+
+Useful environment overrides:
+
+| Env | Default | Purpose |
+| --- | --- | --- |
+| `GEMBA_DATA_DIR` | `/data` | Persistent container data root |
+| `GEMBA_BEADS_DIR` | unset | Use a mounted Beads worktree instead of the seeded demo |
+| `GEMBA_BEADS_URL` | unset | Use a Dolt/MySQL URL instead of local `bd` mode |
+| `GEMBA_BEADS_READ_ONLY` | unset | Set `true` for Beads-read-only mode |
+| `GEMBA_AUTH` | `token` | Auth mode passed to `gemba serve` |
+
+Example with a mounted local Beads project:
+
+```bash
+docker run --rm -it \
+  -p 7666:7666 \
+  -v "$PWD:/work" \
+  -v gemba-quickstart-data:/data \
+  -e GEMBA_BEADS_DIR=/work \
+  gemba-core-quickstart:local
+```
+
+### Minimal server image
+
+Gemba also publishes a multi-arch (linux/amd64 + linux/arm64) container
+image to GitHub Container Registry on every tagged release. The image is
+built with [ko](https://ko.build) — no Dockerfile, distroless base
 (`gcr.io/distroless/static-debian12:nonroot`), ~20MB compressed. The
 SPA is embedded in the binary, so the image is the only artifact you
 need to run.
 
-### Pull
+#### Pull
 
 ```bash
 docker pull ghcr.io/mikebengtson/gemba-server:latest
@@ -152,7 +214,7 @@ Or pin a specific version:
 docker pull ghcr.io/mikebengtson/gemba-server:v0.1.0
 ```
 
-### Run
+#### Run
 
 The image's ENTRYPOINT is the `gemba` binary. The recommended
 invocation binds the server to all interfaces inside the container,
@@ -174,7 +236,7 @@ On first start the server writes a freshly generated bearer token to
 `/var/lib/gemba/auth-token`). Read it with `cat $HOME/.gemba/auth-token`
 and pass it as a `Authorization: Bearer <token>` header on requests.
 
-### Configure
+#### Configure
 
 Operators typically set:
 
@@ -191,7 +253,7 @@ For TLS termination, run gemba behind a reverse proxy (Caddy, nginx,
 Traefik, etc.). Gemba listens HTTP only inside the container; the proxy
 handles certificates.
 
-### Verify
+#### Verify
 
 With the container running, check the capabilities endpoint:
 
@@ -202,7 +264,7 @@ curl -sf http://localhost:7666/api/v1/capabilities | jq .
 A successful 200 with the capabilities JSON confirms the container is
 healthy. The browser UI is served at `http://localhost:7666/`.
 
-### Image signing
+#### Image signing
 
 Each published image is signed with cosign keyless (sigstore) via GitHub
 OIDC. Verify before deploying:
@@ -213,7 +275,7 @@ cosign verify ghcr.io/mikebengtson/gemba-server:v0.1.0 \
   --certificate-oidc-issuer=https://token.actions.githubusercontent.com
 ```
 
-### Building images locally
+#### Building images locally
 
 For testing image config changes without publishing:
 
@@ -222,12 +284,13 @@ make image-build-only   # smoke test (no push, no docker daemon)
 make image-load         # build + load into local docker daemon
 make image              # multi-arch local build (no push)
 make image-push KO_DOCKER_REPO=ghcr.io/<you>/gemba-server   # build + publish
+make quickstart-image   # self-contained quickstart image with bd + sample Beads
 ```
 
 The ko config lives in `.ko.yaml` at the repo root. The release pipeline
 is `.github/workflows/release-image.yml`.
 
-### Limitations
+#### Limitations
 
 - The image is the **plain server** — it does not bundle a docker CLI,
   so the docker-backend agent dispatcher (gm-root.15) cannot run from

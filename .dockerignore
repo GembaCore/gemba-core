@@ -1,0 +1,15 @@
+.git
+.beads
+.gemba/session-manifest.jsonl
+.runtime
+bin
+node_modules
+web/node_modules
+web/dist
+docs-site/node_modules
+docs-site/dist
+testing/e2e/node_modules
+testing/acceptance/temperature-spa/node_modules
+coverage
+*.log
+.DS_Store

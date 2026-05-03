@@ -9,9 +9,8 @@ like populated without wiring their own work tracker first.
 - **`seed.json`** — a `bd create --graph` plan describing one project
   with three milestones (MVP, Beta Release, 1.0 Launch), six epics
   spanning frontend / backend / data / auth / deploy / billing tiers,
-  and ~30 work items with realistic dependency edges (a small cycle
-  on purpose so the Graph view's cycle highlight has something to
-  render; a clear longest path so critical-path mode is non-trivial).
+  and ~30 work items with realistic dependency edges and a clear longest
+  path so critical-path mode is non-trivial.
 - **`load.sh`** — bootstrap a scratch rig at `/tmp/my-project-rig`,
   apply the seed graph, and progress a slice through the workflow so
   the SPA's Board view shows cards in multiple columns.

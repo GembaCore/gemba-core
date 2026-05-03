@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1.7
+#
+# Self-contained Gemba quickstart image.
+#
+# This is intentionally separate from the minimal ko/distroless server
+# image in .ko.yaml. The quickstart image includes the bd CLI and a small
+# entrypoint that seeds examples/my-project into /data so a first-time
+# user can run one Docker command and immediately see a populated Gemba.
+
+ARG NODE_VERSION=22-bookworm
+ARG GO_VERSION=1.25-bookworm
+ARG PYTHON_VERSION=3.12-slim-bookworm
+
+FROM node:${NODE_VERSION} AS web-builder
+WORKDIR /src
+COPY . .
+RUN corepack enable \
+  && pnpm install --frozen-lockfile \
+  && pnpm --filter gemba-web build \
+  && touch web/dist/.keep
+
+FROM golang:${GO_VERSION} AS go-builder
+WORKDIR /src
+COPY . .
+COPY --from=web-builder /src/web/dist ./web/dist
+ARG VERSION=dev
+ARG COMMIT=none
+ARG DATE=unknown
+RUN CGO_ENABLED=0 go build -trimpath \
+  -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+  -o /out/gemba ./cmd/gemba
+
+FROM python:${PYTHON_VERSION} AS runtime
+ARG BEADS_CLI_VERSION=
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates tini git bash \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN if [ -n "${BEADS_CLI_VERSION}" ]; then \
+      python -m pip install --no-cache-dir "beads-cli==${BEADS_CLI_VERSION}"; \
+    else \
+      python -m pip install --no-cache-dir beads-cli; \
+    fi
+
+RUN useradd --create-home --home-dir /home/gemba --uid 10001 --shell /usr/sbin/nologin gemba \
+  && mkdir -p /data /usr/share/gemba/examples/my-project \
+  && chown -R gemba:gemba /data /home/gemba
+
+COPY --from=go-builder /out/gemba /usr/local/bin/gemba
+COPY examples/my-project/seed.json /usr/share/gemba/examples/my-project/seed.json
+COPY deploy/docker/quickstart-entrypoint.sh /usr/local/bin/gemba-quickstart
+RUN chmod 0755 /usr/local/bin/gemba /usr/local/bin/gemba-quickstart
+
+USER gemba
+WORKDIR /data
+ENV HOME=/home/gemba \
+    GEMBA_HOME=/data/gemba-home \
+    GEMBA_DATA_DIR=/data \
+    GEMBA_LISTEN=0.0.0.0:7666 \
+    GEMBA_AUTH=token \
+    GEMBA_DEMO_PREFIX=mp
+VOLUME ["/data"]
+EXPOSE 7666
+
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/gemba-quickstart"]
+CMD ["serve"]

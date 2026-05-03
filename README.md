@@ -111,6 +111,9 @@ edit / delete / state-change actions in a Beads history ledger. Add
 `--beads-read-only` when the same views should be inspection-only:
 Gemba shows a Beads-read-only status pill and rejects every mutation
 before it reaches the Beads adaptor.
+For the lowest-friction trial path, the self-contained Docker
+quickstart image builds Gemba plus `bd`, seeds the sample project, and
+starts Beads-only mode with one command: `make quickstart-run`.
 **Native terminal orchestration is bundled** so operators who want agent
 sessions don't need to install anything extra:
 `gemba serve --orchestration=native` drives tmux / iTerm2 / Terminal.app
@@ -419,6 +422,12 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   inspection-only variant: it implies Beads-only, switches the Status
   pill to **Beads-read-only**, hides write affordances, and hard-blocks
   create/edit/delete/state mutations.
+- **Self-contained Docker quickstart** — `Dockerfile.quickstart`,
+  `docker-compose.quickstart.yml`, and `make quickstart-run` package
+  Gemba with the `bd` CLI and a seeded sample project. A new user can
+  run the container, open `http://localhost:7666`, and explore Flat,
+  Cascade, details, Status, Beads history, and Graph without installing
+  the local developer toolchain.
 - **Codex native agent driver** — `.gemba/agents.toml` can declare a
   `codex` agent type using `binary = "gemba-codex-driver"` and
   `preamble = "codex_exec"`. The driver runs `codex exec --json`,

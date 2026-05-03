@@ -69,9 +69,19 @@ function HelpRegistrar() {
   return null;
 }
 
+function setViewportWidth(width: number) {
+  Object.defineProperty(window, 'innerWidth', {
+    configurable: true,
+    writable: true,
+    value: width,
+  });
+  window.dispatchEvent(new Event('resize'));
+}
+
 describe('RhpShell', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    setViewportWidth(1024);
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -110,6 +120,24 @@ describe('RhpShell', () => {
     render(<App />);
     const shell = screen.getByTestId('rhp-shell');
     expect(shell.dataset.collapsed).toBe('false');
+  });
+
+  it('falls back to the rail when the viewport cannot fit main content and an expanded panel', () => {
+    setViewportWidth(800);
+    function App() {
+      return (
+        <Providers>
+          <HelpRegistrar />
+          <RhpShell />
+        </Providers>
+      );
+    }
+    render(<App />);
+    const shell = screen.getByTestId('rhp-shell');
+    expect(shell.dataset.collapsed).toBe('true');
+    expect(shell.dataset.responsiveCollapsed).toBe('true');
+    expect(screen.queryByTestId('rhp-body')).toBeNull();
+    expect(screen.getByTestId('rhp-tab-help')).toBeTruthy();
   });
 
   it('clicking an icon focuses that tab', () => {
