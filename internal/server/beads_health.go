@@ -83,14 +83,15 @@ func (r *Router) beadsHealthActions(source config.BeadsSource) []beadsHealthActi
 		Label:       "Refresh health",
 		Description: "Re-run the bound Beads adaptor health probe.",
 	}}
-	if source.Kind == "beads-dir" {
+	switch source.Kind {
+	case "beads-dir":
 		actions = append(actions,
 			beadsHealthAction{ID: "dolt-start", Label: "Start Dolt server", Description: "Run bd dolt start in the Beads worktree."},
 			beadsHealthAction{ID: "dolt-test", Label: "Test Dolt connection", Description: "Run bd dolt test in the Beads worktree."},
 			beadsHealthAction{ID: "remote-list", Label: "List remotes", Description: "Run bd dolt remote list to confirm remote configuration."},
 			beadsHealthAction{ID: "doctor-server", Label: "Run server doctor", Description: "Run bd doctor --server --json for structured diagnostics."},
 		)
-	} else if source.Kind == "dolt-url" {
+	case "dolt-url":
 		actions = append(actions, beadsHealthAction{
 			ID:          "remote-test",
 			Label:       "Test remote connection",
