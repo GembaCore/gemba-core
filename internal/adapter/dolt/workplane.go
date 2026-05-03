@@ -413,7 +413,7 @@ func (w *WorkPlane) CreateWorkItem(ctx context.Context, wi core.WorkItem) (core.
 	if err != nil {
 		return core.WorkItem{}, wrapQueryError(err, "issues")
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx,
 		"INSERT INTO issues (id, title, description, design, acceptance_criteria, notes, status, priority, issue_type, assignee, owner, created_at, created_by, updated_at) VALUES (?, ?, ?, '', '', '', ?, ?, ?, ?, ?, ?, ?, ?)",
 		id, wi.Title, desc, status, priority, string(kind), assignee, owner, now, actor, now,
@@ -535,7 +535,7 @@ func (w *WorkPlane) UpdateWorkItem(ctx context.Context, id core.WorkItemID, patc
 	if err != nil {
 		return core.WorkItem{}, wrapQueryError(err, "issues")
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if len(sets) > 0 {
 		args = append(args, native)
 		res, err := tx.ExecContext(ctx,
@@ -628,7 +628,7 @@ func (w *WorkPlane) DeleteWorkItem(ctx context.Context, id core.WorkItemID) (cor
 	if err != nil {
 		return core.WorkItem{}, wrapQueryError(err, "issues")
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	for _, stmt := range []string{
 		"DELETE FROM labels WHERE issue_id = ?",
 		"DELETE FROM dependencies WHERE issue_id = ? OR depends_on_id = ?",
