@@ -98,10 +98,11 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
     // 1. Seed an epic via the bd CLI — the workspace is per-worker
     //    isolated (gm-5v8v.2) so the id we get back is the only
     //    matching card on the board.
+    const targetTitle = 'gm-5v8v.15 dispatch-chain target';
     const created = await bd.create({
       type: 'epic',
       priority: 2,
-      title: 'gm-5v8v.15 dispatch-chain target',
+      title: targetTitle,
     });
     const beadID = created.id;
     const shortID = beadID.split('/').pop() ?? beadID;
@@ -109,8 +110,16 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
     // 2. Sanity: the seeded bead surfaces in /api/work-items.
     const items = await page
       .request.get(`${realServer.baseURL}/api/work-items?limit=200`)
-      .then((r) => r.json() as Promise<{ items: { id: string }[] }>);
-    expect(items.items.find((i) => i.id === beadID), 'seeded bead in /api/work-items').toBeTruthy();
+      .then((r) => r.json() as Promise<{ items: { id: string; title?: string }[] }>);
+    const seeded = items.items.find(
+      (i) =>
+        i.id === beadID ||
+        i.id.endsWith(`/${beadID}`) ||
+        i.id.split('/').pop() === shortID ||
+        i.title === targetTitle,
+    );
+    expect(seeded, 'seeded bead in /api/work-items').toBeTruthy();
+    const apiBeadID = seeded!.id;
 
     // 3. Open the board.
     const network = recordSpawnNetwork(page);
@@ -186,7 +195,13 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
     //    fires the network call. Any PATCH against this bead is fine;
     //    the body should mention the new state_category.
     await expect.poll(() => network.patches.length, { timeout: 10_000 }).toBeGreaterThan(0);
-    const patchHit = network.patches.find((p) => p.url.includes(encodeURIComponent(beadID))) ?? network.patches[0];
+    const patchHit =
+      network.patches.find(
+        (p) =>
+          p.url.includes(encodeURIComponent(apiBeadID)) ||
+          p.url.includes(encodeURIComponent(beadID)) ||
+          p.url.includes(encodeURIComponent(shortID)),
+      ) ?? network.patches[0];
     if (patchHit?.body) {
       expect(patchHit.body, 'PATCH body should set state_category=started').toContain('started');
     }
@@ -238,7 +253,7 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
     const worktree = join(
       homeDir,
       'gt/gemba/crew/worktrees',
-      `bead-${beadID.replace(/\//g, '_')}`,
+      `bead-${apiBeadID.replace(/\//g, '_')}`,
     );
     const evidence = join(worktree, 'hello_world.md');
 

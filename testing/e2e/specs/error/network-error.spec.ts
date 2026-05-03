@@ -42,9 +42,11 @@ test.describe('@error network-error inline alerts', () => {
     await page.goto('/board?layout=list&power=1');
     await expect(page.locator('main')).toBeVisible();
     await expect(page.getByTestId('board-list-error')).toBeVisible();
-    // Shell is still interactive — sidebar links keep working.
-    await page.getByRole('link', { name: 'Board' }).click();
-    await expect(page).toHaveURL(/\/board/);
+    // Shell is still interactive. Settings is intentionally not
+    // workspace-scoped, so it remains clickable when the fake backend
+    // has no active project.
+    await page.getByTestId('sidebar-item-settings').click();
+    await expect(page).toHaveURL(/\/settings/);
   });
 
   test('AdaptorBanner does NOT render on a transient /api/work-items failure', async ({
