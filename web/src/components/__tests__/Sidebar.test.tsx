@@ -10,7 +10,7 @@
 //     caps at "99+", absent from cold-start muted variant
 
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider, type UseQueryResult } from '@tanstack/react-query';
 import { Sidebar } from '../Sidebar';
@@ -348,11 +348,9 @@ describe('Sidebar', () => {
       })
     );
     renderSidebar();
-    // Wait for picker to resolve (Settings is always a link).
-    await screen.findByRole('link', { name: 'Settings' });
-    // The Triage item should be the muted span, not a link.
-    const wrap = document.querySelector('[aria-disabled="true"][data-testid="sidebar-item-escalations"]');
-    expect(wrap).toBeTruthy();
+    // Wait for the project picker to resolve into cold-start mode.
+    await waitFor(() => expect(screen.getByTestId('sidebar-item-escalations').getAttribute('aria-disabled')).toBe('true'));
+    const wrap = screen.getByTestId('sidebar-item-escalations');
     // No badge inside the muted span.
     expect(wrap?.querySelector('[data-testid="sidebar-escalations-badge"]')).toBeNull();
     // No badge anywhere in the document.
