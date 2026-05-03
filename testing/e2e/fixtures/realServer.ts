@@ -137,6 +137,8 @@ export type SpinOptions = {
    * '--pool-config', '/abs/path/pool.toml']).
    */
   serveArgs?: string[];
+  /** Start gemba serve in --beads-only mode. */
+  beadsOnly?: boolean;
 
   /**
    * Optional hook to write workspace-local config before `gemba serve`
@@ -281,6 +283,9 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
   }
   if (opts.dangerouslySkipPermissions) {
     args.push('--dangerously-skip-permissions');
+  }
+  if (opts.beadsOnly) {
+    args.push('--beads-only');
   }
   // gemba serve defaults to --orchestration=native, which auto-detects
   // its terminal backend from TMUX or TERM_PROGRAM. Linux CI runners

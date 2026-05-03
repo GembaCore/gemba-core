@@ -21,6 +21,10 @@ import (
 // restarted with new config).
 type capabilitiesResponse struct {
 	InstanceID         string                                `json:"instance_id"`
+	RuntimeMode        string                                `json:"runtime_mode"`
+	BeadsOnly          bool                                  `json:"beads_only"`
+	BeadsSource        any                                   `json:"beads_source,omitempty"`
+	BeadsHistoryPath   string                                `json:"beads_history_path,omitempty"`
 	WorkPlane          *core.CapabilityManifest              `json:"work_plane"`
 	OrchestrationPlane *core.OrchestrationCapabilityManifest `json:"orchestration_plane"`
 }
@@ -54,7 +58,18 @@ func (r *Router) capabilities(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	resp := capabilitiesResponse{InstanceID: r.instanceID, WorkPlane: &workManifest}
+	mode := "full"
+	if r.cfg.BeadsOnly {
+		mode = "beads_only"
+	}
+	resp := capabilitiesResponse{
+		InstanceID:       r.instanceID,
+		RuntimeMode:      mode,
+		BeadsOnly:        r.cfg.BeadsOnly,
+		BeadsSource:      r.cfg.BeadsSource(),
+		BeadsHistoryPath: r.cfg.BeadsOnlyManifest(),
+		WorkPlane:        &workManifest,
+	}
 	if op := r.host.OrchestrationPlane(); op != nil {
 		orchManifest := op.Describe()
 		resp.OrchestrationPlane = &orchManifest

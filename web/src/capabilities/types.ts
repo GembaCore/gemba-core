@@ -118,6 +118,14 @@ export interface CapabilitiesResponse {
   // Optional in the type so test fixtures can omit it; the real
   // server always populates it. observeInstanceId() ignores undefined.
   instance_id?: string;
+  runtime_mode?: 'full' | 'beads_only';
+  beads_only?: boolean;
+  beads_source?: {
+    kind: string;
+    label?: string;
+    detail?: string;
+  };
+  beads_history_path?: string;
   work_plane: WorkPlaneManifest | null;
   orchestration_plane: OrchestrationManifest | null;
 }

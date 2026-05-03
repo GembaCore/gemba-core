@@ -23,6 +23,7 @@ import {
 import {
   cascadeDispatchWorkItem,
   createWorkItem,
+  deleteWorkItem,
   getWorkItem,
   listWorkItems,
   updateWorkItem,
@@ -187,6 +188,53 @@ export function useUpdateWorkItem(): UseMutationResult<
       // (timestamps, derived signals).
       qc.invalidateQueries({ queryKey: workItemsKeys.detail(vars.id) });
       qc.invalidateQueries({ queryKey: workItemsKeys.list() });
+    },
+  });
+}
+
+export interface DeleteWorkItemVars {
+  id: string;
+  nonce?: string;
+}
+
+export function useDeleteWorkItem(): UseMutationResult<
+  WorkItem,
+  ApiError,
+  DeleteWorkItemVars,
+  { prevDetail: WorkItem | undefined; prevList: WorkItem[] | undefined }
+> {
+  const qc = useQueryClient();
+  return useMutation<
+    WorkItem,
+    ApiError,
+    DeleteWorkItemVars,
+    { prevDetail: WorkItem | undefined; prevList: WorkItem[] | undefined }
+  >({
+    mutationFn: ({ id, nonce }) => deleteWorkItem(id, { nonce }),
+    onMutate: async ({ id }) => {
+      await qc.cancelQueries({ queryKey: workItemsKeys.all });
+      const prevDetail = qc.getQueryData<WorkItem>(workItemsKeys.detail(id));
+      const prevList = qc.getQueryData<WorkItem[]>(workItemsKeys.list());
+      if (prevList) {
+        qc.setQueryData<WorkItem[]>(
+          workItemsKeys.list(),
+          prevList.filter((it) => it.id !== id)
+        );
+      }
+      qc.removeQueries({ queryKey: workItemsKeys.detail(id) });
+      return { prevDetail, prevList };
+    },
+    onError: (_err, vars, ctx) => {
+      if (!ctx) return;
+      if (ctx.prevDetail !== undefined) {
+        qc.setQueryData(workItemsKeys.detail(vars.id), ctx.prevDetail);
+      }
+      if (ctx.prevList !== undefined) {
+        qc.setQueryData(workItemsKeys.list(), ctx.prevList);
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: workItemsKeys.all });
     },
   });
 }

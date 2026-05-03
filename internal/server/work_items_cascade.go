@@ -62,6 +62,11 @@ func (r *Router) cascadeDispatchWorkItem(w http.ResponseWriter, req *http.Reques
 			"adaptor_not_configured", "no WorkPlane adaptor registered")
 		return
 	}
+	if r.cfg.BeadsOnly {
+		httperr.WriteError(w, core.NewAdaptorError(core.KindUnsupported,
+			"cascade dispatch is unavailable in beads-only mode"))
+		return
+	}
 	if r.host.OrchestrationPlane() == nil {
 		httperr.WriteError(w, core.NewAdaptorError(core.KindUnsupported,
 			"orchestration plane not configured"))

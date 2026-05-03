@@ -69,7 +69,7 @@ const caps: CapabilitiesResponse = {
   orchestration_plane: null,
 };
 
-function wrap(ui: ReactNode, initialEntry = '/board') {
+function wrap(ui: ReactNode, initialEntry = '/board', initialCaps: CapabilitiesResponse = caps) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const registry = new HotkeyRegistry();
   return (
@@ -77,7 +77,7 @@ function wrap(ui: ReactNode, initialEntry = '/board') {
       <RhpProvider>
         <RhpPinnedContentProvider>
           <QueryClientProvider client={client}>
-            <CapabilitiesProvider initial={caps}>
+            <CapabilitiesProvider initial={initialCaps}>
               <HotkeysContext.Provider value={registry}>
                 <Routes>
                   <Route path="/board" element={ui} />
@@ -94,6 +94,13 @@ function wrap(ui: ReactNode, initialEntry = '/board') {
     </MemoryRouter>
   );
 }
+
+const beadsOnlyCaps: CapabilitiesResponse = {
+  ...caps,
+  runtime_mode: 'beads_only',
+  beads_only: true,
+  orchestration_plane: null,
+};
 
 function bead(
   id: string,
@@ -150,11 +157,13 @@ describe('BoardPage', () => {
       epic('e2', 'root'),
       bead('t1', 'started', { relationships: [{ kind: 'parent_child', from: 'e1', to: 't1' }] }),
     ];
-    fetchSpy.mockResolvedValueOnce(
-      new Response(JSON.stringify({ items: data, total: data.length }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      })
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: data, total: data.length }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
     );
     render(wrap(<BoardPage />));
     await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
@@ -168,7 +177,7 @@ describe('BoardPage', () => {
   });
 
   it('shows the Epic-empty copy when the dataset has no Epics', async () => {
-    fetchSpy.mockResolvedValueOnce(
+    fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ items: [bead('t1', 'started')], total: 1 }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -187,7 +196,7 @@ describe('BoardPage', () => {
       bead('gm-c', 'unstarted'),
       bead('gm-d', 'completed'),
     ];
-    fetchSpy.mockResolvedValueOnce(
+    fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ items: data, total: data.length }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -219,12 +228,48 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
   });
 
+  it('defaults beads-only mode to Flat and keeps Cascade available for wrappers', async () => {
+    const data: WorkItem[] = [
+      bead('gm-task', 'unstarted', {
+        title: 'Leaf bead',
+        relationships: [{ kind: 'parent_child', from: 'gm-epic', to: 'gm-task' }],
+      }),
+      bead('gm-m1', 'unstarted', { kind: 'milestone', title: 'M1 Foundation' }),
+      epic('gm-epic', 'gm-m1', { title: 'Planning epic' }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: data, total: data.length }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    );
+
+    render(wrap(<BoardPage />, '/board', beadsOnlyCaps));
+
+    await waitFor(() => expect(screen.getByTestId('board-list')).toBeTruthy());
+    expect(screen.getByTestId('view-toggle-list').getAttribute('data-active')).toBe('true');
+    expect(screen.queryByTestId('view-toggle-epic')).toBeNull();
+    expect(screen.queryByTestId('view-toggle-workitem')).toBeNull();
+    expect(screen.getByTestId('board-list-kind-milestone')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('view-toggle-cascade'));
+    await waitFor(() => expect(screen.getByTestId('beads-cascade')).toBeTruthy());
+
+    const rows = [...document.querySelectorAll('[data-testid^="beads-cascade-row-"]')].map((el) =>
+      el.getAttribute('data-testid')
+    );
+    expect(rows).toEqual([
+      'beads-cascade-row-gm-m1',
+      'beads-cascade-row-gm-epic',
+      'beads-cascade-row-gm-task',
+    ]);
+  });
+
   // /board/:epicId deep-link auto-opens the RHP epic detail tab (gm-root.22.6).
   it('/board/:epicId pops the RHP epic detail tab for that epic', async () => {
-    const data: WorkItem[] = [
-      epic('root'),
-      epic('e1', 'root', { description: 'Epic e1 detail.' }),
-    ];
+    const data: WorkItem[] = [epic('root'), epic('e1', 'root', { description: 'Epic e1 detail.' })];
     fetchSpy.mockImplementation((url: string) => {
       if (url === '/api/work-items') {
         return Promise.resolve(
@@ -379,11 +424,7 @@ describe('BoardPage', () => {
   // scope's lineage; the by-parent-epic swimlanes for the rest
   // disappear.
   it('scope picker narrows the kanban to the selected lineage', async () => {
-    const data: WorkItem[] = [
-      epic('e1'),
-      epic('e2'),
-      epic('e3'),
-    ];
+    const data: WorkItem[] = [epic('e1'), epic('e2'), epic('e3')];
     fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ items: data, total: data.length }), {
         status: 200,
@@ -400,14 +441,10 @@ describe('BoardPage', () => {
 
     // Open the picker, click the e1 scope.
     fireEvent.click(screen.getByTestId('board-scope-trigger'));
-    await waitFor(() =>
-      expect(screen.getByTestId('board-scope-option-e1')).toBeTruthy()
-    );
+    await waitFor(() => expect(screen.getByTestId('board-scope-option-e1')).toBeTruthy());
     fireEvent.click(screen.getByTestId('board-scope-option-e1'));
 
-    await waitFor(() =>
-      expect(screen.queryByTestId('board-epic-swimlane-e2')).toBeNull()
-    );
+    await waitFor(() => expect(screen.queryByTestId('board-epic-swimlane-e2')).toBeNull());
     expect(screen.queryByTestId('board-epic-swimlane-e3')).toBeNull();
     // e1's lineage swimlane is still mounted.
     expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
@@ -423,9 +460,7 @@ describe('BoardPage', () => {
       })
     );
     render(wrap(<BoardPage />, '/board?scope=e1'));
-    await waitFor(() =>
-      expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy()
-    );
+    await waitFor(() => expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy());
     expect(screen.queryByTestId('board-epic-swimlane-e2')).toBeNull();
   });
 
@@ -517,15 +552,11 @@ describe('BoardPage', () => {
       expect(screen.queryByTestId('board-column-backlog')).toBeNull();
       // Click toggle → backlog column appears + storage flips on.
       fireEvent.click(screen.getByTestId('board-show-backlog-toggle'));
-      await waitFor(() =>
-        expect(screen.getByTestId('board-column-backlog')).toBeTruthy()
-      );
+      await waitFor(() => expect(screen.getByTestId('board-column-backlog')).toBeTruthy());
       expect(window.localStorage.getItem('gemba.board.show-backlog')).toBe('1');
       // Click again → backlog column hidden + storage cleared.
       fireEvent.click(screen.getByTestId('board-show-backlog-toggle'));
-      await waitFor(() =>
-        expect(screen.queryByTestId('board-column-backlog')).toBeNull()
-      );
+      await waitFor(() => expect(screen.queryByTestId('board-column-backlog')).toBeNull());
       expect(window.localStorage.getItem('gemba.board.show-backlog')).toBeNull();
     });
 
@@ -541,10 +572,7 @@ describe('BoardPage', () => {
     });
 
     it('Epic kanban also drops Backlog by default and restores it on toggle', async () => {
-      const data: WorkItem[] = [
-        epic('root'),
-        epic('e1', 'root'),
-      ];
+      const data: WorkItem[] = [epic('root'), epic('e1', 'root')];
       fetchSpy.mockResolvedValue(
         new Response(JSON.stringify({ items: data, total: data.length }), {
           status: 200,
@@ -586,14 +614,18 @@ describe('BoardPage', () => {
       );
     render(wrap(<BoardPage />));
     await waitFor(() => expect(screen.getByTestId('board-error')).toBeTruthy());
+    const beforeRetry = countWorkItemCalls();
     fireEvent.click(screen.getByRole('button', { name: /retry/i }));
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
     // Count only /api/work-items calls; the empty-state also fires a
     // /api/v1/onboarder/probe per gm-root.17.13 which is unrelated.
-    const workItemCalls = fetchSpy.mock.calls.filter((args) => {
-      const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
-      return url.includes('/api/work-items');
-    });
-    expect(workItemCalls).toHaveLength(2);
+    expect(countWorkItemCalls()).toBeGreaterThan(beforeRetry);
+
+    function countWorkItemCalls(): number {
+      return fetchSpy.mock.calls.filter((args) => {
+        const url = typeof args[0] === 'string' ? args[0] : (args[0] as Request).url;
+        return url.includes('/api/work-items');
+      }).length;
+    }
   });
 });

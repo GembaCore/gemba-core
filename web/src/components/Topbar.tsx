@@ -14,11 +14,13 @@ import { LiveSessionsBadge } from '@/components/sessions/LiveSessionsBadge';
 import { cn } from '@/lib/utils';
 import { ProjectPicker } from '@/components/projectpicker/ProjectPicker';
 import { NewProjectAffordance } from '@/components/projectpicker/NewProjectAffordance';
+import { useCapabilities } from '@/capabilities';
 
 export function Topbar() {
   const { theme, toggle } = useTheme();
   const { setOpen: setPaletteOpen } = usePalette();
   const pm = usePmPanel();
+  const { beadsOnly } = useCapabilities();
   const resolved =
     theme === 'system'
       ? window.matchMedia('(prefers-color-scheme: dark)').matches
@@ -31,7 +33,7 @@ export function Topbar() {
           immediately to the LEFT of the picker. Navigates to /new. */}
       <NewProjectAffordance />
       <ProjectPicker />
-      <LiveSessionsBadge />
+      {!beadsOnly ? <LiveSessionsBadge /> : null}
 
       <button
         type="button"
@@ -51,7 +53,7 @@ export function Topbar() {
       </button>
 
       <div className="ml-auto flex items-center gap-2">
-        <GlobalInFlightCounter />
+        {!beadsOnly ? <GlobalInFlightCounter /> : null}
         <button
           type="button"
           onClick={pm.toggle}

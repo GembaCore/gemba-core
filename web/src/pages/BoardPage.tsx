@@ -4,6 +4,7 @@
 //
 //   ?layout=epic      Epic kanban with swimlanes (default)
 //   ?layout=workitem  flat WorkItem kanban (Cmd-W toggle)
+//   ?layout=cascade   milestone → epic → bead hierarchy
 //   ?layout=list      flat WorkItem list   (former /backlog surface,
 //                     Cmd-Shift-L; gm-e12.19.1)
 //
@@ -22,12 +23,18 @@
 //   /board/:epicId?rhp=workitem:X       → RHP epic + workitem detail tabs stacked
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  useNavigate,
-  useParams,
-  useSearchParams,
-} from 'react-router-dom';
-import { Inbox, LayoutGrid, List, ListChecks, Plus, RotateCcw, Zap } from 'lucide-react';
+  ArrowUpDown,
+  GitBranch,
+  Inbox,
+  LayoutGrid,
+  List,
+  ListChecks,
+  Plus,
+  RotateCcw,
+  Zap,
+} from 'lucide-react';
 import {
   DndContext,
   KeyboardSensor,
@@ -39,6 +46,7 @@ import {
 } from '@dnd-kit/core';
 import { BoardColumn } from '@/components/board/BoardColumn';
 import { BoardListView } from '@/components/board/BoardListView';
+import { BeadsCascadeView } from '@/components/board/BeadsCascadeView';
 import { EpicView } from '@/components/board/EpicView';
 import { EpicDetailRegistration } from '@/components/rhp/details/EpicDetail';
 import { useRhp } from '@/components/rhp/RhpContext';
@@ -53,11 +61,7 @@ import { useEscalations } from '@/hooks/useEscalations';
 import { Link } from 'react-router-dom';
 import { AlertTriangle } from 'lucide-react';
 import { MilestonePicker } from '@/components/board/MilestonePicker';
-import {
-  MILESTONE_ALL,
-  filterByMilestone,
-  type MilestoneID,
-} from '@/components/board/milestone';
+import { MILESTONE_ALL, filterByMilestone, type MilestoneID } from '@/components/board/milestone';
 import {
   cellId,
   resolveRestage,
@@ -85,13 +89,19 @@ import { useHotkey } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 import { groupItemsByBoardColumn, visibleBoardColumns } from '@/components/board/boardColumns';
+import {
+  BOARD_ORDER_OPTIONS,
+  parseBoardOrderKey,
+  sortWorkItems,
+  type BoardOrderKey,
+} from '@/components/board/boardOrder';
+import { useCapabilities } from '@/capabilities';
 
-// LayoutMode aliases the LegacyBoardView union — Board's three
-// kanban+list layouts. Renaming the type-local alias keeps the page
-// vocabulary current ("layout") while the cross-package type stays
-// pinned to the LegacyBoardView name for back-compat with future
-// callers.
-type LayoutMode = LegacyBoardView;
+// LayoutMode extends the legacy board union with Cascade. The
+// cross-package LegacyBoardView type stays pinned to the old three-mode
+// vocabulary for back-compat with named-view defaults.
+type LayoutMode = LegacyBoardView | 'cascade';
+const ORDER_PARAM = 'order';
 
 // Power-mode persistence (gm-uipx.17). The URL is the source of
 // truth (?power=1) so a deep-link or bookmark lands directly in
@@ -147,8 +157,17 @@ function writeStoredShowBacklog(on: boolean): void {
   }
 }
 
-function layoutFromQuery(p: URLSearchParams, view: WorkItemView | null): LayoutMode {
+function layoutFromQuery(
+  p: URLSearchParams,
+  view: WorkItemView | null,
+  beadsOnly: boolean
+): LayoutMode {
   const v = p.get(LAYOUT_PARAM);
+  if (v === 'cascade') return 'cascade';
+  if (beadsOnly) {
+    if (v === 'list') return 'list';
+    return 'list';
+  }
   if (v === 'workitem' || v === 'list' || v === 'epic') return v;
   // No explicit ?layout=: fall back to the active named view's
   // preferred default so /board?view=backlog lands on list mode
@@ -157,11 +176,13 @@ function layoutFromQuery(p: URLSearchParams, view: WorkItemView | null): LayoutM
   return 'epic';
 }
 
+function orderFromQuery(p: URLSearchParams, beadsOnly: boolean): BoardOrderKey {
+  return parseBoardOrderKey(p.get(ORDER_PARAM)) ?? (beadsOnly ? 'id' : 'modified');
+}
+
 function statesFromQuery(p: URLSearchParams): StateCategory[] {
   const all = p.getAll('state_category');
-  return all.filter((s): s is StateCategory =>
-    (STATE_CATEGORIES as readonly string[]).includes(s)
-  );
+  return all.filter((s): s is StateCategory => (STATE_CATEGORIES as readonly string[]).includes(s));
 }
 
 function kindsFromQuery(p: URLSearchParams): string[] {
@@ -189,8 +210,10 @@ export function BoardPage() {
     }
   }, [params, rawParams, setParams]);
 
+  const { beadsOnly } = useCapabilities();
   const view = findView(params.get(VIEW_PARAM));
-  const layout = layoutFromQuery(params, view);
+  const layout = layoutFromQuery(params, view, beadsOnly);
+  const orderKey = orderFromQuery(params, beadsOnly);
 
   // Power-mode resolution. Explicit ?power=1 / ?power=0 in the URL
   // wins; absent that, fall back to the last-used localStorage value
@@ -279,17 +302,33 @@ export function BoardPage() {
   const setLayout = useCallback(
     (next: LayoutMode) => {
       const p = new URLSearchParams(params);
+      if (next === 'cascade') {
+        p.set(LAYOUT_PARAM, next);
+        setParams(p, { replace: true });
+        return;
+      }
       // Drop ?layout= when the choice matches the current default
       // (epic, or whatever the active named view prefers) so the
       // URL stays clean for the common case.
-      const defaultLayout = view
-        ? LEGACY_FROM_LAYOUT[view.defaultLayout]
-        : ('epic' as LayoutMode);
+      const defaultLayout = beadsOnly
+        ? ('list' as LayoutMode)
+        : view
+          ? LEGACY_FROM_LAYOUT[view.defaultLayout]
+          : ('epic' as LayoutMode);
       if (next === defaultLayout) p.delete(LAYOUT_PARAM);
       else p.set(LAYOUT_PARAM, next);
       setParams(p, { replace: true });
     },
-    [params, setParams, view]
+    [beadsOnly, params, setParams, view]
+  );
+
+  const setOrderKey = useCallback(
+    (next: BoardOrderKey) => {
+      const p = new URLSearchParams(params);
+      p.set(ORDER_PARAM, next);
+      setParams(p, { replace: true });
+    },
+    [params, setParams]
   );
 
   const setView = useCallback(
@@ -377,21 +416,28 @@ export function BoardPage() {
   // Cmd-W toggles the kanban granularity (epic ↔ workitem). It does
   // not pivot through list — the list/kanban swap is its own hotkey
   // (Cmd-Shift-L) so the two axes stay independent.
-  const toggleLayout = useCallback(
-    () => setLayout(layout === 'epic' ? 'workitem' : 'epic'),
-    [setLayout, layout]
-  );
+  const toggleLayout = useCallback(() => {
+    if (beadsOnly) {
+      setLayout(layout === 'list' ? 'cascade' : 'list');
+      return;
+    }
+    setLayout(layout === 'epic' ? 'workitem' : 'epic');
+  }, [beadsOnly, setLayout, layout]);
   useHotkey('view-toggle-board', toggleLayout);
 
   const toggleListMode = useCallback(() => {
     if (layout === 'list') {
+      if (beadsOnly) {
+        setLayout('cascade');
+        return;
+      }
       // Returning from list → kanban: prefer epic (the global
       // default) unless the active named view prefers workitem.
       setLayout(view ? LEGACY_FROM_LAYOUT[view.defaultLayout] : 'epic');
     } else {
       setLayout('list');
     }
-  }, [setLayout, layout, view]);
+  }, [beadsOnly, setLayout, layout, view]);
   useHotkey('view-toggle-list', toggleListMode);
 
   const openEpic = useCallback(
@@ -458,16 +504,18 @@ export function BoardPage() {
             }
           }
           if (shouldCascadeDispatch(updated)) {
+            if (beadsOnly) return;
             cascadeDispatch.mutate({ id: updated.id, agent_type: agent });
             return;
           }
           if (shouldAutoStartSession(updated)) {
+            if (beadsOnly) return;
             startSession.mutate({ bead_id: updated.id, agent_type: agent });
           }
         },
       });
     },
-    [itemById, updateWorkItem, cascadeDispatch, startSession, queryClient]
+    [itemById, updateWorkItem, cascadeDispatch, startSession, queryClient, beadsOnly]
   );
 
   // gm-e11.3: build the per-item escalation lookup once, then derive
@@ -496,7 +544,9 @@ export function BoardPage() {
   // loading and error gates only apply to the kanban renderers.
   if (layout !== 'list' && isLoading) return <SkeletonBoard />;
   if (layout !== 'list' && isError)
-    return <ErrorState message={error?.message ?? 'Unknown error.'} onRetry={() => void refetch()} />;
+    return (
+      <ErrorState message={error?.message ?? 'Unknown error.'} onRetry={() => void refetch()} />
+    );
 
   // gm-uekk + gm-l7hy: compose milestone → scope filtering. The
   // unfiltered `data` is still passed to the pickers so their
@@ -504,7 +554,7 @@ export function BoardPage() {
   // selection. Order: milestone narrows first (drops other milestones'
   // subtrees), then scope narrows within that.
   const scopedData = data
-    ? filterByScope(filterByMilestone(data, milestone), scope)
+    ? sortWorkItems(filterByScope(filterByMilestone(data, milestone), scope), orderKey)
     : data;
 
   return (
@@ -524,6 +574,9 @@ export function BoardPage() {
         onChangePower={setPower}
         showBacklog={showBacklog}
         onChangeShowBacklog={setShowBacklog}
+        orderKey={orderKey}
+        onChangeOrder={setOrderKey}
+        beadsOnly={beadsOnly}
         onNewWorkItem={() => setNewItemOpen(true)}
       />
       {bannerCount > 0 && <EscalationBanner count={bannerCount} />}
@@ -539,22 +592,36 @@ export function BoardPage() {
           onSelectWorkItem={(id) => popDetail({ kind: 'workitem', id })}
           power={power}
           scope={scope}
+          orderKey={orderKey}
         />
       ) : !scopedData || scopedData.length === 0 ? (
         <EmptyState onCreate={() => setNewItemOpen(true)} />
+      ) : layout === 'cascade' ? (
+        <BeadsCascadeView
+          items={scopedData}
+          orderKey={orderKey ?? 'id'}
+          onSelect={(item) => {
+            if (item.kind === 'epic') openEpic(item.id);
+            else popDetail({ kind: 'workitem', id: item.id });
+          }}
+        />
       ) : layout === 'epic' ? (
         <EpicView
           items={scopedData}
           onSelectEpic={openEpic}
           showBacklog={showBacklog}
           escalationCounts={escalationCounts}
+          orderKey={orderKey}
         />
       ) : (
         <WorkItemBoard
           data={scopedData}
-          onSelectWorkItem={(id) => { if (id) popDetail({ kind: 'workitem', id }); }}
+          onSelectWorkItem={(id) => {
+            if (id) popDetail({ kind: 'workitem', id });
+          }}
           showBacklog={showBacklog}
           escalationCounts={escalationCounts}
+          orderKey={orderKey}
         />
       )}
       <EpicDetailRegistration />
@@ -589,6 +656,9 @@ interface BoardHeaderProps {
   onChangePower: (next: boolean) => void;
   showBacklog: boolean;
   onChangeShowBacklog: (next: boolean) => void;
+  orderKey: BoardOrderKey | null;
+  onChangeOrder: (next: BoardOrderKey) => void;
+  beadsOnly: boolean;
   onNewWorkItem: () => void;
 }
 function BoardHeader({
@@ -606,6 +676,9 @@ function BoardHeader({
   onChangePower,
   showBacklog,
   onChangeShowBacklog,
+  orderKey,
+  onChangeOrder,
+  beadsOnly,
   onNewWorkItem,
 }: BoardHeaderProps) {
   return (
@@ -622,6 +695,7 @@ function BoardHeader({
       />
       <ViewSwitcher value={view} onChange={onChangeView} />
       <div className="ml-auto flex items-center gap-1">
+        <OrderSelect value={orderKey ?? 'modified'} onChange={onChangeOrder} />
         <button
           type="button"
           data-testid="board-new-workitem"
@@ -633,23 +707,34 @@ function BoardHeader({
         </button>
         <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
         <ToggleButton
-          active={layout === 'epic'}
-          onClick={() => onChangeLayout('epic')}
-          label="Epic"
-          icon={<LayoutGrid className="h-3 w-3" />}
-          testid="view-toggle-epic"
+          active={layout === 'cascade'}
+          onClick={() => onChangeLayout('cascade')}
+          label="Cascade"
+          icon={<GitBranch className="h-3 w-3" />}
+          testid="view-toggle-cascade"
         />
-        <ToggleButton
-          active={layout === 'workitem'}
-          onClick={() => onChangeLayout('workitem')}
-          label="Item"
-          icon={<ListChecks className="h-3 w-3" />}
-          testid="view-toggle-workitem"
-        />
+        {!beadsOnly ? (
+          <>
+            <ToggleButton
+              active={layout === 'epic'}
+              onClick={() => onChangeLayout('epic')}
+              label="Epic"
+              icon={<LayoutGrid className="h-3 w-3" />}
+              testid="view-toggle-epic"
+            />
+            <ToggleButton
+              active={layout === 'workitem'}
+              onClick={() => onChangeLayout('workitem')}
+              label="Item"
+              icon={<ListChecks className="h-3 w-3" />}
+              testid="view-toggle-workitem"
+            />
+          </>
+        ) : null}
         <ToggleButton
           active={layout === 'list'}
           onClick={() => onChangeLayout('list')}
-          label="List"
+          label={beadsOnly ? 'Flat' : 'List'}
           icon={<List className="h-3 w-3" />}
           testid="view-toggle-list"
         />
@@ -664,7 +749,7 @@ function BoardHeader({
               testid="board-power-toggle"
             />
           </>
-        ) : (
+        ) : !beadsOnly ? (
           <>
             <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
             <ToggleButton
@@ -675,7 +760,7 @@ function BoardHeader({
               testid="board-show-backlog-toggle"
             />
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -712,6 +797,31 @@ function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
         </button>
       ))}
     </div>
+  );
+}
+
+interface OrderSelectProps {
+  value: BoardOrderKey;
+  onChange: (next: BoardOrderKey) => void;
+}
+function OrderSelect({ value, onChange }: OrderSelectProps) {
+  return (
+    <label className="inline-flex items-center gap-1 text-neutral-500">
+      <ArrowUpDown className="h-3 w-3" aria-hidden />
+      <span>Order</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as BoardOrderKey)}
+        className="h-7 rounded border border-neutral-300 bg-white px-1.5 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+        data-testid="board-order-select"
+      >
+        {BOARD_ORDER_OPTIONS.map((option) => (
+          <option key={option.key} value={option.key}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -772,12 +882,14 @@ interface WorkItemBoardProps {
   onSelectWorkItem: (id: string | null) => void;
   showBacklog: boolean;
   escalationCounts?: Map<string, number>;
+  orderKey?: BoardOrderKey | null;
 }
 function WorkItemBoard({
   data,
   onSelectWorkItem,
   showBacklog,
   escalationCounts,
+  orderKey,
 }: WorkItemBoardProps) {
   const columns = visibleBoardColumns(showBacklog);
   const groups = useMemo(() => groupItemsByBoardColumn(data, columns), [data, columns]);
@@ -793,6 +905,7 @@ function WorkItemBoard({
           droppableID={cellId('workitem', col.dropState)}
           draggable
           escalationCounts={escalationCounts}
+          orderKey={orderKey}
         />
       ))}
     </div>

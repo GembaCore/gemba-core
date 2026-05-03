@@ -18,15 +18,9 @@
 import { useMemo } from 'react';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import {
-  type WorkItem,
-} from '@/types/core.gen';
+import { type WorkItem } from '@/types/core.gen';
 import { EpicCard, type EpicChildCounts } from './EpicCard';
-import {
-  groupEpicsByRoot,
-  ORPHAN_ROOT_ID,
-  type EpicSwimlane,
-} from './epicHierarchy';
+import { groupEpicsByRoot, ORPHAN_ROOT_ID, type EpicSwimlane } from './epicHierarchy';
 import { cellId } from './dragToRestage';
 import { buildMilestoneByEpic } from './milestoneBadge';
 import {
@@ -34,6 +28,7 @@ import {
   visibleBoardColumns,
   type BoardDisplayColumn,
 } from './boardColumns';
+import { compareWorkItemsByOrder, sortWorkItems, type BoardOrderKey } from './boardOrder';
 
 export interface EpicViewProps {
   items: WorkItem[];
@@ -45,6 +40,7 @@ export interface EpicViewProps {
   // Open-escalation count by work-item id (gm-e11.3). Threaded by the
   // page so each card's badge lookup is O(1).
   escalationCounts?: Map<string, number>;
+  orderKey?: BoardOrderKey | null;
 }
 
 export function EpicView({
@@ -52,13 +48,16 @@ export function EpicView({
   onSelectEpic,
   showBacklog = false,
   escalationCounts,
+  orderKey,
 }: EpicViewProps) {
   // gm-uekk: scope filtering happens in the page; the view always
   // groups by-parent-epic. When scope is set, items is already
   // narrowed and naturally collapses to a single swimlane.
   const swimlanes = useMemo(() => {
-    return groupEpicsByRoot(items);
-  }, [items]);
+    const lanes = groupEpicsByRoot(items);
+    if (!orderKey) return lanes;
+    return [...lanes].sort((a, b) => compareWorkItemsByOrder(orderKey, a.root, b.root));
+  }, [items, orderKey]);
   const childCountsByEpic = useMemo(() => buildChildCounts(items), [items]);
   // gm-4se1: resolve each epic's milestone ancestor once per render so
   // the cards don't re-walk the relationship graph individually.
@@ -85,10 +84,7 @@ export function EpicView({
   }
 
   return (
-    <div
-      data-testid="board-epic"
-      className="flex h-full flex-col overflow-y-auto"
-    >
+    <div data-testid="board-epic" className="flex h-full flex-col overflow-y-auto">
       <ColumnHeader columns={columns} />
       <div className="flex flex-col">
         {swimlanes.map((s) => (
@@ -100,6 +96,7 @@ export function EpicView({
             milestoneByEpic={milestoneByEpic}
             escalationCounts={escalationCounts}
             onSelectEpic={onSelectEpic}
+            orderKey={orderKey}
           />
         ))}
       </div>
@@ -134,6 +131,7 @@ interface SwimlaneRowProps {
   milestoneByEpic: Map<string, WorkItem>;
   escalationCounts?: Map<string, number>;
   onSelectEpic: (id: string) => void;
+  orderKey?: BoardOrderKey | null;
 }
 
 function SwimlaneRow({
@@ -143,6 +141,7 @@ function SwimlaneRow({
   milestoneByEpic,
   escalationCounts,
   onSelectEpic,
+  orderKey,
 }: SwimlaneRowProps) {
   const isOrphan = swimlane.root.id === ORPHAN_ROOT_ID;
   // gm-uekk: scope-driven filtering may leave only one swimlane —
@@ -176,7 +175,7 @@ function SwimlaneRow({
       <div className="flex gap-3">
         {columns.map((col) => (
           <DroppableCell key={col.id} rootID={swimlane.root.id} column={col}>
-            {byColumn[col.id].map((epicItem) => (
+            {sortWorkItems(byColumn[col.id], orderKey).map((epicItem) => (
               <DraggableEpicCard
                 key={epicItem.id}
                 item={epicItem}
@@ -238,7 +237,9 @@ function DraggableEpicCard({
   escalationCount,
   onSelect,
 }: DraggableEpicCardProps) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: item.id,
+  });
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.85 : undefined,

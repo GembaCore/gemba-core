@@ -124,6 +124,12 @@ All writes shell out to the public `bd` CLI. The adaptor never touches
 versions, and the CLI is the stable contract. This rule is asserted by
 conformance group F.
 
+Create and edit map to `bd create` and `bd update`. Hard delete is
+available as a Beads-specific extension through `bd delete <id>
+--force`; Gemba reserves that for explicit delete actions in Beads
+management surfaces. Closing finished work remains a state transition
+through `bd update` / `bd close`, not a delete.
+
 ## Cross-process mutations — the post-write hook (gm-e4.3.3)
 
 `bd` mutations made *outside* the running `gemba serve` process — a

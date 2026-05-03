@@ -69,6 +69,37 @@ func TestServe_DoltURLFlagAccepted(t *testing.T) {
 	}
 }
 
+func TestServe_BeadsOnlyFlagsAccepted(t *testing.T) {
+	cmd := newServeCmd(BuildInfo{})
+	for _, name := range []string{"beads-only", "beads-url", "beads-history"} {
+		if cmd.Flags().Lookup(name) == nil {
+			t.Fatalf("--%s flag missing from serve command", name)
+		}
+	}
+}
+
+func TestServeEnvDefaults_BeadsOnly(t *testing.T) {
+	t.Setenv("GEMBA_MODE", "beads_only")
+	t.Setenv("GEMBA_BEADS_URL", "mysql://root@127.0.0.1:3307/gemba")
+	t.Setenv("GEMBA_BEADS_ONLY_MANIFEST", "/tmp/gemba-history.jsonl")
+
+	cfg := config.ServeConfig{}
+	applyServeEnvDefaults(&cfg)
+
+	if !cfg.BeadsOnly {
+		t.Fatal("GEMBA_MODE=beads_only did not enable BeadsOnly")
+	}
+	if cfg.DoltURL != "mysql://root@127.0.0.1:3307/gemba" {
+		t.Fatalf("DoltURL = %q", cfg.DoltURL)
+	}
+	if cfg.BeadsOnlyManifestPath != "/tmp/gemba-history.jsonl" {
+		t.Fatalf("BeadsOnlyManifestPath = %q", cfg.BeadsOnlyManifestPath)
+	}
+	if shouldProbeBd(cfg) {
+		t.Fatal("beads-only URL mode should not require bd")
+	}
+}
+
 // TestServe_OrchestrationDefaultsToNative pins the flag default. A
 // fresh `gemba serve` MUST register the native orchestration plane
 // so /coach + /api/operational-context return data without the

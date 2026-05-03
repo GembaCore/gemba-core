@@ -74,6 +74,17 @@ type ServeConfig struct {
 	// When set, --orchestration is forced to "noop".
 	Noop bool
 
+	// BeadsOnly, when true, runs Gemba as a Beads viewer/manager without
+	// binding an OrchestrationPlane or requiring a project. Mutating Beads
+	// actions append an informational JSONL manifest instead of dispatching
+	// sessions.
+	BeadsOnly bool
+
+	// BeadsOnlyManifestPath optionally overrides the JSONL manifest path
+	// used by BeadsOnly mode. Empty defaults to .gemba/session-manifest.jsonl
+	// under BeadsDir when available, otherwise the current working directory.
+	BeadsOnlyManifestPath string
+
 	// ConfigPath is an explicit gemba.toml override. Empty means "probe
 	// the standard locations." File loading lands with a later bead;
 	// serve threads the path through today so the flag surface is stable.
@@ -388,6 +399,32 @@ func (c ServeConfig) BeadsSource() BeadsSource {
 		return BeadsSource{Kind: "dolt-url", Label: db, Detail: u.String()}
 	}
 	return BeadsSource{Kind: "unconfigured"}
+}
+
+// BeadsOnlyManifest resolves the append-only JSONL ledger path for
+// Beads-only mode. The path is still returned when BeadsOnly=false so
+// status/config endpoints can show a stable default in tests; callers
+// decide whether to use it.
+func (c ServeConfig) BeadsOnlyManifest() string {
+	if c.BeadsOnlyManifestPath != "" {
+		if filepath.IsAbs(c.BeadsOnlyManifestPath) {
+			return c.BeadsOnlyManifestPath
+		}
+		if abs, err := filepath.Abs(c.BeadsOnlyManifestPath); err == nil {
+			return abs
+		}
+		return filepath.Clean(c.BeadsOnlyManifestPath)
+	}
+	base := c.BeadsDir
+	if base == "" {
+		if cwd, err := os.Getwd(); err == nil {
+			base = cwd
+		}
+	}
+	if base == "" {
+		return filepath.Join(".gemba", "session-manifest.jsonl")
+	}
+	return filepath.Join(base, ".gemba", "session-manifest.jsonl")
 }
 
 // listenDisplay formats Listen+Port the way it would appear on the command

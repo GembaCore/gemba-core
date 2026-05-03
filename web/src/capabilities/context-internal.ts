@@ -9,6 +9,10 @@ import type { OrchestrationManifest, WorkPlaneManifest } from './types';
 export interface CapabilityState {
   workPlane: WorkPlaneManifest | null;
   orchestrationPlane: OrchestrationManifest | null;
+  runtimeMode: 'full' | 'beads_only';
+  beadsOnly: boolean;
+  beadsSource: { kind: string; label?: string; detail?: string } | null;
+  beadsHistoryPath: string;
   // loading: true on the very first fetch only; subsequent background
   // refetches keep the last known manifest visible so the UI doesn't
   // flicker between "hidden" and "shown" during a re-poll.

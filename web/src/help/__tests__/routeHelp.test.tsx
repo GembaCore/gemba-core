@@ -9,8 +9,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 
+import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import { RouteHelp as BoardHelp } from '../BoardHelp';
 import { RouteHelp as WalkHelp } from '../WalkHelp';
 import { RouteHelp as EscalationsHelp } from '../EscalationsHelp';
@@ -21,12 +23,31 @@ import { RouteHelp as ColdStartHelp } from '../ColdStartHelp';
 import { RouteHelp as DefaultHelp } from '../DefaultHelp';
 import { resolveHelpComponent } from '../index';
 
+const caps: CapabilitiesResponse = {
+  work_plane: {
+    adaptor_name: 'fake',
+    adaptor_version: '0.1.0',
+    protocol_version: '0.1.0',
+    transport: 'api',
+    state_map: { open: 'unstarted' },
+    sprint_native: false,
+    token_budget_enforced: false,
+    evidence_synthesis_required: false,
+  },
+  orchestration_plane: null,
+};
+
 // Render a help component inside a MemoryRouter (required because
 // modules use <Link> from react-router-dom).
 function renderHelp(Component: React.ComponentType, path = '/') {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <Component />
+      <QueryClientProvider client={client}>
+        <CapabilitiesProvider initial={caps}>
+          <Component />
+        </CapabilitiesProvider>
+      </QueryClientProvider>
     </MemoryRouter>
   );
 }

@@ -103,6 +103,11 @@ The only hard requirement is a **data plane**.
 [Beads](https://github.com/MikeBengtson/beads) fulfills that out of the
 box, so the minimum working deployment is `gemba serve` and a browser
 pointed at it — no orchestrator, no scheduling infrastructure required.
+For teams that only need Beads viewing and management, `gemba serve
+--beads-only` starts a deliberately smaller mode: no project, GitHub, or
+agent runtime required. It opens the Beads board in a Flat list by
+default, keeps Cascade and Graph views available, and records create /
+edit / delete / state-change actions in a Beads history ledger.
 **Native terminal orchestration is bundled** so operators who want agent
 sessions don't need to install anything extra:
 `gemba serve --orchestration=native` drives tmux / iTerm2 / Terminal.app
@@ -396,6 +401,16 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   `diverged`), and GitNexus analysis freshness against the checked-out
   `HEAD`. Dirty worktrees mark analysis stale because the graph cannot
   include uncommitted source.
+- **Beads-only mode** (`gm-etq2` / `gm-4u4l`) — `gemba serve
+  --beads-only` runs Gemba as a Beads viewer and manager without a
+  project or orchestration plane. The board starts in **Flat** view with
+  milestones, epics, decision beads, and work beads in one ordered list;
+  **Cascade** shows the wrapper hierarchy; the shared **Order** control
+  sorts by modified, created, edited, or ID; Graph remains available.
+  Status shows Beads health and remote setup actions, while the RHP adds
+  a **Beads history** tab backed by a JSONL session manifest. Create,
+  edit, hard-delete, milestone wrapper, decision tag, and milestone tag
+  authoring all stay available.
 - **Codex native agent driver** — `.gemba/agents.toml` can declare a
   `codex` agent type using `binary = "gemba-codex-driver"` and
   `preamble = "codex_exec"`. The driver runs `codex exec --json`,

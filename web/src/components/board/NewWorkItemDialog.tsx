@@ -9,13 +9,13 @@
 // until the form is submittable. Server 400s surface inline.
 
 import { useEffect, useState } from 'react';
-import { useCreateWorkItem } from '@/hooks/useWorkItems';
+import { useCreateWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import type { WorkItem } from '@/types/core.gen';
 
 // Kinds bd's CLI recognises today. Presented as a select; the server
 // still accepts any string so an adaptor-specific kind works by typing
 // into the "Other…" freeform slot.
-const COMMON_KINDS = ['task', 'feature', 'bug', 'epic', 'chore', 'decision'] as const;
+const COMMON_KINDS = ['task', 'feature', 'bug', 'epic', 'milestone', 'chore', 'decision'] as const;
 
 const PRIORITY_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: 'P0 (highest)' },
@@ -49,7 +49,9 @@ export function NewWorkItemDialog({
   const [kind, setKind] = useState<string>('task');
   const [priority, setPriority] = useState<number>(2);
   const [description, setDescription] = useState('');
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const create = useCreateWorkItem();
+  const { data: existingItems = [] } = useWorkItems();
 
   // Reset on close transitions. `create` is intentionally not in the
   // deps: useMutation returns a fresh object every render so including
@@ -63,13 +65,20 @@ export function NewWorkItemDialog({
       setKind('task');
       setPriority(2);
       setDescription('');
+      setSelectedLabels([]);
       createReset();
     }
   }, [open, createReset]);
 
+  useEffect(() => {
+    if (!open || title.trim() !== '') return;
+    const prefix = nextPrefix(kind, parentId, existingItems);
+    if (prefix) setTitle(`${prefix} `);
+  }, [open, kind, parentId, existingItems, title]);
+
   if (!open) return null;
 
-  const canSubmit = title.trim().length > 0 && !create.isPending;
+  const canSubmit = hasAuthoredTitle(title) && !create.isPending;
 
   const submit = () => {
     if (!canSubmit) return;
@@ -81,6 +90,7 @@ export function NewWorkItemDialog({
           status: 'open',
           state_category: 'backlog',
           priority,
+          labels: selectedLabels.length > 0 ? selectedLabels : undefined,
           description: description.trim() || undefined,
           relationships: parentId
             ? [{ kind: 'parent_child', from: parentId, to: '' }]
@@ -133,10 +143,11 @@ export function NewWorkItemDialog({
         </label>
         <input
           type="text"
+          aria-label="Title"
           autoFocus
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="What needs doing?"
+          placeholder={suggestedTitle(kind, parentId, existingItems)}
           className="mb-4 w-full rounded-md border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-800"
         />
 
@@ -175,6 +186,16 @@ export function NewWorkItemDialog({
           </div>
         </div>
 
+        <TagPills
+          items={existingItems}
+          selected={selectedLabels}
+          onToggle={(label) =>
+            setSelectedLabels((cur) =>
+              cur.includes(label) ? cur.filter((v) => v !== label) : [...cur, label]
+            )
+          }
+        />
+
         <label className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-400">
           Description (optional)
         </label>
@@ -212,4 +233,90 @@ export function NewWorkItemDialog({
       </div>
     </div>
   );
+}
+
+function TagPills({
+  items,
+  selected,
+  onToggle,
+}: {
+  items: WorkItem[];
+  selected: string[];
+  onToggle: (label: string) => void;
+}) {
+  const tags = items
+    .filter((item) => item.kind === 'milestone' || item.kind === 'decision')
+    .slice(0, 12)
+    .map((item) => ({
+      label: `${item.kind}:${item.id}`,
+      title: item.title || item.id,
+      kind: item.kind,
+    }));
+  if (tags.length === 0) return null;
+  return (
+    <div className="mb-4">
+      <div className="mb-1 text-xs font-medium text-neutral-600 dark:text-neutral-400">
+        Tags
+      </div>
+      <div className="flex flex-wrap gap-1.5" data-testid="new-workitem-tag-pills">
+        {tags.map((tag) => {
+          const active = selected.includes(tag.label);
+          return (
+            <button
+              key={tag.label}
+              type="button"
+              data-active={active || undefined}
+              onClick={() => onToggle(tag.label)}
+              className={
+                active
+                  ? 'rounded-full bg-cyan-700 px-2 py-0.5 text-xs text-white'
+                  : 'rounded-full border border-neutral-300 px-2 py-0.5 text-xs text-neutral-600 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800'
+              }
+            >
+              {tag.kind}: {tag.title}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function suggestedTitle(kind: string, parentId: string | undefined, items: WorkItem[]): string {
+  const prefix = nextPrefix(kind, parentId, items);
+  if (!prefix) return 'What needs doing?';
+  return `${prefix} short title`;
+}
+
+function nextPrefix(kind: string, parentId: string | undefined, items: WorkItem[]): string {
+  const normalized = kind.toLowerCase();
+  if (normalized === 'milestone') return `M${nextNumber(items, /^M(\d+)[:\s-]/i)}:`;
+  if (normalized === 'epic') return `E${nextNumber(items, /^E(\d+)[:\s-]/i)}:`;
+  if (normalized === 'decision') return `D${nextNumber(items, /^D(\d+)[:\s-]/i)}:`;
+  if (parentId) {
+    const children = items.filter((item) =>
+      (item.relationships ?? []).some(
+        (rel) => rel.kind === 'parent_child' && rel.from === parentId && rel.to === item.id
+      )
+    );
+    return `W${children.length + 1}:`;
+  }
+  return '';
+}
+
+function hasAuthoredTitle(title: string): boolean {
+  const trimmed = title.trim();
+  if (!trimmed) return false;
+  return !/^[A-Z]+\d+:\s*$/i.test(trimmed);
+}
+
+function nextNumber(items: WorkItem[], re: RegExp): number {
+  let max = 0;
+  for (const item of items) {
+    const m = item.title.match(re);
+    if (!m) continue;
+    const n = Number.parseInt(m[1] ?? '', 10);
+    if (Number.isFinite(n)) max = Math.max(max, n);
+  }
+  return max + 1;
 }

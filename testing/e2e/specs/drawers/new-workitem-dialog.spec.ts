@@ -38,7 +38,7 @@ test.describe('NewWorkItemDialog @route', () => {
     const create = dialog.getByRole('button', { name: 'Create' });
     await expect(create).toBeDisabled();
 
-    await dialog.getByPlaceholder('What needs doing?').fill('A new task');
+    await dialog.getByRole('textbox', { name: 'Title' }).fill('A new task');
     await expect(create).toBeEnabled();
   });
 

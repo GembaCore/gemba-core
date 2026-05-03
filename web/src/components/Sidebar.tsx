@@ -11,6 +11,7 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useProjectPicker } from './projectpicker/ProjectPickerContext';
 import { useEscalations } from '@/hooks/useEscalations';
+import { useCapabilities } from '@/capabilities';
 
 // Six first-order panes per the 2026-04-28 ratification (gm-e12.19,
 // second amendment). Secondary surfaces — Backlog, Sprints, Coach,
@@ -119,6 +120,7 @@ function EscalationBadge() {
 
 export function Sidebar() {
   const { activeProject, isLoading } = useProjectPicker();
+  const { beadsOnly } = useCapabilities();
   // Cold-start = picker has finished its initial fetch and there is no
   // active project. Suppress the muted state during the initial fetch
   // so the sidebar doesn't flicker between muted and active.
@@ -130,23 +132,28 @@ export function Sidebar() {
         <span className="font-semibold tracking-tight">Gemba</span>
       </div>
       <nav className="flex flex-col gap-0.5 p-2" data-testid="sidebar-nav">
-        {items.map((item) => (
-          <NavItem key={item.to} item={item} coldStart={coldStart} />
+        {items.filter((item) => visibleInMode(item, beadsOnly)).map((item) => (
+          <NavItem key={item.to} item={item} coldStart={coldStart} beadsOnly={beadsOnly} />
         ))}
       </nav>
       <div className="mt-auto flex flex-col gap-0.5 border-t border-neutral-200 p-2 dark:border-neutral-800">
-        {secondaryItems.map((item) => (
-          <NavItem key={item.to} item={item} coldStart={coldStart} />
+        {secondaryItems.filter((item) => visibleInMode(item, beadsOnly)).map((item) => (
+          <NavItem key={item.to} item={item} coldStart={coldStart} beadsOnly={beadsOnly} />
         ))}
       </div>
     </aside>
   );
 }
 
-function NavItem({ item, coldStart }: { item: Item; coldStart: boolean }) {
+function visibleInMode(item: Item, beadsOnly: boolean): boolean {
+  if (!beadsOnly) return true;
+  return item.to === '/board' || item.to === '/refine' || item.to === '/settings';
+}
+
+function NavItem({ item, coldStart, beadsOnly }: { item: Item; coldStart: boolean; beadsOnly: boolean }) {
   const { to, label, Icon, workspaceScoped } = item;
   const { pathname } = useLocation();
-  const muted = coldStart && Boolean(workspaceScoped);
+  const muted = !beadsOnly && coldStart && Boolean(workspaceScoped);
   const testId = `sidebar-item-${to.replace(/^\//, '')}`;
   const isEscalations = to === '/escalations';
   const active = isActivePath(pathname, item);

@@ -16,19 +16,16 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { Search, Upload } from 'lucide-react';
-import { useFilteredWorkItems, useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { useDeleteWorkItem, useFilteredWorkItems, useUpdateWorkItem } from '@/hooks/useWorkItems';
 import { WorkItemGrid, type BulkAction } from '@/components/grid/WorkItemGrid';
 import { BulkEditDialog } from '@/components/grid/BulkEditDialog';
 import { JsonlImportDialog } from '@/components/grid/JsonlImportDialog';
 import type { WorkItemListFilter, WorkItemPatch } from '@/api/workItems';
-import {
-  applyView,
-  type ViewContext,
-  type WorkItemView,
-} from '@/lib/workItemViews';
+import { applyView, type ViewContext, type WorkItemView } from '@/lib/workItemViews';
 import { lineageIDs, SCOPE_ALL } from '@/components/board/scope';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+import { sortWorkItems, type BoardOrderKey } from './boardOrder';
 
 // Storage key for the power-mode column-visibility presets. Renamed
 // from `gemba.grid.column-presets` to drop the dead-route prefix; an
@@ -37,7 +34,7 @@ import { cn } from '@/lib/utils';
 // migration code carrying its own bug surface).
 const POWER_PRESETS_STORAGE_KEY = 'gemba.board.column-presets';
 
-const KIND_CHIPS = ['task', 'bug', 'epic'] as const;
+const KIND_CHIPS = ['milestone', 'epic', 'feature', 'task', 'bug'] as const;
 
 const STATE_LABELS: Record<StateCategory, string> = {
   backlog: 'Backlog',
@@ -66,6 +63,7 @@ export interface BoardListViewProps {
   // gm-uekk: optional scope id (e.g. an epic) to narrow the rows to
   // its lineage. SCOPE_ALL or undefined = no narrowing.
   scope?: string;
+  orderKey?: BoardOrderKey | null;
 }
 
 export function BoardListView({
@@ -80,8 +78,10 @@ export function BoardListView({
   viewContext,
   power = false,
   scope,
+  orderKey,
 }: BoardListViewProps) {
   const updateWorkItem = useUpdateWorkItem();
+  const deleteWorkItem = useDeleteWorkItem();
   const [importOpen, setImportOpen] = useState(false);
   const [bulkEdit, setBulkEdit] = useState<{ ids: string[] } | null>(null);
 
@@ -107,14 +107,14 @@ export function BoardListView({
       } else if (action === 'defer') {
         applyBulkPatch(ids, { state_category: 'backlog' });
       } else if (action === 'delete') {
-        // No DELETE endpoint on the work-item surface yet; stub by
-        // marking canceled so the operator's intent is recorded
-        // without dropping data. Replace once a destructive endpoint
-        // lands.
-        applyBulkPatch(ids, { state_category: 'canceled' });
+        const noun = ids.length === 1 ? 'bead' : 'beads';
+        if (!window.confirm(`Permanently delete ${ids.length} ${noun}?`)) return;
+        for (const id of ids) {
+          deleteWorkItem.mutate({ id });
+        }
       }
     },
-    [applyBulkPatch]
+    [applyBulkPatch, deleteWorkItem]
   );
   // Effective filter = explicit chips, falling back to the named
   // view's base filter when the operator hasn't touched a chip. Once
@@ -125,11 +125,7 @@ export function BoardListView({
   // render (which would invalidate the apiFilter useMemo below).
   const effectiveStates = useMemo(
     () =>
-      stateCategories.length > 0
-        ? stateCategories
-        : view
-          ? view.baseFilter.state_category
-          : [],
+      stateCategories.length > 0 ? stateCategories : view ? view.baseFilter.state_category : [],
     [stateCategories, view]
   );
   const effectiveKinds = useMemo(
@@ -159,8 +155,8 @@ export function BoardListView({
     }
     const needle = search.trim().toLowerCase();
     if (needle) rows = rows.filter((it) => it.title.toLowerCase().includes(needle));
-    return rows;
-  }, [data, search, view, viewContext, scope]);
+    return sortWorkItems(rows, orderKey);
+  }, [data, search, view, viewContext, scope, orderKey]);
 
   const toggleArrayValue = <T extends string>(arr: T[], value: T): T[] =>
     arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
@@ -176,9 +172,7 @@ export function BoardListView({
             <Chip
               key={sc}
               active={effectiveStates.includes(sc)}
-              onClick={() =>
-                onChangeStateCategories(toggleArrayValue(effectiveStates, sc))
-              }
+              onClick={() => onChangeStateCategories(toggleArrayValue(effectiveStates, sc))}
               testid={`board-list-state-${sc}`}
             >
               {STATE_LABELS[sc]}
@@ -241,10 +235,7 @@ export function BoardListView({
             {error.message}
           </div>
         ) : filtered.length === 0 ? (
-          <div
-            className="p-6 text-sm text-neutral-500"
-            data-testid="board-list-empty"
-          >
+          <div className="p-6 text-sm text-neutral-500" data-testid="board-list-empty">
             No work items match the current filters.
           </div>
         ) : (

@@ -23,9 +23,25 @@
 
 import type { WorkItem } from '../../../web/src/types/core.gen';
 
+export interface FakeBeadsHistoryEvent {
+  event_id: string;
+  occurred_at: string;
+  actor: string;
+  mode: 'beads_only';
+  action: string;
+  entity: { type: string; id: string; title?: string };
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  summary: string;
+}
+
 export interface WorkPlaneStore {
   seed(items: WorkItem[]): void;
   add(item: WorkItem): void;
+  update(id: string, patch: Partial<WorkItem>): WorkItem | undefined;
+  remove(id: string): WorkItem | undefined;
+  addHistory(event: FakeBeadsHistoryEvent): void;
+  history(): FakeBeadsHistoryEvent[];
   get(id: string): WorkItem | undefined;
   list(): WorkItem[];
   clear(): void;
@@ -33,6 +49,7 @@ export interface WorkPlaneStore {
 
 export function createWorkPlane(): WorkPlaneStore {
   const byId = new Map<string, WorkItem>();
+  const history: FakeBeadsHistoryEvent[] = [];
   return {
     seed(items) {
       byId.clear();
@@ -40,6 +57,25 @@ export function createWorkPlane(): WorkPlaneStore {
     },
     add(item) {
       byId.set(item.id, item);
+    },
+    update(id, patch) {
+      const before = byId.get(id);
+      if (!before) return undefined;
+      const next = { ...before, ...patch, updated_at: new Date().toISOString() };
+      byId.set(id, next);
+      return next;
+    },
+    remove(id) {
+      const before = byId.get(id);
+      if (!before) return undefined;
+      byId.delete(id);
+      return before;
+    },
+    addHistory(event) {
+      history.push(event);
+    },
+    history() {
+      return [...history];
     },
     get(id) {
       return byId.get(id);
@@ -49,6 +85,7 @@ export function createWorkPlane(): WorkPlaneStore {
     },
     clear() {
       byId.clear();
+      history.length = 0;
     },
   };
 }

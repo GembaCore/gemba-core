@@ -53,6 +53,10 @@ export function CapabilitiesProvider({ children, initial }: CapabilitiesProvider
     return {
       workPlane: resolved?.work_plane ?? null,
       orchestrationPlane: resolved?.orchestration_plane ?? null,
+      runtimeMode: resolved?.runtime_mode ?? (resolved?.beads_only ? 'beads_only' : 'full'),
+      beadsOnly: Boolean(resolved?.beads_only || resolved?.runtime_mode === 'beads_only'),
+      beadsSource: resolved?.beads_source ?? null,
+      beadsHistoryPath: resolved?.beads_history_path ?? '',
       loading: initial === undefined && isLoading,
       error: (error as Error) ?? null,
     };

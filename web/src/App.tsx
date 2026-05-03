@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import type { ReactNode } from 'react';
 import { AppShell } from '@/layouts/AppShell';
 import { BoardPage } from '@/pages/BoardPage';
 import { RefinePage } from '@/pages/RefinePage';
@@ -40,6 +41,7 @@ import {
   NotFoundPage,
 } from '@/pages/placeholders';
 import { features } from '@/lib/features';
+import { useCapabilities } from '@/capabilities';
 
 export default function App() {
   return (
@@ -65,14 +67,14 @@ export default function App() {
           path="/grid"
           element={<Navigate to="/board?layout=list&power=1" replace />}
         />
-        <Route path="/sessions" element={<SessionsPage />} />
+        <Route path="/sessions" element={<UnavailableInBeadsOnly><SessionsPage /></UnavailableInBeadsOnly>} />
         {/* gm-e12.15: provider-aware agent detail. :id is matched
             against session.id, agent.id, or assignment_id — see
             AgentDetailPage.findContext for the lookup order. */}
-        <Route path="/agents/:id" element={<AgentDetailPage />} />
+        <Route path="/agents/:id" element={<UnavailableInBeadsOnly><AgentDetailPage /></UnavailableInBeadsOnly>} />
         {/* gm-e12.8: AgentGroup board (mode-dispatched: static | pool
             | graph). Empty when no orchestration plane is bound. */}
-        <Route path="/agent-groups" element={<AgentGroupsPage />} />
+        <Route path="/agent-groups" element={<UnavailableInBeadsOnly><AgentGroupsPage /></UnavailableInBeadsOnly>} />
         {/* gm-e11.5: sprint roster + per-sprint detail. Token-budget
             gauges + enforcement deferred to a follow-up under gm-root.14. */}
         <Route path="/sprints" element={<SprintsPage />} />
@@ -83,20 +85,20 @@ export default function App() {
             /insights/* surface; the placeholder /insights stays as a
             landing while other /insights/* tabs land. */}
         <Route path="/insights/personas" element={<InsightsPersonasPage />} />
-        <Route path="/escalations" element={<EscalationsPage />} />
+        <Route path="/escalations" element={<UnavailableInBeadsOnly><EscalationsPage /></UnavailableInBeadsOnly>} />
         <Route path="/capabilities" element={<CapabilitiesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/settings/pools" element={<PoolsPage />} />
         {/* gm-e12.13: desired-vs-actual drift dashboard. */}
-        <Route path="/drift" element={<DriftPage />} />
-        <Route path="/coach" element={<CoachPage />} />
-        <Route path="/walk" element={<WalkPage />} />
+        <Route path="/drift" element={<UnavailableInBeadsOnly><DriftPage /></UnavailableInBeadsOnly>} />
+        <Route path="/coach" element={<UnavailableInBeadsOnly><CoachPage /></UnavailableInBeadsOnly>} />
+        <Route path="/walk" element={<UnavailableInBeadsOnly><WalkPage /></UnavailableInBeadsOnly>} />
         {/* gm-g5xz.2: /recent — operator-facing view of beads created
             in the selected time window (default 24h). Backed by
             ?created_since= on GET /api/work-items. Watermark is
             per-browser localStorage; no per-bead reviewed state. */}
         <Route path="/recent" element={<RecentPage />} />
-        <Route path="/walks/:id" element={<WalkDetailPage />} />
+        <Route path="/walks/:id" element={<UnavailableInBeadsOnly><WalkDetailPage /></UnavailableInBeadsOnly>} />
         <Route path="/project/config" element={<ProjectConfigPage />} />
         {/* gm-uipx.7: /bootstrap 4-step wizard. Each step has its own
             slug so back/forward navigation works and tests can land
@@ -120,5 +122,24 @@ export default function App() {
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
+  );
+}
+
+function UnavailableInBeadsOnly({ children }: { children: ReactNode }) {
+  const { beadsOnly } = useCapabilities();
+  if (!beadsOnly) return <>{children}</>;
+  return (
+    <div
+      data-testid="beads-only-unavailable"
+      className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center"
+    >
+      <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+        Hidden in Beads-only mode
+      </h1>
+      <p className="max-w-md text-xs text-neutral-500 dark:text-neutral-400">
+        This surface depends on orchestration or live sessions. Board, Refine, detail tabs,
+        and Graph remain available for Beads viewing and management.
+      </p>
+    </div>
   );
 }

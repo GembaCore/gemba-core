@@ -269,6 +269,9 @@ function RailIcon({
           data-active={active ? 'true' : 'false'}
           aria-label={tab.label}
           title={tab.label}
+          onPointerDown={(e) => {
+            if (e.button === 0) onFocus();
+          }}
           onClick={onFocus}
           className={cn(
             'flex h-10 w-full items-center justify-center',

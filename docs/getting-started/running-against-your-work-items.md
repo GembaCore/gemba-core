@@ -11,6 +11,9 @@ Gemba at a beads rig two ways:
 - **Mode B — `--dolt-url`**: Gemba opens a direct read-only SQL
   connection to your Dolt server. Faster and no `bd` dependency, but
   needs a reachable Dolt instance.
+- **Beads-only**: add `--beads-only` when you want only Beads viewing
+  and management. Gemba does not require a project, GitHub repository,
+  native agent setup, or Gas Town orchestration in this mode.
 
 Exactly one of the two must be passed (`gm-98l` enforces this at
 startup).
@@ -81,6 +84,44 @@ The dbname is the snake_case rig name — e.g. `gemba`, `lume_spark_api`, `secon
 
 Any password in the URL is redacted from the banner and logs. Mode B is read-only — mutations will surface as `read_only` adaptor errors on the API side; that's by design until a Dolt-write path lands.
 
+## Beads-only mode
+
+Use Beads-only when the Beads database is the product surface: planning,
+review, cleanup, wrapper authoring, and graph inspection without
+dispatch.
+
+```bash
+gemba serve --beads-only --beads-dir ~/gt/gemba --auth none
+gemba serve --beads-only --beads-url 'mysql://root@127.0.0.1:3307/gemba' --auth none
+gemba serve --beads-only --beads-dir ~/gt/gemba --beads-history .gemba/session-manifest.jsonl
+```
+
+The SPA opens on `/board` in **Flat** view. Flat shows milestones,
+epics, decision beads, and work beads in one dense list. Switch to
+**Cascade** when you want the milestone to epic to bead hierarchy, or
+open **Graph** to inspect dependencies. The **Order** control applies to
+Flat, Cascade, and the regular board: modified, created, edited, or ID
+order. Edited currently uses the persisted `updated_at` timestamp until
+the Beads source exposes a distinct edit timestamp.
+
+Available Beads-only actions:
+
+- create, edit, and hard-delete beads;
+- create and edit milestone and epic wrapper beads;
+- create and edit decision beads;
+- select milestone and decision tag pills during authoring;
+- drag cards to update Beads state without dispatching sessions;
+- inspect Beads health in Status, including current database, remote
+  configuration, and repair/setup actions where the source supports
+  them;
+- review the RHP **Beads history** tab, which renders the JSONL session
+  manifest in plain English;
+- use the Graph view for dependency and relationship inspection.
+
+Sessions, agent status, dispatch controls, Gemba Walk, review/triage,
+and orchestration setup are hidden because they require an execution
+plane.
+
 ## Troubleshooting
 
 **`--beads-dir ...: no .beads/ directory found`** — the path exists but isn't a rig root. Point `--beads-dir` at a directory whose `.beads/` subdirectory contains `<name>.db`, or at the `.beads/` directory itself.
@@ -90,6 +131,11 @@ Any password in the URL is redacted from the banner and logs. Mode B is read-onl
 **Board shows a "degraded" banner** — the adaptor is reachable but returned an `adaptor_degraded` error. For Mode A this is usually `bd` missing from `PATH` or the rig being mid-`bd dolt pull`; for Mode B it means the Dolt server answered but the read failed (check `gt dolt status`).
 
 **Board shows "No beads yet"** — the adaptor works but the rig is empty. Run `bd create` or point at a different rig.
+
+**Beads-only Status shows remote setup needed** — the Beads database is
+loaded but the remote check did not find a configured or reachable Dolt
+remote. Use the Status dropdown to rerun health checks or apply the
+available setup/fix action for that source.
 
 **`connection refused` during Mode B startup** — Dolt isn't running on the host/port in your URL. Start it with `gt dolt start`, then retry.
 

@@ -27,7 +27,12 @@ import {
   Terminal,
   Trash2,
 } from 'lucide-react';
-import { useWorkItem, useUpdateWorkItem, useWorkItems } from '@/hooks/useWorkItems';
+import {
+  useDeleteWorkItem,
+  useWorkItem,
+  useUpdateWorkItem,
+  useWorkItems,
+} from '@/hooks/useWorkItems';
 import { useAgents, useSprints } from '@/hooks/useAgents';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -254,7 +259,8 @@ function DispatchButton({
   item: WorkItem | undefined;
   onOpen: () => void;
 }) {
-  const { orchestrationPlane } = useCapabilities();
+  const { orchestrationPlane, beadsOnly } = useCapabilities();
+  if (beadsOnly) return null;
   const isTerminal =
     item?.state_category === 'completed' || item?.state_category === 'canceled';
   const noPlane = !orchestrationPlane;
@@ -304,6 +310,9 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
   }, [workPlane?.field_extensions]);
   const editCtx = { item, adaptorReadOnly };
   const update = useUpdateWorkItem();
+  const deleteWorkItem = useDeleteWorkItem();
+  const { closeDetail } = useRhp();
+  const deleting = deleteWorkItem.isPending;
 
   const hasExtensions = customGroups.length > 0;
   const [tab, setTab] = useState<DetailTab>('description');
@@ -344,15 +353,27 @@ function BeadBody({ item, onNavigate }: { item: WorkItem; onNavigate: (id: strin
           <CloseButton
             item={item}
             adaptorReadOnly={adaptorReadOnly}
-            disabled={update.isPending}
+            disabled={update.isPending || deleting}
             onClose={() =>
               update.mutate({ id: item.id, patch: { state_category: 'completed' } })
             }
           />
+          <DeleteButton
+            item={item}
+            adaptorReadOnly={adaptorReadOnly}
+            disabled={update.isPending || deleting}
+            onDelete={() => {
+              if (!window.confirm(`Permanently delete "${item.title || item.id}"?`)) return;
+              deleteWorkItem.mutate(
+                { id: item.id },
+                { onSuccess: () => closeDetail('workitem', item.id) }
+              );
+            }}
+          />
         </div>
-        {update.isError ? (
+        {update.isError || deleteWorkItem.isError ? (
           <div className="mt-2 text-xs text-rose-600 dark:text-rose-400" data-testid="work-item-edit-error">
-            {update.error?.message ?? 'Update failed.'}
+            {update.error?.message ?? deleteWorkItem.error?.message ?? 'Update failed.'}
           </div>
         ) : null}
         <DefRow label="Assignee">
@@ -939,6 +960,38 @@ function CloseButton({
       data-testid="work-item-close-button"
     >
       Close
+    </button>
+  );
+}
+
+function DeleteButton({
+  item,
+  adaptorReadOnly,
+  disabled,
+  onDelete,
+}: {
+  item: WorkItem;
+  adaptorReadOnly: boolean;
+  disabled: boolean;
+  onDelete: () => void;
+}) {
+  if (adaptorReadOnly) return null;
+  return (
+    <button
+      type="button"
+      onClick={onDelete}
+      disabled={disabled}
+      className={cn(
+        'inline-flex items-center gap-1 rounded border border-rose-300 bg-rose-50 px-2 py-0.5 text-xs text-rose-800',
+        'hover:bg-rose-100',
+        'dark:border-rose-800 dark:bg-rose-950 dark:text-rose-200 dark:hover:bg-rose-900',
+        disabled && 'opacity-60'
+      )}
+      data-testid="work-item-delete-button"
+      title={`Permanently delete ${item.title || item.id}`}
+    >
+      <Trash2 className="h-3 w-3" aria-hidden />
+      Delete
     </button>
   );
 }

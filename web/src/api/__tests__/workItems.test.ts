@@ -3,6 +3,7 @@ import {
   CONFIRM_HEADER,
   cascadeDispatchWorkItem,
   createWorkItem,
+  deleteWorkItem,
   getWorkItem,
   listWorkItems,
   listWorkItemsEnvelope,
@@ -174,5 +175,19 @@ describe('listWorkItems / getWorkItem', () => {
     expect(init.method).toBe('POST');
     expect(init.headers[CONFIRM_HEADER]).toBe('nonce-cascade');
     expect(JSON.parse(init.body as string)).toEqual({ agent_type: 'codex', limit: 2 });
+  });
+
+  it('deleteWorkItem DELETEs with the confirm nonce', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify(sampleItem), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+    await deleteWorkItem('gm/weird id', { nonce: 'nonce-delete' });
+    const [url, init] = fetchSpy.mock.calls[0]!;
+    expect(url).toBe('/api/work-items/gm%2Fweird%20id');
+    expect(init.method).toBe('DELETE');
+    expect(init.headers[CONFIRM_HEADER]).toBe('nonce-delete');
   });
 });

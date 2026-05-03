@@ -18,7 +18,7 @@ import (
 
 // fakeBd is a stateful in-memory stand-in for the bd CLI. It understands
 // the subset of subcommands the WorkPlane adaptor issues (list / show /
-// create / update) so the conformance harness can exercise full CRUD
+// create / update / delete) so the conformance harness can exercise full CRUD
 // round-trips without spawning processes or touching a real Dolt server.
 //
 // Behavior matches `bd --json` contract: show / list return an array of
@@ -65,10 +65,24 @@ func (f *fakeBd) run(_ context.Context, args ...string) ([]byte, error) {
 		return f.handleCreate(args[1:])
 	case "update":
 		return f.handleUpdate(args[1:])
+	case "delete":
+		return f.handleDelete(args[1:])
 	default:
 		f.t.Fatalf("fakeBd: unexpected subcommand %q (args=%v)", args[0], args)
 	}
 	return nil, nil
+}
+
+func (f *fakeBd) handleDelete(args []string) ([]byte, error) {
+	if len(args) == 0 {
+		f.t.Fatal("fakeBd: delete missing id")
+	}
+	id := args[0]
+	if _, ok := f.beads[id]; !ok {
+		return nil, &fakeExitError{stderr: []byte("not found")}
+	}
+	delete(f.beads, id)
+	return []byte(`{"deleted":1}`), nil
 }
 
 func (f *fakeBd) handleList(args []string) ([]byte, error) {
@@ -639,6 +653,32 @@ func TestBeadsCreateWorkItemThenListContainsIt(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("ListWorkItems did not return just-created id %q (got %d items)", created.ID, len(items))
+	}
+}
+
+func TestBeadsDeleteWorkItemRemovesIt(t *testing.T) {
+	fake := newFakeBd(t)
+	impl := bd.NewWorkPlaneWithRunner(fake.run, "")
+	ctx := context.Background()
+	created, err := impl.CreateWorkItem(ctx, core.WorkItem{
+		Title:  "delete me",
+		Kind:   "task",
+		Status: "open",
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkItem: %v", err)
+	}
+
+	deleted, err := impl.DeleteWorkItem(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("DeleteWorkItem: %v", err)
+	}
+	if deleted.ID != created.ID || deleted.Title != created.Title {
+		t.Fatalf("deleted record mismatch: got %+v want id=%q title=%q",
+			deleted, created.ID, created.Title)
+	}
+	if _, err := impl.GetWorkItem(ctx, created.ID); err == nil {
+		t.Fatal("GetWorkItem after DeleteWorkItem succeeded; want not found")
 	}
 }
 

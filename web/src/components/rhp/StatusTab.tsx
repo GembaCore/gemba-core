@@ -3,13 +3,18 @@ import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
   Activity,
+  Ban,
+  ChevronDown,
   CheckCircle2,
   CircleDot,
+  Database,
   ExternalLink,
   Play,
+  RefreshCw,
   Terminal,
+  Wrench,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRhp } from './RhpContext';
 import { useRhpPinnedContent } from './RhpPinnedContent';
 import { useSessions } from '@/hooks/useSessions';
@@ -21,20 +26,16 @@ import { relativeTime } from '@/components/board/relativeTime';
 import { cn } from '@/lib/utils';
 import { encodeInteractionTarget } from '@/interactions/types';
 import { INTERACTION_DETAIL_KIND } from '@/components/rhp/details/InteractionDetail';
+import {
+  getAdaptors,
+  getBeadsHealth,
+  runBeadsHealthAction,
+  type AdaptorsResponse,
+  type BeadsHealthResponse,
+} from '@/api/adaptors';
 import type { Session } from '@/api/sessions';
 import type { EscalationRequest } from '@/api/escalations';
 import type { WorkItem } from '@/types/core.gen';
-
-type AdaptorStatus = {
-  name: string;
-  plane: 'work' | 'orchestration';
-  healthy: boolean;
-  reason?: string;
-};
-
-type AdaptorsResponse = {
-  adaptors: AdaptorStatus[];
-};
 
 const TERMINAL_SESSION_STATUSES = new Set<Session['status']>(['completed', 'failed']);
 
@@ -42,11 +43,27 @@ export function StatusBody() {
   const { data: sessions = [], isLoading: sessionsLoading } = useSessions();
   const { data: escalations = [] } = useEscalations();
   const { data: workItems = [] } = useWorkItems();
-  const { orchestrationPlane, workPlane } = useCapabilities();
+  const { orchestrationPlane, workPlane, beadsOnly, beadsSource, beadsHistoryPath } =
+    useCapabilities();
+  const queryClient = useQueryClient();
   const { data: adaptors } = useQuery<AdaptorsResponse>({
     queryKey: ['adaptors'],
-    queryFn: async () => ({ adaptors: [] }),
-    enabled: false,
+    queryFn: getAdaptors,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
+  const { data: beadsHealth } = useQuery<BeadsHealthResponse>({
+    queryKey: ['beads-health'],
+    queryFn: getBeadsHealth,
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  });
+  const healthAction = useMutation({
+    mutationFn: runBeadsHealthAction,
+    onSuccess: (data) => {
+      queryClient.setQueryData(['beads-health'], data);
+      void queryClient.invalidateQueries({ queryKey: ['adaptors'] });
+    },
   });
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const navigate = useNavigate();
@@ -71,87 +88,117 @@ export function StatusBody() {
       <header className="mb-4 flex items-start gap-2">
         <Activity className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-300" />
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
-            Status
-          </h2>
+          <h2 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">Status</h2>
           <div className="mt-1 flex flex-wrap gap-1.5 text-[11px]">
-            <Pill label={workPlane?.adaptor_name ?? 'No work plane'} tone={workPlane ? 'ok' : 'warn'} />
             <Pill
-              label={orchestrationPlane?.adaptor_id ?? 'No orchestration'}
-              tone={orchestrationPlane ? 'ok' : 'warn'}
+              label={beadsOnly ? 'Beads-only' : (workPlane?.adaptor_name ?? 'No work plane')}
+              tone={workPlane ? 'ok' : 'warn'}
             />
+            {beadsOnly ? (
+              <NotApplicablePill label="Orchestration" />
+            ) : (
+              <Pill
+                label={orchestrationPlane?.adaptor_id ?? 'No orchestration'}
+                tone={orchestrationPlane ? 'ok' : 'warn'}
+              />
+            )}
           </div>
         </div>
       </header>
 
       <MetricGrid metrics={metrics} />
 
-      <section className="mt-5 space-y-2" data-testid="rhp-status-sessions">
-        <SectionHeader
-          title="Sessions"
-          actionLabel="New"
-          actionIcon={<Play className="h-3 w-3" />}
-          onAction={() => setNewSessionOpen(true)}
-        />
-        {sessionsLoading ? (
-          <Muted>Loading…</Muted>
-        ) : activeSessions.length === 0 ? (
-          <Muted>No active sessions.</Muted>
-        ) : (
-          <ShowMoreList
-            items={activeSessions}
-            initialCount={4}
-            renderItem={(session) => (
-              <SessionRow
-                key={session.id}
-                session={session}
-                onOpen={() =>
-                  popDetail({
-                    kind: INTERACTION_DETAIL_KIND,
-                    id: encodeInteractionTarget({ type: 'session', id: session.id }),
-                  })
-                }
-              />
-            )}
-          />
-        )}
-      </section>
+      <BeadsHealthSection
+        health={beadsHealth}
+        sourceLabel={beadsSource?.label ?? beadsSource?.kind ?? 'not configured'}
+        onRunAction={(action) => healthAction.mutate(action)}
+        actionPending={healthAction.isPending}
+      />
 
-      <section className="mt-5 space-y-2" data-testid="rhp-status-escalations">
-        <SectionHeader
-          title="Escalations"
-          actionLabel="Inbox"
-          actionIcon={<ExternalLink className="h-3 w-3" />}
-          onAction={() => navigate('/escalations')}
-        />
-        {openEscalations.length === 0 ? (
-          <Muted>No open escalations.</Muted>
-        ) : (
-          <ShowMoreList
-            items={openEscalations}
-            initialCount={3}
-            renderItem={(escalation) => (
-              <EscalationRow
-                key={escalation.id}
-                escalation={escalation}
-                onOpen={() =>
-                  popDetail({
-                    kind: INTERACTION_DETAIL_KIND,
-                    id: encodeInteractionTarget({ type: 'escalation', id: escalation.id }),
-                  })
-                }
-              />
-            )}
+      {!beadsOnly ? (
+        <section className="mt-5 space-y-2" data-testid="rhp-status-sessions">
+          <SectionHeader
+            title="Sessions"
+            actionLabel="New"
+            actionIcon={<Play className="h-3 w-3" />}
+            onAction={() => setNewSessionOpen(true)}
           />
-        )}
-      </section>
+          {sessionsLoading ? (
+            <Muted>Loading…</Muted>
+          ) : activeSessions.length === 0 ? (
+            <Muted>No active sessions.</Muted>
+          ) : (
+            <ShowMoreList
+              items={activeSessions}
+              initialCount={4}
+              renderItem={(session) => (
+                <SessionRow
+                  key={session.id}
+                  session={session}
+                  onOpen={() =>
+                    popDetail({
+                      kind: INTERACTION_DETAIL_KIND,
+                      id: encodeInteractionTarget({ type: 'session', id: session.id }),
+                    })
+                  }
+                />
+              )}
+            />
+          )}
+        </section>
+      ) : null}
+
+      {!beadsOnly ? (
+        <section className="mt-5 space-y-2" data-testid="rhp-status-escalations">
+          <SectionHeader
+            title="Escalations"
+            actionLabel="Inbox"
+            actionIcon={<ExternalLink className="h-3 w-3" />}
+            onAction={() => navigate('/escalations')}
+          />
+          {openEscalations.length === 0 ? (
+            <Muted>No open escalations.</Muted>
+          ) : (
+            <ShowMoreList
+              items={openEscalations}
+              initialCount={3}
+              renderItem={(escalation) => (
+                <EscalationRow
+                  key={escalation.id}
+                  escalation={escalation}
+                  onOpen={() =>
+                    popDetail({
+                      kind: INTERACTION_DETAIL_KIND,
+                      id: encodeInteractionTarget({ type: 'escalation', id: escalation.id }),
+                    })
+                  }
+                />
+              )}
+            />
+          )}
+        </section>
+      ) : null}
 
       <section className="mt-5 space-y-2" data-testid="rhp-status-runtime">
         <SectionHeader title="Runtime" />
         <RuntimeRow label="Work plane" value={workPlane?.adaptor_name ?? 'not configured'} />
+        <RuntimeRow label="Mode" value={beadsOnly ? 'beads-only' : 'full'} />
+        {beadsOnly ? (
+          <>
+            <RuntimeRow
+              label="Beads source"
+              value={beadsSource?.label ?? beadsSource?.kind ?? 'not configured'}
+            />
+            <RuntimeRow label="History" value={beadsHistoryPath || 'session-manifest.jsonl'} />
+          </>
+        ) : null}
         <RuntimeRow
           label="Orchestration"
-          value={orchestrationPlane?.adaptor_id ?? 'not configured'}
+          value={
+            beadsOnly
+              ? 'hidden in beads-only'
+              : (orchestrationPlane?.adaptor_id ?? 'not configured')
+          }
         />
         {degraded.length > 0 ? (
           <div className="space-y-1">
@@ -161,7 +208,9 @@ export function StatusBody() {
                 className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100"
               >
                 <span className="font-medium">{adaptor.name}</span>
-                {adaptor.reason ? <span className="text-amber-900 dark:text-amber-100">: {adaptor.reason}</span> : null}
+                {adaptor.reason ? (
+                  <span className="text-amber-900 dark:text-amber-100">: {adaptor.reason}</span>
+                ) : null}
               </div>
             ))}
           </div>
@@ -222,13 +271,22 @@ function buildMetrics({
   escalations: EscalationRequest[];
   workItems: WorkItem[];
 }) {
-  const tokenEstimate = sessions.reduce((sum, session) => sum + tokensFromMetadata(session.provider_metadata), 0);
+  const tokenEstimate = sessions.reduce(
+    (sum, session) => sum + tokensFromMetadata(session.provider_metadata),
+    0
+  );
   return [
     { label: 'Tokens', value: formatCompact(tokenEstimate) },
     { label: 'Active', value: String(activeSessions.length) },
     { label: 'Escalations', value: String(escalations.length) },
-    { label: 'Working', value: String(activeSessions.filter((s) => s.status === 'working').length) },
-    { label: 'Prompting', value: String(activeSessions.filter((s) => s.status === 'prompting').length) },
+    {
+      label: 'Working',
+      value: String(activeSessions.filter((s) => s.status === 'working').length),
+    },
+    {
+      label: 'Prompting',
+      value: String(activeSessions.filter((s) => s.status === 'prompting').length),
+    },
     { label: 'Done beads', value: String(countState(workItems, 'completed')) },
   ];
 }
@@ -250,6 +308,102 @@ function MetricGrid({ metrics }: { metrics: Array<{ label: string; value: string
         </div>
       ))}
     </div>
+  );
+}
+
+function BeadsHealthSection({
+  health,
+  sourceLabel,
+  onRunAction,
+  actionPending,
+}: {
+  health?: BeadsHealthResponse;
+  sourceLabel: string;
+  onRunAction: (action: string) => void;
+  actionPending: boolean;
+}) {
+  const healthy = health?.adaptor?.healthy ?? false;
+  const tone = healthy ? 'ok' : 'warn';
+  const currentDB = health?.current_db || sourceLabel;
+  const remoteLabel = health?.remote_status_label ?? 'Status unknown';
+  const actions = health?.actions ?? [
+    { id: 'refresh', label: 'Refresh health', description: 'Re-run the Beads health probe.' },
+  ];
+  return (
+    <section className="mt-5 space-y-2" data-testid="rhp-status-beads-health">
+      <SectionHeader title="Beads" />
+      <div className="rounded-md border border-neutral-200 bg-white p-3 text-xs dark:border-neutral-800 dark:bg-neutral-950">
+        <div className="flex items-start gap-2">
+          <Database className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="font-medium text-neutral-900 dark:text-neutral-100">Current DB</span>
+              <Pill label={remoteLabel} tone={tone} />
+            </div>
+            <div className="mt-1 truncate font-mono text-[11px] text-neutral-600 dark:text-neutral-300">
+              {currentDB}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-neutral-500">
+              <span>{health?.remote_kind ?? 'Beads source'}</span>
+              <span>·</span>
+              <span>{health?.source.detail ?? health?.source.kind ?? sourceLabel}</span>
+            </div>
+          </div>
+        </div>
+        {health?.adaptor?.reason ? (
+          <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+            {health.adaptor.reason}
+          </div>
+        ) : null}
+        {health?.last_action ? (
+          <div
+            className={cn(
+              'mt-2 rounded border px-2 py-1.5',
+              health.last_action.ok
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100'
+                : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100'
+            )}
+          >
+            <div className="font-medium">{health.last_action.message}</div>
+            {health.last_action.output ? (
+              <pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap font-mono text-[10px]">
+                {health.last_action.output}
+              </pre>
+            ) : null}
+          </div>
+        ) : null}
+        <details className="mt-3">
+          <summary className="flex cursor-pointer list-none items-center justify-between rounded-md border border-neutral-200 px-2 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 dark:border-neutral-800 dark:text-neutral-200 dark:hover:bg-neutral-900">
+            <span className="flex items-center gap-1.5">
+              <Wrench className="h-3.5 w-3.5" />
+              Beads health actions
+            </span>
+            <ChevronDown className="h-3.5 w-3.5" />
+          </summary>
+          <div className="mt-2 space-y-1">
+            {actions.map((action) => (
+              <button
+                key={action.id}
+                type="button"
+                disabled={actionPending}
+                onClick={() => onRunAction(action.id)}
+                className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-neutral-100 disabled:opacity-50 dark:hover:bg-neutral-900"
+              >
+                <RefreshCw
+                  className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', actionPending && 'animate-spin')}
+                />
+                <span className="min-w-0">
+                  <span className="block font-medium text-neutral-900 dark:text-neutral-100">
+                    {action.label}
+                  </span>
+                  <span className="block text-[11px] text-neutral-500">{action.description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </details>
+      </div>
+    </section>
   );
 }
 
@@ -388,6 +542,15 @@ function Pill({ label, tone }: { label: string; tone: 'ok' | 'warn' }) {
   );
 }
 
+function NotApplicablePill({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded border border-dashed border-neutral-300 px-1.5 py-0.5 text-neutral-500 dark:border-neutral-700 dark:text-neutral-500">
+      <Ban className="h-3 w-3" aria-hidden />
+      {label}
+    </span>
+  );
+}
+
 function Muted({ children }: { children: React.ReactNode }) {
   return <div className="text-xs text-neutral-500">{children}</div>;
 }
@@ -406,7 +569,11 @@ function tokensFromMetadata(value: unknown): number {
   if (typeof value !== 'object' || value === null) return 0;
   let sum = 0;
   for (const [key, child] of Object.entries(value)) {
-    if (typeof child === 'number' && Number.isFinite(child) && key.toLowerCase().includes('token')) {
+    if (
+      typeof child === 'number' &&
+      Number.isFinite(child) &&
+      key.toLowerCase().includes('token')
+    ) {
       sum += child;
     } else if (typeof child === 'object' && child !== null) {
       sum += tokensFromMetadata(child);

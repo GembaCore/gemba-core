@@ -124,6 +124,15 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 			"(dev/demo; mutually exclusive with --beads-dir / --dolt-url; "+
 			"forces --orchestration=noop)")
 
+	cmd.Flags().BoolVar(&cfg.BeadsOnly, "beads-only", false,
+		"run as a Beads-only viewer/manager: no project or orchestration required; "+
+			"mutations append a JSONL Beads history manifest")
+	cmd.Flags().StringVar(&cfg.BeadsOnlyManifestPath, "beads-history", "",
+		"path to the Beads-only JSONL manifest "+
+			"(default: <beads-dir>/.gemba/session-manifest.jsonl)")
+	cmd.Flags().StringVar(&cfg.DoltURL, "beads-url", "",
+		"alias for --dolt-url; Beads/Dolt URL to use as the work source")
+
 	// gm-e9m0: upstream Prometheus URL for the
 	// /api/v1/metrics/series proxy. Empty (the default) means
 	// "fall back to PROM_URL env, then [metrics].prom_url in
@@ -155,6 +164,8 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 }
 
 func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bool, bannerOut io.Writer) error {
+	applyServeEnvDefaults(&cfg)
+
 	if err := cfg.ValidateBindPolicy(); err != nil {
 		return err
 	}
@@ -196,8 +207,12 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// invocations before being asked to install bd, but BEFORE any
 	// subprocess-spawning work that would fail cryptically without
 	// bd on PATH.
-	if err := probeBd(os.Stderr); err != nil {
-		return err
+	if shouldProbeBd(cfg) {
+		if err := probeBd(os.Stderr); err != nil {
+			return err
+		}
+	} else {
+		slog.Info("beads-only Dolt URL mode: skipping bd CLI startup probe")
 	}
 	cfg.BeadsDir = resolvedBeadsDir
 	if cfg.DangerouslySkipPermissions {
@@ -244,8 +259,14 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	}
 	host := reg.Host
 
-	if err := registerOrchestrationPlane(ctx, host, cfg); err != nil {
-		return err
+	if cfg.BeadsOnly {
+		cfg.Orchestration = "none"
+		slog.Info("beads-only mode active; orchestration plane will not be registered",
+			"manifest", cfg.BeadsOnlyManifest())
+	} else {
+		if err := registerOrchestrationPlane(ctx, host, cfg); err != nil {
+			return err
+		}
 	}
 
 	// gm-s47n.12: load pool config + construct one auto-dispatch
@@ -267,7 +288,9 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// root to /new. Non-fatal: a config I/O error is logged and serve
 	// continues without redirecting so a broken config.toml doesn't
 	// block the operator.
-	if redirect, err := coldStartRedirect(cfg); err != nil {
+	if cfg.BeadsOnly {
+		cfg.ColdStartRedirect = false
+	} else if redirect, err := coldStartRedirect(cfg); err != nil {
 		slog.Warn("cold-start redirect probe failed; serving normally",
 			"err", err)
 	} else {
@@ -532,6 +555,37 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	return srv.Shutdown(shutdownCtx)
 }
 
+func applyServeEnvDefaults(cfg *config.ServeConfig) {
+	if cfg == nil {
+		return
+	}
+	if !cfg.BeadsOnly && strings.EqualFold(strings.TrimSpace(os.Getenv("GEMBA_MODE")), "beads_only") {
+		cfg.BeadsOnly = true
+	}
+	if cfg.DoltURL == "" {
+		if v := strings.TrimSpace(os.Getenv("GEMBA_BEADS_URL")); v != "" {
+			cfg.DoltURL = v
+		}
+	}
+	if cfg.BeadsDir == "" {
+		if v := strings.TrimSpace(os.Getenv("GEMBA_BEADS_DIR")); v != "" {
+			cfg.BeadsDir = v
+		}
+	}
+	if cfg.BeadsOnlyManifestPath == "" {
+		if v := strings.TrimSpace(os.Getenv("GEMBA_BEADS_ONLY_MANIFEST")); v != "" {
+			cfg.BeadsOnlyManifestPath = v
+		}
+	}
+}
+
+func shouldProbeBd(cfg config.ServeConfig) bool {
+	if cfg.BeadsOnly && cfg.DoltURL != "" && cfg.BeadsDir == "" {
+		return false
+	}
+	return true
+}
+
 // registerWorkPlane builds the api transport host, instantiates the
 // configured WorkPlane adaptor, and binds them. Failures here MUST
 // abort startup — a serve process with no WorkPlane has no useful
@@ -585,7 +639,7 @@ func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*workPlaneR
 		slog.Warn("cold-start gate probe failed; proceeding to bind WorkPlane",
 			"err", skipErr)
 	}
-	if skip {
+	if skip && !cfg.BeadsOnly {
 		slog.Info("cold-start: no projects found and Beads URL is built-in default; "+
 			"WorkPlane will NOT be bound — every project-data route returns 503 "+
 			"adaptor_not_configured until the operator creates a project at /new "+
@@ -993,6 +1047,9 @@ func printStartupBanner(w io.Writer, b BuildInfo, cfg config.ServeConfig, reg *w
 	}
 	fmt.Fprintf(w, "▶ gemba %s  listen=%s:%d  auth=%s\n",
 		version, cfg.Listen, cfg.Port, cfg.EffectiveAuthMode())
+	if cfg.BeadsOnly {
+		fmt.Fprintf(w, "▶ mode: beads-only (history=%s)\n", cfg.BeadsOnlyManifest())
+	}
 	// gm-ygwe: cold-start mode binds no WorkPlane; the manifest is a
 	// zero value. Render a clear single-line banner for that case so the
 	// operator sees "no project bound" instead of a confused "▶

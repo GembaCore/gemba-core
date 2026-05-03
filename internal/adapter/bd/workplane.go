@@ -723,6 +723,27 @@ func (w *WorkPlane) UpdateWorkItem(
 	return wiOut, nil
 }
 
+// DeleteWorkItem permanently deletes a bead through the public
+// `bd delete` command and returns the deleted record as it existed
+// immediately before deletion. This is intentionally a hard-delete
+// operation; closing/dismissing work remains UpdateWorkItem.
+func (w *WorkPlane) DeleteWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error) {
+	native := nativeID(w.prefix, id)
+	before, err := w.GetWorkItem(ctx, id)
+	if err != nil {
+		return core.WorkItem{}, err
+	}
+	if _, err := w.run(ctx, "delete", native, "--force"); err != nil {
+		if isNotFoundError(err) {
+			return core.WorkItem{}, core.WrapAdaptorError(core.KindSessionNotFound, err,
+				"beads: bead %q not found", native)
+		}
+		return core.WorkItem{}, wrapBdError(err, "bd delete "+native+" --force")
+	}
+	w.emit(core.WorkItemEventClosed, before)
+	return before, nil
+}
+
 // AttachEvidence is gated off until gm-e6.5 lands the synthesis
 // pipeline. The manifest's EvidenceSynthesisRequired=false makes this
 // a capability-denied op at the port; the adaptor-side check is

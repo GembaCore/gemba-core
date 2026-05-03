@@ -34,6 +34,8 @@ alternatives, and the invariants downstream code can rely on.
 - **[Bead presentation](bead-presentation)** — what a WorkItem
   renders as in the SPA, and why each affordance is gated by
   capability.
+- **[Beads-only operating mode](beads-only-mode)** — lets Gemba run as
+  a Beads viewer and manager without project or orchestration setup.
 - **[Work planning](work-planning)** — the planning loop: from
   freeform intent to bead graphs.
 - **[Complexity-aware dispatch](complexity-aware-dispatch)** —

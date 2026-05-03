@@ -504,8 +504,47 @@ function dispatch(route: Route, stores: FakeStores): unknown {
       // Mutations: echo the seeded item back so optimistic update
       // settles. A richer fake (apply patch to store) is a follow-up.
       const existing = workPlane.get(id);
-      if (existing) return json(existing);
+      if (existing) {
+        const body = parseBody(route.request().postData());
+        const updated = workPlane.update(id, body as Partial<WorkItem>) ?? existing;
+        if (capabilitiesPlane.get().beads_only) {
+          const beforeState = existing.state_category;
+          const afterState = updated.state_category;
+          const action = beforeState !== afterState ? 'work_item.state_changed' : 'work_item.edited';
+          workPlane.addHistory({
+            event_id: `evt-fake-${workPlane.history().length + 1}`,
+            occurred_at: new Date().toISOString(),
+            actor: 'fake',
+            mode: 'beads_only',
+            action,
+            entity: { type: updated.kind === 'epic' ? 'epic' : updated.kind === 'milestone' ? 'milestone' : 'bead', id: updated.id, title: updated.title },
+            before: { state_category: beforeState },
+            after: { state_category: afterState },
+            summary: beforeState !== afterState
+              ? `Moved "${updated.title}" from ${beforeState} to ${afterState}.`
+              : `Edited "${updated.title}".`,
+          });
+        }
+        return json(updated);
+      }
       return notFound('session_not_found', `work item ${id} not found`);
+    }
+    if (route.request().method() === 'DELETE') {
+      const deleted = workPlane.remove(id);
+      if (!deleted) return notFound('session_not_found', `work item ${id} not found`);
+      if (capabilitiesPlane.get().beads_only) {
+        workPlane.addHistory({
+          event_id: `evt-fake-${workPlane.history().length + 1}`,
+          occurred_at: new Date().toISOString(),
+          actor: 'fake',
+          mode: 'beads_only',
+          action: 'work_item.deleted',
+          entity: { type: deleted.kind === 'epic' ? 'epic' : deleted.kind === 'milestone' ? 'milestone' : 'bead', id: deleted.id, title: deleted.title },
+          before: { state_category: deleted.state_category, status: deleted.status },
+          summary: `Deleted "${deleted.title}".`,
+        });
+      }
+      return json(deleted);
     }
     const wi = workPlane.get(id);
     if (wi) return json(wi);
@@ -529,16 +568,32 @@ function dispatch(route: Route, stores: FakeStores): unknown {
       // Pretend the create succeeded with a synthetic id; specs that
       // assert on persistence tag themselves @deep so this branch
       // only runs in fake mode.
+      const body = parseBody(route.request().postData()) as { item?: Partial<WorkItem> };
+      const input = body.item ?? {};
       const fake: WorkItem = {
         id: `fake-${items.length + 1}`,
-        kind: 'task',
-        title: 'fake-created',
-        status: 'open',
-        state_category: 'unstarted',
+        kind: typeof input.kind === 'string' ? input.kind : 'task',
+        title: typeof input.title === 'string' ? input.title : 'fake-created',
+        status: typeof input.status === 'string' ? input.status : 'open',
+        state_category: input.state_category ?? 'unstarted',
+        labels: input.labels,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
       workPlane.add(fake);
+      if (capabilitiesPlane.get().beads_only) {
+        const entityType = fake.kind === 'epic' ? 'epic' : fake.kind === 'milestone' ? 'milestone' : fake.kind === 'decision' ? 'decision' : 'bead';
+        workPlane.addHistory({
+          event_id: `evt-fake-${workPlane.history().length + 1}`,
+          occurred_at: new Date().toISOString(),
+          actor: 'fake',
+          mode: 'beads_only',
+          action: entityType === 'milestone' ? 'milestone.created' : entityType === 'epic' ? 'epic.created' : entityType === 'decision' ? 'decision.created' : 'work_item.created',
+          entity: { type: entityType, id: fake.id, title: fake.title },
+          after: { state_category: fake.state_category },
+          summary: `Created ${entityType} "${fake.title}".`,
+        });
+      }
       return json(fake);
     }
     return json({ items, total: items.length });
@@ -870,6 +925,46 @@ function dispatch(route: Route, stores: FakeStores): unknown {
     return json({ max_polecats: 0 });
   }
 
+  if (isPath(path, '/api/beads-history')) {
+    return json({ mode: capabilitiesPlane.get().beads_only ? 'beads_only' : 'full', entries: workPlane.history(), malformed: 0 });
+  }
+  if (isPath(path, '/api/beads/health')) {
+    const caps = capabilitiesPlane.get();
+    const source = caps.beads_source ?? { kind: 'beads-dir', label: 'fake-beads', detail: '/tmp/fake' };
+    const adaptor = adaptorsState.get().find((a) => a.plane === 'work');
+    return json({
+      source,
+      current_db: source.label ?? source.kind,
+      remote_configured: source.kind === 'dolt-url',
+      remote_kind: source.kind === 'dolt-url' ? 'Dolt URL' : 'Local worktree',
+      remote_status_label: source.kind === 'dolt-url' ? 'Remote configured' : 'Local DB',
+      adaptor,
+      actions: [
+        { id: 'refresh', label: 'Refresh health', description: 'Re-run the bound Beads adaptor health probe.' },
+        { id: 'dolt-test', label: 'Test Dolt connection', description: 'Run bd dolt test in the Beads worktree.' },
+      ],
+    });
+  }
+  if (isPath(path, '/api/beads/health/actions')) {
+    const caps = capabilitiesPlane.get();
+    const source = caps.beads_source ?? { kind: 'beads-dir', label: 'fake-beads', detail: '/tmp/fake' };
+    const adaptor = adaptorsState.get().find((a) => a.plane === 'work');
+    const body = parseBody(route.request().postData());
+    return json({
+      source,
+      current_db: source.label ?? source.kind,
+      remote_configured: source.kind === 'dolt-url',
+      remote_kind: source.kind === 'dolt-url' ? 'Dolt URL' : 'Local worktree',
+      remote_status_label: source.kind === 'dolt-url' ? 'Remote configured' : 'Local DB',
+      adaptor,
+      actions: [{ id: 'refresh', label: 'Refresh health', description: 'Re-run the bound Beads adaptor health probe.' }],
+      last_action: {
+        action: typeof body.action === 'string' ? body.action : 'refresh',
+        ok: true,
+        message: 'Health probe refreshed.',
+      },
+    });
+  }
   if (isPath(path, '/api/capabilities')) return json(capabilitiesPlane.get());
   if (isPath(path, '/api/adaptors')) return json({ adaptors: adaptorsState.get() });
   if (isPath(path, '/api/health')) return json({ status: 'ok' });

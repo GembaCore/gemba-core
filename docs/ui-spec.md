@@ -320,7 +320,7 @@ view toggle.
 
 ### 4.10 View modes (kanban / list)
 
-Board exposes two visual modes over the same query result. The
+Board exposes several visual modes over the same query result. The
 `layout` URL param controls shape, while `view` selects named filters
 (§4.11):
 
@@ -328,11 +328,29 @@ Board exposes two visual modes over the same query result. The
 |---|---|---|
 | `kanban` (default) | `/board` | Three-column execution surface; the canonical Gemba view |
 | `list` | `/board?layout=list` | Flat dense list with state_category + kind filter chips and client-side title search |
+| `cascade` | `/board?layout=cascade` | Hierarchy-first milestone -> epic -> bead view |
 
 Switcher lives in the board header next to the granularity toggle.
 List mode shares the same query, RHP detail, and selection behavior as
 kanban-mode — only the rendering changes. Cmd-Shift-L toggles list ↔
 kanban.
+
+The Board header also carries an order selector shared by Kanban,
+Cascade, and List:
+
+- Modified
+- Created
+- Edited
+- ID
+
+In full mode the default remains useful for execution triage; in
+Beads-only mode `/board` defaults to Flat with ID order so all beads
+are visible before the user has adopted milestone and epic wrappers.
+The Help panel explains that milestone and epic beads are wrappers and
+points users to Cascade once they want to read the milestone -> epic ->
+bead structure. `Edited` currently uses the same persisted `updated_at`
+timestamp as `Modified` until the Beads source provides a separate edit
+timestamp.
 
 `/grid` (§5.3) is intentionally NOT a Board view-mode: Grid is the power-user TanStack table with inline edit, column presets, and bulk-action ergonomics that don't fit a board frame. It stays a standalone surface in the sidebar.
 

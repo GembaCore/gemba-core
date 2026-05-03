@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { WorkItemCard } from './WorkItemCard';
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
+import { sortWorkItems, type BoardOrderKey } from './boardOrder';
 
 export interface BoardColumnProps {
   columnID: string;
@@ -18,6 +19,9 @@ export interface BoardColumnProps {
   // Open-escalation count by work-item id (gm-e11.3). Threaded by the
   // page so the lookup is O(1) per card.
   escalationCounts?: Map<string, number>;
+  // Optional operator-selected ordering. When unset, preserve the
+  // historical priority-first column order used by the execution board.
+  orderKey?: BoardOrderKey | null;
 }
 
 // Sort within a column: priority ascending (P0 first), nulls last; tie-break
@@ -40,9 +44,13 @@ export function BoardColumn({
   droppableID,
   draggable = false,
   escalationCounts,
+  orderKey,
 }: BoardColumnProps) {
-  const sorted = sortItems(items);
-  const droppable = useDroppable({ id: droppableID ?? `disabled|${columnID}`, disabled: !droppableID });
+  const sorted = orderKey ? sortWorkItems(items, orderKey) : sortItems(items);
+  const droppable = useDroppable({
+    id: droppableID ?? `disabled|${columnID}`,
+    disabled: !droppableID,
+  });
   return (
     <section
       ref={droppable.setNodeRef}
@@ -50,7 +58,9 @@ export function BoardColumn({
       data-drop-over={droppable.isOver || undefined}
       className={
         'flex h-full min-w-[18rem] flex-1 flex-col rounded-md bg-neutral-50 transition-colors dark:bg-neutral-950 ' +
-        (droppable.isOver ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-offset-neutral-950' : '')
+        (droppable.isOver
+          ? 'ring-2 ring-sky-400 ring-offset-2 ring-offset-white dark:ring-offset-neutral-950'
+          : '')
       }
     >
       <header className="flex items-center justify-between border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
@@ -96,7 +106,9 @@ function DraggableWorkItemCard({
   onSelect?: (id: string) => void;
   escalationCount: number;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: item.id,
+  });
   const style: CSSProperties = {
     transform: CSS.Translate.toString(transform),
     opacity: isDragging ? 0.85 : undefined,
@@ -106,12 +118,7 @@ function DraggableWorkItemCard({
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <WorkItemCard
-        item={item}
-        onSelect={onSelect}
-        escalationCount={escalationCount}
-        draggable
-      />
+      <WorkItemCard item={item} onSelect={onSelect} escalationCount={escalationCount} draggable />
     </div>
   );
 }

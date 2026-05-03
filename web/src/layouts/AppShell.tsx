@@ -30,6 +30,7 @@ import { RhpShell } from '@/components/rhp/RhpShell';
 // two without touching the public RhpAPI.
 import { HelpTab } from '@/components/rhp/HelpTab';
 import { StatusTab } from '@/components/rhp/StatusTab';
+import { BeadsHistoryTab } from '@/components/rhp/BeadsHistoryTab';
 import { RhpPinnedContentProvider } from '@/components/rhp/RhpPinnedContent';
 // gm-root.22.5: WorkItem detail-tab kind registration. WorkItemDetailRegistration
 // registers the 'workitem' kind with the RHP detail-content registry so
@@ -73,6 +74,7 @@ export function AppShell() {
             </div>
             <RhpShell />
             <StatusTab />
+            <BeadsHistoryTab />
             <HelpTab />
             <WorkItemDetailRegistration />
             <InteractionDetailRegistration />

@@ -19,6 +19,7 @@ import { HelpCircle } from 'lucide-react';
 import { useRhp } from './RhpContext';
 import { useRhpPinnedContent } from './RhpPinnedContent';
 import { useProjectPicker } from '@/components/projectpicker/ProjectPickerContext';
+import { useCapabilities } from '@/capabilities';
 import {
   resolveHelpComponent,
   ColdStartHelp,
@@ -30,9 +31,10 @@ import {
 export function HelpBody() {
   const { pathname } = useLocation();
   const { activeProject, isLoading } = useProjectPicker();
+  const { beadsOnly } = useCapabilities();
 
   // Cold-start: picker has finished loading but no project is active.
-  const isColdStart = !isLoading && activeProject === null;
+  const isColdStart = !beadsOnly && !isLoading && activeProject === null;
 
   if (isColdStart) {
     return <ColdStartHelp />;

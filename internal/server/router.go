@@ -278,6 +278,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/health", r.health)
 		api.Get("/version", r.version)
 		api.Get("/config", r.config)
+		api.Get("/beads-history", r.beadsHistory)
+		api.Get("/beads/health", r.beadsHealth)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/beads/health/actions", r.beadsHealthAction)
 
 		// gm-e4.2: self-describing OpenAPI 3.1 schema. The SPA's
 		// generated client (web/src/api/gen/) is built against this
@@ -365,6 +369,8 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Post("/work-items/{id}/cascade-dispatch", r.cascadeDispatchWorkItem)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Patch("/work-items/{id}", r.patchWorkItem)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/work-items/{id}", r.deleteWorkItem)
 		// gm-e4.3.2: out-of-process notify endpoint. Auth-gated;
 		// NOT nonce-gated — the caller is server-internal plumbing
 		// (the bd post-commit git hook from gm-e4.3.3, ops scripts).
@@ -527,6 +533,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// callers MUST hit /api/v1/*. Mutating routes carry the same
 		// requireConfirmNonce gate as their unversioned twins.
 		api.Get("/v1/capabilities", r.capabilities)
+		api.Get("/v1/beads-history", r.beadsHistory)
 		api.Get("/v1/agents", r.listAgents)
 		api.Get("/v1/groups", r.listAgentGroups)
 		api.Get("/v1/sessions", r.listSessions)
@@ -815,18 +822,25 @@ func (r *Router) version(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (r *Router) config(w http.ResponseWriter, _ *http.Request) {
+	mode := "full"
+	if r.cfg.BeadsOnly {
+		mode = "beads_only"
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"auth_mode":      r.cfg.EffectiveAuthMode(),
 		"yolo_available": r.cfg.DangerouslySkipPermissions,
 		"listen":         r.cfg.Listen,
 		"port":           r.cfg.Port,
+		"mode":           mode,
+		"beads_only":     r.cfg.BeadsOnly,
 		"city":           r.cfg.City,
 		"town":           r.cfg.Town,
 		// beads_source is the workspace identity — 1:1 with a beads
 		// database. The SPA renders it in the Topbar so operators
 		// running multiple gemba instances against different databases
 		// can tell them apart at a glance.
-		"beads_source": r.cfg.BeadsSource(),
+		"beads_source":       r.cfg.BeadsSource(),
+		"beads_history_path": r.cfg.BeadsOnlyManifest(),
 	})
 }
 

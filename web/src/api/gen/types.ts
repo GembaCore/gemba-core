@@ -100,7 +100,8 @@ export interface paths {
         get: operations["getWorkItem"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Hard-delete one WorkItem when the bound WorkPlane supports deletion. */
+        delete: operations["deleteWorkItem"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1088,6 +1089,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description The bound adaptor does not support this operation. */
+        Unsupported: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: never;
     requestBodies: never;
@@ -1229,6 +1239,32 @@ export interface operations {
                 };
             };
             404: components["responses"]["NotFound"];
+            503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    deleteWorkItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Workspace-prefixed bead id (e.g. `gemba/gm-e4.2`). */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The deleted work item as it existed before deletion. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkItem"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["Unsupported"];
             503: components["responses"]["AdaptorUnavailable"];
         };
     };

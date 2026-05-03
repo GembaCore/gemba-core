@@ -200,6 +200,24 @@ export async function updateWorkItem(
   });
 }
 
+// deleteWorkItem — DELETE /api/work-items/{id}. This is a hard-delete
+// administration action for Beads-capable modes. Closing a completed
+// work item remains a PATCH state transition.
+export async function deleteWorkItem(
+  id: string,
+  opts: { nonce?: string } = {}
+): Promise<WorkItem> {
+  if (!id) {
+    throw new Error('deleteWorkItem: id is required');
+  }
+  return apiFetch<WorkItem>(`/work-items/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: {
+      [CONFIRM_HEADER]: opts.nonce ?? freshNonce(),
+    },
+  });
+}
+
 export interface CascadeDispatchRequest {
   agent_type: string;
   limit?: number;

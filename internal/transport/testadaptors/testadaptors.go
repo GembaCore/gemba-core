@@ -32,6 +32,7 @@ type FakeWorkPlane struct {
 	ListFn       func(ctx context.Context, filter core.WorkItemFilter) ([]core.WorkItem, error)
 	CreateFn     func(ctx context.Context, wi core.WorkItem) (core.WorkItem, error)
 	UpdateFn     func(ctx context.Context, id core.WorkItemID, patch core.WorkItemPatch) (core.WorkItem, error)
+	DeleteFn     func(ctx context.Context, id core.WorkItemID) (core.WorkItem, error)
 	AttachFn     func(ctx context.Context, id core.WorkItemID, ev core.Evidence) error
 	SprintsFn    func(ctx context.Context) ([]core.Sprint, error)
 	BudgetRollFn func(ctx context.Context, sprintID string) (core.BudgetRollup, error)
@@ -47,6 +48,7 @@ type FakeWorkPlane struct {
 	listCalls   []core.WorkItemFilter
 	attachCalls []FakeAttachCall
 	updateCalls []FakeUpdateCall
+	deleteCalls []core.WorkItemID
 	createCalls []core.WorkItem
 	budgetCalls []string
 	sprintsN    int
@@ -187,6 +189,17 @@ func (f *FakeWorkPlane) UpdateWorkItem(ctx context.Context, id core.WorkItemID, 
 		return core.WorkItem{}, errors.New("fake: UpdateWorkItem not programmed")
 	}
 	return f.UpdateFn(ctx, id, patch)
+}
+
+func (f *FakeWorkPlane) DeleteWorkItem(ctx context.Context, id core.WorkItemID) (core.WorkItem, error) {
+	f.mu.Lock()
+	f.deleteCalls = append(f.deleteCalls, id)
+	f.mu.Unlock()
+	if f.DeleteFn == nil {
+		return core.WorkItem{}, core.NewAdaptorError(core.KindUnsupported,
+			"fake: DeleteWorkItem not programmed")
+	}
+	return f.DeleteFn(ctx, id)
 }
 
 func (f *FakeWorkPlane) AttachEvidence(ctx context.Context, id core.WorkItemID, ev core.Evidence) error {

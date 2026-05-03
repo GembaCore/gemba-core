@@ -112,6 +112,30 @@ function mockStatusFetch(fetchSpy: ReturnType<typeof vi.fn>) {
     if (url.startsWith('/api/work-items')) {
       return Promise.resolve(jsonResponse({ items: [workItem], total: 1 }));
     }
+    if (url === '/api/adaptors') {
+      return Promise.resolve(
+        jsonResponse({ adaptors: [{ name: 'bd', plane: 'work', healthy: true }] })
+      );
+    }
+    if (url === '/api/beads/health') {
+      return Promise.resolve(
+        jsonResponse({
+          source: { kind: 'beads-dir', label: 'gemba', detail: '/tmp/gemba' },
+          current_db: 'gemba',
+          remote_configured: false,
+          remote_kind: 'Local worktree',
+          remote_status_label: 'Local DB',
+          adaptor: { name: 'bd', plane: 'work', healthy: true },
+          actions: [
+            {
+              id: 'refresh',
+              label: 'Refresh health',
+              description: 'Re-run the Beads health probe.',
+            },
+          ],
+        })
+      );
+    }
     if (url === '/api/agents') {
       return Promise.resolve(jsonResponse({ agents: [], total: 0 }));
     }
@@ -173,6 +197,8 @@ describe('StatusTab', () => {
     expect(screen.getByText('Need approval')).toBeTruthy();
     expect(screen.getAllByText('bd').length).toBeGreaterThan(0);
     expect(screen.getAllByText('gastown').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('rhp-status-beads-health')).toBeTruthy();
+    expect(screen.getByText('Current DB')).toBeTruthy();
     expect(screen.getByText('Adaptors healthy')).toBeTruthy();
   });
 });

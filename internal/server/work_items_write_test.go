@@ -74,6 +74,14 @@ func patchReq(t *testing.T, id, nonce string, body any) *http.Request {
 	return req
 }
 
+func deleteReq(id, nonce string) *http.Request {
+	req := httptest.NewRequest(http.MethodDelete, "/api/work-items/"+id, nil)
+	if nonce != "" {
+		req.Header.Set(ConfirmHeader, nonce)
+	}
+	return req
+}
+
 // ---------------------------------------------------------------------
 // POST /api/work-items (gm-e12.10)
 // ---------------------------------------------------------------------
@@ -573,6 +581,43 @@ func TestPatchWorkItem_ParentIDAbsentLeavesNil(t *testing.T) {
 	}
 	if rec.patches[0].Parent != nil {
 		t.Fatalf("patch.Parent must stay nil when parent_id absent; got %+v", rec.patches[0].Parent)
+	}
+}
+
+func TestDeleteWorkItem_HappyPath(t *testing.T) {
+	host := api.New()
+	wp := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	var got core.WorkItemID
+	wp.DeleteFn = func(_ context.Context, id core.WorkItemID) (core.WorkItem, error) {
+		got = id
+		return core.WorkItem{
+			ID:            id,
+			Kind:          "task",
+			Title:         "old bead",
+			Status:        "open",
+			StateCategory: core.StateBacklog,
+		}, nil
+	}
+	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
+		t.Fatalf("RegisterWorkPlane: %v", err)
+	}
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), host)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, deleteReq("gemba%2Fgemba%2Fgm-delete", "nonce-delete"))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d; body=%q", w.Code, w.Body.String())
+	}
+	if got != "gemba/gemba/gm-delete" {
+		t.Fatalf("adaptor saw %q", got)
+	}
+	var out core.WorkItem
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.ID != got {
+		t.Fatalf("returned item id=%q want %q", out.ID, got)
 	}
 }
 

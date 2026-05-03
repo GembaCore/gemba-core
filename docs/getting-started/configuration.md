@@ -39,6 +39,9 @@ the resolution falls through to user-level config when none is passed.
 |---|---|---|
 | `--beads-dir` | unset | Path to the Beads workspace; bd subprocesses spawn with this as cwd. |
 | `--dolt-url` | unset | `mysql://user[:pass]@host:port/dbname` — direct read-only Dolt SQL connection (faster than the bd CLI path). |
+| `--beads-url` | unset | Alias for `--dolt-url`, intended for Beads-only/container-style boot. |
+| `--beads-only` | `false` | Run without project or orchestration requirements. Shows Beads management surfaces only. |
+| `--beads-history` | unset | JSONL session manifest path for Beads-only history. Defaults under the Beads workspace when possible. |
 | `--noop` | `false` | Bind in-memory reference adaptors for both planes. Forces `--orchestration=noop`. Mutually exclusive with `--beads-dir` / `--dolt-url`. |
 
 ### Orchestration plane
@@ -73,6 +76,10 @@ variables for credentials and side-channel wiring.
 | `ANTHROPIC_API_KEY` | Onboarder persona | Optional fallback when `[llm].api_key` is empty in `~/.gemba/config.toml` (consumer's choice; not the loader's). |
 | `GEMBA_E2E_BASE_URL` | playwright e2e | Used by the screenshot pipeline + live probes. |
 | `GEMBA_E2E_RUN_DEEP` | playwright e2e | Opt-in flag that runs deep-tier specs against a real `gemba serve` + Dolt + bd setup. |
+| `GEMBA_MODE=beads_only` | gemba serve | Enables Beads-only mode without passing `--beads-only`. |
+| `GEMBA_BEADS_URL` | gemba serve | Beads/Dolt URL used as the WorkPlane source in Beads-only mode. |
+| `GEMBA_BEADS_DIR` | gemba serve | Local Beads workspace used as the WorkPlane source in Beads-only mode. |
+| `GEMBA_BEADS_ONLY_MANIFEST` | gemba serve | JSONL manifest path for the RHP Beads history ledger. |
 
 ## Layer 3 — Per-workspace `.gemba/`
 

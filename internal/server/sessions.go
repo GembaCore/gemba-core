@@ -110,6 +110,11 @@ type startSessionRequest struct {
 // SessionPrompt.Extension so the adaptor's own dedup table treats
 // retries correctly (gm-native.9 contract).
 func (r *Router) startSession(w http.ResponseWriter, req *http.Request) {
+	if r.cfg.BeadsOnly {
+		httperr.WriteError(w, core.NewAdaptorError(core.KindUnsupported,
+			"sessions are unavailable in beads-only mode"))
+		return
+	}
 	if r.host == nil || r.host.OrchestrationPlane() == nil {
 		httperr.WriteError(w, core.NewAdaptorError(core.KindUnsupported,
 			"orchestration plane not configured"))
