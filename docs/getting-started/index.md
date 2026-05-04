@@ -21,6 +21,10 @@ items, configuring agent runtimes, and tuning parallelism.
 - **[Install guide](../install)** — includes the standard Docker image
   for mounted real work, the self-contained Docker quickstart image for
   seeded Beads exploration, and the minimal release image.
+- **[Beads-only Docker quickstart](beads-only-docker)** — pull the
+  published containers, authenticate with the one-time browser URL, and
+  explore the sample project, writable Beads-only mode, and
+  Beads-read-only mode.
 - **[Parallelism in Gemba](parallelism)** — declare per-agent
   parallelism in `.gemba/agents.toml`, understand intra- vs
   inter-session axes, the dispatcher's try-reuse-before-spawn

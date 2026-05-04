@@ -817,13 +817,20 @@ func registerBeadsWorkPlane(ctx context.Context, host *api.Host, cfg config.Serv
 	if err != nil {
 		return nil, fmt.Errorf("beads workplane: %w", err)
 	}
+	// Hand the configured worktree to the registry-side probe so
+	// /api/adaptors and /api/beads/health reflect the same Beads source
+	// the workplane is using. This matters in containers, where the
+	// server cwd is not necessarily the mounted or seeded Beads project.
+	bd.SetProbeDir(cfg.BeadsDir)
 	wrapped := shader.Wrap(adaptor, sh)
 	reg, err := host.RegisterWorkPlane(ctx, wrapped)
 	if err != nil {
+		bd.SetProbeDir("")
 		return nil, fmt.Errorf("register beads workplane: %w", err)
 	}
 	manifest, err := wrapped.Describe(ctx)
 	if err != nil {
+		bd.SetProbeDir("")
 		return nil, fmt.Errorf("describe beads workplane: %w", err)
 	}
 	slog.Info("workplane adaptor registered",

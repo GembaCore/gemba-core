@@ -141,6 +141,9 @@ Gemba has three container shapes:
 | Standard Docker server | Local or team deployment with mounted real work | Gemba, sentinel CLIs, `bd`, git/ssh, writable `/data` and `/work` volumes |
 | Minimal server | Production-style deployment with smallest runtime surface | Gemba only, distroless base |
 
+For a copy/paste guide using the published Docker Hub images, see
+[Beads-only Docker quickstart](getting-started/beads-only-docker.md).
+
 ### Quickstart image
 
 The quickstart image is self-contained so a user can get a populated

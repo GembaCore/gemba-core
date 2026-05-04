@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/GembaCore/gemba-core/internal/adapter/registry"
@@ -21,10 +22,26 @@ func init() {
 	})
 }
 
+var (
+	probeDirMu sync.RWMutex
+	probeDir   string
+)
+
+// SetProbeDir installs the Beads worktree directory the registry health
+// probe should use. The registry hooks run without direct access to
+// serve-time configuration, so container and daemon runs must hand the
+// configured --beads-dir to the package after the workplane boots.
+// Passing an empty string restores the legacy cwd/ancestor lookup.
+func SetProbeDir(dir string) {
+	probeDirMu.Lock()
+	probeDir = dir
+	probeDirMu.Unlock()
+}
+
 // detect reports ok when the `bd` CLI is installed AND the current working
-// tree (or an ancestor) contains a .beads/ directory. Both halves matter:
-// without the binary we can't issue queries, and without the store there
-// are no beads to read.
+// tree (or configured probe directory, or an ancestor) contains a .beads/
+// directory. Both halves matter: without the binary we can't issue queries,
+// and without the store there are no beads to read.
 func detect() registry.DetectResult {
 	if _, err := exec.LookPath("bd"); err != nil {
 		return registry.DetectResult{
@@ -32,7 +49,7 @@ func detect() registry.DetectResult {
 				"(https://github.com/steveyegge/beads)",
 		}
 	}
-	cwd, err := os.Getwd()
+	cwd, err := effectiveProbeDir()
 	if err != nil {
 		return registry.DetectResult{Reason: err.Error()}
 	}
@@ -48,6 +65,16 @@ func detect() registry.DetectResult {
 		}
 		dir = parent
 	}
+}
+
+func effectiveProbeDir() (string, error) {
+	probeDirMu.RLock()
+	dir := probeDir
+	probeDirMu.RUnlock()
+	if strings.TrimSpace(dir) == "" {
+		return os.Getwd()
+	}
+	return filepath.Abs(dir)
 }
 
 const probeTimeoutEnv = "GEMBA_BD_PROBE_TIMEOUT"
@@ -94,6 +121,9 @@ func probe() registry.DetectResult {
 	// within a few hundred ms; a hung server is killed by the context
 	// deadline.
 	cmd := exec.CommandContext(ctx, "bd", "list", "--limit", "1", "--json")
+	if dir, err := effectiveProbeDir(); err == nil {
+		cmd.Dir = dir
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
