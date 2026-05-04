@@ -154,6 +154,71 @@ func TestLogin_RejectsAnonymous(t *testing.T) {
 	}
 }
 
+func TestBootstrapLogin_ExchangesOneTimeTokenForCookie(t *testing.T) {
+	cfg := config.ServeConfig{
+		Listen:                 "127.0.0.1",
+		AuthMode:               "token",
+		AuthToken:              "my-bearer",
+		AuthBootstrapToken:     "launch-token",
+		AuthBootstrapExpiresAt: time.Now().Add(time.Minute),
+	}
+	h := NewRouter(cfg, fakeSPA(), nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap", nil)
+	req.Header.Set("Authorization", "Bearer launch-token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bootstrap login: want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+	result := rec.Result()
+	defer result.Body.Close()
+	var session *http.Cookie
+	for _, c := range result.Cookies() {
+		if c.Name == auth.SessionCookieName {
+			session = c
+			break
+		}
+	}
+	if session == nil {
+		t.Fatalf("expected %s cookie", auth.SessionCookieName)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	req.AddCookie(session)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cookie-only: want 200, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap", nil)
+	req.Header.Set("Authorization", "Bearer launch-token")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("second bootstrap use: want 401, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBootstrapLogin_RejectsExpiredToken(t *testing.T) {
+	cfg := config.ServeConfig{
+		Listen:                 "127.0.0.1",
+		AuthMode:               "token",
+		AuthToken:              "my-bearer",
+		AuthBootstrapToken:     "launch-token",
+		AuthBootstrapExpiresAt: time.Now().Add(-time.Minute),
+	}
+	h := NewRouter(cfg, fakeSPA(), nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/bootstrap", nil)
+	req.Header.Set("Authorization", "Bearer launch-token")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d; body=%q", rec.Code, rec.Body.String())
+	}
+}
+
 // gm-e5.2 DoD: token never logged anywhere. The stored file is an argon2id
 // hash — the plaintext must never appear inside it. We prove the invariant
 // by round-tripping a fixed plaintext through WriteHash/ReadHash and

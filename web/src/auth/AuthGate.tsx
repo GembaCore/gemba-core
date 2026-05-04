@@ -9,9 +9,31 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void checkSession().then((next) => {
-      if (!cancelled) setState(next);
-    });
+    const bootstrapToken = consumeBootstrapTokenFromLocation();
+    if (bootstrapToken) {
+      setState('submitting');
+      void exchangeToken('/api/auth/bootstrap', bootstrapToken)
+        .then((ok) => {
+          if (cancelled) return;
+          if (ok) {
+            setState('ready');
+          } else {
+            setMessage(
+              'That launch link was not accepted. Paste the token printed in the server logs.'
+            );
+            setState('needs-token');
+          }
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setMessage(err instanceof Error ? err.message : String(err));
+          setState('error');
+        });
+    } else {
+      void checkSession().then((next) => {
+        if (!cancelled) setState(next);
+      });
+    }
     return () => {
       cancelled = true;
     };
@@ -27,14 +49,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     setState('submitting');
     setMessage('');
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${trimmed}`,
-          Accept: 'application/json',
-        },
-      });
-      if (!res.ok) {
+      if (!(await exchangeToken('/api/auth/login', trimmed))) {
         setMessage('That token was not accepted. Check the server logs and try again.');
         setState('needs-token');
         return;
@@ -100,6 +115,17 @@ export function AuthGate({ children }: { children: ReactNode }) {
   );
 }
 
+async function exchangeToken(path: string, token: string): Promise<boolean> {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: 'application/json',
+    },
+  });
+  return res.ok;
+}
+
 async function checkSession(): Promise<AuthState> {
   try {
     const res = await fetch('/api/health', { headers: { Accept: 'application/json' } });
@@ -109,6 +135,19 @@ async function checkSession(): Promise<AuthState> {
   } catch {
     return 'error';
   }
+}
+
+function consumeBootstrapTokenFromLocation(): string {
+  if (typeof window === 'undefined') return '';
+  const hash = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  if (!hash) return '';
+  const params = new URLSearchParams(hash);
+  const token = params.get('gemba-bootstrap')?.trim() ?? '';
+  if (!token) return '';
+  window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  return token;
 }
 
 function FullScreenShell({ children }: { children: ReactNode }) {

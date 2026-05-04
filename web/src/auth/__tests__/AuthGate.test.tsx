@@ -7,6 +7,7 @@ describe('AuthGate', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    window.history.replaceState(null, '', '/');
   });
 
   afterEach(() => {
@@ -19,7 +20,7 @@ describe('AuthGate', () => {
     render(
       <AuthGate>
         <div>app ready</div>
-      </AuthGate>,
+      </AuthGate>
     );
 
     expect(await screen.findByText('app ready')).toBeTruthy();
@@ -28,14 +29,16 @@ describe('AuthGate', () => {
   it('exchanges a bearer token for a session cookie before rendering children', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response('{"error":"unauthorized","code":"missing_bearer"}', { status: 401 }))
+      .mockResolvedValueOnce(
+        new Response('{"error":"unauthorized","code":"missing_bearer"}', { status: 401 })
+      )
       .mockResolvedValueOnce(new Response('{"status":"ok"}', { status: 200 }));
     globalThis.fetch = fetchMock;
 
     render(
       <AuthGate>
         <div>app ready</div>
-      </AuthGate>,
+      </AuthGate>
     );
 
     fireEvent.change(await screen.findByLabelText('Bearer token'), {
@@ -48,6 +51,30 @@ describe('AuthGate', () => {
       method: 'POST',
       headers: {
         Authorization: 'Bearer secret-token',
+        Accept: 'application/json',
+      },
+    });
+  });
+
+  it('exchanges a launch URL fragment and removes it from the address bar', async () => {
+    window.history.replaceState(null, '', '/#gemba-bootstrap=launch-token');
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{"status":"ok"}', { status: 200 }));
+    globalThis.fetch = fetchMock;
+
+    render(
+      <AuthGate>
+        <div>app ready</div>
+      </AuthGate>
+    );
+
+    expect(await screen.findByText('app ready')).toBeTruthy();
+    expect(window.location.hash).toBe('');
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/bootstrap', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer launch-token',
         Accept: 'application/json',
       },
     });

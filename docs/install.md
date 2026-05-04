@@ -155,9 +155,11 @@ That builds `Dockerfile.quickstart`, starts Gemba on
 volume `gemba-quickstart-data`, and runs in Beads-only mode. The image
 binds `0.0.0.0:7666` inside the container, so it uses token auth by
 default. The token is printed on first start and persisted under the
-`/data` volume as Gemba's normal token hash file. Paste that token into
-the browser prompt on first load; the SPA exchanges it for a session
-cookie.
+`/data` volume as Gemba's normal token hash file. Each server start also
+prints a one-time browser login URL. Open that URL to unlock the SPA; it
+uses a URL fragment so the one-time token is exchanged by the browser and
+then removed from the address bar. If the link expires, paste the primary
+token into the browser prompt as a fallback.
 
 Equivalent manual commands:
 

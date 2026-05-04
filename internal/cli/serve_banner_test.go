@@ -94,6 +94,18 @@ func TestPrintStartupBanner_DoltRedacted(t *testing.T) {
 	}
 }
 
+func TestAuthBootstrapURLUsesLocalhostForWildcardBind(t *testing.T) {
+	cfg := config.ServeConfig{
+		Listen:             "0.0.0.0",
+		Port:               7666,
+		AuthBootstrapToken: "launch-token",
+	}
+	got := authBootstrapURL(cfg)
+	if got != "http://127.0.0.1:7666/#gemba-bootstrap=launch-token" {
+		t.Fatalf("unexpected bootstrap URL: %s", got)
+	}
+}
+
 // TestPrintStartupBanner_VersionFallback covers the `go run` / unstamped-build
 // case: BuildInfo.Version empty must render as "dev" rather than an empty
 // token that would produce "▶ gemba   listen=…".

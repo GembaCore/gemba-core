@@ -258,9 +258,14 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			apiAuth = auth.BearerOrCookieAuth(verifier, cookieSigner)
 		}
 	}
+	bootstrapStore := auth.NewBootstrapStore(cfg.AuthBootstrapToken, cfg.AuthBootstrapExpiresAt)
 
 	// API routes. Everything under /api/* and /events/* is explicit so the
 	// SPA fallback never shadows them (see gm-b2).
+	if cookieSigner != nil && bootstrapStore != nil {
+		mux.Method(http.MethodPost, "/api/auth/bootstrap",
+			auth.BootstrapLoginHandler(cookieSigner, bootstrapStore))
+	}
 	mux.Route("/api", func(api chi.Router) {
 		if apiAuth != nil {
 			api.Use(apiAuth)

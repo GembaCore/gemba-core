@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ServeConfig captures every flag `gemba serve` accepts. Held on the CLI side
@@ -27,9 +28,15 @@ type ServeConfig struct {
 	// AuthTokenHashPath points at the argon2id PHC hash file written by
 	// `gemba auth token rotate`. Defaults to ~/.gemba/tokens/primary.
 	AuthTokenHashPath string
-	TLSCert           string
-	TLSKey            string
-	TLSSelfSigned     bool
+	// AuthBootstrapToken is an ephemeral one-time token used by the SPA to
+	// exchange a launch URL fragment for the normal session cookie. It is
+	// generated at process start for token-auth deployments and is never
+	// persisted.
+	AuthBootstrapToken     string
+	AuthBootstrapExpiresAt time.Time
+	TLSCert                string
+	TLSKey                 string
+	TLSSelfSigned          bool
 
 	// City is the path to a Gas City workspace (preferred).
 	// Town is the path to a Gas Town HQ (legacy; kept for back-compat).

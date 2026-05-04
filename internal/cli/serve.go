@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -263,6 +265,14 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 			return err
 		}
 	}
+	if cfg.EffectiveAuthMode() == "token" {
+		tok, err := auth.NewToken()
+		if err != nil {
+			return fmt.Errorf("generate auth bootstrap token: %w", err)
+		}
+		cfg.AuthBootstrapToken = tok
+		cfg.AuthBootstrapExpiresAt = time.Now().Add(10 * time.Minute)
+	}
 
 	reg, err := registerWorkPlane(ctx, cfg)
 	if err != nil {
@@ -292,6 +302,9 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 
 	if !quiet {
 		printStartupBanner(bannerOut, b, cfg, reg, resolvedPools)
+	}
+	if cfg.AuthBootstrapToken != "" {
+		printAuthBootstrapURL(os.Stderr, cfg)
 	}
 
 	// gm-root.17.4: cold-start redirect — if no project exists under
@@ -1206,6 +1219,44 @@ func ensurePrimaryToken(path string) error {
 	fmt.Fprintln(os.Stderr, "==============================================================")
 	fmt.Fprintln(os.Stderr)
 	return nil
+}
+
+func printAuthBootstrapURL(w io.Writer, cfg config.ServeConfig) {
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "==============================================================")
+	fmt.Fprintln(w, "  Gemba generated a one-time browser login URL.")
+	fmt.Fprintln(w, "  Open it to unlock this server without pasting the token.")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "  Open:   "+authBootstrapURL(cfg))
+	fmt.Fprintln(w, "  Until:  "+cfg.AuthBootstrapExpiresAt.Format(time.RFC3339))
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "  If it expires, paste the primary token at the browser prompt.")
+	fmt.Fprintln(w, "==============================================================")
+	fmt.Fprintln(w)
+}
+
+func authBootstrapURL(cfg config.ServeConfig) string {
+	scheme := "http"
+	if cfg.TLSEnabled() {
+		scheme = "https"
+	}
+	host := browserHost(cfg.Listen)
+	u := url.URL{
+		Scheme:   scheme,
+		Host:     net.JoinHostPort(host, strconv.Itoa(cfg.Port)),
+		Path:     "/",
+		Fragment: "gemba-bootstrap=" + cfg.AuthBootstrapToken,
+	}
+	return u.String()
+}
+
+func browserHost(listen string) string {
+	switch strings.Trim(listen, "[]") {
+	case "", "0.0.0.0", "::":
+		return "127.0.0.1"
+	default:
+		return listen
+	}
 }
 
 // configureTLS resolves the TLS posture for the http.Server based on
