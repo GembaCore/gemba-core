@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ThemeProvider } from '@/lib/theme';
 import { CapabilitiesProvider } from '@/capabilities';
+import { AuthGate } from '@/auth/AuthGate';
 import { HotkeysProvider } from '@/hotkeys';
 import { startSSE } from '@/data/sse';
 import './index.css';
@@ -23,27 +24,27 @@ const queryClient = new QueryClient({
   },
 });
 
-// Open the /events SSE consumer once at boot. Connection lifetime is
-// the app's lifetime — EventSource auto-reconnects on transient
-// disconnects so this is a fire-and-forget call. Returns a cleanup
-// closure we keep in module scope so HMR teardown closes the socket.
-const stopSSE = startSSE(queryClient);
-if (import.meta.hot) {
-  import.meta.hot.dispose(() => stopSSE());
-}
-
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <CapabilitiesProvider>
-          <BrowserRouter>
-            <HotkeysProvider>
-              <App />
-            </HotkeysProvider>
-          </BrowserRouter>
-        </CapabilitiesProvider>
+        <AuthGate>
+          <CapabilitiesProvider>
+            <SseBoot />
+            <BrowserRouter>
+              <HotkeysProvider>
+                <App />
+              </HotkeysProvider>
+            </BrowserRouter>
+          </CapabilitiesProvider>
+        </AuthGate>
       </ThemeProvider>
     </QueryClientProvider>
   </React.StrictMode>
 );
+
+function SseBoot() {
+  const qc = useQueryClient();
+  useEffect(() => startSSE(qc), [qc]);
+  return null;
+}
