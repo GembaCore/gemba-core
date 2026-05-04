@@ -114,6 +114,9 @@ before it reaches the Beads adaptor.
 For the lowest-friction trial path, the self-contained Docker
 quickstart image builds Gemba plus `bd`, seeds the sample project, and
 starts Beads-only mode with one command: `make quickstart-run`.
+For a real unseeded container, `make docker-run` builds the standard
+Docker image with Gemba, the sentinel CLIs, `bd`, git/ssh, and mounted
+`/data` + `/work` volumes.
 **Native terminal orchestration is bundled** so operators who want agent
 sessions don't need to install anything extra:
 `gemba serve --orchestration=native` drives tmux / iTerm2 / Terminal.app
@@ -428,6 +431,10 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   run the container, open `http://localhost:7666`, and explore Flat,
   Cascade, details, Status, Beads history, and Graph without installing
   the local developer toolchain.
+- **Standard Docker server image** — `Dockerfile`,
+  `docker-compose.yml`, and `make docker-run` package unseeded Gemba
+  with `bd`, git/ssh, and the sentinel CLIs for mounted worktrees or
+  Dolt URL deployments.
 - **Codex native agent driver** — `.gemba/agents.toml` can declare a
   `codex` agent type using `binary = "gemba-codex-driver"` and
   `preamble = "codex_exec"`. The driver runs `codex exec --json`,

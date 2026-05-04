@@ -133,12 +133,13 @@ sudo make uninstall              # removes /usr/local/bin/gemba and the unit
 
 ## Container install
 
-Gemba has two container shapes:
+Gemba has three container shapes:
 
 | Image | Purpose | Includes |
 | --- | --- | --- |
 | Quickstart | First run, demos, Beads-only exploration | Gemba, `bd`, embedded sample project seeder, writable `/data` volume |
-| Server | Production-style deployment | Gemba only, distroless base, smallest runtime surface |
+| Standard Docker server | Local or team deployment with mounted real work | Gemba, sentinel CLIs, `bd`, git/ssh, writable `/data` and `/work` volumes |
+| Minimal server | Production-style deployment with smallest runtime surface | Gemba only, distroless base |
 
 ### Quickstart image
 
@@ -192,6 +193,69 @@ docker run --rm -it \
   -e GEMBA_BEADS_DIR=/work \
   gemba-core-quickstart:local
 ```
+
+### Standard Docker server image
+
+The standard Docker image is the unseeded, operator-configured sibling
+of the quickstart image. It is useful when you already have a real
+Beads worktree or Dolt URL and want a normal container that includes the
+pieces Gemba commonly shells out to: `bd`, git/ssh, and the Gemba
+sentinel CLIs used by native session setup.
+
+```bash
+make docker-run
+```
+
+That builds `Dockerfile`, starts Gemba on `http://localhost:7666`,
+mounts the current repository at `/work`, persists Gemba state under the
+named Docker volume `gemba-data`, and sets `GEMBA_BEADS_DIR=/work`.
+
+Equivalent Compose invocation:
+
+```bash
+docker compose up --build
+```
+
+Equivalent manual commands:
+
+```bash
+docker build -f Dockerfile -t gemba-core:local .
+docker run --rm -it \
+  -p 7666:7666 \
+  -v gemba-data:/data \
+  -v "$PWD:/work" \
+  -e GEMBA_BEADS_DIR=/work \
+  gemba-core:local
+```
+
+Use a Dolt URL instead of a mounted Beads worktree:
+
+```bash
+docker run --rm -it \
+  -p 7666:7666 \
+  -v gemba-data:/data \
+  -e GEMBA_BEADS_URL=mysql://root@host.docker.internal:3307/gemba \
+  gemba-core:local
+```
+
+Set `GEMBA_BEADS_ONLY=true` when you want the same standard image to run
+without project or orchestration requirements. Set
+`GEMBA_BEADS_READ_ONLY=true` for the inspection-only variant.
+
+Useful environment overrides:
+
+| Env | Default | Purpose |
+| --- | --- | --- |
+| `GEMBA_DATA_DIR` | `/data` | Persistent container data root |
+| `GEMBA_HOME` | `/data/gemba-home` | Gemba auth/session/config home |
+| `GEMBA_LISTEN` | `0.0.0.0:7666` | Listen address inside the container |
+| `GEMBA_AUTH` | `token` | Auth mode passed to `gemba serve` |
+| `GEMBA_BEADS_DIR` | unset | Mounted Beads worktree |
+| `GEMBA_BEADS_URL` | unset | Dolt/MySQL URL for direct Beads access |
+| `GEMBA_BEADS_ONLY` | unset | Add `--beads-only` |
+| `GEMBA_BEADS_READ_ONLY` | unset | Add `--beads-read-only` |
+| `GEMBA_ORCHESTRATION` | `none` | Add `--orchestration <value>` |
+| `GEMBA_CITY` / `GEMBA_TOWN` | unset | Mounted Gas City or Gas Town workspace |
 
 ### Minimal server image
 
@@ -284,6 +348,7 @@ make image-build-only   # smoke test (no push, no docker daemon)
 make image-load         # build + load into local docker daemon
 make image              # multi-arch local build (no push)
 make image-push KO_DOCKER_REPO=ghcr.io/<you>/gemba-server   # build + publish
+make docker-image       # standard Docker image with bd + sentinels, no demo seed
 make quickstart-image   # self-contained quickstart image with bd + sample Beads
 ```
 

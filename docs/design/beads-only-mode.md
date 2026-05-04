@@ -411,8 +411,8 @@ no manifest event is appended.
 
 ## 10. Docker Readiness
 
-This mode now has a self-contained Docker quickstart image in addition
-to the minimal production server image.
+This mode now has a self-contained Docker quickstart image, a standard
+Docker server image, and the minimal production `ko` image.
 
 Quickstart model:
 
@@ -433,9 +433,31 @@ The quickstart image:
 - accepts `GEMBA_BEADS_DIR=/work` for a mounted local Beads worktree or
   `GEMBA_BEADS_URL=mysql://...` for direct Dolt URL mode.
 
+Standard server model:
+
+```bash
+docker compose up --build
+```
+
+The standard `Dockerfile` image:
+
+- includes the `gemba` binary, sentinel CLIs, `bd`, git, ssh, bash, and
+  `tini`;
+- does not seed demo data;
+- defaults to
+  `gemba serve --listen 0.0.0.0:7666 --auth token --orchestration none`;
+- accepts `GEMBA_BEADS_DIR=/work` for mounted local Beads worktrees and
+  `GEMBA_BEADS_URL=mysql://...` for direct Dolt URL mode;
+- accepts `GEMBA_BEADS_ONLY=true` and `GEMBA_BEADS_READ_ONLY=true` for
+  the Beads-only and Beads-read-only variants;
+- can pass through workspace/orchestration configuration via
+  `GEMBA_CITY`, `GEMBA_TOWN`, `GEMBA_ORCHESTRATION`, and related
+  environment variables.
+
 The minimal server image remains the `ko`/distroless image documented in
 `docs/install.md`; it does not include `bd` and is intended for explicit
-operator-configured deployments.
+operator-configured deployments with the smallest possible runtime
+surface.
 
 ## 11. API and Implementation Notes
 

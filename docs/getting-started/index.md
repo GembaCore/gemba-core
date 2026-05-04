@@ -18,9 +18,9 @@ items, configuring agent runtimes, and tuning parallelism.
   environment variable, and config file Gemba reads, with the order
   of precedence (CLI > env > `.gemba/<file>` > `~/.gemba/config.toml`
   > built-in defaults).
-- **[Install guide](../install)** — includes the self-contained Docker
-  quickstart image for trying Gemba with seeded Beads data before
-  installing the local developer toolchain.
+- **[Install guide](../install)** — includes the standard Docker image
+  for mounted real work, the self-contained Docker quickstart image for
+  seeded Beads exploration, and the minimal release image.
 - **[Parallelism in Gemba](parallelism)** — declare per-agent
   parallelism in `.gemba/agents.toml`, understand intra- vs
   inter-session axes, the dispatcher's try-reuse-before-spawn
