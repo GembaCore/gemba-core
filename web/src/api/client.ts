@@ -9,6 +9,14 @@
 // and the contract in gm-faz).
 
 export const API_BASE = '/api';
+export const ADAPTOR_OPERATION_FAILED_EVENT = 'gemba:adaptor-operation-failed';
+
+export interface AdaptorOperationFailedDetail {
+  status: number;
+  code: string;
+  message: string;
+  url: string;
+}
 
 // ApiError is thrown by apiFetch for any non-2xx response. The `code`
 // field is the envelope's `error` token when one was present, or a
@@ -95,6 +103,9 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
     } catch {
       // fall through to bad_envelope
     }
+    if (isAdaptorFailure(res.status, code)) {
+      notifyAdaptorOperationFailed({ status: res.status, code, message, url });
+    }
     throw new ApiError(res.status, code, message);
   }
 
@@ -104,6 +115,20 @@ export async function apiFetch<T>(path: string, init: ApiFetchInit = {}): Promis
     const msg = e instanceof Error ? e.message : String(e);
     throw new ApiError(res.status, 'parse', `decode ${url}: ${msg}`);
   }
+}
+
+function isAdaptorFailure(status: number, code: string): boolean {
+  return (
+    status === 503 &&
+    (code === 'adaptor_degraded' || code === 'adaptor_not_configured')
+  );
+}
+
+function notifyAdaptorOperationFailed(detail: AdaptorOperationFailedDetail): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(ADAPTOR_OPERATION_FAILED_EVENT, { detail }));
 }
 
 interface Envelope {

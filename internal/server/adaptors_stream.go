@@ -16,11 +16,11 @@ import (
 // the bytes keep the TCP connection warm.
 const sseHeartbeatInterval = 25 * time.Second
 
-// adaptorsStream is the SSE endpoint that fans out AdaptorStatus
-// transitions from the registry HealthBus (gm-root.7). First frame on
-// subscribe is the current snapshot so a reconnecting client renders
-// immediately; subsequent frames fire only when the bus detects a
-// status transition.
+// adaptorsStream is the SSE endpoint that fans out explicit
+// AdaptorStatus refresh transitions from the registry HealthBus
+// (gm-root.7). First frame on subscribe is the current snapshot so a
+// reconnecting client renders immediately; subsequent frames fire only
+// when another request or operator health action refreshes the bus.
 //
 // Wire contract per SSE: Content-Type text/event-stream, no caching,
 // chunked transfer. Each frame is a JSON object matching the shape
@@ -47,10 +47,9 @@ func (r *Router) adaptorsStream(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Ensure the bus ticker is running before we subscribe. Under the
-	// production boot path StartHealthBus has already been called by
-	// cmd/gemba serve — this is a safety net for ad-hoc test harnesses
-	// that wire the router without calling Start themselves.
+	// Ensure the bus is initialized before we subscribe. With the
+	// production zero interval, Start is a no-op; Subscribe/Snapshot
+	// still gives the stream an initial frame.
 	r.healthBus.Start()
 
 	w.Header().Set("Content-Type", "text/event-stream")

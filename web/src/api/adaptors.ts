@@ -45,8 +45,8 @@ export interface BeadsHealthResponse {
   last_action?: BeadsHealthActionResult;
 }
 
-export async function getAdaptors(): Promise<AdaptorsResponse> {
-  const env = await apiFetch<AdaptorsResponse>('/adaptors');
+export async function getAdaptors(options: { refresh?: boolean } = {}): Promise<AdaptorsResponse> {
+  const env = await apiFetch<AdaptorsResponse>(options.refresh ? '/adaptors?refresh=1' : '/adaptors');
   return { ...env, adaptors: env.adaptors ?? [] };
 }
 

@@ -7,9 +7,10 @@ import (
 	"github.com/GembaCore/gemba-core/internal/transport"
 )
 
-// adaptorsHealth is the /api/adaptors handler. The SPA polls this every
-// few seconds (see web/src/components/AdaptorBanner.tsx) to decide
-// whether to surface the "adaptor degraded" banner. gm-b1.
+// adaptorsHealth is the /api/adaptors handler. The SPA reads this on
+// demand: Status uses the cached snapshot, while AdaptorBanner requests
+// ?refresh=1 only after an adaptor operation fails so the banner is a
+// confirmed fault signal rather than a periodic probe. gm-b1.
 //
 // Response shape is stable:
 //
@@ -35,10 +36,14 @@ import (
 // started (the common production path); falls through to a live probe
 // otherwise so unit tests that skip StartHealthBus still get the
 // expected wire shape.
-func (r *Router) adaptorsHealth(w http.ResponseWriter, _ *http.Request) {
+func (r *Router) adaptorsHealth(w http.ResponseWriter, req *http.Request) {
+	statuses := r.snapshotAdaptorStatuses()
+	if req.URL.Query().Get("refresh") == "1" {
+		statuses = r.refreshAdaptorStatuses()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"instance_id": r.instanceID,
-		"adaptors":    r.snapshotAdaptorStatuses(),
+		"adaptors":    statuses,
 	})
 }
 
@@ -51,6 +56,17 @@ func (r *Router) adaptorsHealth(w http.ResponseWriter, _ *http.Request) {
 func (r *Router) snapshotAdaptorStatuses() []registry.AdaptorStatus {
 	if r.healthBus != nil {
 		return r.healthBus.Snapshot()
+	}
+	return r.boundAdaptorStatuses()
+}
+
+// refreshAdaptorStatuses forces exactly one fresh bound-adaptor probe.
+// It is intentionally only used by explicit operator/reactive paths
+// (for example /api/adaptors?refresh=1 after an operation failure),
+// not by a background ticker.
+func (r *Router) refreshAdaptorStatuses() []registry.AdaptorStatus {
+	if r.healthBus != nil {
+		return r.healthBus.Poll()
 	}
 	return r.boundAdaptorStatuses()
 }

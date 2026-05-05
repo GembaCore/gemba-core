@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { useEffect, type ReactNode } from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { Sparkles, BookOpen } from 'lucide-react';
+import { Activity, Sparkles, BookOpen } from 'lucide-react';
 import {
   RhpProvider,
   useRhp,
@@ -69,6 +69,14 @@ function HelpRegistrar() {
   return null;
 }
 
+function StatusRegistrar() {
+  const { registerPinnedTab } = useRhp();
+  useEffect(() => {
+    return registerPinnedTab({ id: 'status', icon: Activity, label: 'Status' });
+  }, [registerPinnedTab]);
+  return null;
+}
+
 function setViewportWidth(width: number) {
   Object.defineProperty(window, 'innerWidth', {
     configurable: true,
@@ -106,6 +114,27 @@ describe('RhpShell', () => {
     }
     render(<App />);
     expect(screen.getByTestId('rhp-tab-help')).toBeTruthy();
+  });
+
+  it('keeps Help before Status and makes Help the default pinned tab', () => {
+    let api: ReturnType<typeof useRhp> | undefined;
+    function App() {
+      return (
+        <Providers>
+          <HelpRegistrar />
+          <StatusRegistrar />
+          <ApiProbe onApi={(a) => (api = a)} />
+          <RhpShell />
+        </Providers>
+      );
+    }
+    render(<App />);
+
+    expect(api!.tabs.filter((t) => t.pinned).map((t) => t.id)).toEqual([
+      'help',
+      'status',
+    ]);
+    expect(api!.activeTabId).toBe('help');
   });
 
   it('cold-start auto-expands when a tab is first registered', () => {

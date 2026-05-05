@@ -76,9 +76,9 @@ Top-to-bottom, in order:
 6. **Sessions** — `/sessions`; live runtime inventory.
 7. **Settings** — `/settings`; global/project configuration, with `/settings/pools` for pool dispatch.
 
-> **Sidebar consolidation rationale (updated 2026-05-01):** Recent and Grid are not top-level concerns. **Recent** is a Board named view; `/recent` survives as a deep link. **Grid** folds into Board's list/power-list layout; `/grid` redirects to `/board?layout=list&power=1`. Agents, Agent groups, Graph, Capabilities, Insights, Drift, Sprints, and Coach remain routeable secondary surfaces but do not occupy first-order sidebar slots.
+> **Sidebar consolidation rationale (updated 2026-05-04):** Recent and Grid are not top-level concerns. **Recent** is a Board named view; `/recent` survives as a deep link. **Grid** folds into Board's list/power-list layout; `/grid` redirects to `/board?layout=list&power=1`. **Graph** is first-order because dependency and relationship inspection is a core Beads-management surface, especially in Beads-only quickstart. Agents, Agent groups, Capabilities, Insights, Drift, Sprints, and Coach remain routeable secondary surfaces but do not occupy first-order sidebar slots.
 
-Secondary surfaces (`/graph`, `/insights`, `/drift`, `/coach`, `/sprints`, `/agent-groups`, `/capabilities`, `/project/config`, `/qa/health`, `/qa/gates`, `/checkpoints`) are NOT in the sidebar. They're reachable via:
+Secondary surfaces (`/insights`, `/drift`, `/coach`, `/sprints`, `/agent-groups`, `/capabilities`, `/project/config`, `/qa/health`, `/qa/gates`, `/checkpoints`) are NOT in the sidebar. They're reachable via:
 - **Cmd-K** (primary: typing the surface name jumps to it)
 - **Deep link** (URL-navigable)
 - **Inline buttons** inside related surfaces (e.g., "Insights" button on Board top-right)
@@ -344,11 +344,10 @@ Cascade, and List:
 - ID
 
 In full mode the default remains useful for execution triage; in
-Beads-only mode `/board` defaults to Flat with ID order so all beads
-are visible before the user has adopted milestone and epic wrappers.
-The Help panel explains that milestone and epic beads are wrappers and
-points users to Cascade once they want to read the milestone -> epic ->
-bead structure. `Edited` currently uses the same persisted `updated_at`
+Beads-only mode `/board` defaults to Cascade so milestone and epic
+wrappers explain the project shape first. Flat remains available from
+the board filter menu for dense inventory review, with ID order as the
+default Beads-only sort. `Edited` currently uses the same persisted `updated_at`
 timestamp as `Modified` until the Beads source provides a separate edit
 timestamp.
 

@@ -134,7 +134,8 @@ This panel does not launch an LLM. It performs deterministic setup:
 2. connect to or initialize the Beads database if allowed,
 3. load Beads capabilities,
 4. switch runtime mode to `beads_only`,
-5. open the board or backlog with the Status RHP tab visible.
+5. open the board or backlog with Help as the default RHP tab and
+   Status next in the rail for health and runtime checks.
 
 ## 4. Runtime Mode Model
 
@@ -189,7 +190,7 @@ features rather than render dead controls.
 
 | Surface or action | Beads-only behavior |
 |---|---|
-| Board | Visible; defaults to Flat |
+| Board | Visible; defaults to Cascade |
 | Cascade board | Visible; hierarchy-first milestone -> epic -> bead view |
 | Flat board/list | Visible; shows milestones, epics, and beads in one ordered list |
 | Sort order | Visible; modified, created, edited, and ID |
@@ -221,10 +222,11 @@ Deep links to hidden routes should redirect to Status or render a clear
 ### Board presentation
 
 Beads-only mode should not lead with the execution-state Kanban. Its
-default Board layout is **Flat**, a dense ordered list of all
+default Board layout is **Cascade**, a hierarchy-first view of
 milestones, epics, and beads. This is the most sensible starting point
-for a newly loaded Beads database because it does not assume the user
-has already organized work into wrappers.
+for the quickstart and most active Beads databases because wrapper
+beads explain the shape of the project before the user dives into the
+flat inventory.
 
 Milestone and epic beads are wrappers: they collect related child beads
 so users can read the project as broad goals, coherent feature areas,
@@ -487,8 +489,8 @@ Implemented points:
   decision tag pills.
 - Work-item detail and power-list bulk actions can hard-delete beads
   when the active source is writable.
-- Board defaults to Flat in Beads-only mode; Cascade and Graph remain
-  available for wrapper and dependency inspection.
+- Board defaults to Cascade in Beads-only mode; Flat and Graph remain
+  available for inventory and dependency inspection.
 
 The manifest writer should live server-side so browser refreshes, REST
 clients, and future container use all share the same ledger.

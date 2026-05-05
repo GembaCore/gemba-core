@@ -73,9 +73,9 @@ export function AppShell() {
               </main>
             </div>
             <RhpShell />
+            <HelpTab />
             <StatusTab />
             <BeadsHistoryTab />
-            <HelpTab />
             <WorkItemDetailRegistration />
             <InteractionDetailRegistration />
             <AppHotkeys />

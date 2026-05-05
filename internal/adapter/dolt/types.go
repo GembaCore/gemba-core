@@ -194,7 +194,7 @@ func (r *issueRow) toWorkItem(prefix string) core.WorkItem {
 	id := buildWorkItemID(prefix, r.ID)
 	descClean, dod := extractDoltDoD(nullString(r.Description))
 	kind := r.IssueType
-	if hasDoltLabel(r.Labels, milestoneLabel) {
+	if r.IssueType == core.KindMilestone || hasDoltLabel(r.Labels, milestoneLabel) {
 		kind = core.KindMilestone
 	}
 	wi := core.WorkItem{

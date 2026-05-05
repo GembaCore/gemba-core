@@ -77,12 +77,12 @@ const caps: CapabilitiesResponse = {
   orchestration_plane: null,
 };
 
-function renderSidebar(initialEntry = '/new') {
+function renderSidebar(initialEntry = '/new', initialCaps: CapabilitiesResponse = caps) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <QueryClientProvider client={client}>
-        <CapabilitiesProvider initial={caps}>
+        <CapabilitiesProvider initial={initialCaps}>
           <ProjectPickerProvider>
             <Sidebar />
           </ProjectPickerProvider>
@@ -100,6 +100,7 @@ function renderSidebar(initialEntry = '/new') {
 // from a cold start).
 const WORKSPACE_SCOPED = [
   'Plan',
+  'Graph',
   'Refine',
   'Review',
   'Triage',
@@ -107,6 +108,13 @@ const WORKSPACE_SCOPED = [
 ];
 
 const ALWAYS_OPERATIONAL = ['Settings'];
+
+const beadsOnlyCaps: CapabilitiesResponse = {
+  ...caps,
+  runtime_mode: 'beads_only',
+  beads_only: true,
+  orchestration_plane: null,
+};
 
 describe('Sidebar', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
@@ -151,9 +159,10 @@ describe('Sidebar', () => {
     );
     renderSidebar('/graph');
 
-    const plan = await screen.findByRole('link', { name: 'Plan' });
-    expect(plan.getAttribute('data-active')).toBe('true');
-    expect(plan.getAttribute('aria-current')).toBe('page');
+    const graph = await screen.findByRole('link', { name: 'Graph' });
+    expect(graph.getAttribute('data-active')).toBe('true');
+    expect(graph.getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: 'Plan' }).getAttribute('data-active')).toBeNull();
     expect(screen.getByRole('link', { name: 'Refine' }).getAttribute('data-active')).toBeNull();
   });
 
@@ -197,11 +206,23 @@ describe('Sidebar', () => {
     renderSidebar('/graph');
 
     await screen.findByRole('link', { name: 'Settings' });
-    const plan = screen.getByTestId('sidebar-item-board');
-    expect(plan.tagName.toLowerCase()).toBe('span');
-    expect(plan.getAttribute('aria-disabled')).toBe('true');
-    expect(plan.getAttribute('data-active')).toBe('true');
-    expect(plan.getAttribute('aria-current')).toBe('page');
+    const graph = screen.getByTestId('sidebar-item-graph');
+    expect(graph.tagName.toLowerCase()).toBe('span');
+    expect(graph.getAttribute('aria-disabled')).toBe('true');
+    expect(graph.getAttribute('data-active')).toBe('true');
+    expect(graph.getAttribute('aria-current')).toBe('page');
+  });
+
+  it('beads-only mode exposes Graph as a first-order navigation item', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ projects: [], total: 0 }));
+    renderSidebar('/board', beadsOnlyCaps);
+
+    const graph = await screen.findByRole('link', { name: 'Graph' });
+    expect(graph.getAttribute('href')).toBe('/graph');
+    expect(graph.getAttribute('data-disabled')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Review' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Triage' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Sessions' })).toBeNull();
   });
 
   it('cold-start: Settings stays interactive', async () => {

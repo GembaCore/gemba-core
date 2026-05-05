@@ -95,6 +95,11 @@ function wrap(ui: ReactNode, initialEntry = '/board', initialCaps: CapabilitiesR
   );
 }
 
+function openBoardControls() {
+  fireEvent.click(screen.getByTestId('board-filter-menu-button'));
+  expect(screen.getByTestId('board-filter-menu')).toBeTruthy();
+}
+
 const beadsOnlyCaps: CapabilitiesResponse = {
   ...caps,
   runtime_mode: 'beads_only',
@@ -228,7 +233,7 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
   });
 
-  it('defaults beads-only mode to Flat and keeps Cascade available for wrappers', async () => {
+  it('defaults beads-only mode to Cascade and keeps Flat available', async () => {
     const data: WorkItem[] = [
       bead('gm-task', 'unstarted', {
         title: 'Leaf bead',
@@ -248,14 +253,25 @@ describe('BoardPage', () => {
 
     render(wrap(<BoardPage />, '/board', beadsOnlyCaps));
 
-    await waitFor(() => expect(screen.getByTestId('board-list')).toBeTruthy());
-    expect(screen.getByTestId('view-toggle-list').getAttribute('data-active')).toBe('true');
+    await waitFor(() => expect(screen.getByTestId('beads-cascade')).toBeTruthy());
+    openBoardControls();
+    expect(screen.getByTestId('view-toggle-cascade').getAttribute('data-active')).toBe('true');
+    expect(screen.getByTestId('view-toggle-list').getAttribute('data-active')).toBe('false');
     expect(screen.queryByTestId('view-toggle-epic')).toBeNull();
     expect(screen.queryByTestId('view-toggle-workitem')).toBeNull();
-    expect(screen.getByTestId('board-list-kind-milestone')).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId('view-toggle-cascade'));
-    await waitFor(() => expect(screen.getByTestId('beads-cascade')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('board-milestone-picker')).toBeTruthy());
+    expect(
+      Boolean(
+        screen
+          .getByTestId('board-milestone-picker')
+          .compareDocumentPosition(screen.getByTestId('board-scope-picker')) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      )
+    ).toBe(true);
+    expect((screen.getByTestId('board-preset-backlog') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('board-preset-backlog').getAttribute('title')).toBe(
+      'View filters apply in Flat/List view.'
+    );
 
     const rows = [...document.querySelectorAll('[data-testid^="beads-cascade-row-"]')].map((el) =>
       el.getAttribute('data-testid')
@@ -265,6 +281,10 @@ describe('BoardPage', () => {
       'beads-cascade-row-gm-epic',
       'beads-cascade-row-gm-task',
     ]);
+
+    fireEvent.click(screen.getByTestId('view-toggle-list'));
+    await waitFor(() => expect(screen.getByTestId('board-list')).toBeTruthy());
+    expect(screen.getByTestId('board-list-kind-milestone')).toBeTruthy();
   });
 
   // /board/:epicId deep-link auto-opens the RHP epic detail tab (gm-root.22.6).
@@ -407,6 +427,7 @@ describe('BoardPage', () => {
     render(wrap(<BoardPage />));
     await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
 
+    openBoardControls();
     fireEvent.click(screen.getByTestId('view-toggle-workitem'));
     await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
 
@@ -546,13 +567,14 @@ describe('BoardPage', () => {
 
     it('toggle click flips the URL param + persists to localStorage', async () => {
       mockData();
-      render(wrap(<BoardPage />, '/board?view=workitem'));
-      await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
-      // Default off.
-      expect(screen.queryByTestId('board-column-backlog')).toBeNull();
-      // Click toggle → backlog column appears + storage flips on.
-      fireEvent.click(screen.getByTestId('board-show-backlog-toggle'));
-      await waitFor(() => expect(screen.getByTestId('board-column-backlog')).toBeTruthy());
+    render(wrap(<BoardPage />, '/board?view=workitem'));
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+    // Default off.
+    expect(screen.queryByTestId('board-column-backlog')).toBeNull();
+    // Click toggle → backlog column appears + storage flips on.
+    openBoardControls();
+    fireEvent.click(screen.getByTestId('board-show-backlog-toggle'));
+    await waitFor(() => expect(screen.getByTestId('board-column-backlog')).toBeTruthy());
       expect(window.localStorage.getItem('gemba.board.show-backlog')).toBe('1');
       // Click again → backlog column hidden + storage cleared.
       fireEvent.click(screen.getByTestId('board-show-backlog-toggle'));
@@ -567,6 +589,7 @@ describe('BoardPage', () => {
       await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
       // No URL param, but storage hydrates the toggle on.
       expect(screen.getByTestId('board-column-backlog')).toBeTruthy();
+      openBoardControls();
       const toggle = screen.getByTestId('board-show-backlog-toggle');
       expect(toggle.getAttribute('data-active')).toBe('true');
     });
@@ -590,6 +613,7 @@ describe('BoardPage', () => {
       render(wrap(<BoardPage />, '/board?layout=list'));
       await waitFor(() => expect(screen.getByTestId('board-list')).toBeTruthy());
       // List mode shows the Power toggle, not the show_backlog toggle.
+      openBoardControls();
       expect(screen.queryByTestId('board-show-backlog-toggle')).toBeNull();
       expect(screen.getByTestId('board-power-toggle')).toBeTruthy();
     });

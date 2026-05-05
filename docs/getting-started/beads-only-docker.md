@@ -70,7 +70,8 @@ This is the fastest way to see a populated board.
    - Start on the Board in Flat layout.
    - Open a bead, epic, or milestone to inspect its right-hand details.
    - Switch to Cascade layout to see milestone → epic → bead structure.
-   - Open Graph to inspect relationships and dependencies.
+   - Open Refine to groom the seeded Backlog items in a dense table.
+   - Click **Graph** in the sidebar to inspect relationships and dependencies.
    - Open the Status tab to verify Beads health and current mode.
    - Create or edit a bead; the Beads history tab records the action.
 

@@ -138,13 +138,12 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 	}
 	id := buildWorkItemID(prefix, b.ID)
 	kind := b.IssueType
-	// Milestone convention (gm-root.3): a bead tagged with the
-	// "type:milestone" label is projected onto core.KindMilestone
-	// regardless of its bd issue_type (typically "epic"). The label is
-	// authoritative — the bd type stays as-is in
-	// Custom["beads:issue_type"] so the beads/ SPA extension can still
-	// render the underlying bd chip.
-	if hasLabel(b.Labels, milestoneLabel) {
+	// Milestone convention (gm-root.3): older Beads stores modelled
+	// milestones as epic beads tagged with "type:milestone"; newer
+	// stores can carry issue_type=milestone directly. Project either
+	// shape onto core.KindMilestone while preserving the native
+	// issue_type under Custom["beads:issue_type"].
+	if b.IssueType == core.KindMilestone || hasLabel(b.Labels, milestoneLabel) {
 		kind = core.KindMilestone
 	}
 	primary, repoIDs := repositoriesFromLabels(b.Labels)
@@ -219,10 +218,9 @@ func (b *Bead) toWorkItem(prefix string, repos *core.RepositoryRegistry) core.Wo
 	return wi
 }
 
-// milestoneLabel is the bd label Gemba uses to tag a bead as a
-// milestone (gm-root.3). The adaptor promotes Kind to KindMilestone on
-// read and pushes the label down as a bd --label filter on ListWorkItems
-// when WorkItemFilter.Kinds asks only for milestones.
+// milestoneLabel is the legacy bd label Gemba used to tag a bead as a
+// milestone (gm-root.3). Native Beads can now also store
+// issue_type=milestone, so read/filter paths accept both forms.
 const milestoneLabel = "type:milestone"
 
 // stagedLabel is the bd-side convention for core.StateStaged: bd has no

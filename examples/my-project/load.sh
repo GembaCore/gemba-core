@@ -66,6 +66,10 @@ key_to_id() {
 # in-progress are what the team is touching now.
 CLOSED_KEYS=(f1 a1 d1 d2)
 IN_PROGRESS_KEYS=(a2 a3 d3 f2 u1)
+# Backlog/refinement examples. bd status "deferred" projects to
+# Gemba's state_category=backlog, which lets /refine demonstrate
+# grooming, search, bulk edit, defer, dismiss, and drop-into-epic.
+BACKLOG_KEYS=(u3 u4 p5 b2)
 
 echo "==> Progressing workflow state"
 for k in "${CLOSED_KEYS[@]}"; do
@@ -78,6 +82,12 @@ for k in "${IN_PROGRESS_KEYS[@]}"; do
   id=$(key_to_id "${k}")
   if [[ -n "${id}" ]]; then
     (cd "${TARGET}" && bd update "${id}" --status in_progress >/dev/null 2>&1) || true
+  fi
+done
+for k in "${BACKLOG_KEYS[@]}"; do
+  id=$(key_to_id "${k}")
+  if [[ -n "${id}" ]]; then
+    (cd "${TARGET}" && bd update "${id}" --status deferred >/dev/null 2>&1) || true
   fi
 done
 

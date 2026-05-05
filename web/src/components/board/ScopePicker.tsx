@@ -1,4 +1,4 @@
-// ScopePicker (gm-uekk) — single pill that names the active board
+// ScopePicker (gm-uekk) — single pill that names the active Epic
 // scope, with a dropdown to pick one of: All / a root epic / a
 // direct child epic. Replaces the unbounded RootEpicBanner strip and
 // the swimlane-mode dropdown. URL state is owned by BoardPage; this
@@ -74,7 +74,7 @@ export function ScopePicker({ items, value, onChange }: ScopePickerProps) {
         )}
       >
         <FolderTree className="h-3 w-3" />
-        <span className="text-neutral-500">Scope</span>
+        <span className="text-neutral-500">Epic</span>
         <span className="max-w-[12rem] truncate font-mono">{triggerLabel}</span>
         <ChevronDown className={cn('h-3 w-3 opacity-60 transition-transform', open && 'rotate-180')} />
       </button>
@@ -82,7 +82,7 @@ export function ScopePicker({ items, value, onChange }: ScopePickerProps) {
       {open && (
         <div
           role="listbox"
-          aria-label="Scope"
+          aria-label="Epic"
           data-testid="board-scope-dropdown"
           className={cn(
             'absolute left-0 top-full z-50 mt-1 max-h-80 min-w-64 overflow-y-auto rounded-md border',

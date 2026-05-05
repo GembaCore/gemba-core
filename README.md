@@ -429,8 +429,10 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   `docker-compose.quickstart.yml`, and `make quickstart-run` package
   Gemba with the `bd` CLI and a seeded sample project. A new user can
   run the container, open `http://localhost:7666`, and explore Flat,
-  Cascade, details, Status, Beads history, and Graph without installing
-  the local developer toolchain.
+  Cascade, Refine, details, Status, Beads history, and Graph without
+  installing the local developer toolchain. The sample intentionally
+  leaves a few future items in Backlog so Refine demonstrates grooming
+  instead of an empty clean-backlog state.
 - **Standard Docker server image** — `Dockerfile`,
   `docker-compose.yml`, and `make docker-run` package unseeded Gemba
   with `bd`, git/ssh, and the sentinel CLIs for mounted worktrees or

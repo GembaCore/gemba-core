@@ -27,6 +27,7 @@ describe('ScopePicker', () => {
   it('renders trigger pill with "All" by default', () => {
     render(<ScopePicker items={[]} value={SCOPE_ALL} onChange={() => {}} />);
     const trigger = screen.getByTestId('board-scope-trigger');
+    expect(trigger.textContent).toContain('Epic');
     expect(trigger.textContent).toContain('All');
   });
 

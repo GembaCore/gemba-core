@@ -44,9 +44,10 @@ The first implementation slice is in place:
   leaving `/onboard` full-page before a project exists.
 - `web/src/components/rhp/details/InteractionDetail.tsx` registers an
   `interaction` RHP detail kind.
-- `web/src/components/rhp/StatusTab.tsx` registers the default RHP
-  **Status** tab before Help. It surfaces the top run metrics, active
-  sessions, open escalations, adaptor health, and workspace counts.
+- `web/src/components/rhp/HelpTab.tsx` registers the default RHP
+  **Help** tab first, with `StatusTab.tsx` registered next. Status
+  surfaces the top run metrics, active sessions, open escalations,
+  adaptor health, and workspace counts.
 - `POST /api/v1/interactions:ensure` creates or returns the
   process-local interaction record for a scoped exchange. The response
   is the normalized InteractionSession shape the SPA renders.
@@ -157,7 +158,7 @@ interaction whose backing runtime is a Gas Town crew session.
 | Current surface | Current role | Proposed interaction shape | Default future host |
 | --- | --- | --- | --- |
 | `/onboard` | New-project conversational planning | `project_onboarding` interaction with transcript + plan preview + ratify | Full page before project exists; shared Interaction components |
-| RHP Status tab | Operational status | `status_home` passive interaction shell with active-session launch points | RHP default tab |
+| RHP Status tab | Operational status | `status_home` passive interaction shell with active-session launch points | RHP pinned tab after Help |
 | RHP detail tabs | Work item/session details | `detail` interaction tabs by scope | RHP |
 | `/coach` | Dispatch affinity and "what next" | `dispatch_coach` interaction or status-derived view | RHP for scoped prompts; page may remain for broad grid |
 | `/walk` | Structured Gemba Walk | `walk` interaction with agenda, turns, decisions | RHP for scoped walk items; full page for whole-walk mode |
@@ -169,13 +170,17 @@ interaction whose backing runtime is a Gas Town crew session.
 
 The RHP should support two top-level modes:
 
-1. **Status mode**
-   - Passive home.
+1. **Help mode**
+   - Default route-aware landing pane.
+   - Explains the current surface and points operators toward the next
+     useful action.
+
+2. **Status mode**
+   - Passive cockpit.
    - Shows active sessions, counts, escalations, decisions, auto-created
      beads, token/cost counters, generated LOC, and other run metrics.
-   - Default RHP landing state.
 
-2. **Interactive mode**
+3. **Interactive mode**
    - Active operator exchange.
    - Renders transcript, draft/preview, suggested actions, and
      controls.

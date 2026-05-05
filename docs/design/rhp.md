@@ -94,7 +94,10 @@ Out of scope (deferred):
 
 ### Pinned tabs (v1)
 
-Just **Help**. Coach is deferred (`gm-root.23`).
+Pinned tabs appear before detail tabs. **Help** is first and default
+active, **Status** is second, and mode-specific pinned tabs such as
+**Beads history** may appear after Status when applicable. Coach is
+deferred (`gm-root.23`).
 
 ### Detail tabs
 

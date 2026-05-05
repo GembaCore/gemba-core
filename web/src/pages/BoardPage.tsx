@@ -8,9 +8,11 @@
 //   ?layout=list      flat WorkItem list   (former /backlog surface,
 //                     Cmd-Shift-L; gm-e12.19.1)
 //
-// Named views layer on top via ?view=<name> (gm-uipx.18). The legacy
-// ?preset= and ?view=epic|workitem|list shapes are migrated on
-// first paint by migrateLegacyParams; existing bookmarks resolve.
+// Named views layer on the Flat/List surface via ?view=<name>
+// (gm-uipx.18). The legacy ?preset= and ?view=epic|workitem|list
+// shapes are migrated on first paint by migrateLegacyParams; existing
+// bookmarks resolve. Cascade keeps the full milestone -> epic -> bead
+// hierarchy intact, so named-view chips are visible but disabled there.
 //
 // URL is the source of truth:
 //   /board                              → Epic kanban, no drawer
@@ -26,6 +28,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowUpDown,
+  Check,
+  ChevronDown,
+  Filter,
   GitBranch,
   Inbox,
   LayoutGrid,
@@ -166,7 +171,7 @@ function layoutFromQuery(
   if (v === 'cascade') return 'cascade';
   if (beadsOnly) {
     if (v === 'list') return 'list';
-    return 'list';
+    return 'cascade';
   }
   if (v === 'workitem' || v === 'list' || v === 'epic') return v;
   // No explicit ?layout=: fall back to the active named view's
@@ -311,7 +316,7 @@ export function BoardPage() {
       // (epic, or whatever the active named view prefers) so the
       // URL stays clean for the common case.
       const defaultLayout = beadsOnly
-        ? ('list' as LayoutMode)
+        ? ('cascade' as LayoutMode)
         : view
           ? LEGACY_FROM_LAYOUT[view.defaultLayout]
           : ('epic' as LayoutMode);
@@ -634,10 +639,10 @@ export function BoardPage() {
   );
 }
 
-// BoardHeader holds three controls along one row (gm-uekk):
-//   Scope picker (left)   — narrow to a root or child epic
-//   View chips (centre)   — Mine / Ready / Done · 7d filter
-//   Layout toggles (right) — Epic / Item / List shape
+// BoardHeader holds hierarchical filters followed by view controls:
+//   Milestone picker (left) — narrow to a milestone wrapper
+//   Epic picker             — narrow within that milestone to an epic lineage
+//   New + filter menu       — view/layout/order/options without crowding the bar
 //
 // The pre-uekk swimlane-mode dropdown and root-epic banner are gone;
 // scope subsumes them.
@@ -684,18 +689,16 @@ function BoardHeader({
   return (
     <div
       data-testid="board-view-toggle"
-      className="flex flex-wrap items-center gap-3 border-b border-neutral-200 bg-white/50 px-4 py-1 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
+      className="flex flex-wrap items-center gap-3 border-b border-neutral-200 bg-white/50 px-4 py-1.5 text-xs dark:border-neutral-800 dark:bg-neutral-950/50"
     >
-      <ScopePicker items={items} value={scope} onChange={onChangeScope} />
       <MilestonePicker
         items={items}
         value={milestone}
         onChange={onChangeMilestone}
         onShow={onShowMilestone}
       />
-      <ViewSwitcher value={view} onChange={onChangeView} />
+      <ScopePicker items={items} value={scope} onChange={onChangeScope} />
       <div className="ml-auto flex items-center gap-1">
-        <OrderSelect value={orderKey ?? 'modified'} onChange={onChangeOrder} />
         <button
           type="button"
           data-testid="board-new-workitem"
@@ -705,64 +708,199 @@ function BoardHeader({
           <Plus className="h-3 w-3" />
           New
         </button>
-        <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
-        <ToggleButton
-          active={layout === 'cascade'}
-          onClick={() => onChangeLayout('cascade')}
-          label="Cascade"
-          icon={<GitBranch className="h-3 w-3" />}
-          testid="view-toggle-cascade"
+        <BoardControlsMenu
+          layout={layout}
+          onChangeLayout={onChangeLayout}
+          view={view}
+          onChangeView={onChangeView}
+          power={power}
+          onChangePower={onChangePower}
+          showBacklog={showBacklog}
+          onChangeShowBacklog={onChangeShowBacklog}
+          orderKey={orderKey ?? 'modified'}
+          onChangeOrder={onChangeOrder}
+          beadsOnly={beadsOnly}
         />
-        {!beadsOnly ? (
-          <>
-            <ToggleButton
-              active={layout === 'epic'}
-              onClick={() => onChangeLayout('epic')}
-              label="Epic"
-              icon={<LayoutGrid className="h-3 w-3" />}
-              testid="view-toggle-epic"
-            />
-            <ToggleButton
-              active={layout === 'workitem'}
-              onClick={() => onChangeLayout('workitem')}
-              label="Item"
-              icon={<ListChecks className="h-3 w-3" />}
-              testid="view-toggle-workitem"
-            />
-          </>
-        ) : null}
-        <ToggleButton
-          active={layout === 'list'}
-          onClick={() => onChangeLayout('list')}
-          label={beadsOnly ? 'Flat' : 'List'}
-          icon={<List className="h-3 w-3" />}
-          testid="view-toggle-list"
-        />
-        {layout === 'list' ? (
-          <>
-            <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
-            <ToggleButton
-              active={power}
-              onClick={() => onChangePower(!power)}
-              label="Power"
-              icon={<Zap className="h-3 w-3" />}
-              testid="board-power-toggle"
-            />
-          </>
-        ) : !beadsOnly ? (
-          <>
-            <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
-            <ToggleButton
-              active={showBacklog}
-              onClick={() => onChangeShowBacklog(!showBacklog)}
-              label="Backlog"
-              icon={<Inbox className="h-3 w-3" />}
-              testid="board-show-backlog-toggle"
-            />
-          </>
-        ) : null}
       </div>
     </div>
+  );
+}
+
+interface BoardControlsMenuProps {
+  layout: LayoutMode;
+  onChangeLayout: (v: LayoutMode) => void;
+  view: WorkItemView | null;
+  onChangeView: (id: string | null) => void;
+  power: boolean;
+  onChangePower: (next: boolean) => void;
+  showBacklog: boolean;
+  onChangeShowBacklog: (next: boolean) => void;
+  orderKey: BoardOrderKey;
+  onChangeOrder: (next: BoardOrderKey) => void;
+  beadsOnly: boolean;
+}
+function BoardControlsMenu({
+  layout,
+  onChangeLayout,
+  view,
+  onChangeView,
+  power,
+  onChangePower,
+  showBacklog,
+  onChangeShowBacklog,
+  orderKey,
+  onChangeOrder,
+  beadsOnly,
+}: BoardControlsMenuProps) {
+  const [open, setOpen] = useState(false);
+  const activeViewCount =
+    (view ? 1 : 0) + (power ? 1 : 0) + (!beadsOnly && layout !== 'list' && showBacklog ? 1 : 0);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        data-testid="board-filter-menu-button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Filters and views"
+        onClick={() => setOpen((cur) => !cur)}
+        className={cn(
+          'inline-flex h-7 items-center gap-1 rounded border px-2 text-xs',
+          open || activeViewCount > 0
+            ? 'border-sky-700 bg-sky-50 text-sky-800 dark:border-sky-600 dark:bg-sky-950/50 dark:text-sky-100'
+            : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
+        )}
+      >
+        <Filter className="h-3.5 w-3.5" aria-hidden />
+        {activeViewCount > 0 ? (
+          <span
+            data-testid="board-filter-menu-count"
+            className="rounded-full bg-sky-700 px-1.5 text-[10px] font-medium leading-4 text-white dark:bg-sky-500 dark:text-sky-950"
+          >
+            {activeViewCount}
+          </span>
+        ) : null}
+        <ChevronDown className="h-3 w-3" aria-hidden />
+      </button>
+      {open ? (
+        <div
+          data-testid="board-filter-menu"
+          role="menu"
+          className={cn(
+            'absolute right-0 z-30 mt-1 w-72 rounded-md border p-2 shadow-lg',
+            'border-neutral-200 bg-white text-xs text-neutral-700',
+            'dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200'
+          )}
+        >
+          <MenuSection title="Layout">
+            <MenuOption
+              active={layout === 'cascade'}
+              onClick={() => onChangeLayout('cascade')}
+              label="Cascade"
+              icon={<GitBranch className="h-3.5 w-3.5" />}
+              testid="view-toggle-cascade"
+            />
+            {!beadsOnly ? (
+              <>
+                <MenuOption
+                  active={layout === 'epic'}
+                  onClick={() => onChangeLayout('epic')}
+                  label="Epic"
+                  icon={<LayoutGrid className="h-3.5 w-3.5" />}
+                  testid="view-toggle-epic"
+                />
+                <MenuOption
+                  active={layout === 'workitem'}
+                  onClick={() => onChangeLayout('workitem')}
+                  label="Item"
+                  icon={<ListChecks className="h-3.5 w-3.5" />}
+                  testid="view-toggle-workitem"
+                />
+              </>
+            ) : null}
+            <MenuOption
+              active={layout === 'list'}
+              onClick={() => onChangeLayout('list')}
+              label={beadsOnly ? 'Flat' : 'List'}
+              icon={<List className="h-3.5 w-3.5" />}
+              testid="view-toggle-list"
+            />
+          </MenuSection>
+
+          <MenuSection title="View">
+            <ViewSwitcher value={view} onChange={onChangeView} disabled={layout !== 'list'} />
+          </MenuSection>
+
+          <MenuSection title="Order">
+            <OrderSelect value={orderKey} onChange={onChangeOrder} />
+          </MenuSection>
+
+          <MenuSection title="Options">
+            {layout === 'list' ? (
+              <MenuOption
+                active={power}
+                onClick={() => onChangePower(!power)}
+                label="Power"
+                icon={<Zap className="h-3.5 w-3.5" />}
+                testid="board-power-toggle"
+              />
+            ) : !beadsOnly ? (
+              <MenuOption
+                active={showBacklog}
+                onClick={() => onChangeShowBacklog(!showBacklog)}
+                label="Backlog"
+                icon={<Inbox className="h-3.5 w-3.5" />}
+                testid="board-show-backlog-toggle"
+              />
+            ) : (
+              <p className="px-2 py-1 text-[11px] text-neutral-500">No extra options.</p>
+            )}
+          </MenuSection>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MenuSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="border-b border-neutral-100 py-2 last:border-0 dark:border-neutral-800">
+      <h3 className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+        {title}
+      </h3>
+      <div className="space-y-1">{children}</div>
+    </section>
+  );
+}
+
+interface MenuOptionProps {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  icon: React.ReactNode;
+  testid: string;
+}
+function MenuOption({ active, onClick, label, icon, testid }: MenuOptionProps) {
+  return (
+    <button
+      type="button"
+      role="menuitemradio"
+      aria-checked={active}
+      data-testid={testid}
+      data-active={active}
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs',
+        active
+          ? 'bg-neutral-100 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
+          : 'text-neutral-600 hover:bg-neutral-50 dark:text-neutral-300 dark:hover:bg-neutral-900'
+      )}
+    >
+      {icon}
+      <span>{label}</span>
+      {active ? <Check className="ml-auto h-3.5 w-3.5" aria-hidden /> : null}
+    </button>
   );
 }
 
@@ -774,21 +912,25 @@ function BoardHeader({
 interface ViewSwitcherProps {
   value: WorkItemView | null;
   onChange: (id: string | null) => void;
+  disabled?: boolean;
 }
-function ViewSwitcher({ value, onChange }: ViewSwitcherProps) {
+function ViewSwitcher({ value, onChange, disabled = false }: ViewSwitcherProps) {
   return (
-    <div className="flex items-center gap-1" data-testid="board-preset-switcher">
-      <span className="text-neutral-500">View</span>
+    <div className="grid grid-cols-2 gap-1" data-testid="board-preset-switcher">
       {WORK_ITEM_VIEWS.map((v) => (
         <button
           key={v.id}
           type="button"
           data-testid={`board-preset-${v.id}`}
           data-active={value?.id === v.id || undefined}
+          disabled={disabled}
+          title={disabled ? 'View filters apply in Flat/List view.' : undefined}
           onClick={() => onChange(value?.id === v.id ? null : v.id)}
           className={cn(
-            'rounded border px-2 py-0.5 text-xs transition-colors',
-            value?.id === v.id
+            'rounded border px-2 py-1 text-left text-xs transition-colors',
+            disabled
+              ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-600'
+              : value?.id === v.id
               ? 'border-sky-700 bg-sky-700 text-white'
               : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800'
           )}
@@ -806,7 +948,7 @@ interface OrderSelectProps {
 }
 function OrderSelect({ value, onChange }: OrderSelectProps) {
   return (
-    <label className="inline-flex items-center gap-1 text-neutral-500">
+    <label className="flex items-center gap-2 px-2 text-neutral-500">
       <ArrowUpDown className="h-3 w-3" aria-hidden />
       <span>Order</span>
       <select
@@ -822,33 +964,6 @@ function OrderSelect({ value, onChange }: OrderSelectProps) {
         ))}
       </select>
     </label>
-  );
-}
-
-interface ToggleButtonProps {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  icon: React.ReactNode;
-  testid: string;
-}
-function ToggleButton({ active, onClick, label, icon, testid }: ToggleButtonProps) {
-  return (
-    <button
-      type="button"
-      data-testid={testid}
-      data-active={active}
-      onClick={onClick}
-      className={cn(
-        'inline-flex items-center gap-1 rounded px-2 py-1 text-xs',
-        active
-          ? 'bg-neutral-200 text-neutral-900 dark:bg-neutral-800 dark:text-neutral-100'
-          : 'text-neutral-500 hover:bg-neutral-100 dark:text-neutral-400 dark:hover:bg-neutral-900'
-      )}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }
 

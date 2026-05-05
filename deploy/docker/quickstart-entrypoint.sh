@@ -70,6 +70,10 @@ seed_demo() {
 
   local closed_keys=(f1 a1 d1 d2)
   local in_progress_keys=(a2 a3 d3 f2 u1)
+  # Keep a few future/unclear items in Backlog so the quickstart
+  # demonstrates /refine as a real grooming surface instead of an
+  # empty "all work is already accepted" table.
+  local backlog_keys=(u3 u4 p5 b2)
   local key id
 
   for key in "${closed_keys[@]}"; do
@@ -83,6 +87,13 @@ seed_demo() {
     id="$(key_to_id "${key}")"
     if [ -n "${id}" ]; then
       (cd "${DEMO_DIR}" && bd update "${id}" --status in_progress >/dev/null 2>&1) || true
+    fi
+  done
+
+  for key in "${backlog_keys[@]}"; do
+    id="$(key_to_id "${key}")"
+    if [ -n "${id}" ]; then
+      (cd "${DEMO_DIR}" && bd update "${id}" --status deferred >/dev/null 2>&1) || true
     fi
   done
 

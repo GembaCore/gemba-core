@@ -147,6 +147,43 @@ func TestListWorkItems_HappyPath(t *testing.T) {
 	}
 }
 
+func TestListWorkItems_NativeMilestoneIssueTypeProjectsToMilestoneKind(t *testing.T) {
+	wp, mock, cleanup := newMock(t)
+	defer cleanup()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	mock.ExpectQuery(`SELECT .* FROM issues`).
+		WillReturnRows(sqlmock.NewRows(issueColumns).AddRow(
+			"gm-m1", "M1", "a milestone", "open", 1, "milestone",
+			"", "", now, "mike", now, "",
+		))
+	mock.ExpectQuery(`SELECT issue_id, label FROM labels`).
+		WithArgs("gm-m1").
+		WillReturnRows(sqlmock.NewRows([]string{"issue_id", "label"}))
+	mock.ExpectQuery(`SELECT issue_id, depends_on_id, type FROM dependencies WHERE issue_id`).
+		WithArgs("gm-m1").
+		WillReturnRows(sqlmock.NewRows([]string{"issue_id", "depends_on_id", "type"}))
+	mock.ExpectQuery(`SELECT issue_id, depends_on_id, type FROM dependencies WHERE depends_on_id`).
+		WithArgs("gm-m1").
+		WillReturnRows(sqlmock.NewRows([]string{"issue_id", "depends_on_id", "type"}))
+
+	items, err := wp.ListWorkItems(context.Background(), core.WorkItemFilter{
+		Kinds: []string{core.KindMilestone},
+	})
+	if err != nil {
+		t.Fatalf("ListWorkItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("got %d items, want 1: %+v", len(items), items)
+	}
+	if items[0].Kind != core.KindMilestone {
+		t.Fatalf("Kind=%q want %q", items[0].Kind, core.KindMilestone)
+	}
+	if got := items[0].Custom["beads:issue_type"]; got != "milestone" {
+		t.Fatalf("Custom[beads:issue_type]=%v want milestone", got)
+	}
+}
+
 func TestListWorkItems_PushesStatusAssigneeLimit(t *testing.T) {
 	wp, mock, cleanup := newMock(t)
 	defer cleanup()

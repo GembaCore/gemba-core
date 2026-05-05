@@ -3,8 +3,7 @@
 // version, declared capabilities, state map, edge / field / relationship
 // extensions, and conformance flags. Read-only diagnostic surface —
 // pulls the same data /api/capabilities serves to the rest of the SPA,
-// plus live health from the /api/adaptors/stream cache the
-// AdaptorBanner already maintains.
+// plus the last on-demand /api/adaptors health snapshot when available.
 //
 // gm-bi5 reorganises the page from "tab per plane" to "section per
 // surface" — Organization vs Execution. The plane (work vs
@@ -44,15 +43,14 @@ type AdaptorsResponse = {
   adaptors: AdaptorStatus[];
 };
 
-// useAdaptorsHealth reads the cache the AdaptorBanner's SSE pump
-// already feeds. We don't own the subscription — just consume what's
-// there. Returns undefined when the banner hasn't run yet (rare in
-// practice; the banner mounts in the app shell).
+// useAdaptorsHealth reads the shared on-demand adaptor-health cache.
+// Returns undefined when no status pane or reactive banner heartbeat
+// has asked for /api/adaptors in this SPA session.
 function useAdaptorsHealth(): AdaptorStatus[] | undefined {
   const { data } = useQuery<AdaptorsResponse>({
     queryKey: ['adaptors'],
-    // The SSE pump in AdaptorBanner is the only writer; we never want
-    // useQuery to refetch here. enabled:false alone would emit a
+    // Other surfaces are the writers; we never want useQuery to refetch
+    // here. enabled:false alone would emit a
     // "No queryFn was passed" warning per react-query 5 — provide
     // an empty fn to silence that without changing semantics.
     queryFn: async () => ({ adaptors: [] }),

@@ -29,11 +29,11 @@ import (
 	"github.com/GembaCore/gemba-core/internal/workflow"
 )
 
-// healthBusInterval is the ticker cadence for the registry HealthBus
-// started by NewRouter. 5s matches the old poll rate — the difference
-// is that we probe once per *process* instead of once per *tab*, and
-// client-side rendering becomes event-driven (see adaptorsStream).
-const healthBusInterval = 5 * time.Second
+// healthBusInterval is zero by design: adaptor health is probed on
+// demand, not on a background ticker. The shared HealthBus still caches
+// snapshots and publishes explicitly refreshed transitions, but Start()
+// is a no-op when interval <= 0.
+const healthBusInterval = 0 * time.Second
 
 // Router is the package-level entry point. cmd/gemba passes in the embedded
 // SPA filesystem so this package doesn't import the embed declaration
@@ -57,11 +57,10 @@ type Router struct {
 	// gemba serve will need a shared store.
 	nonceCache *NonceCache
 
-	// healthBus caches adaptor status and fans out transitions over
-	// /api/adaptors/stream. NewRouter creates it but does NOT start
-	// the ticker — cmd/gemba serve does via StartHealthBus so tests
-	// that never exercise the stream don't leak a goroutine per
-	// construction. gm-root.7.
+	// healthBus caches adaptor status and fans out explicit refreshes
+	// over /api/adaptors/stream. NewRouter creates it, but there is no
+	// background probe ticker; callers refresh it only after an
+	// operation failure or an operator health action. gm-root.7.
 	healthBus *registry.HealthBus
 
 	// eventsHub is the GembaEvent fan-out broker that drives the
@@ -721,11 +720,9 @@ func newInstanceID() string {
 	return hex.EncodeToString(b)
 }
 
-// StartHealthBus starts the background probe ticker that feeds the
-// /api/adaptors snapshot and the /api/adaptors/stream SSE endpoint.
-// cmd/gemba serve calls this once after NewRouter; tests that don't
-// need the stream can skip it and still get correct /api/adaptors
-// responses (the handler falls through to a synchronous probe).
+// StartHealthBus preserves the old serve wiring hook. With the current
+// zero interval it is intentionally a no-op: adaptor health is checked
+// by explicit refresh paths, not by a periodic background probe.
 // gm-root.7.
 func (r *Router) StartHealthBus() {
 	if r.healthBus != nil {

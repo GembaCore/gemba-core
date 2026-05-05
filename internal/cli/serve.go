@@ -353,9 +353,10 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	if op := host.OrchestrationPlane(); op != nil && reg.DoltDB != nil {
 		_ = server.StartRecycleWriter(ctx, op, reg.DoltDB)
 	}
-	// Start the adaptor HealthBus ticker so /api/adaptors and
-	// /api/adaptors/stream read from a shared cache instead of
-	// probing once per client request (gm-root.7).
+	// Preserve the adaptor HealthBus lifecycle hook. The bus no longer
+	// runs a periodic probe ticker; adaptor health is refreshed on
+	// explicit health actions or after an adaptor operation failure
+	// (gm-root.7).
 	handler.StartHealthBus()
 	defer handler.Close()
 

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiFetch, API_BASE } from '../client';
+import {
+  ADAPTOR_OPERATION_FAILED_EVENT,
+  ApiError,
+  apiFetch,
+  API_BASE,
+  type AdaptorOperationFailedDetail,
+} from '../client';
 
 describe('apiFetch', () => {
   const fetchSpy = vi.fn();
@@ -46,6 +52,10 @@ describe('apiFetch', () => {
   });
 
   it('flags 503 adaptor_degraded', async () => {
+    const events: AdaptorOperationFailedDetail[] = [];
+    const onFailure = (ev: Event) =>
+      events.push((ev as CustomEvent<AdaptorOperationFailedDetail>).detail);
+    window.addEventListener(ADAPTOR_OPERATION_FAILED_EVENT, onFailure);
     fetchSpy.mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'adaptor_degraded', message: 'reconnecting' }), {
         status: 503,
@@ -53,13 +63,25 @@ describe('apiFetch', () => {
       })
     );
     try {
-      await apiFetch('/work-items');
-      expect.fail('expected ApiError');
-    } catch (e) {
-      expect(e).toBeInstanceOf(ApiError);
-      const err = e as ApiError;
-      expect(err.isAdaptorDegraded).toBe(true);
-      expect(err.isNotFound).toBe(false);
+      try {
+        await apiFetch('/work-items');
+        expect.fail('expected ApiError');
+      } catch (e) {
+        expect(e).toBeInstanceOf(ApiError);
+        const err = e as ApiError;
+        expect(err.isAdaptorDegraded).toBe(true);
+        expect(err.isNotFound).toBe(false);
+      }
+      expect(events).toMatchObject([
+        {
+          status: 503,
+          code: 'adaptor_degraded',
+          message: 'reconnecting',
+          url: `${API_BASE}/work-items`,
+        },
+      ]);
+    } finally {
+      window.removeEventListener(ADAPTOR_OPERATION_FAILED_EVENT, onFailure);
     }
   });
 

@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutGrid,
+  Network,
   Terminal,
   Footprints,
   AlertTriangle,
@@ -13,11 +14,13 @@ import { useProjectPicker } from './projectpicker/ProjectPickerContext';
 import { useEscalations } from '@/hooks/useEscalations';
 import { useCapabilities } from '@/capabilities';
 
-// Six first-order panes per the 2026-04-28 ratification (gm-e12.19,
-// second amendment). Secondary surfaces — Backlog, Sprints, Coach,
-// Agent groups, Graph, Drift, Capability Browser, Mail — survive as
-// deep-link routes today and roll up under their pane's in-screen
-// tabs as gm-e12.19.4-7 land.
+// First-order panes per the 2026-04-28 ratification (gm-e12.19,
+// second amendment), amended for Beads-only discoverability: Graph is
+// now a visible rail item because dependency inspection is a core
+// Beads-management surface, not a hidden Plan sub-route. Secondary
+// surfaces — Backlog, Sprints, Coach, Agent groups, Drift, Capability
+// Browser, Mail — survive as deep-link routes today and roll up under
+// their pane's in-screen tabs as gm-e12.19.4-7 land.
 //
 // Three core panes (Plan / Review / Triage) cluster at the top —
 // these are the operator's daily verbs. Below a divider, Sessions
@@ -25,7 +28,8 @@ import { useCapabilities } from '@/capabilities';
 // drops into them less often once the dispatcher is humming.
 //
 // Initial route map (until pane consolidation lands):
-//   Plan      → /board       (gm-e12.19.4 grows tabs Board/List/Sprints/Graph)
+//   Plan      → /board       (gm-e12.19.4 grows tabs Board/List/Sprints)
+//   Graph     → /graph       dependency / relationship inspection
 //   Review    → /walk        (Gemba walk surface)
 //   Triage    → /escalations (gm-e12.19.6 grows a Drift tab)
 //   Sessions  → /sessions    (gm-e12.19.5 grows tabs Sessions/Groups/Coach)
@@ -65,7 +69,13 @@ const items: Item[] = [
     label: 'Plan',
     Icon: LayoutGrid,
     workspaceScoped: true,
-    activePaths: ['/board', '/grid', '/graph', '/sprints'],
+    activePaths: ['/board', '/grid', '/sprints'],
+  },
+  {
+    to: '/graph',
+    label: 'Graph',
+    Icon: Network,
+    workspaceScoped: true,
   },
   { to: '/refine', label: 'Refine', Icon: Filter, workspaceScoped: true, activePaths: ['/refine', '/backlog'] },
   { to: '/walk', label: 'Review', Icon: Footprints, workspaceScoped: true, activePaths: ['/walk', '/walks'] },
@@ -147,7 +157,7 @@ export function Sidebar() {
 
 function visibleInMode(item: Item, beadsOnly: boolean): boolean {
   if (!beadsOnly) return true;
-  return item.to === '/board' || item.to === '/refine' || item.to === '/settings';
+  return item.to === '/board' || item.to === '/graph' || item.to === '/refine' || item.to === '/settings';
 }
 
 function NavItem({ item, coldStart, beadsOnly }: { item: Item; coldStart: boolean; beadsOnly: boolean }) {

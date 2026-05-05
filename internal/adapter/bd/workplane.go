@@ -282,15 +282,12 @@ func (w *WorkPlane) ListWorkItems(ctx context.Context, f core.WorkItemFilter) ([
 	if len(f.Statuses) == 1 {
 		args = append(args, "--status", f.Statuses[0])
 	}
-	// Gather all bd --label filters: caller-supplied Filter.Labels plus
-	// the milestone convention (type:milestone) when Kinds asks only for
-	// milestones. Multi-kind requests still post-filter client-side
-	// because bd has no native "kind set" flag we can push down without
-	// narrowing the result set incorrectly.
+	// Gather caller-supplied bd --label filters. We deliberately do not
+	// push milestone filtering down as --label type:milestone: current
+	// Beads stores may represent milestones as native issue_type=milestone
+	// with no legacy label, and bd cannot OR label and type filters. The
+	// in-process matchesFilter below handles both milestone encodings.
 	labels := append([]string(nil), f.Labels...)
-	if len(f.Kinds) == 1 && f.Kinds[0] == core.KindMilestone {
-		labels = append(labels, milestoneLabel)
-	}
 	if len(labels) > 0 {
 		args = append(args, "--label", strings.Join(labels, ","))
 	}

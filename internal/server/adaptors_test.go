@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -157,6 +158,79 @@ func TestAdaptorsEndpoint_FallsThroughWhenNoHost(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &env)
 	if len(env.Adaptors) != 1 {
 		t.Fatalf("nil-host fallback should keep returning the registry; got %d", len(env.Adaptors))
+	}
+}
+
+func TestAdaptorsEndpoint_RefreshForcesOneFreshProbe(t *testing.T) {
+	registry.Reset()
+	t.Cleanup(registry.Reset)
+
+	calls := 0
+	healthy := true
+	registry.Register(registry.Adaptor{
+		Name:  "fake",
+		Plane: registry.WorkPlane,
+		Probe: func() registry.DetectResult {
+			calls++
+			return registry.DetectResult{Ok: healthy}
+		},
+	})
+
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	t.Cleanup(h.Close)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/adaptors", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if calls != 1 {
+		t.Fatalf("initial snapshot should probe once, got %d", calls)
+	}
+
+	healthy = false
+	req = httptest.NewRequest(http.MethodGet, "/api/adaptors", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if calls != 1 {
+		t.Fatalf("cached snapshot should not re-probe, got %d calls", calls)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/adaptors?refresh=1", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if calls != 2 {
+		t.Fatalf("refresh heartbeat should force exactly one probe, got %d calls", calls)
+	}
+	var env struct {
+		Adaptors []registry.AdaptorStatus `json:"adaptors"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("body must parse: %v", err)
+	}
+	if len(env.Adaptors) != 1 || env.Adaptors[0].Healthy {
+		t.Fatalf("refresh response should carry fresh unhealthy status: %+v", env.Adaptors)
+	}
+}
+
+func TestStartHealthBusDoesNotPoll(t *testing.T) {
+	registry.Reset()
+	t.Cleanup(registry.Reset)
+
+	calls := 0
+	registry.Register(registry.Adaptor{
+		Name:  "fake",
+		Plane: registry.WorkPlane,
+		Probe: func() registry.DetectResult {
+			calls++
+			return registry.DetectResult{Ok: true}
+		},
+	})
+
+	h := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	t.Cleanup(h.Close)
+	h.StartHealthBus()
+	time.Sleep(20 * time.Millisecond)
+	if calls != 0 {
+		t.Fatalf("StartHealthBus must not run a periodic probe; got %d calls", calls)
 	}
 }
 

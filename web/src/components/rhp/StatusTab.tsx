@@ -48,15 +48,13 @@ export function StatusBody() {
   const queryClient = useQueryClient();
   const { data: adaptors } = useQuery<AdaptorsResponse>({
     queryKey: ['adaptors'],
-    queryFn: getAdaptors,
-    staleTime: 5_000,
-    refetchInterval: 15_000,
+    queryFn: () => getAdaptors(),
+    staleTime: 30_000,
   });
   const { data: beadsHealth } = useQuery<BeadsHealthResponse>({
     queryKey: ['beads-health'],
     queryFn: getBeadsHealth,
-    staleTime: 5_000,
-    refetchInterval: 15_000,
+    staleTime: 30_000,
   });
   const healthAction = useMutation({
     mutationFn: runBeadsHealthAction,

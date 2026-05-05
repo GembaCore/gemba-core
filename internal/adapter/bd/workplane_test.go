@@ -778,10 +778,10 @@ func TestBeadsMilestoneLabelProjectsToKindMilestone(t *testing.T) {
 
 // TestBeadsListWorkItemsFilterKindsMilestone exercises gm-root.3.5's
 // DoD end-to-end: filtering ListWorkItems by Kinds=[KindMilestone]
-// returns only beads carrying the type:milestone label. The adaptor
-// pushes --label type:milestone down to bd; fakeBd's handleList
-// honors --label, so a milestone-only filter must not return the
-// non-milestone bead even from an unfiltered store.
+// returns both legacy type:milestone-label beads and native
+// issue_type=milestone beads. The adaptor must not push the legacy
+// label down to bd because that would hide native milestones before
+// matchesFilter can see them.
 func TestBeadsListWorkItemsFilterKindsMilestone(t *testing.T) {
 	fake := newFakeBd(t)
 	fake.beads["gm-ms-1"] = &bd.Bead{
@@ -790,7 +790,7 @@ func TestBeadsListWorkItemsFilterKindsMilestone(t *testing.T) {
 	}
 	fake.beads["gm-ms-2"] = &bd.Bead{
 		ID: "gm-ms-2", Title: "M2", Status: "open", Priority: 1,
-		IssueType: "epic", Labels: []string{"type:milestone", "area:spa"},
+		IssueType: "milestone", Labels: []string{"area:spa"},
 	}
 	fake.beads["gm-tk-1"] = &bd.Bead{
 		ID: "gm-tk-1", Title: "T1", Status: "open", Priority: 2,
@@ -810,6 +810,11 @@ func TestBeadsListWorkItemsFilterKindsMilestone(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Fatalf("milestone filter: got %d items, want 2 (%+v)", len(got), got)
+	}
+	for _, arg := range fake.listArgs {
+		if arg == "type:milestone" {
+			t.Fatalf("milestone filter must not push legacy label down to bd; args=%v", fake.listArgs)
+		}
 	}
 	for _, wi := range got {
 		if wi.Kind != core.KindMilestone {
