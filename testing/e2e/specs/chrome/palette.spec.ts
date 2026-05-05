@@ -43,9 +43,7 @@ test.describe('Command palette @chrome', () => {
     const dialog = page.getByTestId('command-palette-dialog');
     await expect(dialog).toBeVisible();
 
-    // Grid was folded into Board's list+power layout (gm-uipx.17) but
-    // the palette entry is preserved for muscle-memory and routes to
-    // the canonical power-list URL. Agents was removed in gm-e12.4.
+    // Backlog and Grid are learned aliases for Refine's table.
     for (const label of [
       'Board',
       'Backlog',
@@ -67,9 +65,7 @@ test.describe('Command palette @chrome', () => {
 
     await dialog.getByRole('option', { name: /^Backlog$/ }).click();
 
-    // gm-e12.19.1 + gm-uipx.18: Backlog palette item routes to
-    // Board's list layout + Backlog view (the canonical surface).
-    await expect(page).toHaveURL(/\/board\?layout=list&view=backlog$/);
+    await expect(page).toHaveURL(/\/refine$/);
     await expect(dialog).toBeHidden();
   });
 

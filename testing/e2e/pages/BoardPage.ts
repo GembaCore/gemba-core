@@ -57,12 +57,11 @@ export class BoardPage extends AppShell {
     this.swimlaneSwitcher = page.getByTestId('swimlane-switcher');
   }
 
-  // gotoEpicView lands on the default /board surface (Epic view +
-  // by-parent-epic swimlane). Confirms the AppShell renders before
+  // gotoEpicView lands on the legacy Epic board. Confirms the AppShell renders before
   // returning so a flake in the dev-server boot doesn't mask a real
   // render bug downstream.
   async gotoEpicView(): Promise<void> {
-    await this.goto('/board');
+    await this.goto('/board?layout=epic');
     await this.expectShellRendered();
   }
 
@@ -86,7 +85,7 @@ export class BoardPage extends AppShell {
   // named view because that's where /backlog redirects today; specs
   // that need other views can pass through goto() directly.
   async gotoListView(): Promise<void> {
-    await this.goto('/board?layout=list&view=backlog');
+    await this.goto('/board?layout=list&view=backlog&power=1');
     await this.expectShellRendered();
     await expect(this.listView).toBeVisible();
   }

@@ -242,8 +242,10 @@ jobs:
             --project=route-fake \
             --project=smoke-deep \
             --project=route-deep \
-            --project=realtime-deep \
             --workers=2
+          pnpm --filter gemba-e2e exec playwright test \
+            --project=realtime-deep \
+            --workers=1
 
       - name: Upload Playwright report
         if: always()
@@ -321,7 +323,27 @@ jobs:
       - name: Run nightly lane (full matrix)
         env:
           GEMBA_E2E_RUN_DEEP: '1'
-        run: pnpm --filter gemba-e2e exec playwright test --workers=2
+        run: |
+          pnpm --filter gemba-e2e exec playwright test \
+            --project=smoke-fake \
+            --project=chrome-fake \
+            --project=route-fake \
+            --project=modes-fake \
+            --project=auth-fake \
+            --project=error-fake \
+            --project=acceptance-temperature-spa \
+            --project=pending-fake \
+            --project=smoke-deep \
+            --project=route-deep \
+            --project=modes-deep \
+            --project=auth-deep \
+            --project=error-deep \
+            --project=integration-deep \
+            --workers=2
+          pnpm --filter gemba-e2e exec playwright test \
+            --project=realtime-fake \
+            --project=realtime-deep \
+            --workers=1
 
       - name: Upload Playwright report
         if: always()
@@ -401,10 +423,33 @@ jobs:
           GEMBA_E2E_RUN_DEEP: ${{ inputs.run_deep && '1' || '' }}
         run: |
           if [ -n "${{ inputs.project }}" ]; then
+            workers=2
+            if [ "${{ inputs.project }}" = "realtime-deep" ] || [ "${{ inputs.project }}" = "realtime-fake" ]; then
+              workers=1
+            fi
             pnpm --filter gemba-e2e exec playwright test \
-              --project="${{ inputs.project }}" --workers=2
+              --project="${{ inputs.project }}" --workers="$workers"
           else
-            pnpm --filter gemba-e2e exec playwright test --workers=2
+            pnpm --filter gemba-e2e exec playwright test \
+              --project=smoke-fake \
+              --project=chrome-fake \
+              --project=route-fake \
+              --project=modes-fake \
+              --project=auth-fake \
+              --project=error-fake \
+              --project=acceptance-temperature-spa \
+              --project=pending-fake \
+              --project=smoke-deep \
+              --project=route-deep \
+              --project=modes-deep \
+              --project=auth-deep \
+              --project=error-deep \
+              --project=integration-deep \
+              --workers=2
+            pnpm --filter gemba-e2e exec playwright test \
+              --project=realtime-fake \
+              --project=realtime-deep \
+              --workers=1
           fi
 
       - name: Upload Playwright report

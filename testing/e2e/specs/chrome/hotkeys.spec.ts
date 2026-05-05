@@ -11,11 +11,7 @@ import { test, expect } from '../../fixtures/server';
 
 const NAV_HOTKEYS = [
   { key: '1', expected: /\/board$/ },
-  // gm-e12.19.1 / gm-uipx.18: '2' goes straight to Board's list
-  // layout + Backlog named view (the collapsed surface). The
-  // legacy ?view=list&preset=backlog deep-link migrates on first
-  // paint so existing keyboard muscle memory keeps working.
-  { key: '2', expected: /\/board\?layout=list&view=backlog$/ },
+  { key: '2', expected: /\/refine$/ },
   { key: '3', expected: /\/graph$/ },
   { key: '4', expected: /\/insights$/ },
   { key: '5', expected: /\/escalations$/ },

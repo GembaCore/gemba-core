@@ -20,7 +20,7 @@ async function gotoGridWithRows(page: Page, workPlane: WorkPlaneStore, count: nu
       }),
     ),
   );
-  await page.goto('/grid');
+  await page.goto('/board?layout=list&power=1');
   await expect(page.getByTestId('work-item-grid')).toBeVisible();
 }
 

@@ -1,17 +1,16 @@
 // specs/realtime/adaptors-stream.spec.ts
 //
 // Tier: realtime. Owner: gm-5v8v.10. Subject: AdaptorBanner +
-// /api/adaptors/stream.
+// /api/adaptors health surfaces.
 //
-// AdaptorBanner subscribes to the SSE stream at /api/adaptors/stream
-// (gm-b1) with a /api/adaptors snapshot fallback. We exercise both
-// halves: in fake mode, seed degraded adaptor data into the
-// adaptorsState fixture and assert the banner paints; in @deep mode,
-// hit the live endpoint and assert it returns valid JSON over the SSE
-// transport (a healthy adaptor → no banner; the dynamic flip-to-degraded
-// case requires killing bd mid-flight, which is an integration-tier
-// follow-up).
+// AdaptorBanner is intentionally reactive now: it does not poll or
+// subscribe to /api/adaptors/stream. Instead, client write failures
+// emit a local operation-failed event, and the banner performs one
+// fresh /api/adaptors?refresh=1 heartbeat. Fake mode seeds that
+// heartbeat response; deep mode keeps a direct wire check for the
+// live /api/adaptors and /api/adaptors/stream endpoints.
 
+import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures/server';
 
 test.describe('@realtime AdaptorBanner', () => {
@@ -26,6 +25,7 @@ test.describe('@realtime AdaptorBanner', () => {
       { name: 'beads', plane: 'work', healthy: false, reason: 'bd CLI not on PATH' },
     ]);
     await page.goto('/board');
+    await dispatchAdaptorFailure(page);
     const banner = page.getByTestId('adaptor-banner');
     await expect(banner).toBeVisible();
     await expect(banner).toContainText('beads');
@@ -41,8 +41,7 @@ test.describe('@realtime AdaptorBanner', () => {
 
     adaptorsState.set([{ name: 'beads', plane: 'work', healthy: true }]);
     await page.goto('/board');
-    // Settle the SSE/snapshot dance before asserting absence.
-    await page.waitForLoadState('networkidle');
+    await dispatchAdaptorFailure(page);
     await expect(page.getByTestId('adaptor-banner')).toHaveCount(0);
   });
 
@@ -79,3 +78,11 @@ test.describe('@realtime AdaptorBanner', () => {
     expect(buf).toMatch(/(data:|: )/);
   });
 });
+
+async function dispatchAdaptorFailure(page: Page) {
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('gemba:adaptor-operation-failed', {
+      detail: { status: 503, code: 'adaptor_degraded', message: 'probe', url: '/api/work-items' },
+    }));
+  });
+}

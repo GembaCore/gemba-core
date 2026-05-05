@@ -1,12 +1,11 @@
 // specs/rhp/help-tab.spec.ts — gm-root.22.3.
 //
-// Help pinned tab in the Right-Hand Panel. Status is the default
-// pinned tab now, but Help remains a stable pinned tab with route-aware
-// content.
+// Help pinned tab in the Right-Hand Panel. Help is the default pinned
+// tab and remains route-aware.
 //
 // Coverage:
 //   - Help tab rail icon is visible on every top-level route.
-//   - Status is the active tab on first load.
+//   - Help is the active tab on first load.
 //   - Switching routes swaps the help body content.
 //   - Cold-start (no projects seeded) shows the cold-start variant.
 //
@@ -44,23 +43,29 @@ test.describe('RHP Help tab @chrome', () => {
       ]);
     });
 
+    test.beforeEach(async ({ page }) => {
+      await page.addInitScript(() => {
+        window.localStorage.setItem('gemba.rhp.collapsed', 'false');
+      });
+    });
+
     test('Help tab rail icon is visible on /board', async ({ page }) => {
       await page.goto('/board');
       // The help tab button has data-testid="rhp-tab-help".
       await expect(page.getByTestId('rhp-tab-help')).toBeVisible();
     });
 
-    test('Status tab is the active tab on first load', async ({ page }) => {
+    test('Help tab is the active tab on first load', async ({ page }) => {
       await page.goto('/board');
       const statusTab = page.getByTestId('rhp-tab-status');
       const helpTab = page.getByTestId('rhp-tab-help');
       await expect(statusTab).toBeVisible();
       await expect(helpTab).toBeVisible();
-      await expect(statusTab).toHaveAttribute('data-active', 'true');
-      await expect(helpTab).toHaveAttribute('data-active', 'false');
+      await expect(helpTab).toHaveAttribute('data-active', 'true');
+      await expect(statusTab).toHaveAttribute('data-active', 'false');
     });
 
-    test('Help tab body shows Plan-board content on /board', async ({ page }) => {
+    test('Help tab body shows Board content on /board', async ({ page }) => {
       await page.goto('/board');
       await ensureExpanded(page);
       await openHelp(page);
@@ -105,7 +110,7 @@ test.describe('RHP Help tab @chrome', () => {
       await expect(page.getByTestId('rhp-body-title')).toContainText('Help');
     });
 
-    test('route navigation returns focus to Status and Help can be reopened', async ({
+    test('route navigation keeps Help focused with route-aware content', async ({
       page,
     }) => {
       await page.goto('/board');
@@ -114,13 +119,11 @@ test.describe('RHP Help tab @chrome', () => {
       await expect(page.getByTestId('help-board')).toBeVisible();
 
       await page.goto('/escalations');
-      // Route changes reset the RHP home tab to Status. Help remains
-      // pinned and can be reopened for route-aware content.
-      await expect(page.getByTestId('rhp-tab-status')).toHaveAttribute(
+      // Route changes reset the RHP home tab to Help.
+      await expect(page.getByTestId('rhp-tab-help')).toHaveAttribute(
         'data-active',
         'true'
       );
-      await openHelp(page);
       await expect(page.getByTestId('help-escalations')).toBeVisible();
     });
   });
@@ -132,6 +135,12 @@ test.describe('RHP Help tab @chrome', () => {
   test.describe('cold-start (no projects seeded)', () => {
     test.beforeEach(({ projectsStore }) => {
       projectsStore.seed([]);
+    });
+
+    test.beforeEach(async ({ page }) => {
+      await page.addInitScript(() => {
+        window.localStorage.setItem('gemba.rhp.collapsed', 'false');
+      });
     });
 
     test('shows cold-start content', async ({ page }) => {

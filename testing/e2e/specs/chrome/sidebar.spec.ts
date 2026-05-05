@@ -25,7 +25,9 @@ import { test, expect } from '../../fixtures/server';
 import type { EscalationRequest } from '../../fixtures/escalationStore';
 
 const NAV_LINKS = [
-  { label: 'Plan', path: '/board' },
+  { label: 'Board', path: '/board' },
+  { label: 'Graph', path: '/graph' },
+  { label: 'Refine', path: '/refine' },
   // Review is rendered but click-nav-excluded — see comment above.
   { label: 'Review', path: '/walk', clickNav: false },
   { label: 'Triage', path: '/escalations' },
@@ -104,7 +106,9 @@ test.describe('Sidebar cold-start @chrome', () => {
     await expect(sidebar).toBeVisible();
 
     const workspaceScoped = [
-      'Plan',
+      'Board',
+      'Graph',
+      'Refine',
       'Review',
       'Triage',
       'Sessions',
@@ -128,7 +132,7 @@ test.describe('Sidebar cold-start @chrome', () => {
   test('clicking a muted item does not navigate', async ({ page }) => {
     await page.goto('/settings');
     const sidebar = page.locator('aside').first();
-    const muted = sidebar.locator('[aria-disabled="true"]', { hasText: 'Plan' });
+    const muted = sidebar.locator('[aria-disabled="true"]', { hasText: 'Board' });
     await muted.click({ force: true }); // bypass cursor: not-allowed for the test
     await expect(page).toHaveURL(/\/settings$/);
   });

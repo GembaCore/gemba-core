@@ -1,26 +1,28 @@
 // specs/chrome/adaptor-banner.spec.ts — gm-5v8v.4
 //
 // AdaptorBanner (web/src/components/AdaptorBanner.tsx) renders only
-// when at least one adaptor reports unhealthy. The signal arrives via
-// the /api/adaptors/stream SSE pump (with a /api/adaptors snapshot
-// fallback). This spec drives both halves through fixture overrides
-// — registering more-specific page.route handlers that win over the
-// fake-fixture catch-all.
+// when an adaptor operation fails and the follow-up
+// /api/adaptors?refresh=1 heartbeat also reports unhealthy. The banner
+// deliberately does not poll or subscribe to the adaptor SSE stream.
 
 import { test, expect } from '../../fixtures/server';
 
-const STREAM = '**/api/adaptors/stream';
+const REFRESH = '**/api/adaptors?refresh=1';
 const SNAPSHOT = '**/api/adaptors';
+
+async function fireAdaptorFailure(page: import('@playwright/test').Page) {
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('gemba:adaptor-operation-failed', {
+      detail: { status: 503, code: 'adaptor_degraded', message: 'probe', url: '/api/work-items' },
+    }));
+  });
+}
 
 test.describe('AdaptorBanner @chrome', () => {
   test('healthy adaptors leave the banner hidden', async ({ page }) => {
-    await page.route(STREAM, (route) => {
+    await page.route(REFRESH, (route) => {
       void route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
-        body:
-          'retry: 100\n' +
-          `data: ${JSON.stringify({ instance_id: 'boot-1', adaptors: [{ name: 'beads', plane: 'work', healthy: true }] })}\n\n`,
+        json: { instance_id: 'boot-1', adaptors: [{ name: 'beads', plane: 'work', healthy: true }] },
       });
     });
     await page.route(SNAPSHOT, (route) => {
@@ -30,26 +32,20 @@ test.describe('AdaptorBanner @chrome', () => {
     });
 
     await page.goto('/board');
-    // Give the SSE pump a moment to deliver the first frame; the
-    // banner condition is "at least one degraded", so a healthy
-    // payload renders nothing.
-    await page.waitForTimeout(300);
+    await fireAdaptorFailure(page);
+    await page.waitForTimeout(100);
     await expect(page.getByTestId('adaptor-banner')).toHaveCount(0);
   });
 
   test('a degraded adaptor surfaces the banner with name + reason', async ({ page }) => {
-    await page.route(STREAM, (route) => {
+    await page.route(REFRESH, (route) => {
       void route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
-        body:
-          'retry: 100\n' +
-          `data: ${JSON.stringify({
-            instance_id: 'boot-1',
-            adaptors: [
-              { name: 'beads', plane: 'work', healthy: false, reason: 'dolt unreachable' },
-            ],
-          })}\n\n`,
+        json: {
+          instance_id: 'boot-1',
+          adaptors: [
+            { name: 'beads', plane: 'work', healthy: false, reason: 'dolt unreachable' },
+          ],
+        },
       });
     });
     await page.route(SNAPSHOT, (route) => {
@@ -64,6 +60,7 @@ test.describe('AdaptorBanner @chrome', () => {
     });
 
     await page.goto('/board');
+    await fireAdaptorFailure(page);
     const banner = page.getByTestId('adaptor-banner');
     await expect(banner).toBeVisible();
     await expect(banner).toContainText('Adaptor degraded');
@@ -72,22 +69,15 @@ test.describe('AdaptorBanner @chrome', () => {
   });
 
   test('recovery — a follow-up healthy frame removes the banner', async ({ page }) => {
-    // First SSE call delivers degraded; on EventSource reconnect
-    // (retry: 100ms) the second call delivers healthy. The banner
-    // should disappear once the cache refreshes.
-    let streamCalls = 0;
-    await page.route(STREAM, (route) => {
-      streamCalls += 1;
-      const healthy = streamCalls > 1;
+    let heartbeatCalls = 0;
+    await page.route(REFRESH, (route) => {
+      heartbeatCalls += 1;
+      const healthy = heartbeatCalls > 1;
       const adaptors = healthy
         ? [{ name: 'beads', plane: 'work', healthy: true }]
         : [{ name: 'beads', plane: 'work', healthy: false, reason: 'temporary' }];
       void route.fulfill({
-        status: 200,
-        headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
-        body:
-          'retry: 100\n' +
-          `data: ${JSON.stringify({ instance_id: 'boot-1', adaptors })}\n\n`,
+        json: { instance_id: 'boot-1', adaptors },
       });
     });
     await page.route(SNAPSHOT, (route) => {
@@ -102,12 +92,12 @@ test.describe('AdaptorBanner @chrome', () => {
     });
 
     await page.goto('/board');
+    await fireAdaptorFailure(page);
     const banner = page.getByTestId('adaptor-banner');
     await expect(banner).toBeVisible();
 
-    // Wait for the SSE to reconnect at least once with the healthy
-    // payload, then confirm the banner is gone.
-    await expect.poll(() => streamCalls, { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
+    await fireAdaptorFailure(page);
+    await expect.poll(() => heartbeatCalls, { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
     await expect(banner).toHaveCount(0);
   });
 });

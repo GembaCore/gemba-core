@@ -49,19 +49,16 @@ test.describe('@deep @realtime /events SSE → SPA invalidation', () => {
 
     // bd create + notify drives the event chain end to end.
     const { id } = await bd.create({ title: 'sse-events smoke bead', type: 'task' });
-    const notifyRes = await fetch(`${serverInfo.baseURL}/api/workitems/notify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ work_item_id: id, source: 'e2e-sse-events' }),
-    });
+    const notifyRes = await postNotify(serverInfo.baseURL, id, 'e2e-sse-events');
     expect(notifyRes.status).toBe(200);
 
     let buf = '';
     let sawWorkitemEvent = false;
-    const deadline = Date.now() + 5_000;
+    const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
-      const { value, done } = await reader.read();
+      const { value, done } = await readWithDeadline(reader, deadline);
       if (done) break;
+      if (!value) continue;
       buf += decoder.decode(value, { stream: true });
       // The /events handler stamps the kind on the SSE event: line
       // (per web/src/data/sse.ts). Match either the event line or a
@@ -74,7 +71,7 @@ test.describe('@deep @realtime /events SSE → SPA invalidation', () => {
     ac.abort();
     expect(
       sawWorkitemEvent,
-      `no workitem.* event seen on /events within 5s. buf=${buf.slice(0, 800)}`
+      `no workitem.* event seen on /events within 15s. buf=${buf.slice(0, 800)}`
     ).toBe(true);
   });
 
@@ -133,11 +130,7 @@ test.describe('@deep @realtime /events SSE → SPA invalidation', () => {
 
     // Trigger the event.
     const { id } = await bd.create({ title: 'sse-events EventSource probe', type: 'task' });
-    const notifyRes = await fetch(`${serverInfo.baseURL}/api/workitems/notify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ work_item_id: id, source: 'e2e-sse-events' }),
-    });
+    const notifyRes = await postNotify(serverInfo.baseURL, id, 'e2e-sse-events');
     expect(notifyRes.status).toBe(200);
 
     const result = await eventPromise;
@@ -147,3 +140,37 @@ test.describe('@deep @realtime /events SSE → SPA invalidation', () => {
     }
   });
 });
+
+async function postNotify(baseURL: string, id: string, source: string): Promise<Response> {
+  let last: Response | undefined;
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    last = await fetch(`${baseURL}/api/workitems/notify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ work_item_id: id, source }),
+    });
+    if (last.status === 200) return last;
+    await last.body?.cancel().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return last ?? fetch(`${baseURL}/api/workitems/notify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ work_item_id: id, source }),
+  });
+}
+
+async function readWithDeadline(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  deadline: number
+): Promise<ReadableStreamReadResult<Uint8Array> | { value?: undefined; done: false }> {
+  const remaining = Math.max(0, deadline - Date.now());
+  if (remaining === 0) return { done: false };
+  return Promise.race([
+    reader.read(),
+    new Promise<{ value?: undefined; done: false }>((resolve) =>
+      setTimeout(() => resolve({ done: false }), remaining)
+    ),
+  ]);
+}

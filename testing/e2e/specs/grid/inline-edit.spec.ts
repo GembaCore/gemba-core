@@ -12,7 +12,7 @@ import { workItem } from '../../builders/workitem';
 test.describe('WorkItemGrid inline edit @route', () => {
   test('click-to-edit activates a cell editor', async ({ page, workPlane }) => {
     workPlane.seed([workItem({ id: 'gm-1', title: 'first' })]);
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     await expect(page.getByTestId('work-item-grid')).toBeVisible();
     // No editor yet.
     await expect(page.getByTestId('grid-cell-editor-title')).toHaveCount(0);
@@ -26,7 +26,7 @@ test.describe('WorkItemGrid inline edit @route', () => {
     workPlane,
   }) => {
     workPlane.seed([workItem({ id: 'gm-1', title: 'unchanged' })]);
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     await expect(page.getByTestId('work-item-grid')).toBeVisible();
     await page.getByTestId('grid-cell-gm-1-title').click();
 
@@ -53,7 +53,7 @@ test.describe('WorkItemGrid inline edit @route', () => {
     workPlane,
   }) => {
     workPlane.seed([workItem({ id: 'gm-1', title: 'first' })]);
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     await expect(page.getByTestId('work-item-grid')).toBeVisible();
     await page.getByTestId('grid-cell-gm-1-title').click();
 
@@ -76,7 +76,7 @@ test.describe('WorkItemGrid inline edit @route', () => {
 
   test('priority cell PATCHes priority on Enter', async ({ page, workPlane }) => {
     workPlane.seed([workItem({ id: 'gm-1', priority: 1 })]);
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     await expect(page.getByTestId('work-item-grid')).toBeVisible();
     await page.getByTestId('grid-cell-gm-1-priority').click();
 
@@ -95,7 +95,7 @@ test.describe('WorkItemGrid inline edit @route', () => {
 
   test('state cell select PATCHes state_category on change', async ({ page, workPlane }) => {
     workPlane.seed([workItem({ id: 'gm-1', state_category: 'unstarted' })]);
-    await page.goto('/grid');
+    await page.goto('/board?layout=list&power=1');
     await expect(page.getByTestId('work-item-grid')).toBeVisible();
     await page.getByTestId('grid-cell-gm-1-state').click();
 

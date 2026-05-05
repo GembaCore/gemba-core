@@ -72,7 +72,7 @@ export const DEFAULT_HOTKEYS: Hotkey[] = [
 
   // Views (1-5 numeric quick switch + named view jumps)
   { id: 'view-1', keys: ['1'], description: 'Board view', category: 'views' },
-  { id: 'view-2', keys: ['2'], description: 'Backlog (Board list mode)', category: 'views' },
+  { id: 'view-2', keys: ['2'], description: 'Refine table', category: 'views' },
   { id: 'view-3', keys: ['3'], description: 'Graph view', category: 'views' },
   { id: 'view-4', keys: ['4'], description: 'Insights view', category: 'views' },
   { id: 'view-5', keys: ['5'], description: 'Escalations view', category: 'views' },

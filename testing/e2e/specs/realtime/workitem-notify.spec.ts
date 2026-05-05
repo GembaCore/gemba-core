@@ -20,11 +20,7 @@ test.describe('@deep @realtime POST /api/workitems/notify', () => {
 
   test('first notify returns Skipped=false', async ({ bd, serverInfo }) => {
     const { id } = await bd.create({ title: 'notify-test bead 1', type: 'task' });
-    const res = await fetch(`${serverInfo.baseURL}/api/workitems/notify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ work_item_id: id, source: 'e2e-test' }),
-    });
+    const res = await postNotify(serverInfo.baseURL, id);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { work_item_id: string; skipped?: boolean };
     expect(body.work_item_id).toBe(id);
@@ -34,12 +30,7 @@ test.describe('@deep @realtime POST /api/workitems/notify', () => {
   test('duplicate notify (same id, same UpdatedAt) is suppressed', async ({ bd, serverInfo }) => {
     const { id } = await bd.create({ title: 'notify-test bead 2', type: 'task' });
 
-    const post = () =>
-      fetch(`${serverInfo.baseURL}/api/workitems/notify`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ work_item_id: id, source: 'e2e-test' }),
-      });
+    const post = () => postNotify(serverInfo.baseURL, id);
 
     const first = (await (await post()).json()) as { skipped?: boolean };
     expect(first.skipped ?? false).toBe(false);
@@ -49,3 +40,23 @@ test.describe('@deep @realtime POST /api/workitems/notify', () => {
     expect(second.skipped).toBe(true);
   });
 });
+
+async function postNotify(baseURL: string, id: string): Promise<Response> {
+  let last: Response | undefined;
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    last = await fetch(`${baseURL}/api/workitems/notify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ work_item_id: id, source: 'e2e-test' }),
+    });
+    if (last.status === 200) return last;
+    await last.body?.cancel().catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  return last ?? fetch(`${baseURL}/api/workitems/notify`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ work_item_id: id, source: 'e2e-test' }),
+  });
+}

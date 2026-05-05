@@ -4,16 +4,15 @@
 // Capabilities are startup-immutable on the server: every response
 // from /api/capabilities and /api/adaptors (snapshot + SSE) carries
 // the per-process boot stamp. The SPA stashes the first id it sees
-// and triggers a hard reload the first time a later id differs —
-// that's how a `gemba serve` restart with new config gets reflected
-// on the client without a live capabilities channel.
+// and triggers a hard reload the first time a later id differs.
 //
 // The bead description names "/api/version" but the surface is
-// actually /api/adaptors* and /api/capabilities (see
-// web/src/transport/instanceId.ts and the gm-6m60 close note).
+// actually /api/capabilities plus the reactive /api/adaptors?refresh=1
+// heartbeat that runs after an adaptor operation fails.
 //
 // Tags: @smoke. Backend-agnostic — this is a behavioral assertion
-// about the SPA's guard logic, exercised through the SSE surface.
+// about the SPA's guard logic, exercised through the reactive heartbeat
+// surface.
 
 import { test, expect } from '../../fixtures/server';
 
@@ -26,29 +25,15 @@ test('instance_id mismatch on /api/adaptors triggers a full SPA reload @smoke', 
   // surfaces that carry instance_id with a counter so the second
   // delivery flips the id.
 
-  let streamCalls = 0;
-  let snapshotCalls = 0;
+  let heartbeatCalls = 0;
 
-  await page.route('**/api/adaptors/stream', (route) => {
-    streamCalls += 1;
-    const id = streamCalls === 1 ? 'boot-A' : 'boot-B';
-    // `retry: 100` instructs EventSource to reconnect 100ms after the
-    // server hangs up, instead of the spec-default 3s. Smoke budget
-    // is <30s so we lean on this aggressively.
-    const body =
-      'retry: 100\n' +
-      `data: ${JSON.stringify({ adaptors: [], instance_id: id })}\n\n`;
-    void route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
-      body,
-    });
+  await page.route('**/api/adaptors?refresh=1', (route) => {
+    heartbeatCalls += 1;
+    void route.fulfill({ json: { adaptors: [], instance_id: 'boot-B' } });
   });
 
   await page.route('**/api/adaptors', (route) => {
-    snapshotCalls += 1;
-    const id = snapshotCalls === 1 ? 'boot-A' : 'boot-B';
-    void route.fulfill({ json: { adaptors: [], instance_id: id } });
+    void route.fulfill({ json: { adaptors: [], instance_id: 'boot-A' } });
   });
 
   await page.route('**/api/capabilities', (route) => {
@@ -68,10 +53,13 @@ test('instance_id mismatch on /api/adaptors triggers a full SPA reload @smoke', 
     (window as unknown as { __preReload?: boolean }).__preReload = true;
   });
 
-  // Wait for the SSE pump to deliver at least two frames — the
-  // second one carries the mismatched id. The fake stream closes
-  // after each frame; EventSource reconnects after `retry: 100`.
-  await expect.poll(() => streamCalls, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('gemba:adaptor-operation-failed', {
+      detail: { status: 503, code: 'adaptor_degraded', message: 'probe', url: '/api/work-items' },
+    }));
+  });
+
+  await expect.poll(() => heartbeatCalls, { timeout: 5_000 }).toBeGreaterThanOrEqual(1);
 
   // The reload guard fires synchronously inside observeInstanceId;
   // the actual navigation flushes on the next tick. Poll for the
@@ -98,16 +86,10 @@ test('stable instance_id does not trigger a reload @smoke', async ({ page }) => 
   // the guard stays quiet. This pins the "no spurious reload"
   // half of the contract.
 
-  let streamCalls = 0;
-  await page.route('**/api/adaptors/stream', (route) => {
-    streamCalls += 1;
-    void route.fulfill({
-      status: 200,
-      headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' },
-      body:
-        'retry: 100\n' +
-        `data: ${JSON.stringify({ adaptors: [], instance_id: 'boot-stable' })}\n\n`,
-    });
+  let heartbeatCalls = 0;
+  await page.route('**/api/adaptors?refresh=1', (route) => {
+    heartbeatCalls += 1;
+    void route.fulfill({ json: { adaptors: [], instance_id: 'boot-stable' } });
   });
 
   await page.route('**/api/adaptors', (route) => {
@@ -124,10 +106,14 @@ test('stable instance_id does not trigger a reload @smoke', async ({ page }) => 
     (window as unknown as { __preReload?: boolean }).__preReload = true;
   });
 
-  // Wait for at least two stream frames so we know the reconnect
-  // path was exercised — without a wait there's no proof we'd have
-  // caught a mismatch even if one were happening.
-  await expect.poll(() => streamCalls, { timeout: 10_000 }).toBeGreaterThanOrEqual(2);
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('gemba:adaptor-operation-failed', {
+      detail: { status: 503, code: 'adaptor_degraded', message: 'probe', url: '/api/work-items' },
+    }));
+  });
+
+  // Wait for the heartbeat path so we know the guard saw a later id.
+  await expect.poll(() => heartbeatCalls, { timeout: 5_000 }).toBeGreaterThanOrEqual(1);
 
   // Give the guard a brief settle window. The sentinel must still
   // be intact — a reload would have wiped it.
