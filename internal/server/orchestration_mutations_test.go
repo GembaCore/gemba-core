@@ -78,7 +78,7 @@ func TestGetSchedulerConfig_NativeReturnsEmpty(t *testing.T) {
 // directly to verify it's plumbed.
 func TestCreateScope_RunnerInjection(t *testing.T) {
 	called := false
-	SetGTRunner(func(_ context.Context, args ...string) ([]byte, []byte, error) {
+	SetGTRunner(func(_ context.Context, _ string, args ...string) ([]byte, []byte, error) {
 		called = true
 		return []byte("ok\n"), nil, nil
 	})
@@ -87,7 +87,7 @@ func TestCreateScope_RunnerInjection(t *testing.T) {
 	if got == nil {
 		t.Fatal("runner not installed")
 	}
-	_, _, _ = got(context.Background(), "rig", "create", "test")
+	_, _, _ = got(context.Background(), "", "rig", "create", "test")
 	if !called {
 		t.Errorf("runner did not invoke")
 	}

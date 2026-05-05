@@ -134,15 +134,45 @@ func checkWorktreeIsolation(req core.IsolationCapabilities) error {
 }
 
 func rigToWorkspace(r gtRig, req core.WorkspaceRequest) core.Workspace {
-	return core.Workspace{
-		ID:         r.Name,
-		Kind:       core.WorkspaceWorktree,
-		Repository: req.Repository,
-		Branch:     req.Branch,
-		Status:     rigStatusToWorkspaceStatus(r.Status),
-		Isolation:  worktreeIsolation,
-		CreatedAt:  time.Now(),
+	repo := req.Repository
+	if repo == "" {
+		repo = firstNonEmpty(r.Repository, r.Repo)
 	}
+	branch := req.Branch
+	if branch == "" {
+		branch = r.Branch
+	}
+	worktree := firstNonEmpty(r.WorktreePath, r.Path, r.Dir)
+	metadata := map[string]any{
+		"rig":          r.Name,
+		"beads_prefix": r.Prefix,
+	}
+	if worktree != "" {
+		metadata["worktree_path"] = worktree
+	}
+	if o := repo; o != "" {
+		metadata["repository"] = o
+	}
+	return core.Workspace{
+		ID:               r.Name,
+		Kind:             core.WorkspaceWorktree,
+		Repository:       repo,
+		Branch:           branch,
+		WorktreePath:     worktree,
+		Status:           rigStatusToWorkspaceStatus(r.Status),
+		Isolation:        worktreeIsolation,
+		ProviderMetadata: metadata,
+		CreatedAt:        time.Now(),
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 // rigStatusToWorkspaceStatus maps the status string `gt rig list` emits

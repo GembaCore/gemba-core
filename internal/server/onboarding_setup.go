@@ -11,6 +11,7 @@ import (
 	"time"
 
 	nativeinstall "github.com/GembaCore/gemba-core/internal/adapter/native/install"
+	"github.com/GembaCore/gemba-core/internal/config"
 	"github.com/GembaCore/gemba-core/internal/server/httperr"
 )
 
@@ -36,6 +37,9 @@ type onboardingSetupRequest struct {
 	Orchestration      string `json:"orchestration"`
 	WorktreePath       string `json:"worktree_path,omitempty"`
 	GastownLocation    string `json:"gastown_location,omitempty"`
+	GastownRig         string `json:"gastown_rig,omitempty"`
+	GastownWorktree    string `json:"gastown_worktree_path,omitempty"`
+	BeadsURL           string `json:"beads_url,omitempty"`
 	SourceAnalysisTool string `json:"source_analysis_tool,omitempty"`
 }
 
@@ -79,6 +83,7 @@ func (r *Router) onboardingSetup(w http.ResponseWriter, req *http.Request) {
 		req:     body,
 		runner:  runner,
 		now:     now,
+		cfg:     r.cfg,
 		checks:  map[string]string{},
 		setupID: "setup-" + newInstanceID(),
 	}
@@ -102,6 +107,9 @@ func (b *onboardingSetupRequest) normalize() {
 	b.Orchestration = strings.ToLower(strings.TrimSpace(b.Orchestration))
 	b.WorktreePath = strings.TrimSpace(b.WorktreePath)
 	b.GastownLocation = strings.TrimSpace(b.GastownLocation)
+	b.GastownRig = strings.TrimSpace(b.GastownRig)
+	b.GastownWorktree = strings.TrimSpace(b.GastownWorktree)
+	b.BeadsURL = strings.TrimSpace(b.BeadsURL)
 	b.SourceAnalysisTool = strings.ToLower(strings.TrimSpace(b.SourceAnalysisTool))
 	if b.Origin == "" {
 		b.Origin = onboardingOriginNew
@@ -146,6 +154,12 @@ func (b onboardingSetupRequest) validate() error {
 		if !filepath.IsAbs(b.GastownLocation) {
 			return fmt.Errorf("gastown_location must be an absolute path")
 		}
+		if b.GastownWorktree != "" && !filepath.IsAbs(b.GastownWorktree) {
+			return fmt.Errorf("gastown_worktree_path must be an absolute path")
+		}
+		if b.BeadsURL != "" && !strings.HasPrefix(b.BeadsURL, "mysql://") {
+			return fmt.Errorf("beads_url must be a mysql:// Dolt URL")
+		}
 		return nil
 	}
 	if b.WorktreePath == "" {
@@ -161,6 +175,7 @@ type onboardingSetupTxn struct {
 	req         onboardingSetupRequest
 	runner      CommandRunner
 	now         func() time.Time
+	cfg         config.ServeConfig
 	setupID     string
 	projectPath string
 	frames      []onboardingSetupFrame
@@ -169,6 +184,9 @@ type onboardingSetupTxn struct {
 }
 
 func (t *onboardingSetupTxn) run(ctx context.Context) error {
+	if t.req.Orchestration == onboardingOrchestrationGastown {
+		return t.runGasTown(ctx)
+	}
 	target := t.targetPath()
 	t.projectPath = target
 	t.info("Starting deterministic onboarding setup for %s.", t.req.ProjectName)
@@ -193,6 +211,32 @@ func (t *onboardingSetupTxn) run(ctx context.Context) error {
 		t.setupGasTown(ctx)
 	}
 	t.info("Setup complete. The Onboarder can now coach milestones, epics, and beads with this context fixed.")
+	return nil
+}
+
+func (t *onboardingSetupTxn) runGasTown(ctx context.Context) error {
+	t.info("Starting deterministic Gas Town onboarding setup for %s.", t.req.ProjectName)
+	rig, worktree := t.setupGasTown(ctx)
+	if worktree == "" {
+		t.warn("Gas Town rig %s is available, but its worktree path could not be resolved. Provide gastown_worktree_path or upgrade gt rig list JSON to include worktree_path.", rig)
+		t.info("Setup complete. Gas Town can dispatch through Sling, but LLM guidance files were not written.")
+		return nil
+	}
+	t.projectPath = worktree
+	if _, err := os.Stat(worktree); err != nil {
+		t.warn("Gas Town worktree %s is not reachable yet: %v", worktree, err)
+		t.info("Setup complete. Gas Town can dispatch through Sling once the rig worktree exists.")
+		return nil
+	}
+	if err := t.ensureGembaWorkspace(worktree); err != nil {
+		return err
+	}
+	if err := t.ensureWorkspaceFiles(ctx, worktree); err != nil {
+		return err
+	}
+	t.configureSourceAnalysis(ctx, worktree)
+	t.testMCP(ctx, worktree)
+	t.info("Setup complete. The Onboarder can now coach milestones, epics, and beads with Gas Town as the runtime host.")
 	return nil
 }
 
@@ -423,41 +467,134 @@ func (t *onboardingSetupTxn) commitSetupSnapshot(ctx context.Context, target str
 	t.checks["git_commit"] = "committed"
 }
 
-func (t *onboardingSetupTxn) setupGasTown(ctx context.Context) {
+func (t *onboardingSetupTxn) setupGasTown(ctx context.Context) (string, string) {
 	remoteURL := githubRemoteURL(t.req.GitHubProject)
 	if remoteURL == "" {
 		t.warn("Gas Town setup needs a GitHub owner/repo or remote URL; skipping rig initialization.")
 		t.checks["gastown"] = "invalid-remote"
-		return
+		return gasTownRigName(t.req.ProjectName), t.req.GastownWorktree
 	}
 	if err := os.MkdirAll(t.req.GastownLocation, 0o755); err != nil {
 		t.warn("Could not create Gas Town location %s: %v", t.req.GastownLocation, err)
 		t.checks["gastown"] = "location-failed"
-		return
+		return gasTownRigName(t.req.ProjectName), t.req.GastownWorktree
 	}
-	rig := gasTownRigName(t.req.ProjectName)
+	rig := t.req.GastownRig
+	if rig == "" {
+		rig = gasTownRigName(t.req.ProjectName)
+	}
 	t.info("Ensuring Gas Town rig %s is available.", rig)
-	if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "list", "--json"); err != nil {
+	rigsOut, err := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "list", "--json")
+	if err != nil {
 		t.warn("Gas Town CLI did not list rigs cleanly: %v", err)
 		t.checks["gastown"] = "gt-unavailable"
-		return
+		return rig, t.req.GastownWorktree
 	}
-	if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "add", rig, remoteURL); err != nil {
-		if _, createErr := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "create", rig); createErr != nil {
-			t.warn("Gas Town rig initialization failed: %v", err)
-			t.checks["gastown"] = "rig-init-failed"
-			return
+	existing, _ := findGasTownRig(rigsOut, rig)
+	if existing.Name != "" {
+		t.info("Reusing existing Gas Town rig %s.", rig)
+		t.checks["gastown_rig"] = "reused"
+	} else {
+		if t.req.Origin == onboardingOriginNew {
+			t.ensureGitHubRepository(ctx, t.req.GastownLocation)
 		}
-		t.info("Created Gas Town rig %s.", rig)
-	} else {
-		t.info("Added or reused Gas Town rig %s for %s.", rig, remoteURL)
+		if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "add", rig, remoteURL); err != nil {
+			if _, createErr := t.runner(ctx, t.req.GastownLocation, "gt", "rig", "create", rig); createErr != nil {
+				t.warn("Gas Town rig initialization failed: %v", err)
+				t.checks["gastown"] = "rig-init-failed"
+				return rig, t.req.GastownWorktree
+			}
+			t.info("Created Gas Town rig %s.", rig)
+		} else {
+			t.info("Added Gas Town rig %s for %s.", rig, remoteURL)
+		}
+		rigsOut, _ = t.runner(ctx, t.req.GastownLocation, "gt", "rig", "list", "--json")
+		existing, _ = findGasTownRig(rigsOut, rig)
+		t.checks["gastown_rig"] = "created"
 	}
-	if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "polecat", "create", rig, "onboarder"); err != nil {
-		t.warn("Gas Town polecat creation was skipped or failed: %v", err)
+	if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "crew", "create", rig, "onboarder"); err != nil {
+		t.warn("Gas Town crew creation was skipped or failed: %v", err)
+		if _, err := t.runner(ctx, t.req.GastownLocation, "gt", "polecat", "create", rig, "onboarder"); err != nil {
+			t.warn("Gas Town onboarding polecat creation was skipped or failed: %v", err)
+		} else {
+			t.info("Created Gas Town onboarding polecat for %s.", rig)
+		}
 	} else {
-		t.info("Created Gas Town onboarding polecat for %s.", rig)
+		t.info("Created or reused Gas Town onboarding crew for %s.", rig)
+	}
+	worktree := t.resolveGasTownWorktree(rig, existing)
+	if worktree != "" {
+		t.info("Resolved Gas Town worktree for %s at %s.", rig, worktree)
+		t.checks["gastown_worktree"] = worktree
 	}
 	t.checks["gastown"] = "initialized"
+	return rig, worktree
+}
+
+func (t *onboardingSetupTxn) ensureGitHubRepository(ctx context.Context, cwd string) {
+	t.info("Preparing GitHub repository %s for Gas Town.", t.req.GitHubProject)
+	if _, err := t.runner(ctx, cwd, "gh", "repo", "view", t.req.GitHubProject, "--json", "name"); err != nil {
+		if _, createErr := t.runner(ctx, cwd, "gh", "repo", "create", t.req.GitHubProject, "--private"); createErr != nil {
+			t.warn("GitHub repository create failed: %v", createErr)
+			t.checks["github"] = "create-failed"
+			return
+		}
+		t.info("Created GitHub repository %s.", t.req.GitHubProject)
+		t.checks["github"] = "created"
+		return
+	}
+	t.info("GitHub repository %s already exists.", t.req.GitHubProject)
+	t.checks["github"] = "already-present"
+}
+
+type gasTownRigView struct {
+	Name         string `json:"name"`
+	Repository   string `json:"repository,omitempty"`
+	Repo         string `json:"repo,omitempty"`
+	Branch       string `json:"branch,omitempty"`
+	WorktreePath string `json:"worktree_path,omitempty"`
+	Path         string `json:"path,omitempty"`
+	Dir          string `json:"dir,omitempty"`
+}
+
+func findGasTownRig(raw []byte, name string) (gasTownRigView, error) {
+	var rigs []gasTownRigView
+	if err := json.Unmarshal(raw, &rigs); err != nil {
+		return gasTownRigView{}, err
+	}
+	for _, rig := range rigs {
+		if rig.Name == name {
+			return rig, nil
+		}
+	}
+	return gasTownRigView{}, nil
+}
+
+func (t *onboardingSetupTxn) resolveGasTownWorktree(rig string, view gasTownRigView) string {
+	if t.req.GastownWorktree != "" {
+		return t.req.GastownWorktree
+	}
+	for _, candidate := range []string{view.WorktreePath, view.Path, view.Dir} {
+		if strings.TrimSpace(candidate) != "" {
+			return strings.TrimSpace(candidate)
+		}
+	}
+	for _, candidate := range []string{
+		filepath.Join(t.req.GastownLocation, "rigs", rig),
+		filepath.Join(t.req.GastownLocation, rig),
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func (t *onboardingSetupTxn) effectiveBeadsURL() string {
+	if t.req.BeadsURL != "" {
+		return t.req.BeadsURL
+	}
+	return t.cfg.DoltURL
 }
 
 func (t *onboardingSetupTxn) gitDirty(ctx context.Context, target string) (bool, error) {
@@ -487,6 +624,9 @@ func (t *onboardingSetupTxn) ensureGembaWorkspace(target string) error {
 	path := filepath.Join(target, ".gemba", "workspace.toml")
 	if _, err := os.Stat(path); err == nil {
 		t.info(".gemba/workspace.toml already exists.")
+		if err := t.ensureWorkspaceBeadsURL(path); err != nil {
+			return err
+		}
 		t.checks["workspace"] = "already-present"
 		return nil
 	} else if err != nil && !os.IsNotExist(err) {
@@ -503,8 +643,33 @@ func (t *onboardingSetupTxn) ensureGembaWorkspace(target string) error {
 	if err := os.WriteFile(path, []byte(buildWorkspaceTOML(state, t.now().UTC())), 0o644); err != nil {
 		return fmt.Errorf("write workspace.toml: %w", err)
 	}
+	if err := t.ensureWorkspaceBeadsURL(path); err != nil {
+		return err
+	}
 	t.info("Created .gemba/workspace.toml.")
 	t.checks["workspace"] = "created"
+	return nil
+}
+
+func (t *onboardingSetupTxn) ensureWorkspaceBeadsURL(path string) error {
+	beadsURL := t.effectiveBeadsURL()
+	if beadsURL == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(raw), "beads_db") {
+		t.checks["beads_binding"] = "already-present"
+		return nil
+	}
+	appendix := fmt.Sprintf("\n# Beads database used by this workspace.\nbeads_db = %q\n", beadsURL)
+	if err := os.WriteFile(path, append(raw, []byte(appendix)...), 0o644); err != nil {
+		return err
+	}
+	t.info("Recorded Beads Dolt URL in .gemba/workspace.toml.")
+	t.checks["beads_binding"] = "recorded"
 	return nil
 }
 

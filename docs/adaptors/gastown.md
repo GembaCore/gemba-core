@@ -26,6 +26,53 @@ fetcher and the adaptor body stays unchanged.
 No MCP bridge required. MCP is recommended-not-required per
 DD-15; the adaptor has no MCP surface today.
 
+## First-class boot model
+
+Gas Town mode separates the two planes:
+
+- **WorkPlane / Beads**: pass a Dolt server URL with `--dolt-url`
+  or `--beads-url`, for example
+  `mysql://root@127.0.0.1:3307/gemba`.
+- **OrchestrationPlane / runtime**: pass `--orchestration=gastown`
+  plus `--city <path>` or legacy `--town <path>`. Every `gt` shellout
+  runs with that directory as cwd.
+
+Example:
+
+```bash
+gemba serve \
+  --dolt-url 'mysql://root@127.0.0.1:3307/<beads-db>' \
+  --orchestration=gastown \
+  --city <gas-town-root>
+```
+
+Do not pass a Gas Town rig as `--beads-dir`. A rig is a code/runtime
+scope owned by Gas Town; the Beads database is served by Dolt.
+
+## Workspace and dispatch mapping
+
+Gemba imports existing rigs from `gt rig list --json`. Each rig becomes
+a Gemba workspace/scope. When the CLI exposes `repository`, `branch`, or
+`worktree_path`/`path`/`dir`, the adaptor copies those fields into
+`core.Workspace` so source-analysis status, dirty-tree checks, and
+evidence links point at the real rig checkout.
+
+Session dispatch uses Sling:
+
+```text
+StartSession(bead, target_rig=rig) -> gt sling <bead> <rig> --agent <agent> --create
+```
+
+The server now threads the selected workspace as `gemba:target_rig`, so
+dragging a bead, epic, or milestone from a scoped board dispatches to
+the intended rig rather than whatever rig happens to be listed first.
+
+Interactive project onboarding uses the Gas Town root to reuse or create
+the selected rig, then writes Gemba/LLM setup files into the rig
+worktree. It records the Dolt Beads URL in `.gemba/workspace.toml` and
+requests an onboarding crew first, falling back to an onboarding polecat
+when the installed `gt` does not support crew creation.
+
 ## Manifest
 
 ```toml

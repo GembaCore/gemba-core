@@ -30,6 +30,22 @@ native-orchestration story. Gas Town / mock / Gas City / LangGraph /
 etc. adaptors swap in with `--orchestration=<name>` when you want their
 specific scheduling or test semantics.
 
+For Gas Town, use Mode B for Beads and point orchestration at the Gas
+Town root:
+
+```bash
+gemba serve \
+  --dolt-url 'mysql://root@127.0.0.1:3307/<beads-db>' \
+  --orchestration=gastown \
+  --city <gas-town-root>
+```
+
+`<beads-db>` is the Dolt database that stores the beads. It is not a rig
+directory. `<gas-town-root>` is where `gt rig list`, `gt sling`,
+`gt convoy list`, and crew/polecat commands should run. Existing rigs
+are imported as scopes and reused for worktrees and interactive
+sessions.
+
 ## Prerequisites
 
 - `gemba` binary on `PATH` — build from source with `make build` and the binary lands at `./bin/gemba`.

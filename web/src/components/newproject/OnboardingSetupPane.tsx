@@ -18,6 +18,9 @@ export interface OnboardingSetup {
   githubProject: string;
   worktreePath: string;
   gastownLocation: string;
+  gastownRig: string;
+  gastownWorktreePath: string;
+  beadsUrl: string;
   sourceAnalysisTool: SourceAnalysisTool;
 }
 
@@ -33,6 +36,9 @@ const DEFAULT_SETUP: OnboardingSetup = {
   githubProject: '',
   worktreePath: '',
   gastownLocation: '',
+  gastownRig: '',
+  gastownWorktreePath: '',
+  beadsUrl: '',
   sourceAnalysisTool: 'gitnexus',
 };
 
@@ -47,7 +53,7 @@ export function OnboardingSetupPane({
   const activity = useMemo(() => setupActivity(setup), [setup]);
   const canContinue = isComplete(setup) && !launching && !preparing;
 
-  const update = <K extends keyof OnboardingSetup,>(key: K, value: OnboardingSetup[K]) => {
+  const update = <K extends keyof OnboardingSetup>(key: K, value: OnboardingSetup[K]) => {
     setSetup((current) => {
       const next = { ...current, [key]: value };
       if (key === 'projectName' && !current.githubProject.trim()) {
@@ -76,8 +82,11 @@ export function OnboardingSetupPane({
         github_project: setup.githubProject,
         orchestration: setup.orchestration,
         worktree_path: setup.orchestration === 'native' ? setup.worktreePath : undefined,
-        gastown_location:
-          setup.orchestration === 'gastown' ? setup.gastownLocation : undefined,
+        gastown_location: setup.orchestration === 'gastown' ? setup.gastownLocation : undefined,
+        gastown_rig: setup.orchestration === 'gastown' ? setup.gastownRig : undefined,
+        gastown_worktree_path:
+          setup.orchestration === 'gastown' ? setup.gastownWorktreePath : undefined,
+        beads_url: setup.orchestration === 'gastown' ? setup.beadsUrl : undefined,
         source_analysis_tool: setup.sourceAnalysisTool,
       });
       setFrames(result.frames);
@@ -100,8 +109,8 @@ export function OnboardingSetupPane({
           Start with deterministic setup
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-neutral-500 dark:text-neutral-400">
-          Gemba asks for project identity, source, repository, and runtime host before launching
-          the Onboarder. The LLM only begins once the workspace contract is known.
+          Gemba asks for project identity, source, repository, and runtime host before launching the
+          Onboarder. The LLM only begins once the workspace contract is known.
         </p>
       </header>
 
@@ -163,9 +172,45 @@ export function OnboardingSetupPane({
                 data-testid="onboard-setup-gastown-location"
                 value={setup.gastownLocation}
                 onChange={(e) => update('gastownLocation', e.target.value)}
-                placeholder="/path/to/town"
+                placeholder="/path/to/city-or-town"
                 className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
               />
+              <label className="mt-3 block">
+                <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                  Rig
+                </span>
+                <input
+                  data-testid="onboard-setup-gastown-rig"
+                  value={setup.gastownRig}
+                  onChange={(e) => update('gastownRig', e.target.value)}
+                  placeholder={slugify(setup.projectName) || 'existing-rig'}
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                  Rig worktree
+                </span>
+                <input
+                  data-testid="onboard-setup-gastown-worktree"
+                  value={setup.gastownWorktreePath}
+                  onChange={(e) => update('gastownWorktreePath', e.target.value)}
+                  placeholder="/path/to/city/rigs/example"
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
+              <label className="mt-3 block">
+                <span className="mb-1 block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+                  Beads Dolt URL
+                </span>
+                <input
+                  data-testid="onboard-setup-beads-url"
+                  value={setup.beadsUrl}
+                  onChange={(e) => update('beadsUrl', e.target.value)}
+                  placeholder="mysql://root@127.0.0.1:3307/project_beads"
+                  className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                />
+              </label>
             </Fieldset>
           ) : (
             <Fieldset title="Local worktree">
@@ -220,7 +265,10 @@ export function OnboardingSetupPane({
                   </li>
                 ))
               : activity.map((item) => (
-                  <li key={item.label} className="flex gap-2 text-xs text-neutral-600 dark:text-neutral-300">
+                  <li
+                    key={item.label}
+                    className="flex gap-2 text-xs text-neutral-600 dark:text-neutral-300"
+                  >
                     {item.done ? (
                       <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
                     ) : (
@@ -250,7 +298,11 @@ export function OnboardingSetupPane({
                 : 'bg-neutral-200 text-neutral-500 dark:bg-neutral-800 dark:text-neutral-500'
             )}
           >
-            {preparing ? 'Preparing workspace...' : launching ? 'Launching Onboarder...' : 'Begin coaching'}
+            {preparing
+              ? 'Preparing workspace...'
+              : launching
+                ? 'Launching Onboarder...'
+                : 'Begin coaching'}
           </button>
         </aside>
       </div>
@@ -319,12 +371,19 @@ function setupActivity(setup: OnboardingSetup): Array<{ label: string; done: boo
     {
       label:
         setup.orchestration === 'gastown'
-          ? 'Gas Town location ready for boot and project init'
+          ? 'Gas Town root ready; existing rigs will be reused before creating new ones'
           : 'Local worktree location ready for sync or creation',
       done:
         setup.orchestration === 'gastown'
           ? setup.gastownLocation.trim().length > 0
           : setup.worktreePath.trim().length > 0,
+    },
+    {
+      label:
+        setup.orchestration === 'gastown'
+          ? 'Beads will be read from the configured Dolt URL, not from the rig directory'
+          : 'Local Beads database can be initialized or reused',
+      done: setup.orchestration !== 'gastown' || setup.beadsUrl.trim().length > 0,
     },
     {
       label:
@@ -345,7 +404,8 @@ function setupActivity(setup: OnboardingSetup): Array<{ label: string; done: boo
       done: setup.sourceAnalysisTool !== 'none',
     },
     {
-      label: 'LLM setup files will advertise Beads, decisions, epics, related beads, and analysis tools',
+      label:
+        'LLM setup files will advertise Beads, decisions, epics, related beads, and analysis tools',
       done: true,
     },
   ];

@@ -917,7 +917,7 @@ func registerOrchestrationPlane(ctx context.Context, host *api.Host, cfg config.
 	case "mock":
 		return registerMockOrchestration(ctx, host, cfg)
 	case "gastown":
-		return registerGastownOrchestration(ctx, host)
+		return registerGastownOrchestration(ctx, host, cfg)
 	default:
 		return fmt.Errorf("orchestration: unknown adaptor %q (want 'native', 'noop', 'mock', 'gastown', 'none', or empty)", cfg.Orchestration)
 	}
@@ -1022,8 +1022,9 @@ func personasFromPoolConfig(path string) []string {
 // (gm-e7.12) runs at construction; if the gt binary is missing or
 // too old, NewOrchestrationPlane returns an error and the server
 // fails to start with a clear message.
-func registerGastownOrchestration(ctx context.Context, host *api.Host) error {
-	plane, err := gt.NewOrchestrationPlane()
+func registerGastownOrchestration(ctx context.Context, host *api.Host, cfg config.ServeConfig) error {
+	root := gastownRoot(cfg)
+	plane, err := gt.NewWithConfig(gt.Config{Root: root})
 	if err != nil {
 		return fmt.Errorf("gastown orchestration: %w", err)
 	}
@@ -1036,8 +1037,16 @@ func registerGastownOrchestration(ctx context.Context, host *api.Host) error {
 		"version", reg.AdaptorVersion,
 		"protocol", reg.ProtocolVersion,
 		"transport", reg.Transport,
-		"mode", "gastown")
+		"mode", "gastown",
+		"root", root)
 	return nil
+}
+
+func gastownRoot(cfg config.ServeConfig) string {
+	if strings.TrimSpace(cfg.City) != "" {
+		return strings.TrimSpace(cfg.City)
+	}
+	return strings.TrimSpace(cfg.Town)
 }
 
 // registerNoopOrchestration binds the in-memory reference OrchestrationPlane

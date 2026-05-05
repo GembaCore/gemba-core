@@ -331,10 +331,12 @@ agent_type = "claude"
 adaptor-aware SPA editor (path picker, dropdowns, live TOML preview,
 clamp warnings).
 
-**Gas Town**: same shape but the scope axis is the rig name and the SPA
-editor imports rigs/personas from `gt agents` and shells to
-`gt rig create` / `gt polecat create` for adaptor-owned changes
-(`gm-s47n.17` wires the SPA buttons; CLI works today).
+**Gas Town**: Beads come from the Dolt server, while code execution and
+interactive sessions happen in existing Gas Town rigs, crews, and
+polecats. The scope axis is the rig name; the SPA imports rigs/personas
+from `gt` and shells to `gt rig create` / `gt crew create` /
+`gt polecat create` for adaptor-owned changes (`gm-s47n.17` wires the
+SPA buttons; CLI works today).
 
 ```toml
 [pool.gemba.engineer]
@@ -347,7 +349,8 @@ agent_type = "claude"
 ```
 
 ```bash
-./bin/gemba serve --beads-dir <rig> --orchestration=gastown \
+./bin/gemba serve --dolt-url 'mysql://root@127.0.0.1:3307/<beads-db>' \
+  --orchestration=gastown --city <gas-town-root> \
   --pool-config ./pool.toml
 ```
 
@@ -375,12 +378,17 @@ When you want the scheduling or isolation semantics those stacks
 provide, swap the orchestration flag:
 
 ```bash
-./bin/gemba serve --beads-dir <rig> --orchestration=gastown
+./bin/gemba serve --dolt-url 'mysql://root@127.0.0.1:3307/<beads-db>' \
+  --orchestration=gastown --city <gas-town-root>
 ```
 
 Gas Town's session lifecycle is implemented end-to-end (`gt sling` for
 dispatch, `gt unsling`/`gt release` for end, `gt convoy list` for
 session enumeration, `gt mail` for escalations) — see `gm-e7.9`.
+Gemba runs those `gt` commands from `--city` / `--town`, reuses existing
+rigs when they exist, and dispatches selected work to Sling using the
+rig as `gemba:target_rig`. The Beads WorkPlane remains the configured
+Dolt URL, not the rig directory.
 Pause/Resume + ClaimNextReady remain `KindUnsupported` where gt's CLI
 lacks the primitive (tracked as `gm-e7.10` / `gm-e7.11`).
 

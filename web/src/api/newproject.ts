@@ -235,6 +235,9 @@ export interface OnboardingSetupRequest {
   orchestration: OnboardingOrchestration;
   worktree_path?: string;
   gastown_location?: string;
+  gastown_rig?: string;
+  gastown_worktree_path?: string;
+  beads_url?: string;
   source_analysis_tool: SourceAnalysisTool;
 }
 
@@ -288,10 +291,7 @@ export async function prepareOnboardingSetup(
 // submitTurn — POST /api/v1/newproject/:id/turn. Submits an operator
 // message (and any in-place plan edits) and returns the updated state
 // plus the skill reply.
-export async function submitTurn(
-  sessionId: string,
-  body: TurnRequest
-): Promise<TurnResponse> {
+export async function submitTurn(sessionId: string, body: TurnRequest): Promise<TurnResponse> {
   if (!sessionId) throw new Error('submitTurn: sessionId is required');
   return apiFetch<TurnResponse>(`/v1/newproject/${encodeURIComponent(sessionId)}/turn`, {
     method: 'POST',

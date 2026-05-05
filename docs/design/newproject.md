@@ -131,15 +131,17 @@ A deterministic setup gate renders before those panes. It collects:
 - project name;
 - GitHub project identity;
 - orchestration layer: native or Gas Town;
-- native worktree path or Gas Town location;
+- native worktree path, or Gas Town root + rig + optional rig worktree;
+- Beads Dolt URL when the project uses Gas Town / remote Beads;
 - source-analysis backend: GitNexus by default, or explicit skip.
 
 The LLM-backed `POST /api/v1/newproject/start` call must not happen
 until this gate is complete. The SPA first POSTs to
 `/api/v1/onboarding/setup` with a nonce. That deterministic setup
 transaction prepares or adopts the worktree, initializes
-`.gemba/workspace.toml` when missing, initializes a local Beads database
-when possible, syncs clean existing worktrees with `git fetch --prune`
+`.gemba/workspace.toml` when missing, records the Beads Dolt URL when
+one is selected, initializes a local Beads database only for native
+filesystem projects, syncs clean existing worktrees with `git fetch --prune`
 and `git pull --ff-only`, and skips pull with an operator-visible
 warning when the worktree is dirty. For new projects it also
 best-effort verifies or creates the GitHub repository with `gh`,
@@ -156,10 +158,14 @@ and probes both `gemba-mcp` and `gitnexus mcp --help`. New projects
 record the GitNexus contract immediately and defer the first index
 until code exists.
 
-For Gas Town onboarding the same setup transaction best-effort verifies
-or creates the selected rig with `gt` and asks Gas Town for an
-onboarding polecat. CLI failures are returned as setup warnings rather
-than silently delegated to the LLM. The final
+For Gas Town onboarding the same setup transaction treats the Gas Town
+location as the runtime root, not the project checkout. It runs `gt`
+from that root, reuses an existing selected rig when present, otherwise
+adds/creates the rig from the GitHub remote, resolves the rig worktree,
+writes setup files there, records the Beads Dolt URL in
+`.gemba/workspace.toml`, and asks Gas Town for an onboarding crew
+before falling back to an onboarding polecat. CLI failures are returned
+as setup warnings rather than silently delegated to the LLM. The final
 `/api/v1/newproject/:id/ratify` transaction still owns the generated
 plan commit path.
 
@@ -211,11 +217,11 @@ coaching panel before any LLM is launched:
 | --- | --- | --- |
 | Is this project new, existing, or imported? | SPA/server setup flow | Required first branch. |
 | What is the project name? | SPA/server setup flow | Used for beads DB name, repo naming, and display. |
-| Create or adopt beads database | Server setup transaction | New projects create it; existing/imported projects adopt or sync it. |
+| Create or adopt beads database | Server setup transaction | Native new projects create a local `.beads` database; Gas Town projects use the configured Dolt URL and do not treat the rig as a Beads directory. |
 | Native or Gas Town orchestration? | SPA/server setup flow | Determines runtime host and subsequent location questions. |
 | GitHub project identity and remote | Server setup transaction | Verify intended owner/repo, create when needed, then push. |
 | Native worktree location | Server setup transaction | Native does not imply a default location; ask or use configured default. |
-| Gas Town location and boot state | Server setup transaction | CWD to the town/root, ensure Gas Town is booted, initialize project with beads DB name and remote URL. |
+| Gas Town root, rig, and worktree | Server setup transaction | CWD to the city/town root, import or create the selected rig, resolve the rig worktree, and initialize LLM/Gemba setup files in that checkout. |
 | Mayor vs crew host | Orchestration setup policy | Project-level onboarding attaches to mayor or a crew according to the session-hosting design. |
 | Existing project sync/adopt | Server setup transaction | Native should sync from remote after confirming worktree; Gas Town should adopt the project location. |
 | Source analysis backend | SPA/server setup flow | Default to GitNexus for existing/imported codebases; allow explicit skip. |

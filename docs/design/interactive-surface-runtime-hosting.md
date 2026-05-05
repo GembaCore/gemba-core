@@ -69,18 +69,22 @@ The first implementation slice is in place:
 - `/onboard` uses the shared transcript component and gates the
   Onboarder LLM behind deterministic setup collection. It asks for
   new/existing/import, project name, GitHub project, orchestration
-  layer, native/Gas Town location, and source-analysis backend before calling
+  layer, native worktree or Gas Town root/rig/worktree, Beads Dolt URL
+  where applicable, and source-analysis backend before calling
   `/api/v1/newproject/start`.
 - `POST /api/v1/onboarding/setup` executes the deterministic setup
-  transaction for the selected path. It creates or adopts the worktree,
-  initializes local Beads metadata where possible, syncs clean existing
+  transaction for the selected path. It creates or adopts the native
+  worktree, or reuses/creates the selected Gas Town rig and resolves
+  its worktree. It initializes local Beads metadata only for native
+  filesystem projects, records a Dolt Beads URL for Gas Town projects,
+  syncs clean existing
   repos, seeds Claude/Codex setup files with Beads and source-analysis
   MCP guidance, verifies or best-effort installs GitNexus, runs initial
   GitNexus analysis for existing/imported codebases, probes MCP
   commands, and for new projects best-effort creates/verifies the GitHub
   repo, configures `origin`, commits a setup snapshot, pushes `main`,
-  and asks Gas Town to add/create the rig and an onboarding polecat when
-  Gas Town orchestration is selected.
+  and asks Gas Town to add/create the rig plus an onboarding crew
+  (falling back to polecat) when Gas Town orchestration is selected.
 
 Remaining follow-on work is primarily hardening rather than product
 contract completion: replace the process-local interaction store with
@@ -296,8 +300,9 @@ branching questions that can be answered deterministically must be
 asked before the LLM launches. Gemba asks whether the user is creating
 a new project, adopting an existing project, or importing a project;
 then collects the project name, GitHub project identity, orchestration
-layer, native worktree or Gas Town location, and source-analysis
-backend. Existing/imported codebases default to GitNexus. Only after
+layer, native worktree or Gas Town root/rig/worktree, Beads Dolt URL
+where applicable, and source-analysis backend. Existing/imported
+codebases default to GitNexus. Only after
 that setup is explicit and required setup checks have completed should
 the Onboarder LLM coach the user through project intent, milestones,
 epics, beads, acceptance criteria, risks, and next actions.
@@ -307,10 +312,10 @@ Ownership split:
 | Setup concern | Owner |
 | --- | --- |
 | New / existing / import branch | Gemba deterministic setup UI |
-| Beads database create/adopt/sync | Gemba server setup transaction |
+| Beads database create/adopt/sync | Gemba server setup transaction; Gas Town projects bind a Dolt URL instead of a rig-local `.beads` directory |
 | GitHub repo verify/create/push | Gemba server setup transaction |
 | Native worktree path and sync | Gemba server setup transaction |
-| Gas Town location, boot, project init | Gas Town adaptor through Gemba setup transaction |
+| Gas Town root, rig, worktree, and crew host | Gas Town adaptor through Gemba setup transaction |
 | Mayor vs crew mounting | Active OrchestrationPlane policy |
 | GitNexus install/analyze for existing code | Gemba server setup transaction |
 | Beads and source-analysis MCP connection test | Gemba server setup transaction |

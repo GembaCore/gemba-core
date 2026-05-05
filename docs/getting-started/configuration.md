@@ -50,16 +50,16 @@ the resolution falls through to user-level config when none is passed.
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--orchestration` | `native` | `native` (terminal multiplexer), `none` (no plane — read-only Kanban), or future named adaptors. |
+| `--orchestration` | `native` | `native` (terminal multiplexer), `gastown` (Gas Town Sling/crew/polecat runtime), `mock`, `none` (no plane), or `noop`. |
 | `--terminal` | `auto` | Terminal backend when `--orchestration=native`: `auto` \| `tmux` \| `iterm` \| `terminal`. |
 | `--agents-registry` | `.gemba/agents.toml` | Agent type registry (see Layer 3). Missing file is non-fatal. |
 | `--worktrees-dir` | `<repo>/../worktrees` | Parent dir for native adaptor's worktree provisioner. |
+| `--city` / `--town` | unset | Gas City / Gas Town root used as cwd for every `gt` command when `--orchestration=gastown`. Prefer `--city`; `--town` remains for legacy layouts. |
 
 ### Other
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--city` / `--town` | unset | Path to a Gas City / Gas Town workspace; legacy Gas Town integration. |
 | `--config` | unset | Explicit path to `gemba.toml` (file loading lands later; flag is stable). |
 | `--orchestrator-config` | `.gemba/orchestrator.json` | Path to the shader/orchestrator binding (see Layer 3). |
 | `--dangerously-skip-permissions` | `false` | Disable the `X-GEMBA-Confirm` mutation gate for the session. Verbatim Claude Code spelling. |

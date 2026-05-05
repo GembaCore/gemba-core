@@ -205,26 +205,34 @@ func TestOnboardingSetup_NewProject_PublishesRepository(t *testing.T) {
 
 func TestOnboardingSetup_GasTownInitializesRig(t *testing.T) {
 	dir := t.TempDir()
+	worktree := filepath.Join(dir, "rigs", "demo")
+	mustMkdir(t, filepath.Join(worktree, ".git"))
 	var calls []string
 	runner := func(_ context.Context, dir, name string, args ...string) ([]byte, error) {
 		call := name + " " + strings.Join(args, " ")
 		calls = append(calls, call)
-		if call == "git status --porcelain" {
-			return []byte("?? .gemba/workspace.toml\n"), nil
+		switch call {
+		case "gt rig list --json":
+			return []byte(`[]`), nil
+		case "gt crew create demo onboarder":
+			return []byte("ok"), nil
+		case "gh repo view GembaCore/demo --json name":
+			return nil, errors.New("not found")
 		}
 		return []byte("ok"), nil
 	}
-	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	r := NewRouter(config.ServeConfig{DoltURL: "mysql://root@127.0.0.1:3307/demo"}, fakeSPA(), nil)
 	t.Cleanup(r.Close)
 	r.AttachProjects(AttachConfig{GitInitRunner: runner})
 
 	body := map[string]any{
-		"origin":               "new",
-		"project_name":         "demo",
-		"github_project":       "GembaCore/demo",
-		"orchestration":        "gastown",
-		"gastown_location":     dir,
-		"source_analysis_tool": "none",
+		"origin":                "new",
+		"project_name":          "demo",
+		"github_project":        "GembaCore/demo",
+		"orchestration":         "gastown",
+		"gastown_location":      dir,
+		"gastown_worktree_path": worktree,
+		"source_analysis_tool":  "none",
 	}
 	rec := httptest.NewRecorder()
 	req := newProjectReq(t, http.MethodPost, "/api/v1/onboarding/setup", body)
@@ -243,12 +251,17 @@ func TestOnboardingSetup_GasTownInitializesRig(t *testing.T) {
 	joined := strings.Join(calls, "\n")
 	for _, want := range []string{
 		"gt rig list --json",
+		"gh repo create GembaCore/demo --private",
 		"gt rig add demo https://github.com/GembaCore/demo.git",
-		"gt polecat create demo onboarder",
+		"gt crew create demo onboarder",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing runner call %q in:\n%s", want, joined)
 		}
+	}
+	workspace := mustRead(t, filepath.Join(worktree, ".gemba", "workspace.toml"))
+	if !strings.Contains(workspace, `beads_db = "mysql://root@127.0.0.1:3307/demo"`) {
+		t.Fatalf("Gas Town workspace.toml missing Dolt beads binding:\n%s", workspace)
 	}
 }
 

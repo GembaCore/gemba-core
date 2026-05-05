@@ -211,9 +211,12 @@ func cmpInt(a, b int) int {
 // liveProbeRunner is the default probe shell — it spawns a real `gt`
 // binary on PATH. Reused by NewOrchestrationPlane so production and
 // tests share the same probe codepath.
-func liveProbeRunner(path string) probeRunner {
+func liveProbeRunner(path, root string) probeRunner {
 	return func(ctx context.Context, args ...string) ([]byte, error) {
 		cmd := exec.CommandContext(ctx, path, args...)
+		if root != "" {
+			cmd.Dir = root
+		}
 		// Use Output (not CombinedOutput) so probe captures stdout
 		// only; --version writes there. Errors carry stderr via the
 		// *exec.ExitError wrapping wrapGtError unwraps.

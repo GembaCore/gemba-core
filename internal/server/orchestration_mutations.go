@@ -20,12 +20,15 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/GembaCore/gemba-core/internal/config"
 )
 
 // gtRunner is the shape orchestration_mutations.go uses to execute the
-// gt CLI. Tests inject a stub via SetGTRunner so they don't fork
-// subprocesses; production wraps exec.CommandContext.
-type gtRunner func(ctx context.Context, args ...string) (stdout, stderr []byte, err error)
+// gt CLI. cwd is the configured Gas Town city/town root. Tests inject a
+// stub via SetGTRunner so they don't fork subprocesses; production wraps
+// exec.CommandContext.
+type gtRunner func(ctx context.Context, cwd string, args ...string) (stdout, stderr []byte, err error)
 
 // gtRunnerVal stores the active runner. atomic.Value lets tests swap
 // it without touching unexported router fields.
@@ -55,7 +58,7 @@ func currentGTRunner() gtRunner {
 	return defaultGTRunner
 }
 
-func defaultGTRunner(ctx context.Context, args ...string) ([]byte, []byte, error) {
+func defaultGTRunner(ctx context.Context, cwd string, args ...string) ([]byte, []byte, error) {
 	path, err := exec.LookPath("gt")
 	if err != nil {
 		return nil, nil, errors.New("gt CLI not on PATH")
@@ -63,6 +66,9 @@ func defaultGTRunner(ctx context.Context, args ...string) ([]byte, []byte, error
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, path, args...)
+	if strings.TrimSpace(cwd) != "" {
+		cmd.Dir = strings.TrimSpace(cwd)
+	}
 	var outBuf, errBuf bytes.Buffer
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
@@ -88,6 +94,13 @@ func (r *Router) adaptorID() string {
 	return r.host.OrchestrationPlane().Describe().AdaptorID
 }
 
+func gasTownRoot(cfg config.ServeConfig) string {
+	if strings.TrimSpace(cfg.City) != "" {
+		return strings.TrimSpace(cfg.City)
+	}
+	return strings.TrimSpace(cfg.Town)
+}
+
 // requireGastown writes a 400 KindUnsupported response when the bound
 // adaptor isn't gt and returns true. The handler returns immediately.
 func (r *Router) requireGastown(w http.ResponseWriter) bool {
@@ -103,7 +116,7 @@ func (r *Router) requireGastown(w http.ResponseWriter) bool {
 
 func (r *Router) shellGT(w http.ResponseWriter, req *http.Request, cmdline string, args []string) {
 	runner := currentGTRunner()
-	stdout, stderr, err := runner(req.Context(), args...)
+	stdout, stderr, err := runner(req.Context(), gasTownRoot(r.cfg), args...)
 	res := runResult{
 		Command: cmdline,
 		Stdout:  string(stdout),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"sort"
 	"strings"
@@ -62,27 +63,61 @@ type gtProbeRunner func(ctx context.Context, args ...string) ([]byte, error)
 // recycle events).
 type OrchestrationPlane struct {
 	run            gtProbeRunner
+	root           string
 	caps           gtCapabilities
 	recycledEvents chan core.OrchestrationEvent
+}
+
+// Config controls how the adaptor reaches Gas Town. Root is the Gas
+// City/Town directory used as cwd for every `gt` invocation; empty keeps
+// the historical "inherit gemba's cwd" behavior.
+type Config struct {
+	Root string
 }
 
 // NewOrchestrationPlane returns an adaptor that shells to the `gt` binary
 // on PATH. Returns an error if `gt` is not installed or if the gt CLI
 // itself fails to answer `gt --version` (capability probe — gm-e7.12).
 func NewOrchestrationPlane() (*OrchestrationPlane, error) {
+	return NewWithConfig(Config{})
+}
+
+// NewWithConfig returns a Gas Town adaptor rooted at cfg.Root. This is
+// the first-class production path for `gemba serve --orchestration=gastown
+// --city/--town ...`: Beads remain on the WorkPlane (often --dolt-url)
+// while every orchestration command runs from the selected Gas Town
+// workspace.
+func NewWithConfig(cfg Config) (*OrchestrationPlane, error) {
 	path, err := exec.LookPath("gt")
 	if err != nil {
 		return nil, core.WrapAdaptorError(core.KindAdaptorDegraded, err,
 			"gastown: gt CLI not on PATH")
 	}
+	root := strings.TrimSpace(cfg.Root)
+	if root != "" {
+		info, err := os.Stat(root)
+		if err != nil {
+			return nil, core.WrapAdaptorError(core.KindAdaptorDegraded, err,
+				"gastown: root %q is not reachable", root)
+		}
+		if !info.IsDir() {
+			return nil, core.NewAdaptorError(core.KindAdaptorDegraded,
+				"gastown: root %q is not a directory", root)
+		}
+	}
 	runner := func(ctx context.Context, args ...string) ([]byte, error) {
-		return exec.CommandContext(ctx, path, args...).Output()
+		cmd := exec.CommandContext(ctx, path, args...)
+		if root != "" {
+			cmd.Dir = root
+		}
+		return cmd.Output()
 	}
 	o := &OrchestrationPlane{
 		run:            runner,
+		root:           root,
 		recycledEvents: make(chan core.OrchestrationEvent, 16),
 	}
-	caps, err := probeCapabilities(context.Background(), liveProbeRunner(path), nil)
+	caps, err := probeCapabilities(context.Background(), liveProbeRunner(path, root), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +197,7 @@ func (o *OrchestrationPlane) Describe() core.OrchestrationCapabilityManifest {
 		"supports_sling_json":    o.caps.SupportsSlingJSON,
 		"has_scheduler":          o.caps.HasScheduler,
 		"has_handoff":            o.caps.HasHandoff,
+		"gastown_root":           o.root,
 	}
 	m.Extension = ext
 	return m
@@ -169,13 +205,19 @@ func (o *OrchestrationPlane) Describe() core.OrchestrationCapabilityManifest {
 
 // gtRig is the shape of a row from `gt rig list --json`.
 type gtRig struct {
-	Name     string `json:"name"`
-	Prefix   string `json:"beads_prefix"`
-	Status   string `json:"status"`
-	Witness  string `json:"witness"`
-	Refinery string `json:"refinery"`
-	Polecats int    `json:"polecats"`
-	Crew     int    `json:"crew"`
+	Name         string `json:"name"`
+	Prefix       string `json:"beads_prefix"`
+	Status       string `json:"status"`
+	Witness      string `json:"witness"`
+	Refinery     string `json:"refinery"`
+	Polecats     int    `json:"polecats"`
+	Crew         int    `json:"crew"`
+	Repository   string `json:"repository,omitempty"`
+	Repo         string `json:"repo,omitempty"`
+	Branch       string `json:"branch,omitempty"`
+	WorktreePath string `json:"worktree_path,omitempty"`
+	Path         string `json:"path,omitempty"`
+	Dir          string `json:"dir,omitempty"`
 }
 
 // gtPolecat is the shape of a row from `gt polecat list --all --json`.

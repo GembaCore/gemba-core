@@ -198,6 +198,7 @@ func buildBeadPrompt(body startSessionRequest, nonce, reusePaneID string) core.S
 	}
 	if body.Workspace != "" {
 		prompt.Extension["gemba:workspace"] = body.Workspace
+		prompt.Extension["gemba:target_rig"] = body.Workspace
 	}
 	if body.Title != "" {
 		prompt.Extension["gemba:title"] = body.Title
@@ -284,6 +285,7 @@ func (r *Router) startManualSession(w http.ResponseWriter, req *http.Request, bo
 	}
 	if body.Workspace != "" {
 		prompt.Extension["gemba:workspace"] = body.Workspace
+		prompt.Extension["gemba:target_rig"] = body.Workspace
 	}
 	if body.Title != "" {
 		prompt.Extension["gemba:title"] = body.Title

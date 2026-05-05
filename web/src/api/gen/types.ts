@@ -895,8 +895,14 @@ export interface components {
             orchestration: "native" | "gastown";
             /** @description Absolute native worktree path. Required when orchestration is native. */
             worktree_path?: string;
-            /** @description Absolute Gas Town location. Required when orchestration is gastown. */
+            /** @description Absolute Gas Town city/town root. Required when orchestration is gastown; used as cwd for gt commands. */
             gastown_location?: string;
+            /** @description Optional Gas Town rig name. Defaults from project_name when omitted. Existing rigs are reused before creation. */
+            gastown_rig?: string;
+            /** @description Optional absolute path to the selected rig worktree. When omitted, setup uses gt rig list metadata or common rig-root fallbacks. */
+            gastown_worktree_path?: string;
+            /** @description Optional mysql:// Dolt URL for the Beads database. Gas Town projects bind Beads through this URL, not through the rig directory. */
+            beads_url?: string;
             /**
              * @description Source-analysis backend. Existing/imported codebases default to gitnexus in the SPA.
              * @enum {string}
