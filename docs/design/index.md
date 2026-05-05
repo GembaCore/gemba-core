@@ -41,6 +41,10 @@ alternatives, and the invariants downstream code can rely on.
 - **[Complexity-aware dispatch](complexity-aware-dispatch)** —
   estimates work depth/span and matches beads to agent/model
   capability envelopes before selection.
+- **[Native support improvements](native-support-improvements)** —
+  provider fidelity classes, terminal/session workspace UX, remote
+  native pairing, source-control health, conversational controls, and
+  native/tmux operator guidance.
 
 ## Operational
 
