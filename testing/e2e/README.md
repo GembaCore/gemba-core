@@ -92,6 +92,7 @@ appear as `pending('...')` placeholders.
 | `error-fake` | error | fake | gm-5v8v.13 |
 | `error-deep` | error | real | gm-5v8v.13 (gated) |
 | `integration-deep` | integration | real | gm-5v8v.15 (gated) |
+| `gastown-deep` | gastown | real | optional local adaptor lifecycle (gated separately) |
 
 `chrome-deep` is intentionally absent — chrome specs are pure SPA-shell
 assertions; the AdaptorBanner integration that *would* matter against a
@@ -117,6 +118,7 @@ Tags are **specifically additive** — Playwright `--grep`s on them.
 | `@auth` | Exercises login / middleware enforcement. |
 | `@mode-managed` | Asserts the managed-mode confirmation UX. |
 | `@deep` | **Asserts on real backend behaviour** — writes, SSE round-trips, Dolt reads. The deep-* projects grep this. Spec is *not* tagged `@deep` if it only renders the SPA shell. |
+| `@gastown` | Optional Gas Town adaptor lifecycle. Runs only under `gastown-deep`, not under regular deep or CI lanes. |
 
 ## Running
 
@@ -129,6 +131,22 @@ pnpm --filter gemba-e2e test       # smoke-fake only (the DoD)
 pnpm --filter gemba-e2e test:all   # full matrix (most projects ignore everything for now)
 pnpm --filter gemba-e2e typecheck
 ```
+
+Optional Gas Town adaptor check:
+
+```bash
+make build
+pnpm --filter gemba-e2e test:gastown
+```
+
+`test:gastown` sets `GEMBA_E2E_GASTOWN=1` and runs only the
+`gastown-deep` project. The current spec starts a real `gemba serve`
+with `--orchestration=gastown`, creates an isolated Beads workspace,
+dispatches a bead through `gt sling`, watches `/api/sessions` transition
+from working to completed, and confirms the underlying bead closes. It
+uses a deterministic `gt` shim so the adaptor can be regression-tested
+without launching a real LLM. This lane is deliberately absent from
+commit hooks and GitHub Actions.
 
 From this directory:
 

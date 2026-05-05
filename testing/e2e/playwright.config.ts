@@ -20,7 +20,10 @@ const isCI = !!process.env.CI;
 // Placeholder project — enumerated in the matrix but ignores all specs
 // until its sibling bead implements the tier. Each child bead in the
 // gm-5v8v family replaces the `testMatch` for its project.
-function pending(name: string, meta: { tier: string; backend: 'fake' | 'real'; bead: string }): Project {
+function pending(
+  name: string,
+  meta: { tier: string; backend: 'fake' | 'real'; bead: string }
+): Project {
   return {
     name,
     testIgnore: ['**/*'],
@@ -34,6 +37,7 @@ function pending(name: string, meta: { tier: string; backend: 'fake' | 'real'; b
 // flip GEMBA_ACCEPTANCE=1 on. Until then this project enumerates so
 // the matrix is visible but `testIgnore` everything.
 const ACCEPTANCE_ON = process.env.GEMBA_ACCEPTANCE === '1';
+const GASTOWN_ON = process.env.GEMBA_E2E_GASTOWN === '1';
 
 const projects: Project[] = [
   // ── Active ─────────────────────────────────────────────────────────
@@ -49,7 +53,12 @@ const projects: Project[] = [
       // server distinguish e2e traffic in logs.
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'smoke', backend: 'fake', bead: 'gm-5v8v.1', status: 'active' },
+    metadata: {
+      tier: 'smoke',
+      backend: 'fake',
+      bead: 'gm-5v8v.1',
+      status: 'active',
+    },
     timeout: 30_000,
   },
 
@@ -71,7 +80,12 @@ const projects: Project[] = [
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'chrome', backend: 'fake', bead: 'gm-5v8v.4', status: 'active' },
+    metadata: {
+      tier: 'chrome',
+      backend: 'fake',
+      bead: 'gm-5v8v.4',
+      status: 'active',
+    },
     timeout: 30_000,
   },
 
@@ -107,7 +121,12 @@ const projects: Project[] = [
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'route', backend: 'fake', bead: 'gm-5v8v.5,6,7,8,9', status: 'active' },
+    metadata: {
+      tier: 'route',
+      backend: 'fake',
+      bead: 'gm-5v8v.5,6,7,8,9',
+      status: 'active',
+    },
     timeout: 30_000,
   },
   // realtime-fake: AdaptorBanner + adaptors-stream specs (gm-5v8v.10).
@@ -120,7 +139,12 @@ const projects: Project[] = [
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'realtime', backend: 'fake', bead: 'gm-5v8v.10', status: 'active' },
+    metadata: {
+      tier: 'realtime',
+      backend: 'fake',
+      bead: 'gm-5v8v.10',
+      status: 'active',
+    },
     timeout: 30_000,
   },
   // modes-fake (gm-5v8v.11) — every spec is currently fixme'd because
@@ -136,7 +160,12 @@ const projects: Project[] = [
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'modes', backend: 'fake', bead: 'gm-5v8v.11', status: 'active (all fixme)' },
+    metadata: {
+      tier: 'modes',
+      backend: 'fake',
+      bead: 'gm-5v8v.11',
+      status: 'active (all fixme)',
+    },
     timeout: 30_000,
   },
   // auth-fake (gm-5v8v.12) — the bead notes auth is a backend
@@ -151,7 +180,12 @@ const projects: Project[] = [
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'auth', backend: 'fake', bead: 'gm-5v8v.12', status: 'active (all fixme)' },
+    metadata: {
+      tier: 'auth',
+      backend: 'fake',
+      bead: 'gm-5v8v.12',
+      status: 'active (all fixme)',
+    },
     timeout: 30_000,
   },
   // error-fake: 404 / network-error / pending. Inline alerts on per-
@@ -164,7 +198,12 @@ const projects: Project[] = [
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'error', backend: 'fake', bead: 'gm-5v8v.13', status: 'active' },
+    metadata: {
+      tier: 'error',
+      backend: 'fake',
+      bead: 'gm-5v8v.13',
+      status: 'active',
+    },
     timeout: 30_000,
   },
   // acceptance-temperature-spa (gm-root.27 wave 2). Drives the full
@@ -215,7 +254,12 @@ const projects: Project[] = [
       ...devices['Desktop Chrome'],
       extraHTTPHeaders: { 'x-gemba-e2e': 'fake' },
     },
-    metadata: { tier: 'pending', backend: 'fake', bead: 'gm-5v8v.14', status: 'living-spec catalog' },
+    metadata: {
+      tier: 'pending',
+      backend: 'fake',
+      bead: 'gm-5v8v.14',
+      status: 'living-spec catalog',
+    },
     timeout: 30_000,
   },
 
@@ -256,7 +300,13 @@ const projects: Project[] = [
           fullyParallel: false,
         } satisfies Project,
       ]
-    : [pending('smoke-deep', { tier: 'smoke', backend: 'real', bead: 'gm-h4n' })]),
+    : [
+        pending('smoke-deep', {
+          tier: 'smoke',
+          backend: 'real',
+          bead: 'gm-h4n',
+        }),
+      ]),
 
   // chrome-deep was a pending() placeholder. Chrome specs (sidebar /
   // topbar / palette / hotkeys / help-overlay) are pure SPA-shell —
@@ -297,7 +347,13 @@ const projects: Project[] = [
           fullyParallel: false,
         } satisfies Project,
       ]
-    : [pending('route-deep', { tier: 'route', backend: 'real', bead: 'gm-5v8v.5/6/8/9' })]),
+    : [
+        pending('route-deep', {
+          tier: 'route',
+          backend: 'real',
+          bead: 'gm-5v8v.5/6/8/9',
+        }),
+      ]),
   // realtime-deep: full /events SSE end-to-end + POST /api/workitems/notify
   // dedupe (gm-5v8v.10). bd write → events.Hub → /events SSE → SPA
   // react-query invalidation. Tagged @deep so the dispatcher only
@@ -330,7 +386,13 @@ const projects: Project[] = [
           fullyParallel: false,
         } satisfies Project,
       ]
-    : [pending('realtime-deep', { tier: 'realtime', backend: 'real', bead: 'gm-5v8v.10' })]),
+    : [
+        pending('realtime-deep', {
+          tier: 'realtime',
+          backend: 'real',
+          bead: 'gm-5v8v.10',
+        }),
+      ]),
   // modes-deep: workspace mode confirmation UX against a real server's
   // X-GEMBA-Confirm nonce + audit trail. modes/* specs carry @deep
   // tags for the load-bearing mode-respect assertions. gm-5v8v.18.
@@ -355,7 +417,13 @@ const projects: Project[] = [
           fullyParallel: false,
         } satisfies Project,
       ]
-    : [pending('modes-deep', { tier: 'modes', backend: 'real', bead: 'gm-5v8v.11' })]),
+    : [
+        pending('modes-deep', {
+          tier: 'modes',
+          backend: 'real',
+          bead: 'gm-5v8v.11',
+        }),
+      ]),
   // auth-deep: token / cookie / middleware enforcement. Auth is
   // backend-only by definition — fake-mode auth specs cover the
   // login-form UI shape, deep-mode covers the bearer/cookie
@@ -381,7 +449,13 @@ const projects: Project[] = [
           fullyParallel: false,
         } satisfies Project,
       ]
-    : [pending('auth-deep', { tier: 'auth', backend: 'real', bead: 'gm-5v8v.12' })]),
+    : [
+        pending('auth-deep', {
+          tier: 'auth',
+          backend: 'real',
+          bead: 'gm-5v8v.12',
+        }),
+      ]),
   // error-deep: real-server JSON envelope contract for /api/* +
   // /events/* (gm-b2 / gm-xke). Tagged @deep so only the load-bearing
   // server-contract specs run here. Same gm-h4n gating as the rest of
@@ -407,7 +481,13 @@ const projects: Project[] = [
           fullyParallel: false,
         } satisfies Project,
       ]
-    : [pending('error-deep', { tier: 'error', backend: 'real', bead: 'gm-5v8v.13' })]),
+    : [
+        pending('error-deep', {
+          tier: 'error',
+          backend: 'real',
+          bead: 'gm-5v8v.13',
+        }),
+      ]),
   // integration-deep — the migrated dispatch-chain spec (gm-5v8v.15).
   // Same opt-in gate as smoke-deep: GEMBA_E2E_RUN_DEEP=1 flips it on.
   // The CI nightly lane sets that flag; PR lanes don't run integration
@@ -435,7 +515,51 @@ const projects: Project[] = [
           fullyParallel: false,
         } satisfies Project,
       ]
-    : [pending('integration-deep', { tier: 'integration', backend: 'real', bead: 'gm-h4n' })]),
+    : [
+        pending('integration-deep', {
+          tier: 'integration',
+          backend: 'real',
+          bead: 'gm-h4n',
+        }),
+      ]),
+
+  // gastown-deep — optional local-only Gas Town adaptor lifecycle.
+  // This is intentionally NOT part of GEMBA_E2E_RUN_DEEP, commit hooks,
+  // or the GitHub E2E workflow. Operators opt in with
+  // GEMBA_E2E_GASTOWN=1 or `pnpm --filter gemba-e2e test:gastown`.
+  //
+  // The spec starts a real `gemba serve --orchestration=gastown`
+  // against an isolated Beads workspace and a deterministic gt shim so
+  // the adaptor contract can be exercised without launching expensive
+  // LLM sessions. A real-gt city/rig variant can live beside it once
+  // Gas Town exposes a cheap non-agent completion mode.
+  ...(GASTOWN_ON
+    ? [
+        {
+          name: 'gastown-deep',
+          testMatch: ['gastown/**/*.spec.ts'],
+          grep: /@gastown/,
+          use: {
+            ...devices['Desktop Chrome'],
+            extraHTTPHeaders: { 'x-gemba-e2e': 'gastown' },
+          },
+          metadata: {
+            tier: 'gastown',
+            backend: 'real',
+            bead: 'gt-adaptor-e2e',
+            status: 'local opt-in (GEMBA_E2E_GASTOWN=1)',
+          },
+          timeout: 180_000,
+          fullyParallel: false,
+        } satisfies Project,
+      ]
+    : [
+        pending('gastown-deep', {
+          tier: 'gastown',
+          backend: 'real',
+          bead: 'gt-adaptor-e2e',
+        }),
+      ]),
 ];
 
 export default defineConfig({
