@@ -12,16 +12,21 @@
 // well under a frame budget thanks to the O(V+E) analysis passes.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  Check,
+  ChevronDown,
+  Filter,
   Layers,
   Network,
+  RotateCcw,
   Route as RouteIcon,
   Wand2,
 } from 'lucide-react';
-import type { WorkItem } from '@/types/core.gen';
+import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import ReactFlow, {
   Background,
   BackgroundVariant,
@@ -37,6 +42,18 @@ import 'reactflow/dist/style.css';
 import { useWorkItems } from '@/hooks/useWorkItems';
 import { useCapabilities } from '@/capabilities/context-internal';
 import { useRhp } from '@/components/rhp/RhpContext';
+import {
+  MILESTONE_ALL,
+  buildMilestoneOptions,
+  filterByMilestone,
+  type MilestoneID,
+} from '@/components/board/milestone';
+import {
+  SCOPE_ALL,
+  buildScopeOptions,
+  filterByScope,
+  type ScopeID,
+} from '@/components/board/scope';
 import { WorkItemNode, type WorkItemNodeData } from '@/components/graph/WorkItemNode';
 import { buildGraph } from '@/components/graph/buildGraph';
 import { criticalPath, detectCycles, edgeKey } from '@/components/graph/graphAnalysis';
@@ -76,9 +93,20 @@ const HIGHLIGHT_CRITICAL = '#f59e0b';
 const AUTO_GRANULARITY_ZOOM_THRESHOLD = 0.3;
 const NARROW_CANVAS_WIDTH = 420;
 const NARROW_CANVAS_OVERVIEW_ZOOM = 0.9;
+const GRAPH_SEARCH_PARAM = 'q';
+
+function statesFromQuery(p: URLSearchParams): StateCategory[] {
+  const all = p.getAll('state_category');
+  return all.filter((s): s is StateCategory => (STATE_CATEGORIES as readonly string[]).includes(s));
+}
+
+function kindsFromQuery(p: URLSearchParams): string[] {
+  return p.getAll('kind').filter((s) => s.length > 0);
+}
 
 export function GraphPage() {
   const { data: items = [], isLoading, error } = useWorkItems();
+  const [params, setParams] = useSearchParams();
   const { workPlane } = useCapabilities();
   const { popDetail, tabs } = useRhp();
   const [highlightCycles, setHighlightCycles] = useState(true);
@@ -119,6 +147,99 @@ export function GraphPage() {
   // auto via the Auto button.
   const [granularityOverride, setGranularityOverride] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(1);
+  const milestone: MilestoneID = params.get('milestone') ?? MILESTONE_ALL;
+  const scope: ScopeID = params.get('scope') ?? SCOPE_ALL;
+  const stateFilters = useMemo(() => statesFromQuery(params), [params]);
+  const kindFilters = useMemo(() => kindsFromQuery(params), [params]);
+  const search = params.get(GRAPH_SEARCH_PARAM) ?? '';
+
+  const updateParams = useCallback(
+    (mutate: (next: URLSearchParams) => void) => {
+      const next = new URLSearchParams(params);
+      mutate(next);
+      setParams(next, { replace: true });
+    },
+    [params, setParams]
+  );
+  const setMilestone = useCallback(
+    (nextMilestone: MilestoneID) => {
+      updateParams((next) => {
+        if (nextMilestone === MILESTONE_ALL) next.delete('milestone');
+        else next.set('milestone', nextMilestone);
+      });
+    },
+    [updateParams]
+  );
+  const setScope = useCallback(
+    (nextScope: ScopeID) => {
+      updateParams((next) => {
+        if (nextScope === SCOPE_ALL) next.delete('scope');
+        else next.set('scope', nextScope);
+      });
+    },
+    [updateParams]
+  );
+  const setStateFilters = useCallback(
+    (states: StateCategory[]) => {
+      updateParams((next) => {
+        next.delete('state_category');
+        for (const state of states) next.append('state_category', state);
+      });
+    },
+    [updateParams]
+  );
+  const setKindFilters = useCallback(
+    (kinds: string[]) => {
+      updateParams((next) => {
+        next.delete('kind');
+        for (const kind of kinds) next.append('kind', kind);
+      });
+    },
+    [updateParams]
+  );
+  const setSearch = useCallback(
+    (nextSearch: string) => {
+      updateParams((next) => {
+        if (nextSearch.trim()) next.set(GRAPH_SEARCH_PARAM, nextSearch);
+        else next.delete(GRAPH_SEARCH_PARAM);
+      });
+    },
+    [updateParams]
+  );
+  const clearFilters = useCallback(() => {
+    updateParams((next) => {
+      next.delete('milestone');
+      next.delete('scope');
+      next.delete('state_category');
+      next.delete('kind');
+      next.delete(GRAPH_SEARCH_PARAM);
+    });
+  }, [updateParams]);
+
+  const filteredItems = useMemo(() => {
+    let out = filterByScope(filterByMilestone(items, milestone), scope);
+    if (stateFilters.length > 0) {
+      const allowed = new Set(stateFilters);
+      out = out.filter((it) => allowed.has(it.state_category));
+    }
+    if (kindFilters.length > 0) {
+      const allowed = new Set(kindFilters);
+      out = out.filter((it) => allowed.has(it.kind));
+    }
+    const needle = search.trim().toLowerCase();
+    if (needle) {
+      out = out.filter(
+        (it) => it.id.toLowerCase().includes(needle) || it.title.toLowerCase().includes(needle)
+      );
+    }
+    return out;
+  }, [items, milestone, scope, stateFilters, kindFilters, search]);
+  const filtersActive =
+    milestone !== MILESTONE_ALL ||
+    scope !== SCOPE_ALL ||
+    stateFilters.length > 0 ||
+    kindFilters.length > 0 ||
+    search.trim().length > 0;
   const narrowCanvas = canvasWidth < NARROW_CANVAS_WIDTH;
   const effectiveGranularity = useMemo<'items' | 'epics'>(() => {
     if (granularityOverride) return granularity;
@@ -127,9 +248,8 @@ export function GraphPage() {
       : 'items';
   }, [granularity, granularityOverride, currentZoom, narrowCanvas]);
   const renderItems = useMemo(
-    () =>
-      effectiveGranularity === 'epics' ? deriveAggregatedItems(items) : items,
-    [effectiveGranularity, items]
+    () => (effectiveGranularity === 'epics' ? deriveAggregatedItems(filteredItems) : filteredItems),
+    [effectiveGranularity, filteredItems]
   );
 
   const focusOnNode = useCallback((id: string) => {
@@ -277,6 +397,17 @@ export function GraphPage() {
     const id = requestAnimationFrame(() => fitOverview());
     return () => cancelAnimationFrame(id);
   }, [effectiveGranularity, fitOverview, granularityOverride, items.length]);
+
+  const graphNodeSignature = graph.nodeIds.join('\u0000');
+  useEffect(() => {
+    if (items.length === 0) return;
+    if (focusedId && !graph.nodeIds.includes(focusedId)) {
+      setFocusedId(null);
+    }
+    if (graph.nodeIds.length === 0) return;
+    const id = requestAnimationFrame(() => fitOverview());
+    return () => cancelAnimationFrame(id);
+  }, [fitOverview, focusedId, graph.nodeIds, graph.nodeIds.length, graphNodeSignature, items.length]);
 
   useEffect(() => {
     if (!narrowCanvas || items.length === 0 || graph.nodeIds.length === 0) return;
@@ -474,7 +605,7 @@ export function GraphPage() {
             Graph
           </h1>
           <p className="text-xs text-neutral-500 dark:text-neutral-400">
-            Dependency graph across every work item. Click a node to drill in.
+            Dependency graph across visible work. Click a node to drill in.
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">
@@ -515,6 +646,22 @@ export function GraphPage() {
             <ArrowDown className="h-3.5 w-3.5" />
           </button>
           <div className="mx-1 h-4 w-px bg-neutral-200 dark:bg-neutral-800" />
+          <GraphFilterMenu
+            items={items}
+            filteredCount={filteredItems.length}
+            milestone={milestone}
+            onChangeMilestone={setMilestone}
+            scope={scope}
+            onChangeScope={setScope}
+            stateFilters={stateFilters}
+            onChangeStateFilters={setStateFilters}
+            kindFilters={kindFilters}
+            onChangeKindFilters={setKindFilters}
+            search={search}
+            onChangeSearch={setSearch}
+            filtersActive={filtersActive}
+            onClear={clearFilters}
+          />
           <ToggleButton
             active={effectiveGranularity === 'epics'}
             onClick={() => {
@@ -577,6 +724,21 @@ export function GraphPage() {
           <div className="m-8 rounded-md border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500 dark:border-neutral-700">
             No work items. The graph populates once the bound WorkPlane has
             something to draw.
+          </div>
+        ) : filteredItems.length === 0 ? (
+          <div
+            className="m-8 rounded-md border border-dashed border-neutral-300 p-8 text-center text-sm text-neutral-500 dark:border-neutral-700"
+            data-testid="graph-filtered-empty"
+          >
+            <p>No graph nodes match the current filters.</p>
+            <button
+              type="button"
+              data-testid="graph-filtered-empty-clear"
+              onClick={clearFilters}
+              className="mt-3 rounded border border-neutral-300 bg-white px-3 py-1 text-xs text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              Clear filters
+            </button>
           </div>
         ) : (
           <ReactFlow
@@ -655,6 +817,260 @@ export function GraphPage() {
       </div>
 
     </div>
+  );
+}
+
+interface GraphFilterMenuProps {
+  items: WorkItem[];
+  filteredCount: number;
+  milestone: MilestoneID;
+  onChangeMilestone: (next: MilestoneID) => void;
+  scope: ScopeID;
+  onChangeScope: (next: ScopeID) => void;
+  stateFilters: StateCategory[];
+  onChangeStateFilters: (next: StateCategory[]) => void;
+  kindFilters: string[];
+  onChangeKindFilters: (next: string[]) => void;
+  search: string;
+  onChangeSearch: (next: string) => void;
+  filtersActive: boolean;
+  onClear: () => void;
+}
+
+function GraphFilterMenu({
+  items,
+  filteredCount,
+  milestone,
+  onChangeMilestone,
+  scope,
+  onChangeScope,
+  stateFilters,
+  onChangeStateFilters,
+  kindFilters,
+  onChangeKindFilters,
+  search,
+  onChangeSearch,
+  filtersActive,
+  onClear,
+}: GraphFilterMenuProps) {
+  const [open, setOpen] = useState(false);
+  const milestones = buildMilestoneOptions(items);
+  const scopes = buildScopeOptions(items);
+  const kinds = useMemo(() => {
+    const set = new Set<string>();
+    for (const item of items) set.add(item.kind);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [items]);
+  const activeCount =
+    (milestone !== MILESTONE_ALL ? 1 : 0) +
+    (scope !== SCOPE_ALL ? 1 : 0) +
+    stateFilters.length +
+    kindFilters.length +
+    (search.trim() ? 1 : 0);
+  const toggleState = (state: StateCategory) => {
+    const next = stateFilters.includes(state)
+      ? stateFilters.filter((s) => s !== state)
+      : [...stateFilters, state];
+    onChangeStateFilters(next);
+  };
+  const toggleKind = (kind: string) => {
+    const next = kindFilters.includes(kind)
+      ? kindFilters.filter((k) => k !== kind)
+      : [...kindFilters, kind];
+    onChangeKindFilters(next);
+  };
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        data-testid="graph-filter-menu-button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Filters"
+        onClick={() => setOpen((cur) => !cur)}
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 transition-colors',
+          open || filtersActive
+            ? 'border-sky-700 bg-sky-50 text-sky-800 dark:border-sky-600 dark:bg-sky-950/50 dark:text-sky-100'
+            : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800'
+        )}
+      >
+        <Filter className="h-3.5 w-3.5" aria-hidden />
+        <span>Filters</span>
+        {activeCount > 0 ? (
+          <span
+            data-testid="graph-filter-menu-count"
+            className="rounded-full bg-sky-700 px-1.5 text-[10px] font-medium leading-4 text-white dark:bg-sky-500 dark:text-sky-950"
+          >
+            {activeCount}
+          </span>
+        ) : null}
+        <ChevronDown className="h-3 w-3" aria-hidden />
+      </button>
+      {open ? (
+        <div
+          data-testid="graph-filter-menu"
+          role="menu"
+          className={cn(
+            'absolute right-0 z-30 mt-1 w-80 rounded-md border p-2 shadow-lg',
+            'border-neutral-200 bg-white text-xs text-neutral-700',
+            'dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200'
+          )}
+        >
+          <GraphMenuSection title="Scope">
+            <GraphSelect
+              label="Milestone"
+              testid="graph-filter-milestone"
+              value={milestone}
+              onChange={onChangeMilestone}
+              options={milestones.map((m) => ({ value: m.id, label: m.label }))}
+            />
+            <GraphSelect
+              label="Epic"
+              testid="graph-filter-scope"
+              value={scope}
+              onChange={onChangeScope}
+              options={scopes.map((s) => ({
+                value: s.id,
+                label: `${s.depth === 1 ? '  ' : ''}${s.label}`,
+              }))}
+            />
+          </GraphMenuSection>
+
+          <GraphMenuSection title="Search">
+            <input
+              data-testid="graph-filter-search"
+              value={search}
+              onChange={(e) => onChangeSearch(e.target.value)}
+              placeholder="Title or id"
+              className="h-7 w-full rounded border border-neutral-300 bg-white px-2 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+            />
+          </GraphMenuSection>
+
+          <GraphMenuSection title="State">
+            <div className="grid grid-cols-2 gap-1">
+              {STATE_CATEGORIES.map((state) => (
+                <GraphCheckOption
+                  key={state}
+                  active={stateFilters.includes(state)}
+                  onClick={() => toggleState(state)}
+                  label={state}
+                  testid={`graph-filter-state-${state}`}
+                />
+              ))}
+            </div>
+          </GraphMenuSection>
+
+          <GraphMenuSection title="Kind">
+            {kinds.length > 0 ? (
+              <div className="grid grid-cols-2 gap-1">
+                {kinds.map((kind) => (
+                  <GraphCheckOption
+                    key={kind}
+                    active={kindFilters.includes(kind)}
+                    onClick={() => toggleKind(kind)}
+                    label={kind}
+                    testid={`graph-filter-kind-${kind}`}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="px-2 py-1 text-[11px] text-neutral-500">No kinds available.</p>
+            )}
+          </GraphMenuSection>
+
+          <div className="flex items-center justify-between px-2 pt-2 text-[11px] text-neutral-500">
+            <span data-testid="graph-filter-visible-count">{filteredCount} visible</span>
+            <button
+              type="button"
+              data-testid="graph-filter-clear"
+              disabled={!filtersActive}
+              onClick={onClear}
+              className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40 dark:text-neutral-300 dark:hover:bg-neutral-900"
+            >
+              <RotateCcw className="h-3 w-3" aria-hidden />
+              Clear
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GraphMenuSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="border-b border-neutral-100 py-2 last:border-0 dark:border-neutral-800">
+      <h3 className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-500">
+        {title}
+      </h3>
+      <div className="space-y-1">{children}</div>
+    </section>
+  );
+}
+
+function GraphSelect({
+  label,
+  testid,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  testid: string;
+  value: string;
+  onChange: (next: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <label className="flex items-center gap-2 px-2 text-neutral-500">
+      <span className="w-16 shrink-0">{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-7 min-w-0 flex-1 rounded border border-neutral-300 bg-white px-1.5 text-xs text-neutral-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200"
+        data-testid={testid}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function GraphCheckOption({
+  active,
+  onClick,
+  label,
+  testid,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  testid: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={active}
+      data-testid={testid}
+      data-active={active || undefined}
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-1 rounded border px-2 py-1 text-left text-xs',
+        active
+          ? 'border-sky-700 bg-sky-700 text-white'
+          : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800'
+      )}
+    >
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      {active ? <Check className="h-3 w-3 shrink-0" aria-hidden /> : null}
+    </button>
   );
 }
 

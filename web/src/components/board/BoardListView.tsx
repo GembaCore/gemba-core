@@ -37,7 +37,7 @@ const POWER_PRESETS_STORAGE_KEY = 'gemba.board.column-presets';
 const KIND_CHIPS = ['milestone', 'epic', 'feature', 'task', 'bug'] as const;
 
 const STATE_LABELS: Record<StateCategory, string> = {
-  backlog: 'Backlog',
+  backlog: 'Deferred',
   unstarted: 'Next Up',
   staged: 'Staged',
   started: 'In Progress',

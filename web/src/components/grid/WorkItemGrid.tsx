@@ -58,7 +58,7 @@ declare module '@tanstack/react-table' {
 }
 
 const STATE_LABELS: Record<StateCategory, string> = {
-  backlog: 'Backlog',
+  backlog: 'Deferred',
   unstarted: 'Next Up',
   staged: 'Staged',
   started: 'In Progress',

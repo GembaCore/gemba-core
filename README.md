@@ -105,9 +105,10 @@ box, so the minimum working deployment is `gemba serve` and a browser
 pointed at it — no orchestrator, no scheduling infrastructure required.
 For teams that only need Beads viewing and management, `gemba serve
 --beads-only` starts a deliberately smaller mode: no project, GitHub, or
-agent runtime required. It opens the Beads board in a Flat list by
-default, keeps Cascade and Graph views available, and records create /
-edit / delete / state-change actions in a Beads history ledger. Add
+agent runtime required. It opens the Beads board in Cascade by default
+so milestone and epic wrappers are visible first, keeps Flat and Graph
+views available, and records create / edit / delete / state-change
+actions in a Beads history ledger. Add
 `--beads-read-only` when the same views should be inspection-only:
 Gemba shows a Beads-read-only status pill and rejects every mutation
 before it reaches the Beads adaptor.
@@ -414,10 +415,12 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   include uncommitted source.
 - **Beads-only mode** (`gm-etq2` / `gm-4u4l`) — `gemba serve
   --beads-only` runs Gemba as a Beads viewer and manager without a
-  project or orchestration plane. The board starts in **Flat** view with
-  milestones, epics, decision beads, and work beads in one ordered list;
-  **Cascade** shows the wrapper hierarchy; the shared **Order** control
-  sorts by modified, created, edited, or ID; Graph remains available.
+  project or orchestration plane. The board starts in **Cascade** view
+  so milestone, epic, and bead wrappers explain the project shape first;
+  **Flat** shows milestones, epics, decision beads, and work beads in
+  one ordered list. The shared **Order** control sorts by modified,
+  created, edited, or ID; Graph remains available with filters for
+  milestone, epic scope, search, state, and kind.
   Status shows Beads health and remote setup actions, while the RHP adds
   a **Beads history** tab backed by a JSONL session manifest. Create,
   edit, hard-delete, milestone wrapper, decision tag, and milestone tag
@@ -428,11 +431,11 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 - **Self-contained Docker quickstart** — `Dockerfile.quickstart`,
   `docker-compose.quickstart.yml`, and `make quickstart-run` package
   Gemba with the `bd` CLI and a seeded sample project. A new user can
-  run the container, open `http://localhost:7666`, and explore Flat,
-  Cascade, Refine, details, Status, Beads history, and Graph without
+  run the container, open `http://localhost:7666`, and explore Cascade,
+  Flat, Refine, details, Status, Beads history, and Graph without
   installing the local developer toolchain. The sample intentionally
-  leaves a few future items in Backlog so Refine demonstrates grooming
-  instead of an empty clean-backlog state.
+  leaves a few future items in the Deferred state so Refine demonstrates
+  grooming instead of an empty clean-refinement state.
 - **Standard Docker server image** — `Dockerfile`,
   `docker-compose.yml`, and `make docker-run` package unseeded Gemba
   with `bd`, git/ssh, and the sentinel CLIs for mounted worktrees or
@@ -455,9 +458,9 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   now presents **Ready → In Progress → Done**. **Ready** combines
   canonical `unstarted` and `staged` work; cards expose the precise
   state with **Next up** / **Staged** pills plus actionable signals such
-  as **Triage**, **Needs input**, **Review**, and **Ready**. Backlog is
-  still available through `/refine` and the board toggle; canceled work
-  stays in list/filter views.
+  as **Triage**, **Needs input**, **Review**, and **Ready**. Deferred
+  work is still available through `/refine` and the board toggle;
+  canceled work stays in list/filter views.
 - **Recent is now a Board named view** (`gm-uipx.18`) — the standalone
   `/recent` route remains as a deep link, but the sidebar no longer
   treats Recent as a top-level concern. Use the Board's **View →

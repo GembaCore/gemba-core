@@ -7,7 +7,7 @@
 // drawer.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
@@ -285,5 +285,52 @@ describe('GraphPage', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rhp-body')).toBeTruthy();
     });
+  });
+
+  it('filters visible graph nodes from the filter menu after each selection', async () => {
+    const items = [
+      wi('m1', { kind: 'milestone', title: 'M1 Foundation' }),
+      wi('e1', {
+        kind: 'epic',
+        title: 'Epic One',
+        relationships: [{ kind: 'parent_child', from: 'm1', to: 'e1' }],
+      }),
+      wi('a', {
+        title: 'Alpha task',
+        state_category: 'started',
+        relationships: [{ kind: 'parent_child', from: 'e1', to: 'a' }],
+      }),
+      wi('b', { title: 'Beta task', state_category: 'completed' }),
+    ];
+    fetchSpy.mockResolvedValueOnce(jsonResp({ items, total: items.length }));
+
+    render(<GraphPage />, { wrapper: wrapper() });
+    await waitFor(() =>
+      expect(screen.getByTestId('rf-stub-node-count').textContent).toBe('4')
+    );
+
+    fireEvent.click(screen.getByTestId('graph-filter-menu-button'));
+    expect(screen.getByTestId('graph-filter-menu')).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId('graph-filter-milestone'), {
+      target: { value: 'm1' },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('rf-stub-node-count').textContent).toBe('2')
+    );
+    expect(screen.getByTestId('graph-filter-visible-count').textContent).toBe('2 visible');
+
+    fireEvent.click(screen.getByTestId('graph-filter-kind-task'));
+    await waitFor(() =>
+      expect(screen.getByTestId('rf-stub-node-count').textContent).toBe('1')
+    );
+
+    fireEvent.click(screen.getByTestId('graph-filter-state-completed'));
+    await waitFor(() => expect(screen.getByTestId('graph-filtered-empty')).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId('graph-filter-clear'));
+    await waitFor(() =>
+      expect(screen.getByTestId('rf-stub-node-count').textContent).toBe('4')
+    );
   });
 });

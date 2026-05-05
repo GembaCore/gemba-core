@@ -26,6 +26,26 @@ export function RouteHelp() {
 
       <section>
         <h2 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
+          Filters and views
+        </h2>
+        <p>
+          Use the Milestone and Epic selectors to narrow the board to a wrapper and its child
+          work. The funnel menu holds layout, saved views, ordering, and view-specific options so
+          the board stays quiet while you work.
+        </p>
+        <ul className="mt-2 space-y-1 list-disc list-inside">
+          <li>Cascade reads milestone to epic to bead structure.</li>
+          <li>Epic and Item layouts show kanban work at different levels of detail.</li>
+          <li>List opens the planning grid with state, kind, search, and order controls.</li>
+          <li>View chips such as Staged, In Progress, Blocked, Ready to stage, Backlog, Recent, and Done 7d apply in List.</li>
+          <li>In List, the backlog state is labeled Deferred because those items are intentionally parked.</li>
+          <li>Power mode adds grid presets, bulk actions, and JSONL import.</li>
+          <li>The Backlog option restores the Deferred column in kanban when you need to inspect parked work.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 className="font-semibold text-neutral-900 dark:text-neutral-100 mb-1">
           What you can do here
         </h2>
         <ul className="space-y-1 list-disc list-inside">
@@ -127,9 +147,8 @@ function BeadsOnlyBoardHelp() {
       <section>
         <h2 className="mb-1 font-semibold text-neutral-900 dark:text-neutral-100">Beads board</h2>
         <p>
-          Beads-only mode starts in Flat view so every milestone, epic, and bead is visible in one
-          ordered list. Use the Order control to sort by modified time, created time, edited time,
-          or ID.
+          Beads-only mode starts in Cascade so milestone, epic, and bead structure is visible right
+          away. Switch to Flat when you want every bead in one ordered list.
         </p>
       </section>
 
@@ -153,6 +172,17 @@ function BeadsOnlyBoardHelp() {
           Once you start using milestone and epic wrappers, switch to Cascade to read the structure
           as milestone to epic to bead. Cascade is a planning map; Flat remains the quickest way to
           scan, filter, edit, and find recently changed beads.
+        </p>
+      </section>
+
+      <section>
+        <h2 className="mb-1 font-semibold text-neutral-900 dark:text-neutral-100">
+          Filters and views
+        </h2>
+        <p>
+          Use the Milestone and Epic selectors to focus on a wrapper's children. The funnel menu
+          switches Cascade and Flat, changes the sort order, and keeps Flat-only filters tucked away
+          until they apply.
         </p>
       </section>
 

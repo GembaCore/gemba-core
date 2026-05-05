@@ -287,6 +287,44 @@ describe('BoardPage', () => {
     expect(screen.getByTestId('board-list-kind-milestone')).toBeTruthy();
   });
 
+  it('opens an epic detail tab when an epic is selected in Cascade view', async () => {
+    const data: WorkItem[] = [
+      bead('gm-task', 'unstarted', {
+        title: 'Leaf bead',
+        relationships: [{ kind: 'parent_child', from: 'gm-epic', to: 'gm-task' }],
+      }),
+      bead('gm-m1', 'unstarted', { kind: 'milestone', title: 'M1 Foundation' }),
+      epic('gm-epic', 'gm-m1', { title: 'Planning epic', description: 'Cascade epic detail.' }),
+    ];
+    fetchSpy.mockImplementation((url: string) => {
+      if (url === '/api/work-items') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: data, total: data.length }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      if (url === '/api/work-items/gm-epic') {
+        return Promise.resolve(
+          new Response(JSON.stringify(data[2]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      throw new Error(`unexpected fetch to ${url}`);
+    });
+
+    render(wrap(<BoardPage />, '/board?layout=cascade', beadsOnlyCaps));
+
+    await waitFor(() => expect(screen.getByTestId('beads-cascade')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('beads-cascade-row-gm-epic').querySelector('button')!);
+    await waitFor(() => expect(screen.getByTestId('epic-detail-id')).toBeTruthy());
+    expect(screen.getByTestId('epic-detail-id').textContent).toBe('gm-epic');
+    await waitFor(() => expect(screen.getByText('Cascade epic detail.')).toBeTruthy());
+  });
+
   // /board/:epicId deep-link auto-opens the RHP epic detail tab (gm-root.22.6).
   it('/board/:epicId pops the RHP epic detail tab for that epic', async () => {
     const data: WorkItem[] = [epic('root'), epic('e1', 'root', { description: 'Epic e1 detail.' })];

@@ -124,6 +124,33 @@ describe('BoardPage list mode (gm-e12.19.1)', () => {
     expect(screen.getByTestId('board-list-count').textContent).toMatch(/2 items/);
   });
 
+  it('labels backlog state as Deferred in the Backlog list', async () => {
+    fetchSpy.mockResolvedValue(
+      jsonResponse({
+        items: [wi('gm-1', { state_category: 'backlog' })],
+        total: 1,
+      })
+    );
+    render(<BoardPage />, { wrapper: wrapper(LIST_BACKLOG) });
+
+    await waitFor(() => expect(screen.getByTestId('work-item-grid')).toBeTruthy());
+    expect(screen.getByTestId('grid-cell-gm-1-state').textContent).toBe('Deferred');
+    expect(screen.getByTestId('board-list-state-backlog').textContent).toBe('Deferred');
+  });
+
+  it('keeps the persisted state value as backlog when editing Deferred', async () => {
+    fetchSpy.mockResolvedValue(jsonResponse({ items: [wi('gm-1')], total: 1 }));
+    render(<BoardPage />, { wrapper: wrapper(LIST_BACKLOG) });
+
+    await waitFor(() => expect(screen.getByTestId('work-item-grid')).toBeTruthy());
+    act(() => {
+      screen.getByTestId('grid-cell-gm-1-state').click();
+    });
+    const select = screen.getByTestId('grid-cell-editor-state') as HTMLSelectElement;
+    const backlogOption = Array.from(select.options).find((opt) => opt.value === 'backlog');
+    expect(backlogOption?.textContent).toBe('Deferred');
+  });
+
   it('client-side search narrows by title', async () => {
     fetchSpy.mockResolvedValue(
       jsonResponse({

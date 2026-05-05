@@ -101,13 +101,27 @@ gemba serve --beads-only --beads-dir ~/gt/gemba --beads-history .gemba/session-m
 gemba serve --beads-read-only --beads-url 'mysql://reader@127.0.0.1:3307/gemba' --auth none
 ```
 
-The SPA opens on `/board` in **Flat** view. Flat shows milestones,
-epics, decision beads, and work beads in one dense list. Switch to
-**Cascade** when you want the milestone to epic to bead hierarchy, or
-open **Graph** to inspect dependencies. The **Order** control applies to
-Flat, Cascade, and the regular board: modified, created, edited, or ID
-order. Edited currently uses the persisted `updated_at` timestamp until
-the Beads source exposes a distinct edit timestamp.
+The SPA opens on `/board` in **Cascade** view. Cascade shows the
+milestone to epic to bead hierarchy first, which is usually the clearest
+way to read an existing Beads database. Switch to **Flat** when you want
+milestones, epics, decision beads, and work beads in one dense ordered
+list, or open **Graph** to inspect dependencies. Graph's funnel menu can
+filter by milestone, epic scope, title/id search, state, or kind. The
+**Order** control applies to Flat, Cascade, and the regular board:
+modified, created, edited, or ID order. Edited currently uses the
+persisted `updated_at` timestamp until the Beads source exposes a
+distinct edit timestamp.
+
+### Major Beads-only surfaces
+
+| Surface | What it can do |
+| --- | --- |
+| **Plan / Board** | Read the project as milestone → epic → bead in Cascade, switch to Flat for a dense inventory, focus by Milestone or Epic, sort by modified/created/edited/ID, and update Beads state by dragging cards when writable. |
+| **Refine** | Groom parked **Deferred** work in a dense table before it belongs on the active execution board. This is the best place for cleanup, prioritization, wrapper assignment, and planning edits. |
+| **Graph** | Inspect dependencies and relationships. Filter by milestone, epic scope, title/id search, state, or kind; aggregate by item or epic; and highlight cycles or critical path chains. |
+| **Details in the RHP** | Open beads, epics, milestones, and decisions for inspection and editing without losing the current Board, Refine, or Graph context. |
+| **Status** | Check Beads health, current database/source, remote configuration, writable/read-only mode, and available repair or setup actions. |
+| **Beads history** | Review the session manifest as plain-English history for create, edit, delete, and state-change events. |
 
 Available Beads-only actions:
 
@@ -116,12 +130,15 @@ Available Beads-only actions:
 - create and edit decision beads;
 - select milestone and decision tag pills during authoring;
 - drag cards to update Beads state without dispatching sessions;
+- use the Deferred state for parked work that belongs in Refine rather
+  than the active execution board;
 - inspect Beads health in Status, including current database, remote
   configuration, and repair/setup actions where the source supports
   them;
 - review the RHP **Beads history** tab, which renders the JSONL session
   manifest in plain English;
-- use the Graph view for dependency and relationship inspection.
+- use the Graph view for dependency and relationship inspection,
+  including critical-path and cycle highlighting.
 
 ### Beads-read-only mode
 
@@ -131,8 +148,9 @@ deployments where operators should inspect Beads without changing them.
 
 What stays available:
 
-- Flat and Cascade Beads views;
-- Graph dependency inspection;
+- Cascade and Flat Beads views;
+- Graph dependency inspection with milestone, epic, search, state, and
+  kind filters;
 - Status, Beads health, current DB/source, and remote setup checks;
 - Beads history display for any existing manifest entries;
 - deep links to bead, epic, milestone, and decision detail tabs.

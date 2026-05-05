@@ -14,6 +14,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import { RouteHelp as BoardHelp } from '../BoardHelp';
+import { RouteHelp as GraphHelp } from '../GraphHelp';
 import { RouteHelp as WalkHelp } from '../WalkHelp';
 import { RouteHelp as EscalationsHelp } from '../EscalationsHelp';
 import { RouteHelp as InsightsHelp } from '../InsightsHelp';
@@ -95,6 +96,25 @@ describe('WalkHelp', () => {
 
   it('has a link back to the Plan board', () => {
     renderHelp(WalkHelp, '/walk');
+    const boardLink = screen.getByRole('link', { name: /Plan board/i });
+    expect(boardLink).toBeTruthy();
+  });
+});
+
+describe('GraphHelp', () => {
+  it('renders without throwing', () => {
+    expect(() => renderHelp(GraphHelp, '/graph')).not.toThrow();
+  });
+
+  it('mentions filters and critical path controls', () => {
+    renderHelp(GraphHelp, '/graph');
+    expect(screen.getByText(/title or id search/i)).toBeTruthy();
+    expect(screen.getByText(/Critical path/i)).toBeTruthy();
+    expect(screen.getByText(/Cycles/i)).toBeTruthy();
+  });
+
+  it('has a link back to the Plan board', () => {
+    renderHelp(GraphHelp, '/graph');
     const boardLink = screen.getByRole('link', { name: /Plan board/i });
     expect(boardLink).toBeTruthy();
   });
@@ -214,6 +234,12 @@ describe('resolveHelpComponent', () => {
     const C = resolveHelpComponent('/walk');
     renderHelp(C, '/walk');
     expect(screen.getByTestId('help-walk')).toBeTruthy();
+  });
+
+  it('returns GraphHelp for /graph', () => {
+    const C = resolveHelpComponent('/graph');
+    renderHelp(C, '/graph');
+    expect(screen.getByTestId('help-graph')).toBeTruthy();
   });
 
   it('returns WalkHelp for /walks/123 (prefix match)', () => {

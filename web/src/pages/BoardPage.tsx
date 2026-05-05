@@ -21,7 +21,8 @@
 //   /board?layout=list&view=backlog     → list + Backlog named view
 //   /board?bead=X                       → RHP workitem detail (migration shim; clears ?bead=)
 //   /board?rhp=workitem:X               → RHP workitem detail tab
-//   /board/:epicId                      → Epic kanban + RHP epic detail tab
+//   /board?rhp=epic:X                   → Epic kanban + RHP epic detail tab
+//   /board/:epicId                      → legacy/deep-link Epic detail tab
 //   /board/:epicId?rhp=workitem:X       → RHP epic + workitem detail tabs stacked
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -264,13 +265,10 @@ export function BoardPage() {
   const splatParams = useParams();
   const splatRaw = splatParams['*'] ?? '';
   const epicId = splatRaw.length > 0 ? splatRaw : null;
-  const navigate = useNavigate();
-
   // gm-root.22.6: pop the RHP epic detail tab on mount when the path
-  // carries an epicId. popDetail handles both deep-links and
-  // card-click navigations: same-kind replaces, different-kind stacks.
-  // Guard with a ref so the effect runs once per mount; popDetail
-  // calls setSearchParams and would otherwise loop on each render.
+  // carries an epicId. Normal board clicks call popDetail directly
+  // (the RHP query param is the canonical tab state); this path branch
+  // exists so older /board/:epicId deep links keep hydrating.
   const { popDetail } = useRhp();
   const epicPopRanRef = useRef(false);
   useEffect(() => {
@@ -447,10 +445,9 @@ export function BoardPage() {
 
   const openEpic = useCallback(
     (id: string) => {
-      const search = params.toString();
-      navigate({ pathname: `/board/${id}`, search: search ? `?${search}` : '' });
+      popDetail({ kind: 'epic', id });
     },
-    [navigate, params]
+    [popDetail]
   );
   const [newItemOpen, setNewItemOpen] = useState(false);
 

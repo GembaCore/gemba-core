@@ -14,7 +14,7 @@ import { STATE_CATEGORIES, type StateCategory } from '@/types/core.gen';
 import type { WorkItemPatch } from '@/api/workItems';
 
 const STATE_LABELS: Record<StateCategory, string> = {
-  backlog: 'Backlog',
+  backlog: 'Deferred',
   unstarted: 'Next Up',
   staged: 'Staged',
   started: 'In Progress',
