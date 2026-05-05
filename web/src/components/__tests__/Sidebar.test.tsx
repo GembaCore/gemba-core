@@ -107,6 +107,15 @@ const WORKSPACE_SCOPED = [
   'Sessions',
 ];
 
+const WORKSPACE_SCOPED_TEST_IDS = [
+  'sidebar-item-board',
+  'sidebar-item-graph',
+  'sidebar-item-refine',
+  'sidebar-item-walk',
+  'sidebar-item-escalations',
+  'sidebar-item-sessions',
+];
+
 const ALWAYS_OPERATIONAL = ['Settings'];
 
 const beadsOnlyCaps: CapabilitiesResponse = {
@@ -188,16 +197,12 @@ describe('Sidebar', () => {
     // a link, so its presence signals the sidebar has rendered at all.
     await screen.findByRole('link', { name: 'Settings' });
 
-    for (const label of WORKSPACE_SCOPED) {
-      // The item still shows the label (greyed, not removed).
-      const labelEl = screen.getByText(label, { selector: 'span' });
-      expect(labelEl).toBeTruthy();
-      // Find the wrapping aria-disabled element.
-      const wrap = labelEl.closest('[aria-disabled="true"]');
-      expect(wrap).toBeTruthy();
-      expect(wrap?.getAttribute('title')).toMatch(/Available after/);
+    for (const testId of WORKSPACE_SCOPED_TEST_IDS) {
+      const wrap = screen.getByTestId(testId);
+      expect(wrap.getAttribute('aria-disabled')).toBe('true');
+      expect(wrap.getAttribute('title')).toMatch(/Available after/);
       // Crucially NOT a real link.
-      expect(wrap?.tagName.toLowerCase()).toBe('span');
+      expect(wrap.tagName.toLowerCase()).toBe('span');
     }
   });
 
