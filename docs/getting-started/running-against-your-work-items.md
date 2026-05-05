@@ -8,15 +8,17 @@ Gemba at a beads rig two ways:
 
 - **Mode A — `--beads-dir`**: Gemba shells out to the `bd` CLI for
   every read. Slower but portable; works anywhere you can run `bd`.
-- **Mode B — `--dolt-url`**: Gemba opens a direct SQL connection to your
-  Dolt server. Faster and no `bd` dependency; reads and writes are
-  enabled when the Dolt user has write permission.
+- **Mode B — `--dolt-url` / `--beads-url`**: Gemba opens a direct SQL
+  connection to your Dolt server. Faster and no `bd` dependency; reads
+  and writes are enabled when the Dolt user has write permission.
+  `--beads-url` is the friendlier alias used by Beads-only and
+  container examples; it resolves to the same direct Dolt adaptor.
 - **Beads-only**: add `--beads-only` when you want only Beads viewing
   and management. Gemba does not require a project, GitHub repository,
   native agent setup, or Gas Town orchestration in this mode.
 
-Exactly one of the two must be passed (`gm-98l` enforces this at
-startup).
+Exactly one work source must be passed: `--beads-dir`, `--dolt-url`,
+or its alias `--beads-url` (`gm-98l` enforces this at startup).
 
 Agent sessions are wired by default through native orchestration
 (`--orchestration=native` if you want to spell it explicitly): live tmux
@@ -64,12 +66,14 @@ hidden by default because `/refine` is the triage surface; **Canceled**
 is available through list/filter views rather than as a default board
 lane.
 
-## Mode B — `--dolt-url` (direct Dolt SQL)
+## Mode B — `--dolt-url` / `--beads-url` (direct Dolt SQL)
 
 ```bash
 gemba serve --dolt-url 'mysql://root@127.0.0.1:3307/gemba' --auth none
 # with credentials:
 gemba serve --dolt-url 'mysql://gemba:$DOLT_PW@127.0.0.1:3307/gemba' --auth none
+# equivalent alias, especially useful in Beads-only/container flows:
+gemba serve --beads-url 'mysql://root@127.0.0.1:3307/gemba' --auth none
 ```
 
 The dbname is the snake_case rig name — e.g. `gemba`, `lume_spark_api`, `second_brain`. Pick the database that holds the rig you want to view.
@@ -179,7 +183,10 @@ plane.
 
 **`--beads-dir ...: no .beads/ directory found`** — the path exists but isn't a rig root. Point `--beads-dir` at a directory whose `.beads/` subdirectory contains `<name>.db`, or at the `.beads/` directory itself.
 
-**`--beads-dir and --dolt-url are mutually exclusive`** — pass exactly one. The two modes select different adaptor implementations; Gemba doesn't mix them.
+**`--beads-dir and --dolt-url are mutually exclusive`** — pass exactly
+one work source. `--beads-url` is an alias for `--dolt-url`, so it is
+also mutually exclusive with `--beads-dir`. The two modes select
+different adaptor implementations; Gemba doesn't mix them.
 
 **Board shows a "degraded" banner** — the adaptor is reachable but returned an `adaptor_degraded` error. For Mode A this is usually `bd` missing from `PATH` or the rig being mid-`bd dolt pull`; for Mode B it means the Dolt server answered but the read failed (check `gt dolt status`).
 
