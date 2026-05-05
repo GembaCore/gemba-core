@@ -140,7 +140,7 @@ describe('BoardPage escalation banner (gm-e11.3)', () => {
       makeEscalationsResult([escalation('a', 'e1'), escalation('b', 'e2')])
     );
     render(wrap(<BoardPage />));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
     const banner = screen.getByTestId('board-escalation-banner');
     expect(banner).toBeTruthy();
     expect(banner.textContent).toContain('2 open escalations');
@@ -188,7 +188,7 @@ describe('BoardPage escalation banner (gm-e11.3)', () => {
       ])
     );
     render(wrap(<BoardPage />, '/board?scope=e1'));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
     const banner = screen.getByTestId('board-escalation-banner');
     // Only c1 falls under e1's lineage; the other two count against e2.
     expect(banner.textContent).toContain('1 open escalation');
@@ -205,7 +205,7 @@ describe('BoardPage escalation banner (gm-e11.3)', () => {
     );
     mockUseEscalations.mockReturnValue(makeEscalationsResult([]));
     render(wrap(<BoardPage />));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
     expect(screen.queryByTestId('board-escalation-banner')).toBeNull();
   });
 
@@ -219,7 +219,7 @@ describe('BoardPage escalation banner (gm-e11.3)', () => {
     );
     mockUseEscalations.mockReturnValue(makeEscalationsResult([escalation('a', 'e1')]));
     render(wrap(<BoardPage />));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
     const banner = screen.getByTestId('board-escalation-banner');
     expect(banner.textContent).toContain('1 open escalation');
     expect(banner.textContent).not.toContain('1 open escalations');

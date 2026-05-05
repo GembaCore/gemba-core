@@ -59,13 +59,10 @@ interface NavigateItem {
 
 const NAVIGATE_ITEMS: NavigateItem[] = [
   { id: 'nav-board', label: 'Board', keywords: 'board kanban epic swimlane', icon: ListTodo, to: '/board' },
-  // Backlog is a Board preset now (gm-e12.19.1) — palette routes
-  // straight to the list-mode + Backlog-preset URL.
-  { id: 'nav-backlog', label: 'Backlog', keywords: 'backlog list planning', icon: ClipboardList, to: '/board?layout=list&view=backlog' },
-  // Grid was folded into /board's list+power layout (gm-uipx.17). The
-  // palette entry stays — operators learned the name — but routes to
-  // the canonical power-list URL.
-  { id: 'nav-grid', label: 'Grid', keywords: 'grid table rows power', icon: Workflow, to: '/board?layout=list&power=1' },
+  // Backlog/deferred grooming and dense grid work now live in Refine.
+  { id: 'nav-backlog', label: 'Backlog', keywords: 'backlog deferred list planning', icon: ClipboardList, to: '/refine' },
+  // Grid is an operator-learned alias for Refine's dense table mode.
+  { id: 'nav-grid', label: 'Grid', keywords: 'grid table rows power', icon: Workflow, to: '/refine' },
   { id: 'nav-graph', label: 'Dependency graph', keywords: 'graph dependency network', icon: Network, to: '/graph' },
   { id: 'nav-sessions', label: 'Sessions', keywords: 'sessions panes runs', icon: Radio, to: '/sessions' },
   { id: 'nav-escalations', label: 'Escalations', keywords: 'escalations elicit hitl', icon: HelpCircle, to: '/escalations' },

@@ -14,6 +14,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 import { CapabilitiesProvider, type CapabilitiesResponse } from '@/capabilities';
 import { RouteHelp as BoardHelp } from '../BoardHelp';
+import { RouteHelp as RefineHelp } from '../RefineHelp';
 import { RouteHelp as GraphHelp } from '../GraphHelp';
 import { RouteHelp as WalkHelp } from '../WalkHelp';
 import { RouteHelp as EscalationsHelp } from '../EscalationsHelp';
@@ -94,10 +95,23 @@ describe('WalkHelp', () => {
     expect(screen.getAllByText(/defer/i).length).toBeGreaterThan(0);
   });
 
-  it('has a link back to the Plan board', () => {
+  it('has a link back to the Board', () => {
     renderHelp(WalkHelp, '/walk');
-    const boardLink = screen.getByRole('link', { name: /Plan board/i });
+    const boardLink = screen.getByRole('link', { name: /Board/i });
     expect(boardLink).toBeTruthy();
+  });
+});
+
+describe('RefineHelp', () => {
+  it('renders without throwing', () => {
+    expect(() => renderHelp(RefineHelp, '/refine')).not.toThrow();
+  });
+
+  it('mentions table, hierarchy, and swimlane views', () => {
+    renderHelp(RefineHelp, '/refine');
+    expect(screen.getByText(/Table shows Deferred work/i)).toBeTruthy();
+    expect(screen.getByText(/Hierarchy reads milestone/i)).toBeTruthy();
+    expect(screen.getByText(/Swimlanes groups work/i)).toBeTruthy();
   });
 });
 
@@ -113,9 +127,9 @@ describe('GraphHelp', () => {
     expect(screen.getByText(/Cycles/i)).toBeTruthy();
   });
 
-  it('has a link back to the Plan board', () => {
+  it('has a link back to the Board', () => {
     renderHelp(GraphHelp, '/graph');
-    const boardLink = screen.getByRole('link', { name: /Plan board/i });
+    const boardLink = screen.getByRole('link', { name: /Board/i });
     expect(boardLink).toBeTruthy();
   });
 });
@@ -158,9 +172,9 @@ describe('SessionsHelp', () => {
     expect(() => renderHelp(SessionsHelp, '/sessions')).not.toThrow();
   });
 
-  it('has a link to the Plan board', () => {
+  it('has a link to the Board', () => {
     renderHelp(SessionsHelp, '/sessions');
-    const boardLink = screen.getByRole('link', { name: /Plan board/i });
+    const boardLink = screen.getByRole('link', { name: /Board/i });
     expect(boardLink).toBeTruthy();
   });
 
@@ -204,7 +218,7 @@ describe('ColdStartHelp', () => {
   it('does NOT mention workspace-scoped surfaces', () => {
     renderHelp(ColdStartHelp, '/');
     // Cold-start help must not mention Board, Walk, Sessions, etc.
-    expect(screen.queryByText(/Plan board/i)).toBeNull();
+    expect(screen.queryByText(/Board/i)).toBeNull();
     expect(screen.queryByText(/Gemba walk/i)).toBeNull();
     expect(screen.queryByText(/Sessions/i)).toBeNull();
     expect(screen.queryByText(/Escalations/i)).toBeNull();
@@ -240,6 +254,12 @@ describe('resolveHelpComponent', () => {
     const C = resolveHelpComponent('/graph');
     renderHelp(C, '/graph');
     expect(screen.getByTestId('help-graph')).toBeTruthy();
+  });
+
+  it('returns RefineHelp for /refine', () => {
+    const C = resolveHelpComponent('/refine');
+    renderHelp(C, '/refine');
+    expect(screen.getByTestId('help-refine')).toBeTruthy();
   });
 
   it('returns WalkHelp for /walks/123 (prefix match)', () => {

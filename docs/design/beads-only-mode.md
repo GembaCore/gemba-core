@@ -26,7 +26,8 @@ setup, or Gas Town orchestration setup is required.
 
 Beads-only mode preserves all Beads management surfaces:
 
-- Board in Flat or Cascade layout
+- Board status columns backed directly by Beads state
+- Refine table, hierarchy, and swimlane planning views
 - shared sort order by modified, created, edited, or ID
 - backlog and refinement
 - milestone, epic, bead, and decision detail tabs
@@ -190,9 +191,10 @@ features rather than render dead controls.
 
 | Surface or action | Beads-only behavior |
 |---|---|
-| Board | Visible; defaults to Cascade |
-| Cascade board | Visible; hierarchy-first milestone -> epic -> bead view |
-| Flat board/list | Visible; shows milestones, epics, and beads in one ordered list |
+| Board | Visible; defaults to Ready / In Progress / Done status columns from Beads state |
+| Refine table | Visible; dense inventory and Deferred grooming surface |
+| Refine hierarchy | Visible; hierarchy-first milestone -> epic -> bead view |
+| Refine swimlanes | Visible; grouped planning view over the same Beads records |
 | Sort order | Visible; modified, created, edited, and ID |
 | Backlog/refinement | Visible |
 | Milestone detail | Visible |
@@ -219,14 +221,14 @@ features rather than render dead controls.
 Deep links to hidden routes should redirect to Status or render a clear
 "unavailable in Beads-only mode" page with a path back to Beads views.
 
-### Board presentation
+### Board and Refine presentation
 
-Beads-only mode should not lead with the execution-state Kanban. Its
-default Board layout is **Cascade**, a hierarchy-first view of
-milestones, epics, and beads. This is the most sensible starting point
-for the quickstart and most active Beads databases because wrapper
-beads explain the shape of the project before the user dives into the
-flat inventory.
+Beads-only mode uses the same default Board as full Gemba: Ready, In
+Progress, and Done columns derived directly from Beads state. This keeps
+state terminology and drag behavior consistent across modes. Dragging a
+card patches Beads state when the source is writable, but it does not
+dispatch an agent or imply that an orchestration session is working the
+item.
 
 Milestone and epic beads are wrappers: they collect related child beads
 so users can read the project as broad goals, coherent feature areas,
@@ -235,8 +237,8 @@ are best for feature areas or larger threads of work. Individual beads
 remain the concrete units to inspect, edit, and later dispatch from
 full Gemba.
 
-The alternate **Cascade** layout is a hierarchy-first reading surface
-that renders:
+Refine hosts the alternate planning views. The **Hierarchy** view is a
+hierarchy-first reading surface that renders:
 
 ```text
 Milestone
@@ -244,7 +246,12 @@ Milestone
     Bead
 ```
 
-Both Flat and Cascade share the Board's global order selector:
+The **Table** view gives users a dense ordered inventory and the primary
+Deferred grooming workspace. The **Swimlanes** view keeps grouped
+planning available without making it the Board's default mode.
+
+Board, Refine table, Refine hierarchy, and Refine swimlanes share the
+order selector:
 
 - Modified
 - Created
@@ -489,8 +496,9 @@ Implemented points:
   decision tag pills.
 - Work-item detail and power-list bulk actions can hard-delete beads
   when the active source is writable.
-- Board defaults to Cascade in Beads-only mode; Flat and Graph remain
-  available for inventory and dependency inspection.
+- Board defaults to status columns in Beads-only mode; Refine table,
+  hierarchy, swimlanes, and Graph remain available for inventory,
+  planning, and dependency inspection.
 
 The manifest writer should live server-side so browser refreshes, REST
 clients, and future container use all share the same ledger.

@@ -57,7 +57,7 @@ export function RouteHelp() {
         <p>
           Use the{' '}
           <Link to="/board" className="underline hover:text-neutral-900 dark:hover:text-neutral-100">
-            Plan board
+            Board
           </Link>{' '}
           to edit, dispatch, and triage the same beads.
         </p>

@@ -105,14 +105,14 @@ gemba serve --beads-only --beads-dir ~/gt/gemba --beads-history .gemba/session-m
 gemba serve --beads-read-only --beads-url 'mysql://reader@127.0.0.1:3307/gemba' --auth none
 ```
 
-The SPA opens on `/board` in **Cascade** view. Cascade shows the
-milestone to epic to bead hierarchy first, which is usually the clearest
-way to read an existing Beads database. Switch to **Flat** when you want
-milestones, epics, decision beads, and work beads in one dense ordered
-list, or open **Graph** to inspect dependencies. Graph's funnel menu can
-filter by milestone, epic scope, title/id search, state, or kind. The
-**Order** control applies to Flat, Cascade, and the regular board:
-modified, created, edited, or ID order. Edited currently uses the
+The SPA opens on `/board` as the same status board used by full Gemba:
+Ready, In Progress, and Done, backed directly by Beads state rather than
+by an orchestration plane. Use **Refine** when you want the dense table,
+milestone -> epic -> bead hierarchy, or grouped swimlane planning views.
+Open **Graph** to inspect dependencies. Graph's funnel menu can filter by
+milestone, epic scope, title/id search, state, or kind. The **Order**
+control applies to Board and Refine planning views: modified, created,
+edited, or ID order. Edited currently uses the
 persisted `updated_at` timestamp until the Beads source exposes a
 distinct edit timestamp.
 
@@ -120,8 +120,8 @@ distinct edit timestamp.
 
 | Surface | What it can do |
 | --- | --- |
-| **Plan / Board** | Read the project as milestone → epic → bead in Cascade, switch to Flat for a dense inventory, focus by Milestone or Epic, sort by modified/created/edited/ID, and update Beads state by dragging cards when writable. |
-| **Refine** | Groom parked **Deferred** work in a dense table before it belongs on the active execution board. This is the best place for cleanup, prioritization, wrapper assignment, and planning edits. |
+| **Board** | Read and update Beads state in Ready / In Progress / Done status columns, focus by Milestone or Epic, sort by modified/created/edited/ID, and drag cards when writable. |
+| **Refine** | Groom parked **Deferred** work in a dense table, switch to hierarchy when you want milestone -> epic -> bead structure, and switch to swimlanes when grouped planning is clearer. This is the best place for cleanup, prioritization, wrapper assignment, and planning edits. |
 | **Graph** | Inspect dependencies and relationships. Filter by milestone, epic scope, title/id search, state, or kind; aggregate by item or epic; and highlight cycles or critical path chains. |
 | **Details in the RHP** | Open beads, epics, milestones, and decisions for inspection and editing without losing the current Board, Refine, or Graph context. |
 | **Status** | Check Beads health, current database/source, remote configuration, writable/read-only mode, and available repair or setup actions. |
@@ -152,7 +152,7 @@ deployments where operators should inspect Beads without changing them.
 
 What stays available:
 
-- Cascade and Flat Beads views;
+- Board status columns and Refine table, hierarchy, and swimlane views;
 - Graph dependency inspection with milestone, epic, search, state, and
   kind filters;
 - Status, Beads health, current DB/source, and remote setup checks;

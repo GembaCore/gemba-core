@@ -18,27 +18,40 @@ A workspace dedicated to triage and refinement of
 execution kanban. Backlog work has different ergonomics from
 in-flight work — density-rich tabular layout, priority weighting,
 dependency visibility, suggested-epic placement, bulk triage
-actions.
+actions. Refine also owns the alternate planning projections that used
+to clutter Board: hierarchy and grouped swimlanes.
 
 ## Why this lives outside the Board
 
-The Board is execution chrome — Ready / In Progress / Done flow,
-swimlanes, scope.
+The Board is execution chrome — Ready / In Progress / Done flow, card
+status, and wrapper scope.
 Refinement is a sorting / triaging activity, not a flow stage. The
 Board's list mode (`?layout=list`) was an interim affordance; it
 does fine for general list browsing but is anemic for actual
-refinement. /refine reclaims the surface.
+refinement. /refine reclaims the surface and becomes the home for
+planning views that are useful but not central to live status.
 
 ## Surface
 
 - **Route**: `/refine`. Reclaims `/backlog` (which gm-e12.19.1
   redirected to Board's list mode); the redirect target shifts to
   `/refine`.
-- **Sidebar entry**: top-level pane between Plan and Review. Same
+- **Sidebar entry**: top-level pane between Board and Review. Same
   visual treatment as the other top-level entries; `workspaceScoped:
   true` so cold-start mutes it.
 
-## Default view
+## Views
+
+Refine exposes three projections over the same WorkItem data:
+
+- **Table** (default): dense backlog/refinement grid. It hardwires
+  `state_category=backlog` and focuses on cleanup and grooming.
+- **Hierarchy**: milestone -> epic -> bead reading surface for wrapper
+  comprehension.
+- **Swimlanes**: grouped planning view for users who want wrapper
+  context without leaving refinement.
+
+## Default table view
 
 - **Filter**: `state_category=backlog` is hardwired. The state-
   category chip bar is hidden — this is a backlog surface by
@@ -103,7 +116,7 @@ backlog; this gate is forward-compat.)
 
 ## What it is NOT
 
-- Not a Kanban — refinement is not a flow stage.
+- Not the default execution Kanban — refinement is not a flow stage.
 - Not a sprint planner — that's `/sprints` (gm-e11.5).
 - Not a coach surface — Selection / planner-coach lives in `/coach`
   and feeds suggestions in via the suggested-epic column.
@@ -115,7 +128,7 @@ Children (filed under gm-3ofd):
 1. **Page scaffold + route + sidebar** — `RefinePage` renders the
    existing `WorkItemGrid` with hardcoded backlog filter, default
    sort, power features always on. `/backlog` redirect re-targets
-   `/refine`. Sidebar entry between Plan and Review.
+   `/refine`. Sidebar entry between Board and Review.
 2. **Refine-specific columns** — age, suggested-epic, blockers
    count, dispatch_status. Adds rendering to `WorkItemGrid`'s
    column registry.

@@ -9,19 +9,31 @@
 // follow-up children (see docs/design/refine.md).
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { GitBranch, LayoutGrid, Search, TableProperties } from 'lucide-react';
 import { WorkItemGrid, type BulkAction } from '@/components/grid/WorkItemGrid';
 import { BulkEditDialog } from '@/components/grid/BulkEditDialog';
 import { EpicPickerDialog } from '@/components/refine/EpicPickerDialog';
-import { useFilteredWorkItems, useUpdateWorkItem } from '@/hooks/useWorkItems';
+import { useFilteredWorkItems, useUpdateWorkItem, useWorkItems } from '@/hooks/useWorkItems';
 import type { WorkItemPatch } from '@/api/workItems';
 import { useRhp } from '@/components/rhp/RhpContext';
 import { useSearchParams } from 'react-router-dom';
 import type { WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
+import { BeadsCascadeView } from '@/components/board/BeadsCascadeView';
+import { EpicView } from '@/components/board/EpicView';
+import { DndContext } from '@dnd-kit/core';
 
 const REFINE_PRESETS_STORAGE_KEY = 'gemba.refine.column-presets';
 const DEFER_LABEL_PREFIX = 'defer-until:';
+const REFINE_VIEW_PARAM = 'view';
+type RefineView = 'table' | 'hierarchy' | 'swimlanes';
+
+function refineViewFromParams(params: URLSearchParams): RefineView {
+  const raw = params.get(REFINE_VIEW_PARAM);
+  if (raw === 'hierarchy' || raw === 'swimlanes') return raw;
+  return 'table';
+}
 
 // /refine surfaces the refine-specific columns (gm-51i2). The grid hides
 // these globally so the Board's list mode stays lean; this override
@@ -59,7 +71,17 @@ function stripDeferUntil(labels: string[] | undefined): string[] {
 
 export function RefinePage() {
   const [params, setParams] = useSearchParams();
+  const view = refineViewFromParams(params);
   const search = params.get('q') ?? '';
+  const setView = useCallback(
+    (next: RefineView) => {
+      const p = new URLSearchParams(params);
+      if (next === 'table') p.delete(REFINE_VIEW_PARAM);
+      else p.set(REFINE_VIEW_PARAM, next);
+      setParams(p, { replace: true });
+    },
+    [params, setParams]
+  );
   const onChangeSearch = useCallback(
     (next: string) => {
       const p = new URLSearchParams(params);
@@ -75,6 +97,7 @@ export function RefinePage() {
   const { data = [], isLoading, error } = useFilteredWorkItems({
     state_category: ['backlog'],
   });
+  const allItems = useWorkItems();
 
   const updateWorkItem = useUpdateWorkItem();
   const [bulkEdit, setBulkEdit] = useState<{ ids: string[] } | null>(null);
@@ -144,6 +167,19 @@ export function RefinePage() {
     if (needle) r = r.filter((it) => it.title.toLowerCase().includes(needle));
     return r;
   }, [data, search]);
+  const planningRows = useMemo(() => {
+    let r = refineDefaultSort(allItems.data ?? []);
+    const needle = search.trim().toLowerCase();
+    if (needle) {
+      r = r.filter(
+        (it) =>
+          it.title.toLowerCase().includes(needle) ||
+          it.id.toLowerCase().includes(needle) ||
+          it.kind.toLowerCase().includes(needle)
+      );
+    }
+    return r;
+  }, [allItems.data, search]);
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="refine-page">
@@ -153,8 +189,32 @@ export function RefinePage() {
       >
         <h1 className="text-sm font-semibold tracking-tight">Refine</h1>
         <span className="text-neutral-500" data-testid="refine-row-count">
-          {rows.length} item{rows.length === 1 ? '' : 's'}
+          {(view === 'table' ? rows : planningRows).length} item
+          {(view === 'table' ? rows : planningRows).length === 1 ? '' : 's'}
         </span>
+        <div className="flex items-center gap-1">
+          <RefineViewButton
+            active={view === 'table'}
+            onClick={() => setView('table')}
+            label="Table"
+            icon={<TableProperties className="h-3.5 w-3.5" />}
+            testid="refine-view-table"
+          />
+          <RefineViewButton
+            active={view === 'hierarchy'}
+            onClick={() => setView('hierarchy')}
+            label="Hierarchy"
+            icon={<GitBranch className="h-3.5 w-3.5" />}
+            testid="refine-view-hierarchy"
+          />
+          <RefineViewButton
+            active={view === 'swimlanes'}
+            onClick={() => setView('swimlanes')}
+            label="Swimlanes"
+            icon={<LayoutGrid className="h-3.5 w-3.5" />}
+            testid="refine-view-swimlanes"
+          />
+        </div>
         <div className="ml-auto flex items-center gap-2">
           <label className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-neutral-500" />
@@ -174,13 +234,13 @@ export function RefinePage() {
       </div>
 
       <div className="flex-1 min-h-0 overflow-auto">
-        {isLoading ? (
+        {view === 'table' && isLoading ? (
           <RefineSkeleton />
-        ) : error ? (
+        ) : view === 'table' && error ? (
           <RefineError message={error.message} />
-        ) : rows.length === 0 ? (
+        ) : view === 'table' && rows.length === 0 ? (
           <RefineEmpty hasSearch={!!search.trim()} />
-        ) : (
+        ) : view === 'table' ? (
           <WorkItemGrid
             rows={rows}
             onSelect={(id) => popDetail({ kind: 'workitem', id })}
@@ -188,6 +248,30 @@ export function RefinePage() {
             presets={{ storageKey: REFINE_PRESETS_STORAGE_KEY }}
             visibilityOverride={REFINE_VISIBILITY}
           />
+        ) : allItems.isLoading ? (
+          <RefineSkeleton />
+        ) : allItems.error ? (
+          <RefineError message={allItems.error.message} />
+        ) : planningRows.length === 0 ? (
+          <RefineEmpty hasSearch={!!search.trim()} />
+        ) : view === 'hierarchy' ? (
+          <BeadsCascadeView
+            items={planningRows}
+            orderKey="modified"
+            onSelect={(item) => {
+              if (item.kind === 'epic') popDetail({ kind: 'epic', id: item.id });
+              else popDetail({ kind: 'workitem', id: item.id });
+            }}
+          />
+        ) : (
+          <DndContext>
+            <EpicView
+              items={planningRows}
+              onSelectEpic={(id) => popDetail({ kind: 'epic', id })}
+              showBacklog
+              orderKey="modified"
+            />
+          </DndContext>
         )}
       </div>
 
@@ -238,6 +322,34 @@ export function RefinePage() {
       )}
 
     </div>
+  );
+}
+
+interface RefineViewButtonProps {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  icon: ReactNode;
+  testid: string;
+}
+
+function RefineViewButton({ active, onClick, label, icon, testid }: RefineViewButtonProps) {
+  return (
+    <button
+      type="button"
+      data-testid={testid}
+      data-active={active}
+      onClick={onClick}
+      className={cn(
+        'inline-flex h-7 items-center gap-1.5 rounded-md border px-2 text-xs',
+        active
+          ? 'border-sky-700 bg-sky-700 text-white dark:border-sky-500 dark:bg-sky-600'
+          : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200 dark:hover:bg-neutral-800'
+      )}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 

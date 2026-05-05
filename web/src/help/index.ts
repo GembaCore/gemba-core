@@ -21,6 +21,7 @@ export type HelpModule = {
 // eager import is fine for v1. Switch to React.lazy if bundle analysis
 // warrants it.
 import { RouteHelp as BoardHelp } from './BoardHelp';
+import { RouteHelp as RefineHelp } from './RefineHelp';
 import { RouteHelp as GraphHelp } from './GraphHelp';
 import { RouteHelp as WalkHelp } from './WalkHelp';
 import { RouteHelp as EscalationsHelp } from './EscalationsHelp';
@@ -37,6 +38,8 @@ export { RouteHelp as DefaultHelp } from './DefaultHelp';
 // order (Object.entries preserves insertion order in modern JS).
 export const ROUTE_HELP_REGISTRY: Record<string, ComponentType> = {
   '/board': BoardHelp,
+  '/refine': RefineHelp,
+  '/backlog': RefineHelp,
   '/graph': GraphHelp,
   '/walk': WalkHelp,
   '/walks': WalkHelp,

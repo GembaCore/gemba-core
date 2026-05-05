@@ -308,7 +308,7 @@ function EmptyState({ skillCount }: { skillCount: number }) {
       </p>
       <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
         {skillCount > 0
-          ? `${skillCount} skill${skillCount === 1 ? '' : 's'} registered. Start a consult via POST /api/consults or the Plan view.`
+          ? `${skillCount} skill${skillCount === 1 ? '' : 's'} registered. Start a consult via POST /api/consults or the Board.`
           : 'No skills registered either. Check the gemba serve startup logs for skill registration warnings.'}
       </p>
     </div>

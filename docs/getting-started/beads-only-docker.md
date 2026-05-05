@@ -13,12 +13,13 @@ Beads adaptor together.
 | Beads-only | `soflo1/gemba-core:latest` | Mounting your own Beads worktree or using a Dolt URL | Writable unless the source denies writes |
 | Beads-read-only | Either image with `GEMBA_BEADS_READ_ONLY=true` | Review, audits, sharing a safe UI over real work | Blocked by Gemba before the adaptor |
 
-The UI starts in Beads-only mode with Beads surfaces enabled: Cascade
-and Flat board layouts, sort controls, milestone / epic / bead wrappers,
-details in the right-hand panel, Beads health, Beads history, and the
-Graph view. Cascade is the default so the sample project's hierarchy is
-visible first. Agent sessions, dispatch, review, and escalation surfaces
-are hidden because no orchestration plane is active.
+The UI starts in Beads-only mode with Beads surfaces enabled: the Board
+status columns, Refine table / hierarchy / swimlane views, sort controls,
+milestone / epic / bead wrappers, details in the right-hand panel, Beads
+health, Beads history, and the Graph view. Board state comes directly
+from Beads without dispatching agents. Agent sessions, dispatch, review,
+and escalation surfaces are hidden because no orchestration plane is
+active.
 
 ## Major functions
 
@@ -27,8 +28,8 @@ managing Beads, and hides the surfaces that require agent orchestration.
 
 | Surface | What it does in Beads-only mode |
 | --- | --- |
-| **Plan / Board** | Starts in **Cascade** so milestones, epics, and beads read as a hierarchy. Use **Flat** for a dense inventory, the **Order** control for modified/created/edited/ID sorting, and the Milestone / Epic selectors to focus on a wrapper's children. In writable mode you can create, edit, delete, and drag beads between states without dispatching agents. |
-| **Refine** | Shows parked **Deferred** work in a dense table for grooming. Use it to improve titles, descriptions, priority, wrappers, labels, and other planning fields before work is staged or reviewed elsewhere. |
+| **Board** | Starts as a status board with Ready / In Progress / Done columns from Beads state. Use the **Order** control for modified/created/edited/ID sorting and the Milestone / Epic selectors to focus on a wrapper's children. In writable mode you can create, edit, delete, and drag beads between states without dispatching agents. |
+| **Refine** | Shows parked **Deferred** work in a dense table for grooming. Switch to **Hierarchy** for milestone -> epic -> bead structure or **Swimlanes** for grouped planning. Use it to improve titles, descriptions, priority, wrappers, labels, and other planning fields before work is staged or reviewed elsewhere. |
 | **Graph** | Shows dependency and relationship structure. Use the funnel menu to filter by milestone, epic scope, search, state, or kind; switch between item and epic aggregation; and inspect cycles or critical path signals. |
 | **Right-hand panel details** | Opens bead, epic, milestone, and decision details without leaving the current view. Writable mode exposes edit controls; read-only mode keeps inspection available and blocks mutations. |
 | **Status** | Shows the active Beads mode, current database/source, remote health, read-only posture, and repair/setup actions when the source supports them. |
@@ -82,10 +83,11 @@ This is the fastest way to see a populated board.
 
 4. Explore the UI:
 
-   - Start on the Board in Cascade layout to see milestone → epic → bead structure.
+   - Start on the Board to see Ready / In Progress / Done state columns.
    - Open a bead, epic, or milestone to inspect its right-hand details.
-   - Switch to Flat layout when you want a dense ordered inventory.
    - Open Refine to groom the seeded Deferred items in a dense table.
+   - Switch Refine to Hierarchy to see milestone -> epic -> bead structure.
+   - Switch Refine to Swimlanes when grouped planning is more useful.
    - Click **Graph** in the sidebar to inspect relationships and dependencies; use the funnel menu to filter by milestone, epic scope, search, state, or kind.
    - Open the Status tab to verify Beads health and current mode.
    - Create or edit a bead; the Beads history tab records the action.

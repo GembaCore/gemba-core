@@ -330,8 +330,8 @@ Assessment:
 5. Retrospective and evidence: the system records session outcomes, bead-done
    events, notes, decisions, walk output, and follow-up issues.
 
-6. Product navigation: the operator moves between Plan (including Recent
-   Board views), Refine, Review, Triage, Sessions, Settings, Insights,
+6. Product navigation: the operator moves between Board, Recent catch-up,
+   Refine, Review, Triage, Sessions, Settings, Insights,
    Capabilities, Walks, and project config without needing to understand
    backend-specific vocabulary.
 

@@ -68,15 +68,15 @@
 
 Top-to-bottom, in order:
 
-1. **Plan** — `/board`; home execution surface with board/list layouts, milestone and scope filters, and named views such as Recent and Done · 7d.
-2. **Refine** — `/refine`; backlog grooming and dispatch-status triage.
+1. **Board** — `/board`; home status surface with Ready / In Progress / Done columns, milestone and scope filters, and card attention pills.
+2. **Refine** — `/refine`; backlog grooming, hierarchy, and planning swimlanes.
 3. **Review** — `/walk`; Gemba walk surface for work-in-progress review.
 4. **Triage** — `/escalations`; blockers, HITL, permission prompts, and degraded-adaptor attention.
 5. *(divider)*
 6. **Sessions** — `/sessions`; live runtime inventory.
 7. **Settings** — `/settings`; global/project configuration, with `/settings/pools` for pool dispatch.
 
-> **Sidebar consolidation rationale (updated 2026-05-04):** Recent and Grid are not top-level concerns. **Recent** is a Board named view; `/recent` survives as a deep link. **Grid** folds into Board's list/power-list layout; `/grid` redirects to `/board?layout=list&power=1`. **Graph** is first-order because dependency and relationship inspection is a core Beads-management surface, especially in Beads-only quickstart. Agents, Agent groups, Capabilities, Insights, Drift, Sprints, and Coach remain routeable secondary surfaces but do not occupy first-order sidebar slots.
+> **Sidebar consolidation rationale (updated 2026-05-05):** Recent and Grid are not top-level concerns. **Recent** survives as a deep link for catch-up workflows. **Grid** folds into Refine's table mode; `/grid` redirects to `/refine`. **Graph** is first-order because dependency and relationship inspection is a core Beads-management surface, especially in Beads-only quickstart. Agents, Agent groups, Capabilities, Insights, Drift, Sprints, and Coach remain routeable secondary surfaces but do not occupy first-order sidebar slots.
 
 Secondary surfaces (`/insights`, `/drift`, `/coach`, `/sprints`, `/agent-groups`, `/capabilities`, `/project/config`, `/qa/health`, `/qa/gates`, `/checkpoints`) are NOT in the sidebar. They're reachable via:
 - **Cmd-K** (primary: typing the surface name jumps to it)
@@ -262,8 +262,8 @@ Default execution Board columns, fixed order:
 Optional / alternate surfaces:
 - **Backlog** appears when the Board Backlog toggle is on; `/refine`
   remains the preferred refinement surface.
-- **Canceled** is intentionally not a default Board lane; use list mode
-  / filters for audit or recovery.
+- **Canceled** is intentionally not a default Board lane; use Refine table
+  filters for audit or recovery.
 
 The **Ready** column is a presentation grouping for canonical
 `unstarted` and `staged` work. Cards retain the exact state in a pill
@@ -318,40 +318,38 @@ Alternate view at `/board?view=workitem`. Same operational columns
 instead of Epics. Accessible via keyboard shortcut and the board header
 view toggle.
 
-### 4.10 View modes (kanban / list)
+### 4.10 Board controls
 
-Board exposes several visual modes over the same query result. The
-`layout` URL param controls shape, while `view` selects named filters
-(§4.11):
+Board is the status surface. It exposes the Ready / In Progress / Done
+columns by default in both full and Beads-only modes. The `layout` URL
+param still accepts legacy values for old bookmarks, but the visible
+controls no longer present Board as a multi-layout selector:
 
 | Mode | URL | Purpose |
 |---|---|---|
-| `kanban` (default) | `/board` | Three-column execution surface; the canonical Gemba view |
-| `list` | `/board?layout=list` | Flat dense list with state_category + kind filter chips and client-side title search |
-| `cascade` | `/board?layout=cascade` | Hierarchy-first milestone -> epic -> bead view |
+| `workitem` (default) | `/board` | Ready / In Progress / Done status board; the canonical Gemba view |
+| `epic` (legacy) | `/board?layout=epic` | Wrapper-level legacy board for existing links |
+| `list` (legacy) | `/board?layout=list` | Flat legacy list for existing links |
+| `cascade` (legacy) | `/board?layout=cascade` | Hierarchy-first legacy link; Refine hierarchy is the visible home |
 
-Switcher lives in the board header next to the granularity toggle.
-List mode shares the same query, RHP detail, and selection behavior as
-kanban-mode — only the rendering changes. Cmd-Shift-L toggles list ↔
-kanban.
-
-The Board header also carries an order selector shared by Kanban,
-Cascade, and List:
+The Board header carries focus selectors and a small funnel menu for
+board-specific controls: order and optional Deferred lane visibility.
+The order selector is:
 
 - Modified
 - Created
 - Edited
 - ID
 
-In full mode the default remains useful for execution triage; in
-Beads-only mode `/board` defaults to Cascade so milestone and epic
-wrappers explain the project shape first. Flat remains available from
-the board filter menu for dense inventory review, with ID order as the
-default Beads-only sort. `Edited` currently uses the same persisted `updated_at`
+In full and Beads-only mode the Board stays a status board. Refine owns
+table, hierarchy, and swimlane planning projections. `Edited` currently
+uses the same persisted `updated_at`
 timestamp as `Modified` until the Beads source provides a separate edit
 timestamp.
 
-`/grid` (§5.3) is intentionally NOT a Board view-mode: Grid is the power-user TanStack table with inline edit, column presets, and bulk-action ergonomics that don't fit a board frame. It stays a standalone surface in the sidebar.
+`/grid` (§5.3) is intentionally NOT a Board view-mode: Grid folds into
+Refine's table mode because inline edit, column presets, and bulk-action
+ergonomics do not fit a board frame.
 
 ### 4.11 Built-in Named Views
 
@@ -377,7 +375,7 @@ users can layer additional chips on top. Saved personal views (per
 
 ## 5. Other screens
 
-### 5.1 Plan view (`/plan`)
+### 5.1 Dispatch planning view (`/plan`, planned)
 
 - Primary action button: **Execute all Staged** — top-right, primary color, cmd-Enter shortcut
 - Layout: vertical list of Staged Epics, grouped by parallel-group (each group in an outlined cluster)
@@ -397,12 +395,16 @@ Refine surface.
 - `/refine` filters `state_category=backlog` and exposes dense triage
   controls: priority, age, suggested epic, blockers, labels, and
   dispatch status.
+- Refine also offers hierarchy and swimlane views for planning without
+  turning Board into a layout switcher.
 - Graduating backlog work moves it to `unstarted`; it then appears in
   the Board's **Ready** column with a **Next up** pill.
 
 ### 5.3 Grid (`/grid`)
 
-- Power-user WorkItem view (not Epic). TanStack Table with inline-edit, sortable columns, column presets.
+- Legacy redirect to `/refine`; the power-user WorkItem table now lives
+  inside Refine.
+- TanStack Table with inline-edit, sortable columns, column presets.
 - **Default columns:** ID / Type / Title / State / Priority / Parent Epic / Labels / Updated
 - Column preset system: saved-views (personal). Shared views are v2.
 - Virtualization: up to **1k rows** without performance concern. 10k+ gracefully degrades.
@@ -410,16 +412,15 @@ Refine surface.
 - Inline-edit: **click-to-edit** (single click enters edit mode on supported fields; Escape cancels; Enter commits)
 - Selection: space-to-toggle; range-select with shift-click
 
-### 5.3.1 Recent Board named view
+### 5.3.1 Recent catch-up deep link
 
 > Added 2026-04-30 (`gm-g5xz`). User-facing guide:
 > [`docs/concepts/recent-view.md`](concepts/recent-view.md).
 
 Reading surface that lists beads created or completed in a chosen
-window. Current implementation is a Board named view, not a sidebar
-slot: use `/board?view=recent&layout=list` for new work and the
-`done-recent` Board view for recently completed work. `/recent` remains
-a legacy deep link for bookmarks.
+window. It is not a sidebar slot: use `/recent` or the legacy
+`/board?view=recent&layout=list` deep link for new work and return to
+Board or Refine for the primary working surfaces.
 
 - **Cutoff control:** eight discrete preset stops (1h / 4h / 12h / 24h
   default / 3d / 7d / 30d / All) plus an **Advance to now** button that

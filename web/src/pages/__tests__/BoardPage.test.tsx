@@ -152,10 +152,7 @@ describe('BoardPage', () => {
     expect(screen.getAllByTestId('board-skeleton-card').length).toBeGreaterThan(0);
   });
 
-  // Default Epic-primary view (gm-root.6 / ui-spec §4). Cards on /board
-  // are Epics swimlaned by parent-epic; the WorkItem-flat board is now
-  // the alternate.
-  it('default view at /board renders Epic cards in swimlanes', async () => {
+  it('default view at /board renders the status board', async () => {
     const data: WorkItem[] = [
       epic('root'),
       epic('e1', 'root'),
@@ -171,17 +168,14 @@ describe('BoardPage', () => {
       )
     );
     render(wrap(<BoardPage />));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
-    // Swimlane keyed by root epic id.
-    expect(screen.getByTestId('board-epic-swimlane-root')).toBeTruthy();
-    // Epic cards (not WorkItem cards) carry data-epic-card="true".
-    const epicCards = document.querySelectorAll('[data-epic-card="true"]');
-    expect(epicCards).toHaveLength(3);
-    // The flat WorkItem board is NOT mounted on the default view.
-    expect(screen.queryByTestId('board-workitem')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+    expect(screen.getByTestId('board-column-ready')).toBeTruthy();
+    expect(screen.getByTestId('board-column-started')).toBeTruthy();
+    expect(screen.getByTestId('board-column-completed')).toBeTruthy();
+    expect(screen.queryByTestId('board-epic')).toBeNull();
   });
 
-  it('shows the Epic-empty copy when the dataset has no Epics', async () => {
+  it('shows the status board when the dataset has no Epics', async () => {
     fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ items: [bead('t1', 'started')], total: 1 }), {
         status: 200,
@@ -189,8 +183,8 @@ describe('BoardPage', () => {
       })
     );
     render(wrap(<BoardPage />));
-    await waitFor(() => expect(screen.getByTestId('board-epic-empty')).toBeTruthy());
-    expect(screen.getByText(/No Epics yet/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+    expect(screen.getByTestId('workitem-card-t1-state-pill').textContent).toBe('In progress');
   });
 
   // /board?view=workitem opts back into the M1 flat view (ui-spec L293).
@@ -233,7 +227,7 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByTestId('board-empty')).toBeTruthy());
   });
 
-  it('defaults beads-only mode to Cascade and keeps Flat available', async () => {
+  it('defaults beads-only mode to the same status board', async () => {
     const data: WorkItem[] = [
       bead('gm-task', 'unstarted', {
         title: 'Leaf bead',
@@ -253,12 +247,12 @@ describe('BoardPage', () => {
 
     render(wrap(<BoardPage />, '/board', beadsOnlyCaps));
 
-    await waitFor(() => expect(screen.getByTestId('beads-cascade')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
     openBoardControls();
-    expect(screen.getByTestId('view-toggle-cascade').getAttribute('data-active')).toBe('true');
-    expect(screen.getByTestId('view-toggle-list').getAttribute('data-active')).toBe('false');
+    expect(screen.queryByTestId('view-toggle-cascade')).toBeNull();
     expect(screen.queryByTestId('view-toggle-epic')).toBeNull();
     expect(screen.queryByTestId('view-toggle-workitem')).toBeNull();
+    expect(screen.queryByTestId('view-toggle-list')).toBeNull();
     await waitFor(() => expect(screen.getByTestId('board-milestone-picker')).toBeTruthy());
     expect(
       Boolean(
@@ -268,23 +262,37 @@ describe('BoardPage', () => {
           Node.DOCUMENT_POSITION_FOLLOWING
       )
     ).toBe(true);
-    expect((screen.getByTestId('board-preset-backlog') as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByTestId('board-preset-backlog').getAttribute('title')).toBe(
-      'View filters apply in Flat/List view.'
+    expect(screen.getByTestId('workitem-card-gm-task-state-pill').textContent).toBe('Next up');
+  });
+
+  it('keeps legacy beads-only hierarchy layout addressable by URL', async () => {
+    const data: WorkItem[] = [
+      bead('gm-m1', 'unstarted', { kind: 'milestone', title: 'M1 Foundation' }),
+      epic('gm-epic', 'gm-m1', { title: 'Planning epic' }),
+      bead('gm-task', 'started', {
+        title: 'In-flight bead',
+        relationships: [{ kind: 'parent_child', from: 'gm-epic', to: 'gm-task' }],
+      }),
+      bead('gm-done', 'completed', {
+        title: 'Finished bead',
+        relationships: [{ kind: 'parent_child', from: 'gm-epic', to: 'gm-done' }],
+      }),
+    ];
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ items: data, total: data.length }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
     );
 
-    const rows = [...document.querySelectorAll('[data-testid^="beads-cascade-row-"]')].map((el) =>
-      el.getAttribute('data-testid')
-    );
-    expect(rows).toEqual([
-      'beads-cascade-row-gm-m1',
-      'beads-cascade-row-gm-epic',
-      'beads-cascade-row-gm-task',
-    ]);
+    render(wrap(<BoardPage />, '/board?layout=cascade', beadsOnlyCaps));
 
-    fireEvent.click(screen.getByTestId('view-toggle-list'));
-    await waitFor(() => expect(screen.getByTestId('board-list')).toBeTruthy());
-    expect(screen.getByTestId('board-list-kind-milestone')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('beads-cascade')).toBeTruthy());
+    expect(screen.getByTestId('beads-cascade-row-gm-m1')).toBeTruthy();
+    expect(screen.getByTestId('beads-cascade-row-gm-epic')).toBeTruthy();
+    expect(screen.getByTestId('beads-cascade-row-gm-task')).toBeTruthy();
   });
 
   it('opens an epic detail tab when an epic is selected in Cascade view', async () => {
@@ -450,11 +458,7 @@ describe('BoardPage', () => {
     await waitFor(() => expect(screen.getByText('Deep dive into gm-a.')).toBeTruthy());
   });
 
-  // The in-page view toggle flips ?view=workitem|list on/off without
-  // a reload. gm-e12.19.1 added the third "list" mode (former
-  // /backlog surface lifted into Board) so the toggle is now
-  // tri-state — pin all three transitions.
-  it('view toggle cycles through Epic, WorkItem, and List boards', async () => {
+  it('filter menu exposes board controls without layout toggles', async () => {
     const data: WorkItem[] = [epic('root'), bead('t1', 'started')];
     fetchSpy.mockResolvedValue(
       new Response(JSON.stringify({ items: data, total: data.length }), {
@@ -463,19 +467,14 @@ describe('BoardPage', () => {
       })
     );
     render(wrap(<BoardPage />));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
-
-    openBoardControls();
-    fireEvent.click(screen.getByTestId('view-toggle-workitem'));
     await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
 
-    // gm-e12.19.1: List mode renders BoardListView under the same
-    // shell. The list pane carries data-testid="board-list".
-    fireEvent.click(screen.getByTestId('view-toggle-list'));
-    await waitFor(() => expect(screen.getByTestId('board-list')).toBeTruthy());
-
-    fireEvent.click(screen.getByTestId('view-toggle-epic'));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
+    openBoardControls();
+    expect(screen.getByTestId('board-order-select')).toBeTruthy();
+    expect(screen.getByTestId('board-show-backlog-toggle')).toBeTruthy();
+    expect(screen.queryByTestId('view-toggle-workitem')).toBeNull();
+    expect(screen.queryByTestId('view-toggle-epic')).toBeNull();
+    expect(screen.queryByTestId('view-toggle-list')).toBeNull();
   });
 
   // gm-uekk: scope picker replaces the old swimlane-switcher.
@@ -491,22 +490,19 @@ describe('BoardPage', () => {
       })
     );
     render(wrap(<BoardPage />));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
-
-    // Default scope=All: three swimlanes (one per root).
-    expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
-    expect(screen.getByTestId('board-epic-swimlane-e2')).toBeTruthy();
-    expect(screen.getByTestId('board-epic-swimlane-e3')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+    expect(screen.getAllByText('title e1').length).toBeGreaterThan(0);
+    expect(screen.getByText('title e2')).toBeTruthy();
+    expect(screen.getByText('title e3')).toBeTruthy();
 
     // Open the picker, click the e1 scope.
     fireEvent.click(screen.getByTestId('board-scope-trigger'));
     await waitFor(() => expect(screen.getByTestId('board-scope-option-e1')).toBeTruthy());
     fireEvent.click(screen.getByTestId('board-scope-option-e1'));
 
-    await waitFor(() => expect(screen.queryByTestId('board-epic-swimlane-e2')).toBeNull());
-    expect(screen.queryByTestId('board-epic-swimlane-e3')).toBeNull();
-    // e1's lineage swimlane is still mounted.
-    expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText('title e2')).toBeNull());
+    expect(screen.queryByText('title e3')).toBeNull();
+    expect(screen.getAllByText('title e1').length).toBeGreaterThan(0);
   });
 
   // ?scope=<id> deep-links narrow the kanban on first paint.
@@ -519,8 +515,8 @@ describe('BoardPage', () => {
       })
     );
     render(wrap(<BoardPage />, '/board?scope=e1'));
-    await waitFor(() => expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy());
-    expect(screen.queryByTestId('board-epic-swimlane-e2')).toBeNull();
+    await waitFor(() => expect(screen.getAllByText('title e1').length).toBeGreaterThan(0));
+    expect(screen.queryByText('title e2')).toBeNull();
   });
 
   // ?swimlane=by-label is a legacy URL; the migration step in
@@ -536,9 +532,8 @@ describe('BoardPage', () => {
       })
     );
     render(wrap(<BoardPage />, '/board?swimlane=by-label'));
-    await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
-    // Default scope=All means the e1 swimlane renders.
-    expect(screen.getByTestId('board-epic-swimlane-e1')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+    expect(screen.getByText('title e1')).toBeTruthy();
   });
 
   // gm-5ekd: Backlog column is hidden by default in the kanban; the
@@ -640,7 +635,7 @@ describe('BoardPage', () => {
           headers: { 'Content-Type': 'application/json' },
         })
       );
-      render(wrap(<BoardPage />, '/board?show_backlog=1'));
+      render(wrap(<BoardPage />, '/board?layout=epic&show_backlog=1'));
       await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
       // Backlog plus the three operational columns when toggle is on.
       expect(screen.getByTestId('board-epic-cell-root-backlog')).toBeTruthy();
@@ -653,7 +648,8 @@ describe('BoardPage', () => {
       // List mode shows the Power toggle, not the show_backlog toggle.
       openBoardControls();
       expect(screen.queryByTestId('board-show-backlog-toggle')).toBeNull();
-      expect(screen.getByTestId('board-power-toggle')).toBeTruthy();
+      expect(screen.queryByTestId('board-power-toggle')).toBeNull();
+      expect(screen.getByText('No board options.')).toBeTruthy();
     });
   });
 

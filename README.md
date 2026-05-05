@@ -105,10 +105,10 @@ box, so the minimum working deployment is `gemba serve` and a browser
 pointed at it — no orchestrator, no scheduling infrastructure required.
 For teams that only need Beads viewing and management, `gemba serve
 --beads-only` starts a deliberately smaller mode: no project, GitHub, or
-agent runtime required. It opens the Beads board in Cascade by default
-so milestone and epic wrappers are visible first, keeps Flat and Graph
-views available, and records create / edit / delete / state-change
-actions in a Beads history ledger. Add
+agent runtime required. It opens the same status Board as full Gemba,
+keeps Refine's table, hierarchy, and swimlane planning views plus Graph
+available, and records create / edit / delete / state-change actions in
+a Beads history ledger. Add
 `--beads-read-only` when the same views should be inspection-only:
 Gemba shows a Beads-read-only status pill and rejects every mutation
 before it reaches the Beads adaptor.
@@ -415,12 +415,14 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   include uncommitted source.
 - **Beads-only mode** (`gm-etq2` / `gm-4u4l`) — `gemba serve
   --beads-only` runs Gemba as a Beads viewer and manager without a
-  project or orchestration plane. The board starts in **Cascade** view
-  so milestone, epic, and bead wrappers explain the project shape first;
-  **Flat** shows milestones, epics, decision beads, and work beads in
-  one ordered list. The shared **Order** control sorts by modified,
-  created, edited, or ID; Graph remains available with filters for
-  milestone, epic scope, search, state, and kind.
+  project or orchestration plane. The Board starts as the same Ready /
+  In Progress / Done status board as full Gemba, backed directly by
+  Beads state and without dispatching agents. Refine now owns the dense
+  planning views: **Table** for inventory and grooming, **Hierarchy**
+  for milestone -> epic -> bead structure, and **Swimlanes** for grouped
+  planning. The shared **Order** control sorts by modified, created,
+  edited, or ID; Graph remains available with filters for milestone,
+  epic scope, search, state, and kind.
   Status shows Beads health and remote setup actions, while the RHP adds
   a **Beads history** tab backed by a JSONL session manifest. Create,
   edit, hard-delete, milestone wrapper, decision tag, and milestone tag
@@ -431,11 +433,11 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
 - **Self-contained Docker quickstart** — `Dockerfile.quickstart`,
   `docker-compose.quickstart.yml`, and `make quickstart-run` package
   Gemba with the `bd` CLI and a seeded sample project. A new user can
-  run the container, open `http://localhost:7666`, and explore Cascade,
-  Flat, Refine, details, Status, Beads history, and Graph without
-  installing the local developer toolchain. The sample intentionally
-  leaves a few future items in the Deferred state so Refine demonstrates
-  grooming instead of an empty clean-refinement state.
+  run the container, open `http://localhost:7666`, and explore Board,
+  Refine table / hierarchy / swimlanes, details, Status, Beads history,
+  and Graph without installing the local developer toolchain. The sample
+  intentionally leaves a few future items in the Deferred state so Refine
+  demonstrates grooming instead of an empty clean-refinement state.
 - **Standard Docker server image** — `Dockerfile`,
   `docker-compose.yml`, and `make docker-run` package unseeded Gemba
   with `bd`, git/ssh, and the sentinel CLIs for mounted worktrees or
@@ -461,11 +463,11 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   as **Triage**, **Needs input**, **Review**, and **Ready**. Deferred
   work is still available through `/refine` and the board toggle;
   canceled work stays in list/filter views.
-- **Recent is now a Board named view** (`gm-uipx.18`) — the standalone
-  `/recent` route remains as a deep link, but the sidebar no longer
-  treats Recent as a top-level concern. Use the Board's **View →
-  Recent** chip for the last-24h created-items list, or **Done · 7d**
-  for recent completions.
+- **Recent is now a catch-up deep link** (`gm-uipx.18`) — the standalone
+  `/recent` route remains available, but the sidebar no longer treats
+  Recent as a top-level concern. Use `/recent` or
+  `/board?view=recent&layout=list` for the last-24h created-items list,
+  then return to Board or Refine for primary work.
 - **Autonomous dispatch (sticky session pools)** (`gm-s47n.10`/`.11`/
   `.12`/`.16`) — long-lived agent sessions per `(scope, persona)` with
   `SessionReady` idle state, in-place recycle (no respawn), an idle-pane
@@ -493,10 +495,10 @@ SHADER_INTEROP_SLING=1 bash scripts/shader-interop.sh
   triage + refinement surface for `state_category=backlog` beads,
   distinct from the execution kanban. Density-rich tabular layout with
   age, suggested-epic, blockers, and `dispatch_status` columns; defer +
-  dismiss actions with notes (`gm-mw5n`); single
-  - bulk drop-into-epic (`gm-ju5o`); persona-driven milestone creation
-    during refinement (`gm-yjst`). Replaces the
-    `?layout=list&view=backlog` crutch.
+  dismiss actions with notes (`gm-mw5n`); single + bulk drop-into-epic
+  (`gm-ju5o`); persona-driven milestone creation during refinement
+  (`gm-yjst`). Refine also hosts hierarchy and swimlane planning views,
+  replacing the old `?layout=list&view=backlog` board crutch.
 - **Escalation visibility** (`gm-e11.3` and friends) — **Triage** pills
   on bead/epic cards when open escalations target that work, a
   Board-level banner with scope-aware count and link to the dedicated

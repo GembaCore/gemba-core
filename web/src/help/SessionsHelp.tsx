@@ -37,7 +37,7 @@ export function RouteHelp() {
               to="/board"
               className="underline hover:text-neutral-900 dark:hover:text-neutral-100"
             >
-              Return to the Plan board
+              Return to the Board
             </Link>{' '}
             to dispatch new work items
           </li>

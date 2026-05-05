@@ -4,7 +4,7 @@
 >
 > **Status:** v1 ships exactly one skill — `epic_order`. Additional skills (`add_to_backlog`, `change_this`, `what_remains`, `sprint_retro`, …) land per their own beads under gm-858.
 
-The Project Manager is gemba's default advisor for the Plan view and execution batching. It's a **Coach** (variety = `coach`) — every recommendation carries a `suggested_action`, but the operator (or a Manager-variety persona) is responsible for actually applying it. The PM never files beads, never writes to the WorkPlane, never exceeds its declared budget.
+The Project Manager is gemba's default advisor for Board/refinement work and execution batching. It's a **Coach** (variety = `coach`) — every recommendation carries a `suggested_action`, but the operator (or a Manager-variety persona) is responsible for actually applying it. The PM never files beads, never writes to the WorkPlane, never exceeds its declared budget.
 
 ## Persona definition
 

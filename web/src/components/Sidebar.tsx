@@ -22,13 +22,13 @@ import { useCapabilities } from '@/capabilities';
 // Browser, Mail — survive as deep-link routes today and roll up under
 // their pane's in-screen tabs as gm-e12.19.4-7 land.
 //
-// Three core panes (Plan / Review / Triage) cluster at the top —
+// Three core panes (Board / Review / Triage) cluster at the top —
 // these are the operator's daily verbs. Below a divider, Sessions
 // and Settings sit as secondary / utility surfaces — the operator
 // drops into them less often once the dispatcher is humming.
 //
 // Initial route map (until pane consolidation lands):
-//   Plan      → /board       (gm-e12.19.4 grows tabs Board/List/Sprints)
+//   Board     → /board       status board
 //   Graph     → /graph       dependency / relationship inspection
 //   Review    → /walk        (Gemba walk surface)
 //   Triage    → /escalations (gm-e12.19.6 grows a Drift tab)
@@ -60,13 +60,14 @@ type Item = {
   activePaths?: string[];
 };
 
-// Core panes — the operator's daily verbs. Refine sits between Plan
-// and Review (gm-3ofd) — it's the upstream triage surface for backlog
-// work, distinct from Plan's execution kanban.
+// Core panes — the operator's daily verbs. Refine sits between Board
+// and Review (gm-3ofd) — it's the upstream planning surface for dense,
+// hierarchical, and grouped work inspection, distinct from Board's
+// execution/status kanban.
 const items: Item[] = [
   {
     to: '/board',
-    label: 'Plan',
+    label: 'Board',
     Icon: LayoutGrid,
     workspaceScoped: true,
     activePaths: ['/board', '/grid', '/sprints'],

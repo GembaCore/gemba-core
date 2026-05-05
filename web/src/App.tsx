@@ -55,17 +55,14 @@ export default function App() {
             "<workspace>/<repo>/". useParams()['*'] surfaces the rest. */}
         <Route path="/board/*" element={<BoardPage />} />
         {/* /refine — dedicated triage + refinement surface (gm-3ofd).
-            Reclaims the /backlog path; existing /backlog links land
-            here. The Board's list mode is still reachable via
-            ?layout=list for non-refinement browsing. */}
+            Reclaims dense planning modes: deferred table, hierarchy,
+            and swimlanes. Existing /backlog links land here. */}
         <Route path="/refine" element={<RefinePage />} />
         <Route path="/backlog" element={<Navigate to="/refine" replace />} />
-        {/* /grid folded into /board's list layout + power mode
-            (gm-uipx.17). Permanent redirect so existing bookmarks
-            land on the equivalent power-list URL. */}
+        {/* /grid now folds into Refine's table mode. */}
         <Route
           path="/grid"
-          element={<Navigate to="/board?layout=list&power=1" replace />}
+          element={<Navigate to="/refine" replace />}
         />
         <Route path="/sessions" element={<UnavailableInBeadsOnly><SessionsPage /></UnavailableInBeadsOnly>} />
         {/* gm-e12.15: provider-aware agent detail. :id is matched

@@ -21,7 +21,7 @@ export function RouteHelp() {
         <ul className="space-y-1 list-disc list-inside">
           <li>
             <Link to="/board" className="underline hover:text-neutral-900 dark:hover:text-neutral-100">
-              Go to the Plan board
+              Go to the Board
             </Link>
           </li>
           <li>

@@ -114,11 +114,8 @@ describe('Palette', () => {
       fireEvent.click(item);
     });
 
-    // Backlog folded into Board (gm-e12.19.1) — palette routes to
-    // the canonical list-layout + Backlog-view URL on Board (post-uipx.18).
-    await waitFor(() =>
-      expect(screen.getByTestId('loc').textContent).toBe('/board?layout=list&view=backlog')
-    );
+    // Backlog/deferred grooming lives in Refine.
+    await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/refine'));
     // Selecting an item closes the palette.
     expect(screen.queryByTestId('command-palette-input')).toBeNull();
   });

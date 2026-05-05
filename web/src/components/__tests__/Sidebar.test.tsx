@@ -99,7 +99,7 @@ function renderSidebar(initialEntry = '/new', initialCaps: CapabilitiesResponse 
 // workspace-agnostic (so a fresh install can reach global config
 // from a cold start).
 const WORKSPACE_SCOPED = [
-  'Plan',
+  'Board',
   'Graph',
   'Refine',
   'Review',
@@ -162,7 +162,7 @@ describe('Sidebar', () => {
     const graph = await screen.findByRole('link', { name: 'Graph' });
     expect(graph.getAttribute('data-active')).toBe('true');
     expect(graph.getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('link', { name: 'Plan' }).getAttribute('data-active')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Board' }).getAttribute('data-active')).toBeNull();
     expect(screen.getByRole('link', { name: 'Refine' }).getAttribute('data-active')).toBeNull();
   });
 

@@ -218,6 +218,6 @@ describe('StatusTab', () => {
     await waitFor(() => expect(screen.getByText('Beads-read-only')).toBeTruthy());
     expect(screen.getByText('beads-read-only')).toBeTruthy();
     expect(screen.getByTestId('rhp-status-read-only')).toBeTruthy();
-    expect(screen.getByText(/Inspect Flat and Cascade views/)).toBeTruthy();
+    expect(screen.getByText(/Inspect Board status columns/)).toBeTruthy();
   });
 });

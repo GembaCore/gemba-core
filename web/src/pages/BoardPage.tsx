@@ -1,21 +1,21 @@
-// Board pane (gm-root.6 / ui-spec §4). Default layout is Epic-primary
-// kanban with swimlanes by parent-epic. Three layouts share the same
-// URL state and drawer plumbing:
+// Board pane (gm-root.6 / ui-spec §4). The visible Board surface is the
+// honest status board: Ready, In Progress, and Done from Beads/WorkPlane
+// state. Historical layout URLs still resolve for bookmarks, but dense
+// table, hierarchy, and alternate planning swimlanes moved to Refine.
 //
-//   ?layout=epic      Epic kanban with swimlanes (default)
-//   ?layout=workitem  flat WorkItem kanban (Cmd-W toggle)
+//   ?layout=workitem  WorkItem status board (default)
+//   ?layout=epic      legacy Epic kanban with swimlanes
 //   ?layout=cascade   milestone → epic → bead hierarchy
 //   ?layout=list      flat WorkItem list   (former /backlog surface,
-//                     Cmd-Shift-L; gm-e12.19.1)
+//                     gm-e12.19.1)
 //
 // Named views layer on the Flat/List surface via ?view=<name>
-// (gm-uipx.18). The legacy ?preset= and ?view=epic|workitem|list
-// shapes are migrated on first paint by migrateLegacyParams; existing
-// bookmarks resolve. Cascade keeps the full milestone -> epic -> bead
-// hierarchy intact, so named-view chips are visible but disabled there.
+// (gm-uipx.18) for compatibility. The legacy ?preset= and
+// ?view=epic|workitem|list shapes are migrated on first paint by
+// migrateLegacyParams; existing bookmarks resolve.
 //
 // URL is the source of truth:
-//   /board                              → Epic kanban, no drawer
+//   /board                              → WorkItem status board, no drawer
 //   /board?layout=workitem              → flat WorkItem kanban
 //   /board?layout=list                  → flat WorkItem list
 //   /board?layout=list&view=backlog     → list + Backlog named view
@@ -32,14 +32,9 @@ import {
   Check,
   ChevronDown,
   Filter,
-  GitBranch,
   Inbox,
-  LayoutGrid,
-  List,
-  ListChecks,
   Plus,
   RotateCcw,
-  Zap,
 } from 'lucide-react';
 import {
   DndContext,
@@ -83,15 +78,12 @@ import type { AgentRef } from '@/types/core.gen';
 import {
   findView,
   LAYOUT_PARAM,
-  LEGACY_FROM_LAYOUT,
   migrateLegacyParams,
   VIEW_PARAM,
-  WORK_ITEM_VIEWS,
   type LegacyBoardView,
   type WorkItemView,
 } from '@/lib/workItemViews';
 import { useWorkItems } from '@/hooks/useWorkItems';
-import { useHotkey } from '@/hotkeys';
 import { STATE_CATEGORIES, type StateCategory, type WorkItem } from '@/types/core.gen';
 import { cn } from '@/lib/utils';
 import { groupItemsByBoardColumn, visibleBoardColumns } from '@/components/board/boardColumns';
@@ -126,16 +118,6 @@ function readStoredPower(): boolean {
   }
 }
 
-function writeStoredPower(on: boolean): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (on) window.localStorage.setItem(POWER_STORAGE_KEY, '1');
-    else window.localStorage.removeItem(POWER_STORAGE_KEY);
-  } catch {
-    /* storage unavailable (private mode); URL param still works */
-  }
-}
-
 // show_backlog persistence (gm-5ekd). The kanban hides the Backlog
 // column by default; ?show_backlog=1 brings it back. Triage now lives
 // on /refine (gm-3ofd), so the kanban is for in-flight work. Mirrors
@@ -163,23 +145,18 @@ function writeStoredShowBacklog(on: boolean): void {
   }
 }
 
-function layoutFromQuery(
-  p: URLSearchParams,
-  view: WorkItemView | null,
-  beadsOnly: boolean
-): LayoutMode {
+function layoutFromQuery(p: URLSearchParams, _view: WorkItemView | null, beadsOnly: boolean): LayoutMode {
   const v = p.get(LAYOUT_PARAM);
   if (v === 'cascade') return 'cascade';
   if (beadsOnly) {
-    if (v === 'list') return 'list';
-    return 'cascade';
+    if (v === 'epic' || v === 'workitem' || v === 'list') return v;
+    return 'workitem';
   }
   if (v === 'workitem' || v === 'list' || v === 'epic') return v;
-  // No explicit ?layout=: fall back to the active named view's
-  // preferred default so /board?view=backlog lands on list mode
-  // without the operator having to spell it out. Default-default = epic.
-  if (view) return LEGACY_FROM_LAYOUT[view.defaultLayout];
-  return 'epic';
+  // No explicit ?layout=: Board stays an honest status board. Named
+  // views may still filter the collection, but table/hierarchy
+  // affordances now live on /refine.
+  return 'workitem';
 }
 
 function orderFromQuery(p: URLSearchParams, beadsOnly: boolean): BoardOrderKey {
@@ -231,16 +208,6 @@ export function BoardPage() {
     if (raw === '0') return false;
     return readStoredPower();
   }, [params]);
-  const setPower = useCallback(
-    (next: boolean) => {
-      const p = new URLSearchParams(params);
-      if (next) p.set(POWER_PARAM, '1');
-      else p.delete(POWER_PARAM);
-      writeStoredPower(next);
-      setParams(p, { replace: true });
-    },
-    [params, setParams]
-  );
   // show_backlog resolution mirrors power: URL wins; on absence we
   // fall back to the last stored preference so a refresh sticks.
   const showBacklog = useMemo(() => {
@@ -302,52 +269,10 @@ export function BoardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const setLayout = useCallback(
-    (next: LayoutMode) => {
-      const p = new URLSearchParams(params);
-      if (next === 'cascade') {
-        p.set(LAYOUT_PARAM, next);
-        setParams(p, { replace: true });
-        return;
-      }
-      // Drop ?layout= when the choice matches the current default
-      // (epic, or whatever the active named view prefers) so the
-      // URL stays clean for the common case.
-      const defaultLayout = beadsOnly
-        ? ('cascade' as LayoutMode)
-        : view
-          ? LEGACY_FROM_LAYOUT[view.defaultLayout]
-          : ('epic' as LayoutMode);
-      if (next === defaultLayout) p.delete(LAYOUT_PARAM);
-      else p.set(LAYOUT_PARAM, next);
-      setParams(p, { replace: true });
-    },
-    [beadsOnly, params, setParams, view]
-  );
-
   const setOrderKey = useCallback(
     (next: BoardOrderKey) => {
       const p = new URLSearchParams(params);
       p.set(ORDER_PARAM, next);
-      setParams(p, { replace: true });
-    },
-    [params, setParams]
-  );
-
-  const setView = useCallback(
-    (nextId: string | null) => {
-      const p = new URLSearchParams(params);
-      if (nextId === null) p.delete(VIEW_PARAM);
-      else p.set(VIEW_PARAM, nextId);
-      // Switching named views clears explicit chip selections so the
-      // new view's defaults take hold cleanly. The explicit
-      // ?layout= is preserved — an operator who deep-linked or
-      // toggled into a specific layout (e.g. list+power for spreadsheet
-      // workflow) shouldn't be yanked out into the view's preferred
-      // kanban every time they switch chips. The bead drawer
-      // (?bead=) is preserved.
-      p.delete('state_category');
-      p.delete('kind');
       setParams(p, { replace: true });
     },
     [params, setParams]
@@ -416,33 +341,6 @@ export function BoardPage() {
     },
     [params, setParams]
   );
-  // Cmd-W toggles the kanban granularity (epic ↔ workitem). It does
-  // not pivot through list — the list/kanban swap is its own hotkey
-  // (Cmd-Shift-L) so the two axes stay independent.
-  const toggleLayout = useCallback(() => {
-    if (beadsOnly) {
-      setLayout(layout === 'list' ? 'cascade' : 'list');
-      return;
-    }
-    setLayout(layout === 'epic' ? 'workitem' : 'epic');
-  }, [beadsOnly, setLayout, layout]);
-  useHotkey('view-toggle-board', toggleLayout);
-
-  const toggleListMode = useCallback(() => {
-    if (layout === 'list') {
-      if (beadsOnly) {
-        setLayout('cascade');
-        return;
-      }
-      // Returning from list → kanban: prefer epic (the global
-      // default) unless the active named view prefers workitem.
-      setLayout(view ? LEGACY_FROM_LAYOUT[view.defaultLayout] : 'epic');
-    } else {
-      setLayout('list');
-    }
-  }, [beadsOnly, setLayout, layout, view]);
-  useHotkey('view-toggle-list', toggleListMode);
-
   const openEpic = useCallback(
     (id: string) => {
       popDetail({ kind: 'epic', id });
@@ -563,17 +461,12 @@ export function BoardPage() {
     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
       <BoardHeader
         layout={layout}
-        onChangeLayout={setLayout}
         items={data ?? []}
         scope={scope}
         onChangeScope={setScope}
         milestone={milestone}
         onChangeMilestone={setMilestone}
         onShowMilestone={(id) => popDetail({ kind: 'workitem', id })}
-        view={view}
-        onChangeView={setView}
-        power={power}
-        onChangePower={setPower}
         showBacklog={showBacklog}
         onChangeShowBacklog={setShowBacklog}
         orderKey={orderKey}
@@ -639,23 +532,18 @@ export function BoardPage() {
 // BoardHeader holds hierarchical filters followed by view controls:
 //   Milestone picker (left) — narrow to a milestone wrapper
 //   Epic picker             — narrow within that milestone to an epic lineage
-//   New + filter menu       — view/layout/order/options without crowding the bar
+//   New + filter menu       — order + Deferred lane without crowding the bar
 //
 // The pre-uekk swimlane-mode dropdown and root-epic banner are gone;
 // scope subsumes them.
 interface BoardHeaderProps {
   layout: LayoutMode;
-  onChangeLayout: (v: LayoutMode) => void;
   items: WorkItem[];
   scope: ScopeID;
   onChangeScope: (s: ScopeID) => void;
   milestone: MilestoneID;
   onChangeMilestone: (m: MilestoneID) => void;
   onShowMilestone: (id: string) => void;
-  view: WorkItemView | null;
-  onChangeView: (id: string | null) => void;
-  power: boolean;
-  onChangePower: (next: boolean) => void;
   showBacklog: boolean;
   onChangeShowBacklog: (next: boolean) => void;
   orderKey: BoardOrderKey | null;
@@ -665,17 +553,12 @@ interface BoardHeaderProps {
 }
 function BoardHeader({
   layout,
-  onChangeLayout,
   items,
   scope,
   onChangeScope,
   milestone,
   onChangeMilestone,
   onShowMilestone,
-  view,
-  onChangeView,
-  power,
-  onChangePower,
   showBacklog,
   onChangeShowBacklog,
   orderKey,
@@ -707,11 +590,6 @@ function BoardHeader({
         </button>
         <BoardControlsMenu
           layout={layout}
-          onChangeLayout={onChangeLayout}
-          view={view}
-          onChangeView={onChangeView}
-          power={power}
-          onChangePower={onChangePower}
           showBacklog={showBacklog}
           onChangeShowBacklog={onChangeShowBacklog}
           orderKey={orderKey ?? 'modified'}
@@ -725,11 +603,6 @@ function BoardHeader({
 
 interface BoardControlsMenuProps {
   layout: LayoutMode;
-  onChangeLayout: (v: LayoutMode) => void;
-  view: WorkItemView | null;
-  onChangeView: (id: string | null) => void;
-  power: boolean;
-  onChangePower: (next: boolean) => void;
   showBacklog: boolean;
   onChangeShowBacklog: (next: boolean) => void;
   orderKey: BoardOrderKey;
@@ -738,11 +611,6 @@ interface BoardControlsMenuProps {
 }
 function BoardControlsMenu({
   layout,
-  onChangeLayout,
-  view,
-  onChangeView,
-  power,
-  onChangePower,
   showBacklog,
   onChangeShowBacklog,
   orderKey,
@@ -750,8 +618,8 @@ function BoardControlsMenu({
   beadsOnly,
 }: BoardControlsMenuProps) {
   const [open, setOpen] = useState(false);
-  const activeViewCount =
-    (view ? 1 : 0) + (power ? 1 : 0) + (!beadsOnly && layout !== 'list' && showBacklog ? 1 : 0);
+  const canShowDeferred = layout === 'epic' || layout === 'workitem';
+  const activeViewCount = canShowDeferred && showBacklog ? 1 : 0;
 
   return (
     <div className="relative">
@@ -760,7 +628,7 @@ function BoardControlsMenu({
         data-testid="board-filter-menu-button"
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Filters and views"
+        title="Board controls"
         onClick={() => setOpen((cur) => !cur)}
         className={cn(
           'inline-flex h-7 items-center gap-1 rounded border px-2 text-xs',
@@ -790,68 +658,21 @@ function BoardControlsMenu({
             'dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-200'
           )}
         >
-          <MenuSection title="Layout">
-            <MenuOption
-              active={layout === 'cascade'}
-              onClick={() => onChangeLayout('cascade')}
-              label="Cascade"
-              icon={<GitBranch className="h-3.5 w-3.5" />}
-              testid="view-toggle-cascade"
-            />
-            {!beadsOnly ? (
-              <>
-                <MenuOption
-                  active={layout === 'epic'}
-                  onClick={() => onChangeLayout('epic')}
-                  label="Epic"
-                  icon={<LayoutGrid className="h-3.5 w-3.5" />}
-                  testid="view-toggle-epic"
-                />
-                <MenuOption
-                  active={layout === 'workitem'}
-                  onClick={() => onChangeLayout('workitem')}
-                  label="Item"
-                  icon={<ListChecks className="h-3.5 w-3.5" />}
-                  testid="view-toggle-workitem"
-                />
-              </>
-            ) : null}
-            <MenuOption
-              active={layout === 'list'}
-              onClick={() => onChangeLayout('list')}
-              label={beadsOnly ? 'Flat' : 'List'}
-              icon={<List className="h-3.5 w-3.5" />}
-              testid="view-toggle-list"
-            />
-          </MenuSection>
-
-          <MenuSection title="View">
-            <ViewSwitcher value={view} onChange={onChangeView} disabled={layout !== 'list'} />
-          </MenuSection>
-
           <MenuSection title="Order">
             <OrderSelect value={orderKey} onChange={onChangeOrder} />
           </MenuSection>
 
           <MenuSection title="Options">
-            {layout === 'list' ? (
-              <MenuOption
-                active={power}
-                onClick={() => onChangePower(!power)}
-                label="Power"
-                icon={<Zap className="h-3.5 w-3.5" />}
-                testid="board-power-toggle"
-              />
-            ) : !beadsOnly ? (
+            {canShowDeferred ? (
               <MenuOption
                 active={showBacklog}
                 onClick={() => onChangeShowBacklog(!showBacklog)}
-                label="Backlog"
+                label={beadsOnly ? 'Deferred lane' : 'Backlog'}
                 icon={<Inbox className="h-3.5 w-3.5" />}
                 testid="board-show-backlog-toggle"
               />
             ) : (
-              <p className="px-2 py-1 text-[11px] text-neutral-500">No extra options.</p>
+              <p className="px-2 py-1 text-[11px] text-neutral-500">No board options.</p>
             )}
           </MenuSection>
         </div>
@@ -898,44 +719,6 @@ function MenuOption({ active, onClick, label, icon, testid }: MenuOptionProps) {
       <span>{label}</span>
       {active ? <Check className="ml-auto h-3.5 w-3.5" aria-hidden /> : null}
     </button>
-  );
-}
-
-// ViewSwitcher renders one chip per registry entry (gm-uipx.18).
-// Replaces the old PresetSwitcher; the testids keep the
-// `board-preset-*` prefix (with the canonical view ids) so existing
-// e2e selectors that don't carry a strong vocabulary contract on the
-// chip name itself stay green.
-interface ViewSwitcherProps {
-  value: WorkItemView | null;
-  onChange: (id: string | null) => void;
-  disabled?: boolean;
-}
-function ViewSwitcher({ value, onChange, disabled = false }: ViewSwitcherProps) {
-  return (
-    <div className="grid grid-cols-2 gap-1" data-testid="board-preset-switcher">
-      {WORK_ITEM_VIEWS.map((v) => (
-        <button
-          key={v.id}
-          type="button"
-          data-testid={`board-preset-${v.id}`}
-          data-active={value?.id === v.id || undefined}
-          disabled={disabled}
-          title={disabled ? 'View filters apply in Flat/List view.' : undefined}
-          onClick={() => onChange(value?.id === v.id ? null : v.id)}
-          className={cn(
-            'rounded border px-2 py-1 text-left text-xs transition-colors',
-            disabled
-              ? 'cursor-not-allowed border-neutral-200 bg-neutral-50 text-neutral-400 opacity-60 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-600'
-              : value?.id === v.id
-              ? 'border-sky-700 bg-sky-700 text-white'
-              : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800'
-          )}
-        >
-          {v.label}
-        </button>
-      ))}
-    </div>
   );
 }
 

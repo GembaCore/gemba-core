@@ -4,11 +4,11 @@
 // matrix the fixture was built to exercise.
 //
 // Why this test exists: BoardPage.test.tsx covers narrow unit behaviour
-// (one swimlane, one drawer, etc). This file covers the shape of a
-// realistic project — swimlanes by root, orphan lane, the 4-deep blocks
-// chain, cross-prefix relations, closed epics, sprint membership. A
-// layout regression (missing column, mis-grouped swimlane, drawer
-// field dropped) shows up here.
+// (one scope, one drawer, etc). This file covers the shape of a
+// realistic project — default status board, legacy epic swimlanes,
+// orphan lane, the 4-deep blocks chain, cross-prefix relations, closed
+// epics, sprint membership. A layout regression (missing column,
+// mis-grouped legacy swimlane, drawer field dropped) shows up here.
 //
 // Determinism: React Query cache is preloaded from the JSONL rather
 // than fetched. No wall-clock assertions — the one component that
@@ -170,9 +170,21 @@ describe('Board regression — project-canonical fixture', () => {
     expect(deepestBlocks).toBeGreaterThanOrEqual(4);
   });
 
-  it('renders an Epic swimlane per top-level root + an orphan lane', async () => {
+  it('renders the default status board over the canonical fixture', async () => {
     const items = loadFixture();
     mountBoard(items);
+    await waitFor(() => expect(screen.getByTestId('board-workitem')).toBeTruthy());
+    expect(screen.getByTestId('board-column-ready')).toBeTruthy();
+    expect(screen.getByTestId('board-column-started')).toBeTruthy();
+    expect(screen.getByTestId('board-column-completed')).toBeTruthy();
+    expect(screen.queryByTestId('board-column-backlog')).toBeNull();
+    expect(screen.getByText('Foundation: embed pipeline')).toBeTruthy();
+    expect(screen.getByText('Phase 3: Closed epic')).toBeTruthy();
+  });
+
+  it('keeps the legacy Epic layout addressable for top-level roots and orphan lanes', async () => {
+    const items = loadFixture();
+    mountBoard(items, '/board?layout=epic');
     await waitFor(() => expect(screen.getByTestId('board-epic')).toBeTruthy());
     // pc-root is a real top-level root; pc-orphan is a separate
     // top-level root; no synthetic ORPHAN_ROOT_ID is needed because
@@ -200,7 +212,7 @@ describe('Board regression — project-canonical fixture', () => {
     // gm-5ekd: backlog column is hidden by default; this regression
     // test asserts every state bucket including backlog, so render
     // with the toggle on.
-    mountBoard(items, '/board?show_backlog=1');
+    mountBoard(items, '/board?layout=epic&show_backlog=1');
     // Per-root expected counts of epics (kind==='epic') by visual board
     // column. Ready collapses canonical unstarted + staged.
     const epicsByRoot: Record<string, Partial<Record<BoardColumnID, number>>> = {
@@ -239,22 +251,21 @@ describe('Board regression — project-canonical fixture', () => {
     // should show up under the appropriate state buckets.
     for (const childID of ['demo/pc-11', 'demo/pc-12', 'demo/pc-13', 'demo/pc-14']) {
       expect(
-        screen.getByText(childID, { selector: 'span' }),
+        screen.getAllByText(childID, { selector: 'span' }).length,
         `missing child row for ${childID}`
-      ).toBeTruthy();
+      ).toBeGreaterThan(0);
     }
   });
 
   it('selecting a scope from the picker narrows the board to that lineage', async () => {
     const items = loadFixture();
-    mountBoard(items);
+    mountBoard(items, '/board?show_backlog=1');
     fireEvent.click(screen.getByTestId('board-scope-trigger'));
     fireEvent.click(screen.getByTestId('board-scope-option-demo/pc-orphan'));
-    // The pc-orphan swimlane stays mounted; the pc-root swimlane
-    // gets filtered out.
+    // The pc-orphan lineage stays visible; pc-root gets filtered out.
     await waitFor(() => {
-      expect(screen.getByTestId('board-epic-swimlane-demo/pc-orphan')).toBeTruthy();
-      expect(screen.queryByTestId('board-epic-swimlane-demo/pc-root')).toBeNull();
+      expect(screen.getAllByText('Orphan epic (top-level)').length).toBeGreaterThan(0);
+      expect(screen.queryByText('Demo project root epic')).toBeNull();
     });
   });
 });
