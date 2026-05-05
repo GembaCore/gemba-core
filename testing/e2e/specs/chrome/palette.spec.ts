@@ -4,7 +4,13 @@
 // Topbar pill all open the same dialog; cmdk filters items as the
 // user types; Escape and clicking a result both close it.
 
+import type { Page } from '@playwright/test';
 import { test, expect } from '../../fixtures/server';
+
+async function openPaletteFromTrigger(page: Page) {
+  await page.locator('[data-hotkey-target="command-palette"]').click();
+  await expect(page.getByTestId('command-palette-dialog')).toBeVisible();
+}
 
 test.describe('Command palette @chrome', () => {
   test.beforeEach(async ({ page }) => {
@@ -15,9 +21,10 @@ test.describe('Command palette @chrome', () => {
     const dialog = page.getByTestId('command-palette-dialog');
     await expect(dialog).toBeHidden();
 
-    // Playwright honors `Meta+K` on macOS; PaletteContext treats
-    // metaKey OR ctrlKey as the modifier so this works on every OS.
-    await page.keyboard.press('Meta+K');
+    // PaletteContext treats metaKey OR ctrlKey as the modifier. Use
+    // Ctrl here because GitHub's Linux runner can drop Meta key
+    // chords in headless Chromium.
+    await page.keyboard.press('Control+K');
     await expect(dialog).toBeVisible();
   });
 
@@ -31,17 +38,15 @@ test.describe('Command palette @chrome', () => {
   });
 
   test('Escape closes the palette', async ({ page }) => {
-    await page.keyboard.press('Meta+K');
+    await openPaletteFromTrigger(page);
     const dialog = page.getByTestId('command-palette-dialog');
-    await expect(dialog).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
   });
 
   test('Navigate group lists every primary route', async ({ page }) => {
-    await page.keyboard.press('Meta+K');
+    await openPaletteFromTrigger(page);
     const dialog = page.getByTestId('command-palette-dialog');
-    await expect(dialog).toBeVisible();
 
     // Backlog and Grid are learned aliases for Refine's table.
     for (const label of [
@@ -60,7 +65,7 @@ test.describe('Command palette @chrome', () => {
 
   test('selecting a Navigate item routes there and closes the palette', async ({ page }) => {
     await page.goto('/board');
-    await page.keyboard.press('Meta+K');
+    await openPaletteFromTrigger(page);
     const dialog = page.getByTestId('command-palette-dialog');
 
     await dialog.getByRole('option', { name: /^Backlog$/ }).click();
@@ -70,7 +75,7 @@ test.describe('Command palette @chrome', () => {
   });
 
   test('typing filters items via cmdk substring match', async ({ page }) => {
-    await page.keyboard.press('Meta+K');
+    await openPaletteFromTrigger(page);
     const dialog = page.getByTestId('command-palette-dialog');
     const input = page.getByTestId('command-palette-input');
 
@@ -87,9 +92,9 @@ test.describe('Command palette @chrome', () => {
 
   test('Cmd+K when open closes the palette', async ({ page }) => {
     const dialog = page.getByTestId('command-palette-dialog');
-    await page.keyboard.press('Meta+K');
+    await page.keyboard.press('Control+K');
     await expect(dialog).toBeVisible();
-    await page.keyboard.press('Meta+K');
+    await page.keyboard.press('Control+K');
     await expect(dialog).toBeHidden();
   });
 });
