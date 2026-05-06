@@ -142,8 +142,9 @@ This lets you introduce Spec Kit incrementally:
 ## Editing Spec Kit In Gemba
 
 The Bootstrap tab is also a small Spec Kit workspace editor. The left
-rail lists feature spec sets. The **Spec Files** tab opens the selected
-feature's files across the top of the editor, followed by shared
+toolbar lists feature spec sets and includes **Create Spec Set**. The
+**Spec Files** tab opens the selected feature's files across the top of
+the editor, followed by shared
 `.specify/` templates and constitution files. Save writes the edited
 text back into the project worktree; the Beads draft remains staged
 until you ratify it separately.

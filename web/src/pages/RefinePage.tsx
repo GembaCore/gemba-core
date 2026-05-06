@@ -619,18 +619,11 @@ function SpecKitPanel({
   if (error) return <RefineError message={error} />;
   if (!configured) {
     return (
-      <div className="grid h-full min-h-0 grid-cols-[minmax(220px,320px)_1fr] divide-x divide-neutral-200 dark:divide-neutral-800" data-testid="spec-kit-panel">
-        <SpecKitSidebar
-          features={[]}
-          selectedID=""
-          onSelect={setSelectedID}
-          newFeatureTitle={newFeatureTitle}
-          onNewFeatureTitle={setNewFeatureTitle}
-          onCreateFeature={createNewFeature}
-          creatingFeature={createFeature.isPending}
-          canCreateFeature={false}
-        />
-        <section className="flex min-h-0 items-center justify-center p-6" data-testid="spec-kit-empty">
+      <div className="h-full min-h-0" data-testid="spec-kit-panel">
+        <section
+          className="flex h-full min-h-0 items-center justify-center p-6"
+          data-testid="spec-kit-empty"
+        >
           <div className="max-w-md text-xs text-neutral-600 dark:text-neutral-300">
             <div className="text-[11px] font-semibold uppercase text-neutral-500">
               Bootstrap pack · Spec Kit
@@ -664,10 +657,10 @@ function SpecKitPanel({
 
   return (
     <div
-      className="grid h-full min-h-0 grid-cols-[minmax(220px,320px)_1fr] divide-x divide-neutral-200 dark:divide-neutral-800"
+      className="flex h-full min-h-0 flex-col"
       data-testid="spec-kit-panel"
     >
-      <SpecKitSidebar
+      <SpecKitFeatureStrip
         features={features}
         selectedID={selected?.id ?? ''}
         onSelect={setSelectedID}
@@ -679,7 +672,7 @@ function SpecKitPanel({
         canCreateFeature
       />
       {selected ? (
-        <section className="min-h-0 overflow-auto p-5" data-testid="spec-kit-detail">
+        <section className="min-h-0 flex-1 overflow-auto p-5" data-testid="spec-kit-detail">
           <header className="flex flex-wrap items-start justify-between gap-3 border-b border-neutral-200 pb-4 dark:border-neutral-800">
             <div>
               <div className="text-[11px] font-semibold uppercase text-neutral-500">
@@ -851,14 +844,14 @@ function SpecKitPanel({
           )}
         </section>
       ) : files.length > 0 ? (
-        <section className="min-h-0 overflow-auto p-5" data-testid="spec-kit-detail">
+        <section className="min-h-0 flex-1 overflow-auto p-5" data-testid="spec-kit-detail">
           <header className="border-b border-neutral-200 pb-4 dark:border-neutral-800">
             <div className="text-[11px] font-semibold uppercase text-neutral-500">
               Bootstrap pack · Spec Kit
             </div>
             <h2 className="mt-1 text-base font-semibold tracking-tight">Workspace Files</h2>
             <div className="mt-1 text-xs text-neutral-500">
-              Create a feature spec set from the left rail when you are ready to generate draft Beads.
+              Create a feature spec set from the toolbar when you are ready to generate draft Beads.
             </div>
           </header>
           <SpecKitFileEditor
@@ -880,17 +873,17 @@ function SpecKitPanel({
         </section>
       ) : (
         <section
-          className="flex min-h-0 items-center justify-center p-6 text-xs text-neutral-500"
+          className="flex min-h-0 flex-1 items-center justify-center p-6 text-xs text-neutral-500"
           data-testid="spec-kit-empty"
         >
-          No Spec Kit features match the search. Create a new spec set from the left rail.
+          No Spec Kit features match the search. Create a new spec set from the toolbar.
         </section>
       )}
     </div>
   );
 }
 
-function SpecKitSidebar({
+function SpecKitFeatureStrip({
   features,
   selectedID,
   onSelect,
@@ -912,8 +905,8 @@ function SpecKitSidebar({
   canCreateFeature: boolean;
 }) {
   return (
-    <aside className="flex min-h-0 flex-col">
-      <div className="min-h-0 flex-1 overflow-auto">
+    <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-5 py-3 text-xs dark:border-neutral-800">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
         {features.map((feature) => (
           <button
             key={feature.id}
@@ -922,27 +915,20 @@ function SpecKitSidebar({
             data-active={selectedID === feature.id}
             onClick={() => onSelect(feature.id)}
             className={cn(
-              'block w-full border-b border-neutral-200 px-4 py-3 text-left text-xs hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-900',
-              selectedID === feature.id && 'bg-sky-50 dark:bg-sky-950/30'
+              'inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-neutral-300 px-3 text-left text-xs text-neutral-700 hover:bg-neutral-100 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900',
+              selectedID === feature.id &&
+                'border-sky-600 bg-sky-50 text-sky-800 dark:border-sky-500 dark:bg-sky-950/30 dark:text-sky-200'
             )}
           >
-            <div className="font-medium text-neutral-950 dark:text-neutral-100">
-              {feature.title}
-            </div>
-            <div className="mt-1 flex flex-wrap gap-2 text-neutral-500">
-              <span>Spec Kit</span>
-              <span>{feature.id}</span>
-              <span>{feature.task_count} tasks</span>
-              {feature.parallel_task_count > 0 && (
-                <span>{feature.parallel_task_count} parallel</span>
-              )}
-            </div>
+            <span className="max-w-[16rem] truncate font-medium">{feature.title}</span>
+            <span className="font-mono text-[11px] text-neutral-500">{feature.id}</span>
+            <span className="text-neutral-500">{feature.task_count} tasks</span>
           </button>
         ))}
       </div>
-      <div className="border-t border-neutral-200 p-3 dark:border-neutral-800">
-        <label className="block text-xs">
-          <span className="font-medium text-neutral-700 dark:text-neutral-300">New spec set</span>
+      <div className="flex shrink-0 items-center gap-2">
+        <label className="flex items-center gap-2">
+          <span className="sr-only">New spec set</span>
           <input
             data-testid="spec-kit-new-title"
             value={newFeatureTitle}
@@ -952,7 +938,7 @@ function SpecKitSidebar({
               if (e.key === 'Enter') onCreateFeature();
             }}
             placeholder="Feature title"
-            className="mt-1 h-8 w-full rounded-md border border-neutral-300 bg-white px-2 text-xs disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950"
+            className="h-8 w-48 rounded-md border border-neutral-300 bg-white px-2 text-xs disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-950"
           />
         </label>
         <button
@@ -960,16 +946,16 @@ function SpecKitSidebar({
           data-testid="spec-kit-create-feature"
           disabled={!canCreateFeature || !newFeatureTitle.trim() || creatingFeature}
           onClick={onCreateFeature}
-          className="mt-2 inline-flex h-8 w-full items-center justify-center gap-2 rounded-md border border-neutral-300 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-wait disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+          className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-neutral-300 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:cursor-wait disabled:opacity-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
         >
           <Plus className="h-3.5 w-3.5" />
           Create Spec Set
         </button>
         {createError && (
-          <p className="mt-2 text-xs text-rose-700 dark:text-rose-300">{createError}</p>
+          <p className="max-w-64 text-xs text-rose-700 dark:text-rose-300">{createError}</p>
         )}
       </div>
-    </aside>
+    </div>
   );
 }
 
