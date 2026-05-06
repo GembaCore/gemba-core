@@ -146,10 +146,10 @@ func (s *Scanner) ReadWorkspaceFile(ctx context.Context, rel string) (FileConten
 		return FileContent{}, err
 	}
 	if info.IsDir() {
-		return FileContent{}, errors.New("Spec Kit path is a directory")
+		return FileContent{}, errors.New("spec kit path is a directory")
 	}
 	if info.Size() > maxEditableSpecKitFileBytes {
-		return FileContent{}, fmt.Errorf("Spec Kit file is too large to edit in Gemba (%d bytes)", info.Size())
+		return FileContent{}, fmt.Errorf("spec kit file is too large to edit in Gemba (%d bytes)", info.Size())
 	}
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -168,7 +168,7 @@ func (s *Scanner) WriteWorkspaceFile(ctx context.Context, rel, content string) (
 		return FileContent{}, err
 	}
 	if len(content) > maxEditableSpecKitFileBytes {
-		return FileContent{}, fmt.Errorf("Spec Kit file is too large to write in Gemba (%d bytes)", len(content))
+		return FileContent{}, fmt.Errorf("spec kit file is too large to write in Gemba (%d bytes)", len(content))
 	}
 	path, rel, err := s.resolveEditablePath(rel)
 	if err != nil {
@@ -219,7 +219,7 @@ func (s *Scanner) CreateFeature(ctx context.Context, opts NewFeatureOptions) (Fe
 		id = nextFeatureID(root, opts.Title)
 	}
 	if id == "" {
-		return Feature{}, errors.New("Spec Kit feature id is required")
+		return Feature{}, errors.New("spec kit feature id is required")
 	}
 	title := strings.TrimSpace(opts.Title)
 	if title == "" {
@@ -227,7 +227,7 @@ func (s *Scanner) CreateFeature(ctx context.Context, opts NewFeatureOptions) (Fe
 	}
 	dir := filepath.Join(root, "specs", id)
 	if info, err := os.Stat(dir); err == nil && info.IsDir() {
-		return Feature{}, fmt.Errorf("Spec Kit feature %q already exists", id)
+		return Feature{}, fmt.Errorf("spec kit feature %q already exists", id)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return Feature{}, err
@@ -252,18 +252,18 @@ func (s *Scanner) resolveEditablePath(rel string) (string, string, error) {
 	}
 	rel = strings.TrimSpace(filepath.ToSlash(rel))
 	if rel == "" || strings.HasPrefix(rel, "/") || strings.Contains(rel, "\x00") {
-		return "", "", errors.New("Spec Kit file path is required")
+		return "", "", errors.New("spec kit file path is required")
 	}
 	clean := filepath.Clean(filepath.FromSlash(rel))
 	rel = filepath.ToSlash(clean)
 	if strings.HasPrefix(rel, "../") || rel == ".." {
-		return "", "", errors.New("Spec Kit file path must stay inside the project")
+		return "", "", errors.New("spec kit file path must stay inside the project")
 	}
 	if !strings.HasPrefix(rel, "specs/") && !strings.HasPrefix(rel, ".specify/") {
-		return "", "", errors.New("Spec Kit file path must be under specs/ or .specify/")
+		return "", "", errors.New("spec kit file path must be under specs/ or .specify/")
 	}
 	if !isEditableSpecKitFile(filepath.Base(rel)) {
-		return "", "", errors.New("Spec Kit editor only supports text planning files")
+		return "", "", errors.New("spec kit editor only supports text planning files")
 	}
 	path := filepath.Join(root, filepath.FromSlash(rel))
 	abs, err := filepath.Abs(path)
@@ -272,7 +272,7 @@ func (s *Scanner) resolveEditablePath(rel string) (string, string, error) {
 	}
 	rootWithSep := root + string(filepath.Separator)
 	if abs != root && !strings.HasPrefix(abs, rootWithSep) {
-		return "", "", errors.New("Spec Kit file path must stay inside the project")
+		return "", "", errors.New("spec kit file path must stay inside the project")
 	}
 	return abs, rel, nil
 }

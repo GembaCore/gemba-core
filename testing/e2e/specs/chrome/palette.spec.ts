@@ -15,6 +15,7 @@ async function openPaletteFromTrigger(page: Page) {
 test.describe('Command palette @chrome', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/board');
+    await expect(page.locator('[data-hotkey-target="command-palette"]')).toBeVisible();
   });
 
   test('Mod+K opens the palette', async ({ page }) => {

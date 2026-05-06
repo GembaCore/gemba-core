@@ -63,6 +63,12 @@ function ensureTitle(content, fallback) {
   return `---\ntitle: "${title}"\n---\n\n${content}`;
 }
 
+function rewriteDocsAssetPaths(body) {
+  return body.replace(/!\[([^\]]*)\]\((\.\.\/)+img\/([^)]+)\)/g, (_, alt, _prefix, file) => {
+    return `![${alt}](${withBase('/img/' + file)})`;
+  });
+}
+
 async function copyMarkdown(rel) {
   const src = path.join(srcDocs, rel);
   const dst = path.join(dstDocs, rel);
@@ -72,7 +78,7 @@ async function copyMarkdown(rel) {
     .basename(rel, path.extname(rel))
     .replace(/[-_]/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
-  const out = ensureTitle(raw, fallback);
+  const out = ensureTitle(rewriteDocsAssetPaths(raw), fallback);
   await fs.writeFile(dst, out, 'utf8');
 }
 

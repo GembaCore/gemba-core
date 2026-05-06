@@ -519,7 +519,7 @@ function SpecKitPanel({
     setDraftSource('spec-kit');
     setDraftError('');
   }, [draft.data?.items, draft.data?.plan?.hash]);
-  const files = workspace?.files ?? [];
+  const files = useMemo(() => workspace?.files ?? [], [workspace?.files]);
   const selectedFiles = useMemo(() => {
     if (!selected) return files;
     const featureFiles = files.filter((file) => file.feature_id === selected.id);
