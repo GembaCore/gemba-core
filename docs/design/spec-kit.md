@@ -1,3 +1,7 @@
+---
+decision: none
+---
+
 # Spec Kit Integration
 
 Spec Kit fits Gemba as the first **bootstrap pack** provider: a planning
