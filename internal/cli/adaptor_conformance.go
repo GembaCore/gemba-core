@@ -22,12 +22,13 @@ import (
 // builtin:noop-orch values drive the in-process noop adaptor; other
 // targets require a transport wire client which lands in later epics.
 type testFlags struct {
-	transport string
-	target    string
-	plane     string
-	junit     string
-	beadsDir  string
-	jsonOut   bool
+	transport  string
+	target     string
+	plane      string
+	junit      string
+	projectDir string
+	beadsDir   string
+	jsonOut    bool
 }
 
 // newAdaptorTestCmd builds the `gemba adaptor test` subcommand (gm-e3.5).
@@ -57,7 +58,7 @@ probe fails.
   builtin:noop-work    in-process noop WorkPlane reference adaptor
   builtin:noop-orch    in-process noop OrchestrationPlane reference adaptor
   builtin:bd-work      Beads (bd) WorkPlane against a real local bd CLI.
-                       Requires --beads-dir pointing at the workspace root
+                       Requires --project-dir pointing at the workspace root
                        (the directory containing .beads/). gm-e6.7.
   builtin:gastown      in-process Gas Town OrchestrationPlane (gm-e7.x).
                        Requires the 'gt' CLI on PATH. Group B / F probes
@@ -95,8 +96,11 @@ probe fails.
 		"plane to test: work | orchestration (defaults to the plane implied by --target for builtins)")
 	cmd.Flags().StringVar(&f.junit, "junit", "",
 		"write a JUnit XML report to this path (optional)")
+	cmd.Flags().StringVar(&f.projectDir, "project-dir", "",
+		"path to the project workspace root (required for --target=builtin:bd-work)")
 	cmd.Flags().StringVar(&f.beadsDir, "beads-dir", "",
-		"path to the Beads workspace root (required for --target=builtin:bd-work)")
+		"deprecated alias for --project-dir")
+	_ = cmd.Flags().MarkDeprecated("beads-dir", "use --project-dir")
 	cmd.Flags().BoolVar(&f.jsonOut, "json", false,
 		"emit the report as JSON on stdout (default: human text)")
 
@@ -158,7 +162,7 @@ func runBuiltinOrRemote(_ context.Context, f testFlags, transport core.Transport
 }
 
 // runBuiltinBdWork wires the bd WorkPlane against a real local bd CLI
-// pointed at --beads-dir. The conformance suite runs the same probe
+// pointed at --project-dir. The conformance suite runs the same probe
 // set the test harness drives in TestBeadsWorkPlaneConformance, but
 // shells to the actual bd binary so the report reflects the live
 // adaptor — not the in-process fake. gm-e6.7.
@@ -168,12 +172,16 @@ func runBuiltinBdWork(transport core.Transport, f testFlags) (*gembatesting.Repo
 			"--plane=%q is incompatible with --target=builtin:bd-work (implicit plane is work)",
 			f.plane)
 	}
-	if f.beadsDir == "" {
+	projectDir := f.projectDir
+	if projectDir == "" {
+		projectDir = f.beadsDir
+	}
+	if projectDir == "" {
 		return nil, fmt.Errorf(
-			"--target=builtin:bd-work requires --beads-dir pointing at a workspace " +
+			"--target=builtin:bd-work requires --project-dir pointing at a workspace " +
 				"root (a directory containing .beads/)")
 	}
-	impl, err := bd.NewWorkPlane(bd.Config{BeadsDir: f.beadsDir})
+	impl, err := bd.NewWorkPlane(bd.Config{BeadsDir: projectDir})
 	if err != nil {
 		return nil, fmt.Errorf("init bd WorkPlane: %w", err)
 	}

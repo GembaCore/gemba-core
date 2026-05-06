@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Bot, CheckCircle2, CircleDot, FileText, GitBranch, MessagesSquare, Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TranscriptPane } from './TranscriptPane';
@@ -16,10 +17,20 @@ const STATUS_LABELS: Record<InteractionSession['status'], string> = {
 export function InteractionPanel({
   session,
   onAction,
+  onSend,
 }: {
   session: InteractionSession;
   onAction?: (actionId: string) => void;
+  onSend?: (message: string) => void;
 }) {
+  const [message, setMessage] = useState('');
+  const canSend = session.capabilities.includes('input.send') && !!onSend;
+  const submit = () => {
+    const next = message.trim();
+    if (!next || !canSend) return;
+    onSend(next);
+    setMessage('');
+  };
   return (
     <div className="flex min-h-full flex-col" data-testid="interaction-panel">
       <header className="border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
@@ -53,6 +64,20 @@ export function InteractionPanel({
             emptyLabel="No transcript frames yet."
             testid="interaction-transcript"
           />
+          {canSend && session.quickReplies && session.quickReplies.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-1.5" data-testid="interaction-quick-replies">
+              {session.quickReplies.map((reply) => (
+                <button
+                  key={reply.id}
+                  type="button"
+                  onClick={() => onSend?.(reply.message)}
+                  className="rounded-md border border-neutral-300 px-2 py-1 text-xs text-neutral-700 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-200 dark:hover:bg-neutral-900"
+                >
+                  {reply.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </Section>
 
         {session.draft ? (
@@ -151,6 +176,32 @@ export function InteractionPanel({
           </div>
         </Section>
       </div>
+      {canSend ? (
+        <form
+          className="border-t border-neutral-200 p-3 dark:border-neutral-800"
+          data-testid="interaction-composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit();
+          }}
+        >
+          <textarea
+            data-testid="interaction-composer-input"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={3}
+            className="w-full resize-none rounded-md border border-neutral-300 bg-white px-2 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-950"
+          />
+          <button
+            type="submit"
+            data-testid="interaction-composer-submit"
+            disabled={!message.trim()}
+            className="mt-2 inline-flex h-8 items-center rounded-md bg-sky-700 px-3 text-xs font-medium text-white hover:bg-sky-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-sky-600 dark:hover:bg-sky-500"
+          >
+            Send
+          </button>
+        </form>
+      ) : null}
     </div>
   );
 }

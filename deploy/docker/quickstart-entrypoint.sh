@@ -117,11 +117,12 @@ mode_args=(--beads-only)
 if [ -n "${GEMBA_BEADS_URL:-}" ]; then
   mode_args+=(--beads-url "${GEMBA_BEADS_URL}")
 else
-  if [ -z "${GEMBA_BEADS_DIR:-}" ]; then
+  project_dir="${GEMBA_PROJECT_DIR:-${GEMBA_BEADS_DIR:-}}"
+  if [ -z "${project_dir}" ]; then
     seed_demo
-    GEMBA_BEADS_DIR="${DEMO_DIR}"
+    project_dir="${DEMO_DIR}"
   fi
-  mode_args+=(--beads-dir "${GEMBA_BEADS_DIR}")
+  mode_args+=(--project-dir "${project_dir}")
 fi
 
 if truthy "${GEMBA_BEADS_READ_ONLY:-}"; then
@@ -135,7 +136,7 @@ log "data: ${DATA_DIR}"
 if [ -n "${GEMBA_BEADS_URL:-}" ]; then
   log "beads source: ${GEMBA_BEADS_URL}"
 else
-  log "beads source: ${GEMBA_BEADS_DIR}"
+  log "beads source: ${project_dir}"
 fi
 
 exec gemba serve \

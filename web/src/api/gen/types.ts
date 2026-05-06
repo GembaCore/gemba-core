@@ -141,6 +141,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/spec-kit/features": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Spec Kit feature artifacts discovered under the active Beads workspace. */
+        get: operations["listSpecKitFeatures"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spec-kit/features/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one parsed Spec Kit feature artifact bundle. */
+        get: operations["getSpecKitFeature"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spec-kit/features/{id}/sync-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview the Beads create/update/delete plan for one Spec Kit feature without applying it. */
+        get: operations["planSpecKitFeatureSync"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/spec-kit/features/{id}/sync-to-beads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Apply an approved Spec Kit sync plan into Beads. */
+        post: operations["syncSpecKitFeature"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/agents": {
         parameters: {
             query?: never;
@@ -545,7 +613,7 @@ export interface components {
         /** @description Workspace identity — 1:1 with a beads database (gm-77u). Detail strips credentials when source is a dolt-url. */
         BeadsSource: {
             /** @enum {string} */
-            kind: "beads-dir" | "dolt-url" | "unconfigured";
+            kind: "project-dir" | "beads-dir" | "dolt-url" | "unconfigured";
             label: string;
             detail?: string;
         };
@@ -1073,6 +1141,116 @@ export interface components {
             personas: components["schemas"]["PersonaSummary"][];
             total: number;
         };
+        /** @description Spec Kit feature discovery result. `configured=false` means neither specs/ nor .specify/specs/ exists under the active Beads directory. */
+        SpecKitFeatureList: {
+            configured: boolean;
+            features: components["schemas"]["SpecKitFeature"][];
+            total: number;
+        };
+        /** @description One Spec Kit feature directory and the parsed artifacts Gemba can project into Beads. */
+        SpecKitFeature: {
+            /** @example 001-auth */
+            id: string;
+            /** @example Login Recovery */
+            title: string;
+            /** @example specs/001-auth */
+            directory: string;
+            /** @example specs/001-auth/spec.md */
+            spec_path?: string;
+            /** @example specs/001-auth/plan.md */
+            plan_path?: string;
+            /** @example specs/001-auth/tasks.md */
+            tasks_path?: string;
+            has_spec: boolean;
+            has_plan: boolean;
+            has_tasks: boolean;
+            spec: components["schemas"]["SpecKitSpecSummary"];
+            tasks: components["schemas"]["SpecKitTask"][];
+            task_count: number;
+            parallel_task_count: number;
+        };
+        SpecKitSpecSummary: {
+            title?: string;
+            user_stories?: components["schemas"]["SpecKitUserStory"][];
+            acceptance_scenarios?: string[];
+            functional_requirements?: string[];
+        };
+        SpecKitUserStory: {
+            /** @example US1 */
+            id: string;
+            title: string;
+            /** @example P1 */
+            priority?: string;
+            acceptance_scenarios?: string[];
+        };
+        SpecKitTask: {
+            /** @example T001 */
+            id: string;
+            title: string;
+            phase?: string;
+            /** @example US1 */
+            story_id?: string;
+            parallel: boolean;
+            done: boolean;
+            line?: number;
+            description?: string;
+        };
+        /** @description Read-only staged Beads reconciliation plan for one Spec Kit feature. The hash must be echoed back when applying the plan. */
+        SpecKitSyncPlan: {
+            feature_id: string;
+            changes: components["schemas"]["SpecKitSyncChange"][];
+            counts: components["schemas"]["SpecKitChangeCounts"];
+            /** @example sha256:0123456789abcdef */
+            hash: string;
+            /** @description bd-importable JSONL manifest for create/update portability. */
+            jsonl?: string;
+            warnings?: string[];
+        };
+        SpecKitChangeCounts: {
+            create: number;
+            update: number;
+            delete: number;
+        };
+        SpecKitSyncChange: {
+            /** @enum {string} */
+            action: "create" | "update" | "delete";
+            /** @example task:T001 */
+            key: string;
+            /** @example task */
+            kind: string;
+            /** @example T001 */
+            source_id?: string;
+            /** @example speckit/001-auth/T001 */
+            id?: string;
+            title: string;
+            summary: string;
+        };
+        SpecKitSyncRequest: {
+            /** @description Hash from the latest sync plan preview. */
+            plan_hash: string;
+            /**
+             * @description Must be true when the staged plan deletes stale source:spec-kit Beads.
+             * @default false
+             */
+            allow_deletes: boolean;
+        };
+        SpecKitSyncResult: {
+            feature_id: string;
+            milestone_id?: string;
+            epic_id?: string;
+            story_ids?: {
+                [key: string]: string;
+            };
+            task_ids?: {
+                [key: string]: string;
+            };
+            plan: components["schemas"]["SpecKitSyncPlan"];
+            created?: string[];
+            updated?: string[];
+            deleted?: string[];
+            task_count: number;
+            story_count: number;
+        };
     };
     responses: {
         /** @description Malformed request — invalid query parameters or body. */
@@ -1329,6 +1507,112 @@ export interface operations {
                     "application/json": components["schemas"]["ListSprintsEnvelope"];
                 };
             };
+            503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    listSpecKitFeatures: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Spec Kit feature list. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecKitFeatureList"];
+                };
+            };
+            500: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    getSpecKitFeature: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Spec Kit feature directory id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Spec Kit feature. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecKitFeature"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    planSpecKitFeatureSync: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Spec Kit feature directory id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Staged Spec Kit sync plan. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecKitSyncPlan"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            503: components["responses"]["AdaptorUnavailable"];
+        };
+    };
+    syncSpecKitFeature: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Idempotency nonce. Replays of the same nonce return the cached response. */
+                "X-GEMBA-Confirm": string;
+            };
+            path: {
+                /** @description Spec Kit feature directory id. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecKitSyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Spec Kit sync result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpecKitSyncResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            405: components["responses"]["Unsupported"];
             503: components["responses"]["AdaptorUnavailable"];
         };
     };

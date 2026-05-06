@@ -9,7 +9,7 @@
 //      engine local to that directory — sidesteps the shared
 //      :3307 server entirely; no orphan-DB risk).
 //   3. Pick a free TCP port via net.createServer().listen(0).
-//   4. Spawn `bin/gemba serve --beads-dir <td> --port <p> --quiet`.
+//   4. Spawn `bin/gemba serve --project-dir <td> --port <p> --quiet`.
 //   5. Poll GET /api/health until 200 or 30s.
 //   6. Tear down on dispose: kill the gemba child + rm -rf the tempdir.
 //
@@ -276,7 +276,7 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     'serve',
     '--listen', listen,
     '--port', String(port),
-    '--beads-dir', baseDir,
+    '--project-dir', baseDir,
     '--worktrees-dir', worktreesDir,
     '--quiet',
   ];

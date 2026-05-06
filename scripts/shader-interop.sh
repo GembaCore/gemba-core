@@ -7,7 +7,7 @@
 # a real gemba serve + bd backend.
 #
 # Steps:
-#   1. Boot ./bin/gemba serve in --beads-dir mode (writable; --dolt-url
+#   1. Boot ./bin/gemba serve in --project-dir mode (writable; --dolt-url
 #      is read-only and can't be used for the PATCH below).
 #   2. Create a bare probe via `bd create` so we own a bead the shader
 #      hasn't touched yet.
@@ -66,7 +66,7 @@ command -v curl >/dev/null 2>&1 || die "curl required on PATH"
 # ---------- start gemba ----------
 GEMBA_LOG="$(mktemp)"
 "$GEMBA_BIN" serve \
-  --beads-dir "$BEADS_DIR" \
+  --project-dir "" \
   --orchestrator-config "$ORCH_CONFIG" \
   --listen 127.0.0.1 \
   --port "$PORT" \
@@ -123,7 +123,7 @@ step "  probe id: $PROBE_ID"
 # expects. bd's local form is bare ("gm-xxx"); the dolt server prefixes
 # with the rig name. The bd-CLI workplane in gemba serve doesn't add a
 # prefix, so the bare id is what /api/work-items/{id} expects in this
-# mode. (--dolt-url mode would need the prefix; we're in --beads-dir.)
+# mode. (--dolt-url mode would need the prefix; we're in --project-dir.)
 GEMBA_ID="$PROBE_ID"
 
 # ---------- patch via gemba (shader encodes) ----------

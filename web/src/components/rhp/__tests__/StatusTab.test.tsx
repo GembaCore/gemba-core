@@ -120,7 +120,7 @@ function mockStatusFetch(fetchSpy: ReturnType<typeof vi.fn>) {
     if (url === '/api/beads/health') {
       return Promise.resolve(
         jsonResponse({
-          source: { kind: 'beads-dir', label: 'gemba', detail: '/tmp/gemba' },
+          source: { kind: 'project-dir', label: 'gemba', detail: '/tmp/gemba' },
           current_db: 'gemba',
           remote_configured: false,
           remote_kind: 'Local worktree',

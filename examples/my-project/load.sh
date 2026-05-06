@@ -94,5 +94,5 @@ done
 echo "==> Done. ${TARGET}/.beads/ ready."
 echo
 echo "Boot Gemba against the sample:"
-echo "  ./bin/gemba serve --beads-dir ${TARGET} --port 7666"
+echo "  ./bin/gemba serve --project-dir ${TARGET} --port 7666"
 echo "  open http://127.0.0.1:7666"

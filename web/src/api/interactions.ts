@@ -27,6 +27,7 @@ interface WireInteractionSession {
   scope: InteractionScope;
   messages: InteractionMessage[];
   suggested_actions: WireInteractionAction[];
+  quick_replies?: InteractionSession['quickReplies'];
   draft?: InteractionDraft;
   evidence?: InteractionSession['evidence'];
   decision_log?: InteractionSession['decisionLog'];
@@ -38,10 +39,26 @@ export interface EnsureInteractionRequest {
   scope: InteractionScope;
 }
 
+export interface SendInteractionTurnRequest {
+  id: string;
+  message: string;
+}
+
 export async function ensureInteraction(
   body: EnsureInteractionRequest
 ): Promise<InteractionSession> {
   const wire = await apiFetch<WireInteractionSession>('/v1/interactions:ensure', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return fromWire(wire);
+}
+
+export async function sendInteractionTurn(
+  body: SendInteractionTurnRequest
+): Promise<InteractionSession> {
+  const wire = await apiFetch<WireInteractionSession>('/v1/interactions:turn', {
     method: 'POST',
     body: JSON.stringify(body),
     headers: { 'Content-Type': 'application/json' },
@@ -60,6 +77,7 @@ function fromWire(wire: WireInteractionSession): InteractionSession {
     scope: wire.scope,
     messages: wire.messages,
     suggestedActions: wire.suggested_actions.map(actionFromWire),
+    quickReplies: wire.quick_replies,
     draft: wire.draft,
     evidence: wire.evidence,
     decisionLog: wire.decision_log,

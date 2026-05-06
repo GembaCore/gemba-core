@@ -117,7 +117,7 @@ info "launching gemba on ${BASE_URL}"
 # stderr captured so logs don't scramble test output; surfaced on failure.
 LOG_FILE="${TMP_FIXTURE}/gemba.log"
 "${GEMBA_BIN}" serve \
-  --beads-dir "${TMP_FIXTURE}" \
+  --project-dir "${TMP_FIXTURE}" \
   --auth none \
   --listen "${HOST}" \
   --port "${PORT}" \

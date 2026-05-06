@@ -72,7 +72,7 @@ func TestAdaptorTest_BeadsIsGreen(t *testing.T) {
 	out, err := runTest(t,
 		"--transport", "api",
 		"--target", "builtin:bd-work",
-		"--beads-dir", beadsDir,
+		"--project-dir", beadsDir,
 	)
 	if err != nil {
 		t.Fatalf("adaptor test: unexpected error: %v\n%s", err, out)

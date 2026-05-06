@@ -26,7 +26,7 @@ type Runner func(ctx context.Context, args ...string) ([]byte, error)
 type Config struct {
 	// BeadsDir is the working directory the bd subprocess inherits. When
 	// empty, bd runs in the gemba server's cwd. Mirrors the
-	// `--beads-dir` flag on `gemba serve`.
+	// `--project-dir` flag on `gemba serve`.
 	BeadsDir string
 
 	// DescriptionFormat overrides the CapabilityManifest's declared

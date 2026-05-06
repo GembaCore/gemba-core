@@ -10,7 +10,7 @@ The suite is exposed as a CLI target on `gemba adaptor test`. Point it at a real
 gemba adaptor test \
   --transport api \
   --target builtin:bd-work \
-  --beads-dir <path/to/beads/workspace>
+  --project-dir <path/to/project-worktree>
 ```
 
 Add `--json` for machine-readable output, or `--junit <path>` to emit a JUnit XML alongside the text summary.

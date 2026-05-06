@@ -1,0 +1,23 @@
+# Gemba Beads Sync extension configuration.
+#
+# Copy to:
+#   .specify/extensions/gemba/gemba-config.yml
+#
+# Environment variables override these values:
+#   GEMBA_API_BASE
+#   GEMBA_AUTH_TOKEN
+#   GEMBA_SYNC_AUTO_APPLY
+#   GEMBA_SYNC_ALLOW_DELETES
+
+api_base: "http://127.0.0.1:7666/api"
+
+# Optional bearer token for authenticated Gemba servers.
+auth_token: ""
+
+# false: preview the staged plan and point the operator at Gemba Refine.
+# true: apply the staged plan through Gemba after validating the plan hash.
+auto_apply: false
+
+# Only used when auto_apply is true. Deletes stale source:spec-kit Beads
+# after the extension prints the delete count.
+allow_deletes: false

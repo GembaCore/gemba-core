@@ -45,6 +45,9 @@ alternatives, and the invariants downstream code can rely on.
   provider fidelity classes, terminal/session workspace UX, remote
   native pairing, source-control health, conversational controls, and
   native/tmux operator guidance.
+- **[Spec Kit integration](spec-kit)** — how Spec Kit feature
+  artifacts become staged Beads milestones, epics, stories, and tasks
+  without replacing Beads as the work system of record.
 
 ## Operational
 

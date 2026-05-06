@@ -84,7 +84,7 @@ func (r *Router) beadsHealthActions(source config.BeadsSource) []beadsHealthActi
 		Description: "Re-run the bound Beads adaptor health probe.",
 	}}
 	switch source.Kind {
-	case "beads-dir":
+	case "project-dir", "beads-dir":
 		actions = append(actions,
 			beadsHealthAction{ID: "dolt-start", Label: "Start Dolt server", Description: "Run bd dolt start in the Beads worktree."},
 			beadsHealthAction{ID: "dolt-test", Label: "Test Dolt connection", Description: "Run bd dolt test in the Beads worktree."},
@@ -140,10 +140,10 @@ func (r *Router) runBeadsHealthAction(ctx context.Context, action string) (*bead
 
 func (r *Router) runBdHealthCommand(ctx context.Context, action, label, name string, args ...string) (*beadsHealthActionResult, error) {
 	source := r.cfg.BeadsSource()
-	if source.Kind != "beads-dir" {
+	if source.Kind != "project-dir" && source.Kind != "beads-dir" {
 		return nil, &badRequestError{msg: "action requires a local Beads worktree"}
 	}
-	cwd := r.cfg.BeadsDir
+	cwd := r.cfg.ProjectRoot()
 	if cwd == "" {
 		if wd, err := os.Getwd(); err == nil {
 			cwd = wd
@@ -220,7 +220,7 @@ func remoteKind(source config.BeadsSource) string {
 			return "Dolthub"
 		}
 		return "Dolt URL"
-	case "beads-dir":
+	case "project-dir", "beads-dir":
 		return "Local worktree"
 	default:
 		return "None"
@@ -234,7 +234,7 @@ func remoteStatusLabel(source config.BeadsSource, adaptor *registry.AdaptorStatu
 		}
 		return "Remote needs attention"
 	}
-	if source.Kind == "beads-dir" {
+	if source.Kind == "project-dir" || source.Kind == "beads-dir" {
 		return "Local DB"
 	}
 	return "Not configured"

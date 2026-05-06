@@ -7,7 +7,7 @@
 import { apiFetch } from './client';
 
 export interface BeadsSource {
-  // "beads-dir" | "dolt-url" | "unconfigured"
+  // "project-dir" | "beads-dir" | "dolt-url" | "unconfigured"
   kind: string;
   label: string;
   // Full path or DSN with credentials stripped. Empty when kind is

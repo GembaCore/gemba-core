@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { InteractionPanel } from '../InteractionPanel';
 import type { InteractionSession } from '@/interactions/types';
 
@@ -33,12 +33,15 @@ const session: InteractionSession = {
     bullets: ['Shared shell', 'Runtime-owned execution'],
   },
   evidence: [{ id: 'ev-1', label: 'commit: abc123' }],
+  quickReplies: [
+    { id: 'looks-good', label: 'Looks good', message: 'This draft looks good.' },
+  ],
   capabilities: ['transcript.peek', 'input.send'],
 };
 
 describe('InteractionPanel', () => {
   it('renders transcript, runtime host, draft, actions, evidence, and capabilities', () => {
-    render(<InteractionPanel session={session} />);
+    render(<InteractionPanel session={session} onSend={vi.fn()} />);
 
     expect(screen.getByTestId('interaction-panel')).toBeTruthy();
     expect(screen.getByText('Implement converter')).toBeTruthy();
@@ -52,6 +55,27 @@ describe('InteractionPanel', () => {
     expect(screen.getByTestId('interaction-actions').textContent).toContain('Dispatch runtime');
     expect(screen.getByTestId('interaction-evidence').textContent).toContain('commit');
     expect(screen.getByTestId('interaction-capabilities').textContent).toContain('input.send');
+    expect(screen.getByTestId('interaction-quick-replies').textContent).toContain('Looks good');
+  });
+
+  it('sends an interactive turn when a sender is provided', () => {
+    const onSend = vi.fn();
+    render(<InteractionPanel session={session} onSend={onSend} />);
+
+    fireEvent.change(screen.getByTestId('interaction-composer-input'), {
+      target: { value: 'Please split this batch.' },
+    });
+    fireEvent.click(screen.getByTestId('interaction-composer-submit'));
+
+    expect(onSend).toHaveBeenCalledWith('Please split this batch.');
+  });
+
+  it('sends a prepared quick reply', () => {
+    const onSend = vi.fn();
+    render(<InteractionPanel session={session} onSend={onSend} />);
+
+    fireEvent.click(screen.getByText('Looks good'));
+
+    expect(onSend).toHaveBeenCalledWith('This draft looks good.');
   });
 });
-

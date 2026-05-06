@@ -350,7 +350,7 @@ def social_04_terminal():
     d = ImageDraw.Draw(img)
     win = (64, 64, W - 64, H_SOCIAL - 64)
     _terminal_window(d, img, win=win, with_cursor=True, lines=[
-        ("$ gemba serve --beads-dir .", "cmd"),
+        ("$ gemba serve --project-dir .", "cmd"),
         ("→ workplane:    bd  (44 epics, 312 work items)", "info"),
         ("→ orchestrator: native  (4 agents available)", "info"),
         ("→ ui:           http://127.0.0.1:7666/", "info"),
@@ -389,7 +389,7 @@ def banner_04_terminal():
     x = pad[0] + 22
     y = pad[1] + bar_h + 18
     lines = [
-        ("$ gemba serve --beads-dir .", PRI["emerald"], bold_f),
+        ("$ gemba serve --project-dir .", PRI["emerald"], bold_f),
         ("→ workplane: bd · orchestrator: native · 4 agents", (190, 194, 206), body_f),
         ("$ gemba dispatch gm-e4.2 --to deployment-engineer", PRI["emerald"], bold_f),
         ("✓ slung gm-e4.2 → session a91415c1", PRI["emerald"], body_f),

@@ -9,7 +9,7 @@ Gemba is a single Go binary with the SPA embedded, so deployment is
 | --- | --- | --- |
 | `tmux` | `--orchestration native --terminal tmux` | distro package (declared in `.deb`/`.rpm`) |
 | `git` | native orchestration (worktree provisioning) | distro package (declared in `.deb`/`.rpm`) |
-| `bd` (beads) | `--beads-dir` WorkPlane mode | `scripts/install-deps.sh` (GitHub releases) |
+| `bd` (beads) | `--project-dir` WorkPlane mode | `scripts/install-deps.sh` (GitHub releases) |
 | `dolt` | running a local Dolt server, or `bd dolt` ops | `scripts/install-deps.sh` (dolthub installer) |
 | Dolt server reachable via mysql:// | `--dolt-url` WorkPlane mode | network only — no binary on the gemba host |
 | agent CLIs (claude, gemini, …) | whatever your `.gemba/agents.toml` declares | out of scope for gemba; operator installs per agent type |
@@ -60,7 +60,7 @@ ExecStart=/usr/bin/gemba serve \
   --listen 0.0.0.0 --port 7666 \
   --auth token \
   --tls-cert /etc/gemba/fullchain.pem --tls-key /etc/gemba/privkey.pem \
-  --beads-dir /var/lib/gemba/rig \
+  --project-dir /var/lib/gemba/rig \
   --orchestration native --terminal tmux
 ```
 
@@ -113,7 +113,7 @@ sudo usermod -aG docker "$USER"   # log out/in so group takes effect
 export DOCKER_HOST="ssh://op@vps.example.com"
 docker info                       # sanity check — should print the VPS daemon
 gemba serve --orchestration native --terminal container \
-  --beads-dir ~/work/rig
+  --project-dir ~/work/rig
 ```
 
 ### Bind-mount paths must resolve on the remote host

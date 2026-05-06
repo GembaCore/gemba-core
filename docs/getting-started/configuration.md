@@ -9,7 +9,7 @@ wins):
 4. **User-level config** at `~/.gemba/config.toml`
 
 A missing file at any layer falls through to the next; if everything
-is absent, the built-in defaults take over and `gemba serve --beads-dir <rig>`
+is absent, the built-in defaults take over and `gemba serve --project-dir <rig>`
 just works against any local Beads workspace.
 
 ## Layer 1 — CLI flags
@@ -32,19 +32,20 @@ every flag the binary accepts today.
 
 ### Data plane (WorkPlane)
 
-Exactly one of `--beads-dir`, `--dolt-url`, or `--noop` must resolve;
+Exactly one of `--project-dir`, `--dolt-url`, or `--noop` must resolve;
 the resolution falls through to user-level config when none is passed.
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--beads-dir` | unset | Path to the Beads workspace; bd subprocesses spawn with this as cwd. |
+| `--project-dir` | unset | Path to the project worktree containing `.beads/`; bd subprocesses spawn with this as cwd. |
+| `--beads-dir` | unset | Deprecated alias for `--project-dir`. |
 | `--dolt-url` | unset | `mysql://user[:pass]@host:port/dbname` — direct Dolt SQL connection. Reads and writes are enabled when the Dolt user can write. |
 | `--beads-url` | unset | Alias for `--dolt-url`, intended for Beads-only/container-style boot. |
 | `--beads-only` | `false` | Run without project or orchestration requirements. Shows Beads management surfaces only. |
 | `--beads-read-only` | `false` | Implies `--beads-only` and blocks all Beads mutations. URL mode is not read-only unless this flag is set or the Dolt user itself lacks write permission. |
 | `--beads-history` | unset | JSONL session manifest path for Beads-only history. Defaults under the Beads workspace when possible. |
-| `--restart` | `false` | Allows `gemba serve` to restart local helper services when a mode needs it. With `--beads-read-only --beads-dir`, Gemba restarts local bd Dolt with `bd --readonly dolt start`; without it, Gemba still blocks mutations at the server/adaptor boundary. |
-| `--noop` | `false` | Bind in-memory reference adaptors for both planes. Forces `--orchestration=noop`. Mutually exclusive with `--beads-dir` / `--dolt-url`. |
+| `--restart` | `false` | Allows `gemba serve` to restart local helper services when a mode needs it. With `--beads-read-only --project-dir`, Gemba restarts local bd Dolt with `bd --readonly dolt start`; without it, Gemba still blocks mutations at the server/adaptor boundary. |
+| `--noop` | `false` | Bind in-memory reference adaptors for both planes. Forces `--orchestration=noop`. Mutually exclusive with `--project-dir` / `--dolt-url`. |
 
 ### Orchestration plane
 
@@ -80,13 +81,13 @@ variables for credentials and side-channel wiring.
 | `GEMBA_E2E_RUN_DEEP` | playwright e2e | Opt-in flag that runs deep-tier specs against a real `gemba serve` + Dolt + bd setup. |
 | `GEMBA_MODE=beads_only` | gemba serve | Enables Beads-only mode without passing `--beads-only`. |
 | `GEMBA_BEADS_URL` | gemba serve | Beads/Dolt URL used as the WorkPlane source in Beads-only mode. |
-| `GEMBA_BEADS_DIR` | gemba serve | Local Beads workspace used as the WorkPlane source in Beads-only mode. |
+| `GEMBA_PROJECT_DIR` | gemba serve | Local project worktree used as the WorkPlane source in Beads-only mode. |
 | `GEMBA_BEADS_READ_ONLY` | gemba serve | Enables explicit Beads-read-only mode (`true`, `1`, `yes`, or `on`). |
 | `GEMBA_BEADS_ONLY_MANIFEST` | gemba serve | JSONL manifest path for the RHP Beads history ledger. |
 
 ## Layer 3 — Per-workspace `.gemba/`
 
-Files live in `.gemba/` next to the rig (one level above `.beads/`).
+Files live in `.gemba/` next to the project worktree (one level above `.beads/`).
 All four are optional.
 
 ### `.gemba/agents.toml`
@@ -211,7 +212,7 @@ When everything else is silent:
 - Bind: `127.0.0.1:7666`
 - Auth: off (loopback-only)
 - TLS: off
-- WorkPlane: none — `gemba serve` refuses to start unless `--beads-dir`,
+- WorkPlane: none — `gemba serve` refuses to start unless `--project-dir`,
   `--dolt-url`, or `--noop` resolves
 - OrchestrationPlane: `native` (auto-detects `tmux` → `iterm` → `terminal`)
 - Worktrees parent: `<repo>/../worktrees`

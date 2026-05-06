@@ -11,7 +11,7 @@
 //     the configured default_dir.
 //
 //  3. applyBeadsURLDefault: resolves the Beads server URL from config /
-//     built-in default when neither --dolt-url nor --beads-dir was set
+//     built-in default when neither --dolt-url nor --project-dir was set
 //     explicitly. Populates cfg.DoltURL so downstream validation and
 //     adaptor construction can proceed without special-casing the
 //     "no flags" scenario (gm-root.19).
@@ -108,7 +108,7 @@ func coldStartRedirect(cfg config.ServeConfig) (bool, error) {
 // order:
 //
 //  1. --dolt-url already set in cfg — no-op; CLI wins.
-//  2. --beads-dir already set in cfg — no-op; bd CLI path wins.
+//  2. --project-dir / --beads-dir already set in cfg — no-op; bd CLI path wins.
 //  3. --noop already set — no-op; in-memory plane wins.
 //  4. [beads].url in ~/.gemba/config.toml — populate cfg.DoltURL.
 //  5. Built-in default (config.DefaultBeadsURL) — populate cfg.DoltURL.
@@ -126,7 +126,7 @@ func applyBeadsURLDefault(cfg *config.ServeConfig) error {
 	// recording that the source is "cli". --noop has no Beads URL at
 	// all — leave BeadsURLSource empty so the cold-start gate treats
 	// it as a non-default-bound run.
-	if cfg.DoltURL != "" || cfg.BeadsDir != "" {
+	if cfg.DoltURL != "" || cfg.ProjectDir != "" || cfg.BeadsDir != "" {
 		cfg.BeadsURLSource = "cli"
 		return nil
 	}
@@ -209,7 +209,7 @@ func applyPromURLDefault(cfg *config.ServeConfig) error {
 //  2. no project marker (.gemba/workspace.toml) exists under the
 //     configured [projects].default_dir.
 //
-// An explicit --dolt-url, an explicit --beads-dir, an explicit --noop,
+// An explicit --dolt-url, an explicit --project-dir / --beads-dir, an explicit --noop,
 // or a [beads].url operator override in ~/.gemba/config.toml all bypass
 // this gate — the operator has stated their intent and we honor it.
 //

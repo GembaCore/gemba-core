@@ -134,7 +134,7 @@ startup.
 
 ```bash
 ./bin/gemba serve \
-  --beads-dir .beads \
+  --project-dir .beads \
   --orchestration=native \
   --pool-config ./pool.toml
 ```
@@ -269,7 +269,7 @@ agent_type = "claude"
 
 ```bash
 ./bin/gemba serve \
-  --beads-dir .beads \
+  --project-dir .beads \
   --orchestration=gastown \
   --pool-config ./pool.toml
 ```
@@ -370,7 +370,7 @@ When to reach for it:
 Setup is the same as native — write `pool.toml`, then:
 
 ```bash
-./bin/gemba serve --beads-dir .beads --orchestration=mock --pool-config ./pool.toml
+./bin/gemba serve --project-dir .beads --orchestration=mock --pool-config ./pool.toml
 ```
 
 The mock plane preseeds one idle session per persona discovered in

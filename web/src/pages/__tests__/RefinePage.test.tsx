@@ -85,7 +85,7 @@ describe('RefinePage', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     const url = String(fetchSpy.mock.calls[0]?.[0] ?? '');
@@ -98,11 +98,9 @@ describe('RefinePage', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
-    await waitFor(() =>
-      expect(screen.getByTestId('refine-empty')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId('refine-empty')).toBeTruthy());
   });
 
   it('sorts by priority asc then created_at asc within priority', async () => {
@@ -116,18 +114,14 @@ describe('RefinePage', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByText('title-gm-hi-old')).toBeTruthy());
     const cells = Array.from(document.querySelectorAll('td'))
       .map((c) => c.textContent ?? '')
       .filter((t) => t.startsWith('title-'));
     // First two are priority=1 (older first), last is priority=3.
-    expect(cells.slice(0, 3)).toEqual([
-      'title-gm-hi-old',
-      'title-gm-hi-new',
-      'title-gm-low-old',
-    ]);
+    expect(cells.slice(0, 3)).toEqual(['title-gm-hi-old', 'title-gm-hi-new', 'title-gm-low-old']);
   });
 
   it('surfaces the four refine columns with derived values (gm-51i2)', async () => {
@@ -153,7 +147,7 @@ describe('RefinePage', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByText(/plain item/)).toBeTruthy());
     // Suggested-epic chip on row a.
@@ -191,7 +185,7 @@ describe('RefinePage', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByTestId('grid-sort-blockers')).toBeTruthy());
     // First click — tanstack defaults numeric columns to desc-first, so
@@ -201,11 +195,7 @@ describe('RefinePage', () => {
       const titles = Array.from(document.querySelectorAll('td'))
         .map((c) => c.textContent ?? '')
         .filter((t) => t.endsWith('blocker') || t.endsWith('blockers'));
-      expect(titles.slice(0, 3)).toEqual([
-        'three blockers',
-        'one blocker',
-        'zero blockers',
-      ]);
+      expect(titles.slice(0, 3)).toEqual(['three blockers', 'one blocker', 'zero blockers']);
     });
     // Second click flips to ascending.
     fireEvent.click(screen.getByTestId('grid-sort-blockers'));
@@ -213,11 +203,7 @@ describe('RefinePage', () => {
       const titles = Array.from(document.querySelectorAll('td'))
         .map((c) => c.textContent ?? '')
         .filter((t) => t.endsWith('blocker') || t.endsWith('blockers'));
-      expect(titles.slice(0, 3)).toEqual([
-        'zero blockers',
-        'one blocker',
-        'three blockers',
-      ]);
+      expect(titles.slice(0, 3)).toEqual(['zero blockers', 'one blocker', 'three blockers']);
     });
   });
 
@@ -232,7 +218,7 @@ describe('RefinePage', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByTestId('grid-sort-age')).toBeTruthy());
     // Click — ascending by timestamp puts oldest first.
@@ -255,7 +241,7 @@ describe('RefinePage', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByText(/fix login/)).toBeTruthy());
     fireEvent.change(screen.getByTestId('refine-search'), {
@@ -263,6 +249,279 @@ describe('RefinePage', () => {
     });
     await waitFor(() => expect(screen.queryByText(/redesign/)).toBeNull());
     expect(screen.getByText(/fix login/)).toBeTruthy();
+  });
+
+  it('renders Spec Kit artifacts and syncs a feature into Beads', async () => {
+    fetchSpy.mockImplementation((url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (init?.method === 'POST' && u.includes('/spec-kit/features/001-auth/sync-to-beads')) {
+        return Promise.resolve(
+          jsonResponse({
+            feature_id: '001-auth',
+            milestone_id: 'speckit/001-auth/milestone',
+            epic_id: 'speckit/001-auth/epic',
+            story_ids: { US1: 'speckit/001-auth/US1' },
+            task_ids: { T001: 'speckit/001-auth/T001' },
+            created: ['speckit/001-auth/milestone'],
+            task_count: 1,
+            story_count: 1,
+          })
+        );
+      }
+      if (u.includes('/spec-kit/features/001-auth/draft')) {
+        return Promise.resolve(
+          jsonResponse({
+            feature_id: '001-auth',
+            plan: {
+              feature_id: '001-auth',
+              counts: { create: 4, update: 1, delete: 0 },
+              hash: 'sha256:test-plan',
+              changes: [
+                {
+                  action: 'create',
+                  key: 'milestone',
+                  kind: 'milestone',
+                  title: 'Login Recovery',
+                  summary: 'create milestone "Login Recovery"',
+                },
+                {
+                  action: 'update',
+                  key: 'story:US1',
+                  kind: 'story',
+                  id: 'gm-us1',
+                  source_id: 'US1',
+                  title: 'US1: Reset password',
+                  summary: 'update story "US1: Reset password"',
+                },
+              ],
+              jsonl: '{"id":"gm-us1","title":"US1: Reset password"}',
+            },
+            items: [
+              {
+                id: 'speckit/001-auth/milestone',
+                kind: 'milestone',
+                title: 'Login Recovery',
+                description: 'Draft milestone',
+                status: 'open',
+                state_category: 'backlog',
+                labels: ['source:spec-kit', 'speckit:001-auth', 'speckit:milestone'],
+                relationships: [],
+                created_at: '2026-05-05T00:00:00Z',
+                updated_at: '2026-05-05T00:00:00Z',
+              },
+              {
+                id: 'speckit/001-auth/US1',
+                kind: 'story',
+                title: 'US1: Reset password',
+                description: 'Draft story',
+                status: 'open',
+                state_category: 'backlog',
+                labels: ['source:spec-kit', 'speckit:001-auth', 'speckit:story', 'speckit:US1'],
+                relationships: [
+                  {
+                    kind: 'parent_child',
+                    from: 'speckit/001-auth/milestone',
+                    to: 'speckit/001-auth/US1',
+                  },
+                ],
+                created_at: '2026-05-05T00:00:00Z',
+                updated_at: '2026-05-05T00:00:00Z',
+              },
+            ],
+          })
+        );
+      }
+      if (u.includes('/spec-kit/files')) {
+        if (init?.method === 'PUT') {
+          return Promise.resolve(
+            jsonResponse({
+              path: 'specs/001-auth/spec.md',
+              content: JSON.parse(String(init.body)).content,
+              size: 128,
+              modified: '2026-05-05T00:00:00Z',
+            })
+          );
+        }
+        return Promise.resolve(
+          jsonResponse({
+            path: 'specs/001-auth/spec.md',
+            content: '# Feature Specification: Login Recovery\n\n## Requirements\n\n- FR-001: Reset works.\n',
+            size: 83,
+            modified: '2026-05-05T00:00:00Z',
+          })
+        );
+      }
+      if (u.includes('/spec-kit/workspace')) {
+        return Promise.resolve(
+          jsonResponse({
+            configured: true,
+            scaffold_present: true,
+            root: '/tmp/project',
+            recommended_root: 'specs',
+            files: [
+              {
+                path: 'specs/001-auth/spec.md',
+                name: 'spec.md',
+                role: 'spec',
+                feature_id: '001-auth',
+                size: 83,
+              },
+              {
+                path: 'specs/001-auth/tasks.md',
+                name: 'tasks.md',
+                role: 'tasks',
+                feature_id: '001-auth',
+                size: 80,
+              },
+              {
+                path: '.specify/templates/spec-template.md',
+                name: 'spec-template.md',
+                role: 'template',
+                size: 120,
+              },
+            ],
+            features: [
+              {
+                id: '001-auth',
+                title: 'Login Recovery',
+                directory: 'specs/001-auth',
+                spec_path: 'specs/001-auth/spec.md',
+                tasks_path: 'specs/001-auth/tasks.md',
+                has_spec: true,
+                has_plan: false,
+                has_tasks: true,
+                spec: {
+                  user_stories: [
+                    {
+                      id: 'US1',
+                      title: 'Reset password',
+                      priority: 'P1',
+                      acceptance_scenarios: ['Recovery email is sent'],
+                    },
+                  ],
+                },
+                tasks: [
+                  {
+                    id: 'T001',
+                    title: 'Create recovery form in web/src/auth.tsx',
+                    story_id: 'US1',
+                    phase: 'Phase 3',
+                    parallel: true,
+                    done: false,
+                    line: 3,
+                  },
+                ],
+                task_count: 1,
+                parallel_task_count: 1,
+              },
+            ],
+          })
+        );
+      }
+      if (u.includes('/spec-kit/features')) {
+        return Promise.resolve(
+          jsonResponse({
+            configured: true,
+            total: 1,
+            features: [
+              {
+                id: '001-auth',
+                title: 'Login Recovery',
+                directory: 'specs/001-auth',
+                spec_path: 'specs/001-auth/spec.md',
+                tasks_path: 'specs/001-auth/tasks.md',
+                has_spec: true,
+                has_plan: false,
+                has_tasks: true,
+                spec: {
+                  user_stories: [
+                    {
+                      id: 'US1',
+                      title: 'Reset password',
+                      priority: 'P1',
+                      acceptance_scenarios: ['Recovery email is sent'],
+                    },
+                  ],
+                },
+                tasks: [
+                  {
+                    id: 'T001',
+                    title: 'Create recovery form in web/src/auth.tsx',
+                    story_id: 'US1',
+                    phase: 'Phase 3',
+                    parallel: true,
+                    done: false,
+                    line: 3,
+                  },
+                ],
+                task_count: 1,
+                parallel_task_count: 1,
+              },
+            ],
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({ items: [], total: 0 }));
+    });
+    const W = wrap('/refine?view=spec-kit');
+    render(
+      <W>
+        <RefinePage />
+      </W>
+    );
+    await waitFor(() => expect(screen.getByTestId('spec-kit-panel')).toBeTruthy());
+    expect(screen.getAllByText('Login Recovery').length).toBeGreaterThan(0);
+    expect(screen.getByText('Reset password')).toBeTruthy();
+    expect(screen.getByTestId('spec-kit-task-T001').textContent).toContain('Create recovery form');
+    await waitFor(() =>
+      expect(screen.getByTestId('spec-kit-change-counts').textContent).toContain('4 create')
+    );
+    expect(screen.getByTestId('spec-kit-change-0').textContent).toContain('create');
+    expect(screen.getByTestId('spec-kit-change-1').textContent).toContain('update');
+    expect(screen.getByTestId('spec-kit-draft-review').textContent).toContain('2 draft items');
+    expect(screen.getByTestId('spec-kit-draft-editor')).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId('spec-kit-tab-files'));
+    await waitFor(() => expect(screen.getByTestId('spec-kit-file-editor')).toBeTruthy());
+    expect(screen.getByTestId('spec-kit-file-tab-specs/001-auth/spec.md')).toBeTruthy();
+    await waitFor(() =>
+      expect((screen.getByTestId('spec-kit-file-content') as HTMLTextAreaElement).value).toContain(
+        'Feature Specification: Login Recovery'
+      )
+    );
+    fireEvent.change(screen.getByTestId('spec-kit-file-content'), {
+      target: { value: '# Feature Specification: Login Recovery\n\nUpdated body\n' },
+    });
+    fireEvent.click(screen.getByTestId('spec-kit-save-file'));
+    await waitFor(() =>
+      expect(
+        fetchSpy.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes('/spec-kit/files') &&
+            (init as RequestInit | undefined)?.method === 'PUT'
+        )
+      ).toBe(true)
+    );
+    fireEvent.click(screen.getByTestId('spec-kit-tab-draft'));
+
+    fireEvent.click(screen.getByTestId('spec-kit-sync'));
+    await waitFor(() =>
+      expect(
+        fetchSpy.mock.calls.some(
+          ([url, init]) =>
+            String(url).includes('/spec-kit/features/001-auth/sync-to-beads') &&
+            (init as RequestInit | undefined)?.method === 'POST'
+        )
+      ).toBe(true)
+    );
+    const syncCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/spec-kit/features/001-auth/sync-to-beads')
+    );
+    expect(JSON.parse(String((syncCall?.[1] as RequestInit).body))).toEqual({
+      plan_hash: 'sha256:test-plan',
+      allow_deletes: false,
+      items: expect.any(Array),
+    });
   });
 });
 
@@ -289,14 +548,10 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
         return Promise.resolve(jsonResponse({}));
       }
       if (u.includes('kind=epic')) {
-        return Promise.resolve(
-          jsonResponse({ items: opts.epics, total: opts.epics.length }),
-        );
+        return Promise.resolve(jsonResponse({ items: opts.epics, total: opts.epics.length }));
       }
       // default = backlog list
-      return Promise.resolve(
-        jsonResponse({ items: opts.backlog, total: opts.backlog.length }),
-      );
+      return Promise.resolve(jsonResponse({ items: opts.backlog, total: opts.backlog.length }));
     });
   }
 
@@ -325,7 +580,7 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByTestId('grid-row-gm-a')).toBeTruthy());
 
@@ -333,16 +588,14 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
     fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-a'));
     fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-b'));
     await waitFor(() =>
-      expect(screen.getByTestId('grid-selection-count').textContent).toContain('2'),
+      expect(screen.getByTestId('grid-selection-count').textContent).toContain('2')
     );
 
     fireEvent.click(screen.getByTestId('grid-bulk-drop-into-epic'));
     await waitFor(() => expect(screen.getByTestId('epic-picker-dialog')).toBeTruthy());
 
     // Picker lists both epics, none of the backlog tasks.
-    await waitFor(() =>
-      expect(screen.getByTestId('epic-picker-option-gm-epic-x')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId('epic-picker-option-gm-epic-x')).toBeTruthy());
     expect(screen.getByTestId('epic-picker-option-gm-epic-y')).toBeTruthy();
     expect(screen.queryByTestId('epic-picker-option-gm-a')).toBeNull();
     expect(screen.queryByTestId('epic-picker-option-gm-b')).toBeNull();
@@ -358,9 +611,7 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
       expect(p.body).toEqual({ parent_id: 'gm-epic-x' });
     }
     // Dialog closes after pick.
-    await waitFor(() =>
-      expect(screen.queryByTestId('epic-picker-dialog')).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByTestId('epic-picker-dialog')).toBeNull());
   });
 
   it('right-click on a single row opens the picker and re-parents that one id', async () => {
@@ -372,7 +623,7 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByTestId('grid-row-gm-only')).toBeTruthy());
 
@@ -382,9 +633,7 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
     fireEvent.click(screen.getByTestId('grid-context-drop-into-epic'));
     await waitFor(() => expect(screen.getByTestId('epic-picker-dialog')).toBeTruthy());
 
-    await waitFor(() =>
-      expect(screen.getByTestId('epic-picker-option-gm-epic-x')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId('epic-picker-option-gm-epic-x')).toBeTruthy());
     fireEvent.click(screen.getByTestId('epic-picker-option-gm-epic-x'));
     await waitFor(() => expect(patchCalls().length).toBe(1));
     const [only] = patchCalls();
@@ -405,7 +654,7 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByTestId('grid-row-gm-a')).toBeTruthy());
 
@@ -415,11 +664,9 @@ describe('RefinePage drop-into-epic (gm-ju5o)', () => {
     fireEvent.click(screen.getByTestId('grid-context-drop-into-epic'));
     await waitFor(() => expect(screen.getByTestId('epic-picker-dialog')).toBeTruthy());
 
-    await waitFor(() =>
-      expect(screen.getByTestId('epic-picker-option-gm-epic-1')).toBeTruthy(),
-    );
+    await waitFor(() => expect(screen.getByTestId('epic-picker-option-gm-epic-1')).toBeTruthy());
     const opts = Array.from(
-      screen.getByTestId('epic-picker-options').querySelectorAll('[role="option"]'),
+      screen.getByTestId('epic-picker-options').querySelectorAll('[role="option"]')
     ).map((el) => el.getAttribute('data-testid'));
     expect(opts).toEqual([
       'epic-picker-option-gm-epic-1',
@@ -477,7 +724,7 @@ describe('RefinePage defer / dismiss actions', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByText('title-gm-1')).toBeTruthy());
     // Check the row to drive selection through the grid.
@@ -505,7 +752,7 @@ describe('RefinePage defer / dismiss actions', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByText('title-gm-1')).toBeTruthy());
     fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-1'));
@@ -524,7 +771,7 @@ describe('RefinePage defer / dismiss actions', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByText('title-gm-1')).toBeTruthy());
     fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-1'));
@@ -552,7 +799,7 @@ describe('RefinePage defer / dismiss actions', () => {
     render(
       <W>
         <RefinePage />
-      </W>,
+      </W>
     );
     await waitFor(() => expect(screen.getByText('title-gm-1')).toBeTruthy());
     fireEvent.click(screen.getByTestId('grid-row-checkbox-gm-1'));

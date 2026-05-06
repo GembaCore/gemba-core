@@ -11,6 +11,7 @@ export type InteractionKind =
 
 export type InteractionScopeType =
   | 'project'
+  | 'bootstrap'
   | 'milestone'
   | 'epic'
   | 'workitem'
@@ -43,6 +44,7 @@ export interface InteractionScope {
   id: string;
   title?: string;
   breadcrumb?: Array<{ id: string; label: string; type: InteractionScopeType }>;
+  context?: string;
 }
 
 export interface InteractionMessage {
@@ -57,6 +59,12 @@ export interface InteractionSuggestedAction {
   label: string;
   description: string;
   disabledReason?: string;
+}
+
+export interface InteractionQuickReply {
+  id: string;
+  label: string;
+  message: string;
 }
 
 export interface InteractionDraft {
@@ -83,6 +91,7 @@ export interface InteractionSession {
   scope: InteractionScope;
   messages: InteractionMessage[];
   suggestedActions: InteractionSuggestedAction[];
+  quickReplies?: InteractionQuickReply[];
   draft?: InteractionDraft;
   evidence?: Array<{ id: string; label: string; href?: string }>;
   decisionLog?: InteractionDecision[];
@@ -112,6 +121,7 @@ export function runtimeHostForScope(
   if (adaptor === 'gastown') {
     const mayorScopes: ReadonlySet<InteractionScopeType> = new Set([
       'project',
+      'bootstrap',
       'milestone',
       'epic',
       'escalation',

@@ -258,7 +258,7 @@ func TestResolveBeadsDir(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ServeConfig{BeadsDir: tc.in}.ResolveBeadsDir()
+			got, err := ServeConfig{ProjectDir: tc.in}.ResolveBeadsDir()
 			if tc.wantErr != "" {
 				if err == nil {
 					t.Fatalf("expected error, got nil (result=%q)", got)
@@ -285,11 +285,12 @@ func TestValidateWorkPlaneFlags(t *testing.T) {
 		wantErr string // substring; empty means "no error expected"
 	}{
 		{"neither set", ServeConfig{}, "no WorkPlane selected"},
-		{"only beads-dir", ServeConfig{BeadsDir: "/tmp/gm"}, ""},
+		{"only project-dir", ServeConfig{ProjectDir: "/tmp/gm"}, ""},
+		{"legacy beads-dir", ServeConfig{BeadsDir: "/tmp/gm"}, ""},
 		{"only dolt-url", ServeConfig{DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, ""},
 		{"both set", ServeConfig{BeadsDir: "/tmp/gm", DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, "mutually exclusive"},
 		{"noop alone", ServeConfig{Noop: true}, ""},
-		{"noop with beads-dir", ServeConfig{Noop: true, BeadsDir: "/tmp/gm"}, "--noop is mutually exclusive"},
+		{"noop with project-dir", ServeConfig{Noop: true, ProjectDir: "/tmp/gm"}, "--noop is mutually exclusive"},
 		{"noop with dolt-url", ServeConfig{Noop: true, DoltURL: "mysql://root@127.0.0.1:3307/gemba"}, "--noop is mutually exclusive"},
 	}
 	for _, tc := range cases {
@@ -320,7 +321,7 @@ func TestValidateWorkPlaneFlags_NeitherSetMentionsBothFlags(t *testing.T) {
 	if err == nil {
 		t.Fatalf("want error")
 	}
-	for _, want := range []string{"--beads-dir", "--dolt-url"} {
+	for _, want := range []string{"--project-dir", "--dolt-url"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error missing %q; got %q", want, err.Error())
 		}
@@ -412,9 +413,9 @@ func TestBeadsSource(t *testing.T) {
 		wantDetail string
 	}{
 		{
-			name:       "beads-dir",
-			cfg:        ServeConfig{BeadsDir: "/Users/mike/gt/gemba"},
-			wantKind:   "beads-dir",
+			name:       "project-dir",
+			cfg:        ServeConfig{ProjectDir: "/Users/mike/gt/gemba"},
+			wantKind:   "project-dir",
 			wantLabel:  "gemba",
 			wantDetail: "/Users/mike/gt/gemba",
 		},

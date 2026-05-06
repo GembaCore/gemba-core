@@ -44,10 +44,15 @@ type ServeConfig struct {
 	City string
 	Town string
 
-	// BeadsDir is the workspace directory the Beads WorkPlane adaptor
-	// targets — bd subprocesses spawn with this as their cwd. Empty
-	// means "use the gemba server's cwd," which is the right default
-	// when gemba is launched from inside a beads workspace.
+	// ProjectDir is the project worktree root the bd WorkPlane adaptor
+	// targets. It is the preferred operator-facing name for the local
+	// project source selected by `gemba serve --project-dir`.
+	ProjectDir string
+
+	// BeadsDir is the legacy name for ProjectDir. It is retained so older
+	// scripts using `--beads-dir` and GEMBA_BEADS_DIR keep working. After
+	// resolution, serve normalizes BeadsDir to the resolved project root
+	// because the bd adaptor still consumes this field.
 	BeadsDir string
 
 	// DoltURL is a mysql://user[:password]@host:port/dbname connection
@@ -61,7 +66,7 @@ type ServeConfig struct {
 	// BeadsURLSource records where the resolved DoltURL came from after
 	// applyBeadsURLDefault runs (gm-ygwe). Values:
 	//
-	//	"cli"     — the operator passed --dolt-url (or --beads-dir) explicitly
+	//	"cli"     — the operator passed --dolt-url (or --project-dir) explicitly
 	//	"config"  — populated from ~/.gemba/config.toml's [beads].url
 	//	"default" — populated from the built-in DefaultBeadsURL fallback
 	//	""        — applyBeadsURLDefault has not been called yet
@@ -288,7 +293,7 @@ func (c ServeConfig) TLSEnabled() bool {
 }
 
 // ValidateWorkPlaneFlags enforces the WorkPlane selector contract:
-// exactly one of --beads-dir and --dolt-url must be set. Both select a
+// exactly one of --project-dir and --dolt-url must be set. Both select a
 // beads backend but by different means; a server asked to honor both
 // would have to pick one and ignore the other, and a server with
 // neither has no WorkPlane to serve at all. In both error cases we
@@ -296,63 +301,67 @@ func (c ServeConfig) TLSEnabled() bool {
 // actionable message instead of a later cryptic failure from the
 // adaptor layer.
 func (c ServeConfig) ValidateWorkPlaneFlags() error {
-	if c.Noop && (c.BeadsDir != "" || c.DoltURL != "") {
+	projectDir := c.localProjectDir()
+	if c.Noop && (projectDir != "" || c.DoltURL != "") {
 		return fmt.Errorf(
-			"--noop is mutually exclusive with --beads-dir and --dolt-url; " +
+			"--noop is mutually exclusive with --project-dir and --dolt-url; " +
 				"the noop adaptor is itself a complete in-memory WorkPlane\n" +
-				"  drop --beads-dir / --dolt-url, or drop --noop")
+				"  drop --project-dir / --dolt-url, or drop --noop")
 	}
 	if c.Noop {
 		return nil
 	}
-	if c.BeadsDir != "" && c.DoltURL != "" {
+	if projectDir != "" && c.DoltURL != "" {
 		return fmt.Errorf(
-			"--beads-dir and --dolt-url are mutually exclusive; " +
+			"--project-dir and --dolt-url are mutually exclusive; " +
 				"pass one or the other\n" +
-				"  --beads-dir routes reads+writes through the bd CLI\n" +
+				"  --project-dir routes reads+writes through the bd CLI\n" +
 				"  --dolt-url opens a direct SQL connection to Dolt")
 	}
-	if c.BeadsDir == "" && c.DoltURL == "" {
+	if projectDir == "" && c.DoltURL == "" {
 		return fmt.Errorf(
-			"no WorkPlane selected; pass --beads-dir <path>, " +
+			"no WorkPlane selected; pass --project-dir <path>, " +
 				"--dolt-url <mysql://...>, or --noop\n" +
-				"  --beads-dir <path>          route through the bd CLI (reads + writes)\n" +
+				"  --project-dir <path>        route through the bd CLI (reads + writes)\n" +
 				"  --dolt-url <mysql://...>    direct SQL to a Dolt server\n" +
 				"  --noop                      bind in-memory reference adaptors (dev/demo)")
 	}
 	return nil
 }
 
-// ResolveBeadsDir validates c.BeadsDir and returns the directory `bd`
+// ResolveBeadsDir validates the configured local project directory and
+// returns the directory `bd`
 // should be invoked from. The bd CLI discovers its workspace by walking
 // up from cwd looking for `.beads/`, so the returned path is the rig
-// root: either c.BeadsDir itself (when it contains `.beads/`) or its
-// parent (when c.BeadsDir *is* `.beads/`). Accepting both forms matches
-// how users talk about rigs in practice — `--beads-dir ~/gt/gemba` and
-// `--beads-dir ~/gt/gemba/.beads` both mean the same rig.
+// root: either ProjectDir itself (when it contains `.beads/`) or its
+// parent (when ProjectDir *is* `.beads/`). Accepting both forms matches
+// how users talk about projects in practice — `--project-dir ~/gt/gemba`
+// and `--project-dir ~/gt/gemba/.beads` both mean the same project.
 //
-// An empty c.BeadsDir returns ("", nil); callers decide whether that's
+// An empty local project dir returns ("", nil); callers decide whether that's
 // an error. Mutual exclusion with --dolt-url is handled separately by
 // ValidateWorkPlaneFlags.
 func (c ServeConfig) ResolveBeadsDir() (string, error) {
-	if c.BeadsDir == "" {
+	dir := c.localProjectDir()
+	flag := c.localProjectDirFlag()
+	if dir == "" {
 		return "", nil
 	}
-	abs, err := filepath.Abs(c.BeadsDir)
+	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return "", fmt.Errorf("--beads-dir %q: %w", c.BeadsDir, err)
+		return "", fmt.Errorf("%s %q: %w", flag, dir, err)
 	}
 	info, err := os.Stat(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", fmt.Errorf(
-				"--beads-dir %q: path does not exist", c.BeadsDir)
+				"%s %q: path does not exist", flag, dir)
 		}
-		return "", fmt.Errorf("--beads-dir %q: %w", c.BeadsDir, err)
+		return "", fmt.Errorf("%s %q: %w", flag, dir, err)
 	}
 	if !info.IsDir() {
 		return "", fmt.Errorf(
-			"--beads-dir %q: not a directory", c.BeadsDir)
+			"%s %q: not a directory", flag, dir)
 	}
 	// Accept the rig root (contains .beads/) or the .beads/ dir itself.
 	if filepath.Base(abs) == ".beads" {
@@ -362,11 +371,29 @@ func (c ServeConfig) ResolveBeadsDir() (string, error) {
 	binfo, err := os.Stat(beads)
 	if err != nil || !binfo.IsDir() {
 		return "", fmt.Errorf(
-			"--beads-dir %q: no .beads/ directory found at %s\n"+
-				"  pass the rig root (containing .beads/) or the "+
-				".beads/ directory itself", c.BeadsDir, beads)
+			"%s %q: no .beads/ directory found at %s\n"+
+				"  pass the project root (containing .beads/) or the "+
+				".beads/ directory itself", flag, dir, beads)
 	}
 	return abs, nil
+}
+
+func (c ServeConfig) ProjectRoot() string {
+	if strings.TrimSpace(c.ProjectDir) != "" {
+		return c.ProjectDir
+	}
+	return c.BeadsDir
+}
+
+func (c ServeConfig) localProjectDir() string {
+	return c.ProjectRoot()
+}
+
+func (c ServeConfig) localProjectDirFlag() string {
+	if strings.TrimSpace(c.ProjectDir) != "" {
+		return "--project-dir"
+	}
+	return "--beads-dir"
 }
 
 // BeadsSource describes the configured WorkPlane source in a form safe to
@@ -374,12 +401,12 @@ func (c ServeConfig) ResolveBeadsDir() (string, error) {
 // from Detail so the SPA can render the workspace identity in the topbar
 // without leaking secrets to anyone viewing the page or its devtools.
 type BeadsSource struct {
-	// Kind is one of "beads-dir", "dolt-url", "unconfigured".
+	// Kind is one of "project-dir", "dolt-url", "noop", "unconfigured".
 	Kind string `json:"kind"`
 	// Label is the short human-friendly identifier — basename of the
-	// beads-dir path, or the database name parsed from a dolt-url.
+	// project-dir path, or the database name parsed from a dolt-url.
 	Label string `json:"label"`
-	// Detail is the redacted full source: absolute beads-dir path, or
+	// Detail is the redacted full source: absolute project-dir path, or
 	// a mysql:// DSN with the user-info segment removed. Empty for
 	// "unconfigured" and for dolt-urls that fail to parse.
 	Detail string `json:"detail,omitempty"`
@@ -394,11 +421,11 @@ func (c ServeConfig) BeadsSource() BeadsSource {
 	if c.Noop {
 		return BeadsSource{Kind: "noop", Label: "noop", Detail: "in-memory reference adaptor"}
 	}
-	if c.BeadsDir != "" {
+	if dir := c.localProjectDir(); dir != "" {
 		return BeadsSource{
-			Kind:   "beads-dir",
-			Label:  filepath.Base(c.BeadsDir),
-			Detail: c.BeadsDir,
+			Kind:   "project-dir",
+			Label:  filepath.Base(dir),
+			Detail: dir,
 		}
 	}
 	if c.DoltURL != "" {
@@ -432,7 +459,7 @@ func (c ServeConfig) BeadsOnlyManifest() string {
 		}
 		return filepath.Clean(c.BeadsOnlyManifestPath)
 	}
-	base := c.BeadsDir
+	base := c.localProjectDir()
 	if base == "" {
 		if cwd, err := os.Getwd(); err == nil {
 			base = cwd

@@ -222,7 +222,7 @@ rendering it immediately:
 
 ```bash
 make build
-./bin/gemba serve --beads-dir <path-to-your-beads-rig>
+./bin/gemba serve --project-dir <path-to-your-beads-rig>
 # -> http://127.0.0.1:7666
 ```
 
@@ -231,7 +231,7 @@ the native terminal orchestrator by default. If you want a read-only /
 human-driven board with no session controls, pass
 `--orchestration=none`.
 
-End-to-end setup (both `--beads-dir` CLI mode and writable `--dolt-url`
+End-to-end setup (both `--project-dir` CLI mode and writable `--dolt-url`
 direct-SQL mode), explicit `--beads-read-only`, expected banner output,
 and troubleshooting:
 [Running Gemba against your work items](https://gembacore.github.io/gemba-core/getting-started/running-against-your-work-items/).
@@ -242,7 +242,7 @@ Native is the default orchestration mode. Spell it explicitly when you
 want the command to document that choice:
 
 ```bash
-./bin/gemba serve --beads-dir <rig> --orchestration=native
+./bin/gemba serve --project-dir <rig> --orchestration=native
 ```
 
 On boot, the native adaptor auto-detects an available terminal backend
@@ -323,7 +323,7 @@ agent_type = "claude"
 ```
 
 ```bash
-./bin/gemba serve --beads-dir <rig> --orchestration=native \
+./bin/gemba serve --project-dir <rig> --orchestration=native \
   --pool-config ./pool.toml
 ```
 
@@ -366,10 +366,10 @@ Design: [`docs/design/session-pool.md`](docs/design/session-pool.md)
 
 ```bash
 # Self-signed: ephemeral cert + fingerprint banner on boot
-./bin/gemba serve --beads-dir <rig> --tls-self-signed
+./bin/gemba serve --project-dir <rig> --tls-self-signed
 
 # Operator-supplied chain
-./bin/gemba serve --beads-dir <rig> --tls-cert ./cert.pem --tls-key ./key.pem
+./bin/gemba serve --project-dir <rig> --tls-cert ./cert.pem --tls-key ./key.pem
 ```
 
 ### Optional: Gas Town, LangGraph, other orchestrators
@@ -667,7 +667,7 @@ The full docsite is published at
 
 | Where                                                                      | What                                                                                                                                |
 | -------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| [Getting Started](https://gembacore.github.io/gemba-core/getting-started/) | Operator-facing guides — running against your work items, parallelism configuration                                                 |
+| [Getting Started](https://gembacore.github.io/gemba-core/getting-started/) | Operator-facing guides — running against your work items, Spec Kit planning sync, parallelism configuration                         |
 | [Adaptors](https://gembacore.github.io/gemba-core/adaptors/)               | Per-adaptor authoring docs + conformance reports — how to write a new WorkPlane / OrchestrationPlane                                |
 | [Design](https://gembacore.github.io/gemba-core/design/)                   | Durable architectural decisions — parallelism boundary, milestone convention, Gemba walk (review of work in progress), persona PPPP |
 | [Agents](https://gembacore.github.io/gemba-core/agents/)                   | Per-role agent operating docs                                                                                                       |

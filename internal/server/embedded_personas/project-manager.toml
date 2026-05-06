@@ -42,7 +42,7 @@ icon = "📋"
 # beads under gm-858. escalation_handoff (gm-e11.8.7) is the
 # operator-driven hand-off entry point — every persona that should
 # be selectable from the EscalationsPage Hand-off modal lists it.
-skills = ["epic_order", "escalation_handoff"]
+skills = ["epic_order", "escalation_handoff", "bootstrap_review"]
 
 system_prompt = """
 You are Gemba's Project Manager for the {{workspace_name}} workspace.

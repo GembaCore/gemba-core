@@ -35,7 +35,7 @@ make build
 examples/my-project/load.sh
 
 # Boot Gemba against the rig.
-./bin/gemba serve --beads-dir /tmp/my-project-rig --port 7666
+./bin/gemba serve --project-dir /tmp/my-project-rig --port 7666
 
 # Open in a browser.
 open http://127.0.0.1:7666

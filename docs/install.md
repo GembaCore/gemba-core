@@ -187,7 +187,7 @@ Useful environment overrides:
 | Env | Default | Purpose |
 | --- | --- | --- |
 | `GEMBA_DATA_DIR` | `/data` | Persistent container data root |
-| `GEMBA_BEADS_DIR` | unset | Use a mounted Beads worktree instead of the seeded demo |
+| `GEMBA_PROJECT_DIR` | unset | Use a mounted project worktree instead of the seeded demo |
 | `GEMBA_BEADS_URL` | unset | Use a Dolt/MySQL URL instead of local `bd` mode |
 | `GEMBA_BEADS_READ_ONLY` | unset | Set `true` for Beads-read-only mode |
 | `GEMBA_AUTH` | `token` | Auth mode passed to `gemba serve` |
@@ -199,7 +199,7 @@ docker run --rm -it \
   -p 7666:7666 \
   -v "$PWD:/work" \
   -v gemba-quickstart-data:/data \
-  -e GEMBA_BEADS_DIR=/work \
+  -e GEMBA_PROJECT_DIR=/work \
   gemba-core-quickstart:local
 ```
 
@@ -207,7 +207,7 @@ docker run --rm -it \
 
 The standard Docker image is the unseeded, operator-configured sibling
 of the quickstart image. It is useful when you already have a real
-Beads worktree or Dolt URL and want a normal container that includes the
+project worktree or Dolt URL and want a normal container that includes the
 pieces Gemba commonly shells out to: `bd`, git/ssh, and the Gemba
 sentinel CLIs used by native session setup.
 
@@ -217,7 +217,7 @@ make docker-run
 
 That builds `Dockerfile`, starts Gemba on `http://localhost:7666`,
 mounts the current repository at `/work`, persists Gemba state under the
-named Docker volume `gemba-data`, and sets `GEMBA_BEADS_DIR=/work`.
+named Docker volume `gemba-data`, and sets `GEMBA_PROJECT_DIR=/work`.
 
 Equivalent Compose invocation:
 
@@ -233,11 +233,11 @@ docker run --rm -it \
   -p 7666:7666 \
   -v gemba-data:/data \
   -v "$PWD:/work" \
-  -e GEMBA_BEADS_DIR=/work \
+  -e GEMBA_PROJECT_DIR=/work \
   gemba-core:local
 ```
 
-Use a Dolt URL instead of a mounted Beads worktree:
+Use a Dolt URL instead of a mounted project worktree:
 
 ```bash
 docker run --rm -it \
@@ -259,7 +259,7 @@ Useful environment overrides:
 | `GEMBA_HOME` | `/data/gemba-home` | Gemba auth/session/config home |
 | `GEMBA_LISTEN` | `0.0.0.0:7666` | Listen address inside the container |
 | `GEMBA_AUTH` | `token` | Auth mode passed to `gemba serve` |
-| `GEMBA_BEADS_DIR` | unset | Mounted Beads worktree |
+| `GEMBA_PROJECT_DIR` | unset | Mounted project worktree |
 | `GEMBA_BEADS_URL` | unset | Dolt/MySQL URL for direct Beads access |
 | `GEMBA_BEADS_ONLY` | unset | Add `--beads-only` |
 | `GEMBA_BEADS_READ_ONLY` | unset | Add `--beads-read-only` |

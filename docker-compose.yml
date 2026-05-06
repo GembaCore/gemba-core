@@ -17,7 +17,7 @@ services:
       GEMBA_LISTEN: 0.0.0.0:7666
       GEMBA_AUTH: token
       GEMBA_ORCHESTRATION: none
-      GEMBA_BEADS_DIR: /work
+      GEMBA_PROJECT_DIR: /work
 
 volumes:
   gemba-data:

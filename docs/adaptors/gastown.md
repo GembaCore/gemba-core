@@ -46,7 +46,7 @@ gemba serve \
   --city <gas-town-root>
 ```
 
-Do not pass a Gas Town rig as `--beads-dir`. A rig is a code/runtime
+Do not pass a Gas Town rig as `--project-dir`. A rig is a code/runtime
 scope owned by Gas Town; the Beads database is served by Dolt.
 
 ## Workspace and dispatch mapping

@@ -30,7 +30,7 @@ var (
 // SetProbeDir installs the Beads worktree directory the registry health
 // probe should use. The registry hooks run without direct access to
 // serve-time configuration, so container and daemon runs must hand the
-// configured --beads-dir to the package after the workplane boots.
+// configured --project-dir to the package after the workplane boots.
 // Passing an empty string restores the legacy cwd/ancestor lookup.
 func SetProbeDir(dir string) {
 	probeDirMu.Lock()

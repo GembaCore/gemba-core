@@ -348,6 +348,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// transcript tail from the backing pane. Read-only; no nonce.
 		api.Get("/sessions/{id}/peek", r.peekSession)
 		api.Post("/interactions:ensure", r.ensureInteraction)
+		api.Post("/interactions:turn", r.turnInteraction)
 		// gm-s47n.5.4: operational-context aggregator. Single read
 		// returning the join — Agent + Session + Workspace +
 		// Assignment + Profile + Health — that the planner, the
@@ -404,6 +405,26 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Post("/workflows/runs", r.startWorkflowRun)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/workflows/runs/{id}/burn", r.burnWorkflowRun)
+
+		// Spec Kit artifacts are a planning source: read/edit the
+		// .specify/specs (or specs) tree and, on explicit operator
+		// action, sync feature → milestone/epic/story/task beads.
+		api.Get("/spec-kit/workspace", r.getSpecKitWorkspace)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/spec-kit/scaffold", r.initializeSpecKitScaffold)
+		api.Get("/spec-kit/files", r.getSpecKitFile)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Put("/spec-kit/files", r.putSpecKitFile)
+		api.Get("/spec-kit/features", r.listSpecKitFeatures)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/spec-kit/features", r.createSpecKitFeature)
+		api.Get("/spec-kit/features/{id}", r.getSpecKitFeature)
+		api.Get("/spec-kit/features/{id}/draft", r.draftSpecKitFeatureSync)
+		api.Get("/spec-kit/features/{id}/sync-plan", r.planSpecKitFeatureSync)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/spec-kit/features/{id}/sync-to-beads", r.syncSpecKitFeature)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/bootstrap/drafts/apply", r.applyBootstrapDraft)
 		api.Get("/packs", notImplemented)
 		api.Get("/desired-state", notImplemented)
 		api.Get("/drift", notImplemented)
@@ -547,6 +568,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Delete("/v1/sessions/{id}", r.endSession)
 		api.Get("/v1/sessions/{id}/peek", r.peekSession)
 		api.Post("/v1/interactions:ensure", r.ensureInteraction)
+		api.Post("/v1/interactions:turn", r.turnInteraction)
 		api.Get("/v1/escalations", r.listEscalations)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/escalations/{id}/respond", r.respondEscalation)

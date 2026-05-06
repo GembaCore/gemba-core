@@ -1,6 +1,6 @@
 // /api/repositories handler (gm-uipx.8). Read-only listing of the
 // workspace's RepositoryRegistry, sourced from
-// `<BeadsDir-or-cwd>/.gemba/repositories/*.toml`. Drives the
+// `<project-dir-or-cwd>/.gemba/repositories/*.toml`. Drives the
 // `/project/config` Workspace-repos section; the listing is
 // advisory and never blocks render — a missing directory or a
 // malformed registry returns an empty list with a non-fatal
@@ -19,7 +19,7 @@ import (
 // listRepositories handles GET /api/repositories.
 //
 // Discovery rule: load `<workspaceDir>/.gemba/repositories/`. The
-// workspace dir is `cfg.BeadsDir` when set, otherwise the gemba
+// workspace dir is `cfg.ProjectRoot()` when set, otherwise the gemba
 // process cwd — same source-of-truth as the rest of the server.
 func (r *Router) listRepositories(w http.ResponseWriter, _ *http.Request) {
 	dir := r.repositoriesDir()
@@ -59,7 +59,7 @@ func (r *Router) listRepositories(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (r *Router) repositoriesDir() string {
-	base := r.cfg.BeadsDir
+	base := r.cfg.ProjectRoot()
 	if base == "" {
 		base = "."
 	}

@@ -107,8 +107,8 @@ every StartSession, so a pristine worktree just works.
 ## CLI reference
 
 ```bash
-gemba serve --beads-dir <rig> --orchestration=native        # default: auto-detect backend
-gemba serve --beads-dir <rig> --orchestration=native \
+gemba serve --project-dir <rig> --orchestration=native        # default: auto-detect backend
+gemba serve --project-dir <rig> --orchestration=native \
             --backend=tmux                                   # explicit backend
 gemba install-bridge                                         # manual install (StartSession does this automatically)
 ```

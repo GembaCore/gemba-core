@@ -6,6 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -120,5 +124,108 @@ func TestEnsureInteraction_RejectsBadScope(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/interactions:ensure", bytes.NewReader([]byte(`{"scope":{"id":"gm-1"}}`))))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInteractionTurn_AppendsBootstrapConversation(t *testing.T) {
+	r := NewRouter(config.ServeConfig{}, fakeSPA(), nil)
+	ensureBody := []byte(`{"kind":"pm_consult","scope":{"type":"bootstrap","id":"001-auth","title":"Login Recovery"}}`)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/interactions:ensure", bytes.NewReader(ensureBody)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("ensure status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var ensured interactionSession
+	if err := json.Unmarshal(rec.Body.Bytes(), &ensured); err != nil {
+		t.Fatal(err)
+	}
+
+	turnBody := []byte(`{"id":` + strconv.Quote(ensured.ID) + `,"message":"split the export story out"}`)
+	turnRec := httptest.NewRecorder()
+	r.ServeHTTP(turnRec, httptest.NewRequest(http.MethodPost, "/api/v1/interactions:turn", bytes.NewReader(turnBody)))
+	if turnRec.Code != http.StatusOK {
+		t.Fatalf("turn status=%d body=%s", turnRec.Code, turnRec.Body.String())
+	}
+	var turned interactionSession
+	if err := json.Unmarshal(turnRec.Body.Bytes(), &turned); err != nil {
+		t.Fatal(err)
+	}
+	if len(turned.Messages) != len(ensured.Messages)+2 {
+		t.Fatalf("messages=%d want %d", len(turned.Messages), len(ensured.Messages)+2)
+	}
+	if got := turned.Messages[len(turned.Messages)-2]; got.Role != "operator" || !strings.Contains(got.Body, "split") {
+		t.Fatalf("operator turn=%+v", got)
+	}
+	if got := turned.Messages[len(turned.Messages)-1]; got.Role != "assistant" || !strings.Contains(got.Body, "batch-shaping") {
+		t.Fatalf("assistant reply=%+v", got)
+	}
+}
+
+func TestEnsureInteraction_SeedsBootstrapWithSpecKitContext(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "specs", "001-auth")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "spec.md"), []byte(`# Feature Specification: Login Recovery
+
+## User Story 1 - Reset password (Priority: P1)
+
+### Acceptance Scenarios
+
+- Recovery email is sent.
+
+## Functional Requirements
+
+- Users can request a one-time recovery link.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tasks.md"), []byte(`# Tasks
+
+## Phase 3
+
+- [ ] T001 [P] [US1] Create recovery form.
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	host := api.New()
+	wp := testadaptors.NewFakeWorkPlane(core.TransportAPI)
+	wp.ListFn = func(context.Context, core.WorkItemFilter) ([]core.WorkItem, error) {
+		return nil, nil
+	}
+	if _, err := host.RegisterWorkPlane(context.Background(), wp); err != nil {
+		t.Fatalf("RegisterWorkPlane: %v", err)
+	}
+	r := NewRouter(config.ServeConfig{BeadsDir: root}, fakeSPA(), host)
+	body := []byte(`{"kind":"pm_consult","scope":{"type":"bootstrap","id":"001-auth"}}`)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/v1/interactions:ensure", bytes.NewReader(body)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got interactionSession
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Scope.Title != "Login Recovery" {
+		t.Fatalf("scope title=%q", got.Scope.Title)
+	}
+	system := got.Messages[0].Body
+	for _, want := range []string{
+		"Provider: Spec Kit",
+		"US1 (P1): Reset password",
+		"acceptance: Recovery email is sent.",
+		"T001 [P] [US1]: Create recovery form.",
+		"Plan hash:",
+		"Draft Beads tree:",
+	} {
+		if !strings.Contains(system, want) {
+			t.Fatalf("system message missing %q:\n%s", want, system)
+		}
+	}
+	if len(got.QuickReplies) < 4 {
+		t.Fatalf("quick replies=%+v", got.QuickReplies)
 	}
 }

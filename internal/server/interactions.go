@@ -11,6 +11,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/GembaCore/gemba-core/core"
 	"github.com/GembaCore/gemba-core/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/speckit"
 )
 
 type interactionKind string
@@ -30,6 +32,7 @@ type interactionScopeType string
 
 const (
 	interactionScopeProject    interactionScopeType = "project"
+	interactionScopeBootstrap  interactionScopeType = "bootstrap"
 	interactionScopeMilestone  interactionScopeType = "milestone"
 	interactionScopeEpic       interactionScopeType = "epic"
 	interactionScopeWorkItem   interactionScopeType = "workitem"
@@ -60,6 +63,7 @@ type interactionScope struct {
 	ID         string               `json:"id"`
 	Title      string               `json:"title,omitempty"`
 	Breadcrumb []interactionCrumb   `json:"breadcrumb,omitempty"`
+	Context    string               `json:"context,omitempty"`
 }
 
 type interactionCrumb struct {
@@ -80,6 +84,12 @@ type interactionAction struct {
 	Label          string `json:"label"`
 	Description    string `json:"description"`
 	DisabledReason string `json:"disabled_reason,omitempty"`
+}
+
+type interactionQuickReply struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Message string `json:"message"`
 }
 
 type interactionDraft struct {
@@ -103,26 +113,32 @@ type interactionEvidence struct {
 }
 
 type interactionSession struct {
-	ID               string                 `json:"id"`
-	Kind             interactionKind        `json:"kind"`
-	Status           interactionStatus      `json:"status"`
-	UIHost           string                 `json:"ui_host"`
-	RuntimeHost      interactionRuntimeHost `json:"runtime_host"`
-	RuntimeLabel     string                 `json:"runtime_label"`
-	Scope            interactionScope       `json:"scope"`
-	Messages         []interactionMessage   `json:"messages"`
-	SuggestedActions []interactionAction    `json:"suggested_actions"`
-	Draft            *interactionDraft      `json:"draft,omitempty"`
-	Evidence         []interactionEvidence  `json:"evidence,omitempty"`
-	DecisionLog      []interactionDecision  `json:"decision_log,omitempty"`
-	Capabilities     []string               `json:"capabilities"`
-	CreatedAt        time.Time              `json:"created_at"`
-	UpdatedAt        time.Time              `json:"updated_at"`
+	ID               string                  `json:"id"`
+	Kind             interactionKind         `json:"kind"`
+	Status           interactionStatus       `json:"status"`
+	UIHost           string                  `json:"ui_host"`
+	RuntimeHost      interactionRuntimeHost  `json:"runtime_host"`
+	RuntimeLabel     string                  `json:"runtime_label"`
+	Scope            interactionScope        `json:"scope"`
+	Messages         []interactionMessage    `json:"messages"`
+	SuggestedActions []interactionAction     `json:"suggested_actions"`
+	QuickReplies     []interactionQuickReply `json:"quick_replies,omitempty"`
+	Draft            *interactionDraft       `json:"draft,omitempty"`
+	Evidence         []interactionEvidence   `json:"evidence,omitempty"`
+	DecisionLog      []interactionDecision   `json:"decision_log,omitempty"`
+	Capabilities     []string                `json:"capabilities"`
+	CreatedAt        time.Time               `json:"created_at"`
+	UpdatedAt        time.Time               `json:"updated_at"`
 }
 
 type ensureInteractionRequest struct {
 	Kind  interactionKind  `json:"kind"`
 	Scope interactionScope `json:"scope"`
+}
+
+type turnInteractionRequest struct {
+	ID      string `json:"id"`
+	Message string `json:"message"`
 }
 
 type interactionStore struct {
@@ -142,6 +158,31 @@ func (s *interactionStore) ensure(rec interactionSession) interactionSession {
 	}
 	s.by[rec.ID] = rec
 	return rec
+}
+
+func (s *interactionStore) turn(id, message string, now time.Time) (interactionSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.by[id]
+	if !ok {
+		return interactionSession{}, ErrNewProjectNotFound
+	}
+	nextIndex := len(rec.Messages) + 1
+	rec.Messages = append(rec.Messages, interactionMessage{
+		ID:   fmt.Sprintf("operator-%d", nextIndex),
+		Role: "operator",
+		Body: message,
+		At:   now.Format(time.RFC3339),
+	})
+	rec.Messages = append(rec.Messages, interactionMessage{
+		ID:   fmt.Sprintf("assistant-%d", nextIndex+1),
+		Role: "assistant",
+		Body: interactionReply(rec.Scope, message),
+		At:   now.Format(time.RFC3339),
+	})
+	rec.UpdatedAt = now
+	s.by[id] = rec
+	return rec, nil
 }
 
 func (r *Router) ensureInteraction(w http.ResponseWriter, req *http.Request) {
@@ -175,7 +216,8 @@ func (r *Router) ensureInteraction(w http.ResponseWriter, req *http.Request) {
 		Scope:            scope,
 		Messages:         defaultInteractionMessages(scope, host),
 		SuggestedActions: defaultInteractionActions(host, r.host != nil && r.host.OrchestrationPlane() != nil),
-		Draft:            defaultInteractionDraft(),
+		QuickReplies:     defaultInteractionQuickReplies(scope.Type),
+		Draft:            defaultInteractionDraft(scope.Type),
 		Evidence:         evidence,
 		Capabilities:     interactionCapabilities(host),
 		CreatedAt:        now,
@@ -184,9 +226,29 @@ func (r *Router) ensureInteraction(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, r.interactionStore.ensure(rec))
 }
 
+func (r *Router) turnInteraction(w http.ResponseWriter, req *http.Request) {
+	var body turnInteractionRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		httperr.Write(w, http.StatusBadRequest, "invalid_body", "request body must be JSON {id, message}")
+		return
+	}
+	body.ID = strings.TrimSpace(body.ID)
+	body.Message = strings.TrimSpace(body.Message)
+	if body.ID == "" || body.Message == "" {
+		httperr.Write(w, http.StatusBadRequest, "bad_request", "id and message are required")
+		return
+	}
+	rec, err := r.interactionStore.turn(body.ID, body.Message, time.Now().UTC())
+	if err != nil {
+		httperr.Write(w, http.StatusNotFound, "not_found", "interaction not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, rec)
+}
+
 func validInteractionScope(t interactionScopeType) bool {
 	switch t {
-	case interactionScopeProject, interactionScopeMilestone, interactionScopeEpic, interactionScopeWorkItem,
+	case interactionScopeProject, interactionScopeBootstrap, interactionScopeMilestone, interactionScopeEpic, interactionScopeWorkItem,
 		interactionScopeSession, interactionScopeEscalation, interactionScopeWalk:
 		return true
 	default:
@@ -197,6 +259,9 @@ func validInteractionScope(t interactionScopeType) bool {
 func (r *Router) enrichInteractionScope(req *http.Request, scope interactionScope) (interactionScope, []interactionEvidence) {
 	if r.host == nil {
 		return scope, nil
+	}
+	if scope.Type == interactionScopeBootstrap {
+		return r.enrichBootstrapInteractionScope(req, scope)
 	}
 	wp := r.host.WorkPlane()
 	if wp == nil {
@@ -226,6 +291,116 @@ func (r *Router) enrichInteractionScope(req *http.Request, scope interactionScop
 		Label: item.Title,
 	}}
 	return itemScope, evidenceFromWorkItem(item)
+}
+
+func (r *Router) enrichBootstrapInteractionScope(req *http.Request, scope interactionScope) (interactionScope, []interactionEvidence) {
+	scanner := speckit.NewScanner(r.specKitRoot())
+	feature, err := scanner.Load(req.Context(), scope.ID)
+	if err != nil {
+		return scope, nil
+	}
+	if scope.Title == "" {
+		scope.Title = feature.Title
+	}
+	var draft *speckit.SyncDraft
+	if wp := r.host.WorkPlane(); wp != nil {
+		if d, err := speckit.DraftFeature(req.Context(), wp, feature); err == nil {
+			draft = &d
+		}
+	}
+	scope.Context = bootstrapInteractionContext(feature, draft)
+	evidence := []interactionEvidence{{
+		ID:    "spec-kit:" + feature.ID,
+		Label: "Spec Kit feature: " + feature.Directory,
+	}}
+	if feature.SpecPath != "" {
+		evidence = append(evidence, interactionEvidence{ID: "spec:" + feature.ID, Label: "spec.md: " + feature.SpecPath})
+	}
+	if feature.PlanPath != "" {
+		evidence = append(evidence, interactionEvidence{ID: "plan:" + feature.ID, Label: "plan.md: " + feature.PlanPath})
+	}
+	if feature.TasksPath != "" {
+		evidence = append(evidence, interactionEvidence{ID: "tasks:" + feature.ID, Label: "tasks.md: " + feature.TasksPath})
+	}
+	return scope, evidence
+}
+
+func bootstrapInteractionContext(feature speckit.Feature, draft *speckit.SyncDraft) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Provider: Spec Kit\nFeature: %s (%s)\nDirectory: %s\n", feature.Title, feature.ID, feature.Directory)
+	if feature.SpecPath != "" {
+		fmt.Fprintf(&b, "Spec: %s\n", feature.SpecPath)
+	}
+	if feature.PlanPath != "" {
+		fmt.Fprintf(&b, "Plan: %s\n", feature.PlanPath)
+	}
+	if feature.TasksPath != "" {
+		fmt.Fprintf(&b, "Tasks: %s\n", feature.TasksPath)
+	}
+	if len(feature.Spec.UserStories) > 0 {
+		b.WriteString("\nSpec Kit user stories:\n")
+		for _, story := range feature.Spec.UserStories {
+			fmt.Fprintf(&b, "- %s", story.ID)
+			if story.Priority != "" {
+				fmt.Fprintf(&b, " (%s)", story.Priority)
+			}
+			fmt.Fprintf(&b, ": %s\n", story.Title)
+			for _, scenario := range story.AcceptanceScenarios {
+				fmt.Fprintf(&b, "  acceptance: %s\n", scenario)
+			}
+		}
+	}
+	if len(feature.Spec.AcceptanceScenarios) > 0 {
+		b.WriteString("\nFeature acceptance scenarios:\n")
+		for _, scenario := range feature.Spec.AcceptanceScenarios {
+			fmt.Fprintf(&b, "- %s\n", scenario)
+		}
+	}
+	if len(feature.Spec.FunctionalRequirements) > 0 {
+		b.WriteString("\nFunctional requirements:\n")
+		for _, req := range feature.Spec.FunctionalRequirements {
+			fmt.Fprintf(&b, "- %s\n", req)
+		}
+	}
+	if len(feature.Tasks) > 0 {
+		b.WriteString("\nSpec Kit tasks:\n")
+		for _, task := range feature.Tasks {
+			fmt.Fprintf(&b, "- %s", task.ID)
+			if task.Parallel {
+				b.WriteString(" [P]")
+			}
+			if task.StoryID != "" {
+				fmt.Fprintf(&b, " [%s]", task.StoryID)
+			}
+			fmt.Fprintf(&b, ": %s", task.Title)
+			if task.Phase != "" {
+				fmt.Fprintf(&b, " (%s)", task.Phase)
+			}
+			b.WriteString("\n")
+		}
+	}
+	if draft != nil {
+		fmt.Fprintf(&b, "\nPlan hash: %s\n", draft.Plan.Hash)
+		fmt.Fprintf(&b, "Change plan: %d create, %d update, %d delete\n", draft.Plan.Counts.Create, draft.Plan.Counts.Update, draft.Plan.Counts.Delete)
+		if len(draft.Items) > 0 {
+			b.WriteString("Draft Beads tree:\n")
+			for _, item := range draft.Items {
+				parent := ""
+				for _, rel := range item.Relationships {
+					if rel.Kind == core.RelParentChild && rel.From != "" {
+						parent = string(rel.From)
+						break
+					}
+				}
+				if parent != "" {
+					fmt.Fprintf(&b, "- %s %s: %s (parent: %s)\n", item.Kind, item.ID, item.Title, parent)
+				} else {
+					fmt.Fprintf(&b, "- %s %s: %s\n", item.Kind, item.ID, item.Title)
+				}
+			}
+		}
+	}
+	return strings.TrimSpace(b.String())
 }
 
 func evidenceFromWorkItem(item core.WorkItem) []interactionEvidence {
@@ -284,10 +459,50 @@ func defaultInteractionMessages(scope interactionScope, host interactionRuntimeH
 	if title == "" {
 		title = scope.ID
 	}
+	if scope.Type == interactionScopeBootstrap {
+		context := strings.TrimSpace(scope.Context)
+		if context == "" {
+			context = "No provider context loaded yet. Ask the user to reopen the draft after the bootstrap pack is available."
+		}
+		return []interactionMessage{
+			{ID: "system-1", Role: "system", Body: "Goal: translate bootstrap input into Beads through a first-pass automatic decomposition, then guided editing, then a finished ratified draft set. The user is reviewing milestones, epics, stories, and beads before any database mutation. Keep draft Beads uncommitted until the user ratifies them into a selected database or exports JSONL. Use the full provider context below when responding; preserve the user's perspective on the project.\n\n" + context, At: now},
+			{ID: "assistant-1", Role: "assistant", Body: "Ready to review bootstrap draft " + title + ". The current draft is not stored in Beads yet; it is a staged decomposition for you to approve, reshape with me, edit manually, export as JSONL, or ratify into a database when it reflects your view of the project.", At: now},
+		}
+	}
 	return []interactionMessage{
 		{ID: "system-1", Role: "system", Body: authority, At: now},
 		{ID: "assistant-1", Role: "assistant", Body: "Ready to work with " + string(scope.Type) + " " + title + ".", At: now},
 	}
+}
+
+func defaultInteractionQuickReplies(scope interactionScopeType) []interactionQuickReply {
+	if scope != interactionScopeBootstrap {
+		return nil
+	}
+	return []interactionQuickReply{
+		{ID: "looks-good", Label: "Looks good", Message: "This draft looks good. Help me do a final readiness check before I ratify it."},
+		{ID: "change-things", Label: "I want changes", Message: "I want to change some things. Review the draft as a batch and suggest what should be renamed, split, merged, or clarified."},
+		{ID: "edit-board", Label: "I'll edit on board", Message: "I'll edit on the board. Keep track of the goal and call out anything I should verify before ratifying."},
+		{ID: "export-jsonl", Label: "Export JSONL", Message: "I want to export this draft as Beads-compatible JSONL instead of committing it to a database right now."},
+		{ID: "need-questions", Label: "Ask questions", Message: "Ask me any clarifying questions needed before this draft becomes milestones, epics, and beads."},
+	}
+}
+
+func interactionReply(scope interactionScope, message string) string {
+	if scope.Type == interactionScopeBootstrap {
+		lower := strings.ToLower(message)
+		switch {
+		case strings.Contains(lower, "jsonl"):
+			return "Got it. Keep this draft set unratified; export remains a file operation until you choose a database target and commit."
+		case strings.Contains(lower, "split") || strings.Contains(lower, "merge") || strings.Contains(lower, "rename"):
+			return "Captured as batch-shaping guidance. Review the staged bead titles and descriptions, then apply the edits to the draft set before ratifying."
+		case strings.Contains(lower, "approve") || strings.Contains(lower, "done"):
+			return "When the staged set matches your intent, ratify it into the selected Beads database or export it as JSONL. Until then it remains a draft only."
+		default:
+			return "Captured. I will treat that as guidance for the bootstrap draft set, not as permission to write Beads yet."
+		}
+	}
+	return "Captured. This interaction now has your latest note in context for the next action."
 }
 
 func defaultInteractionActions(host interactionRuntimeHost, hasOrchestration bool) []interactionAction {
@@ -334,7 +549,18 @@ func dispatchDescription(host interactionRuntimeHost) string {
 	}
 }
 
-func defaultInteractionDraft() *interactionDraft {
+func defaultInteractionDraft(scope interactionScopeType) *interactionDraft {
+	if scope == interactionScopeBootstrap {
+		return &interactionDraft{
+			Title:   "Bootstrap Review Goal",
+			Summary: "Translate the bootstrap input into a draft Beads decomposition, shape it through guided review and manual edits, then ratify a finished set that represents the operator perspective.",
+			Bullets: []string{
+				"Draft beads are not stored in a Beads database until ratified.",
+				"The review preserves provider context, including Spec Kit user stories, tasks, acceptance criteria, and draft item tree.",
+				"The final output is a coherent set of milestones, epics, stories, and beads ready for database commit or JSONL export.",
+			},
+		}
+	}
 	return &interactionDraft{
 		Title:   "Working Brief",
 		Summary: "Use this tab for scoped clarification, triage, and runtime supervision without leaving board context.",
@@ -355,6 +581,6 @@ func interactionCapabilities(host interactionRuntimeHost) []string {
 	case interactionRuntimeNative, interactionRuntimeCodex, interactionRuntimeClaude:
 		return []string{"transcript.peek", "input.send", "pause.resume", "evidence.attach"}
 	default:
-		return []string{"suggested_actions.apply", "ratify"}
+		return []string{"input.send", "suggested_actions.apply", "ratify"}
 	}
 }

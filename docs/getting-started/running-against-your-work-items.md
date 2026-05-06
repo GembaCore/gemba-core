@@ -6,7 +6,7 @@ requirement is a data plane; **beads** (`bd`) fulfills that out of
 the box, and the work items themselves are bd issues. You can point
 Gemba at a beads rig two ways:
 
-- **Mode A — `--beads-dir`**: Gemba shells out to the `bd` CLI for
+- **Mode A — `--project-dir`**: Gemba shells out to the `bd` CLI for
   every read. Slower but portable; works anywhere you can run `bd`.
 - **Mode B — `--dolt-url` / `--beads-url`**: Gemba opens a direct SQL
   connection to your Dolt server. Faster and no `bd` dependency; reads
@@ -17,7 +17,7 @@ Gemba at a beads rig two ways:
   and management. Gemba does not require a project, GitHub repository,
   native agent setup, or Gas Town orchestration in this mode.
 
-Exactly one work source must be passed: `--beads-dir`, `--dolt-url`,
+Exactly one work source must be passed: `--project-dir`, `--dolt-url`,
 or its alias `--beads-url` (`gm-98l` enforces this at startup).
 
 Agent sessions are wired by default through native orchestration
@@ -52,12 +52,12 @@ sessions.
 - **For Mode A**: [`bd`](https://github.com/steveklabnik/beads) ≥ a version that emits M1-compatible JSON, and a beads rig at `<path>` (a directory containing `.beads/<name>.db` or a rig root whose `.beads/` subdirectory holds the database).
 - **For Mode B**: a running Dolt server reachable via `mysql://…`. The default Gas Town Dolt runs on `:3307` and serves every rig's beads database off the same port; see `gt dolt status`.
 
-## Mode A — `--beads-dir` (bd CLI adaptor)
+## Mode A — `--project-dir` (bd CLI adaptor)
 
 ```bash
-gemba serve --beads-dir ~/gt/gemba --auth none
+gemba serve --project-dir ~/gt/gemba --auth none
 # equivalent (the resolver accepts the .beads subdir too):
-gemba serve --beads-dir ~/gt/gemba/.beads --auth none
+gemba serve --project-dir ~/gt/gemba/.beads --auth none
 ```
 
 `--auth none` is the default and only needs to be spelled out when binding to a non-loopback interface. On a loopback bind (the default `127.0.0.1:7666`) you can omit it.
@@ -115,9 +115,9 @@ review, cleanup, wrapper authoring, and graph inspection without
 dispatch.
 
 ```bash
-gemba serve --beads-only --beads-dir ~/gt/gemba --auth none
+gemba serve --beads-only --project-dir ~/gt/gemba --auth none
 gemba serve --beads-only --beads-url 'mysql://root@127.0.0.1:3307/gemba' --auth none
-gemba serve --beads-only --beads-dir ~/gt/gemba --beads-history .gemba/session-manifest.jsonl
+gemba serve --beads-only --project-dir ~/gt/gemba --beads-history .gemba/session-manifest.jsonl
 gemba serve --beads-read-only --beads-url 'mysql://reader@127.0.0.1:3307/gemba' --auth none
 ```
 
@@ -185,7 +185,7 @@ What is blocked:
 
 The Status pane shows **Beads-read-only** instead of **Beads-only**.
 URL sources are not intrinsically read-only; use Dolt credentials or the
-Gemba flag to choose that posture explicitly. With a local `--beads-dir`,
+Gemba flag to choose that posture explicitly. With a local `--project-dir`,
 adding `--restart` lets Gemba restart bd's Dolt server with `bd --readonly
 dolt start` so the lower layer also enforces the policy. Without
 `--restart`, Gemba still applies a hard server/adaptor write gate while
@@ -197,11 +197,11 @@ plane.
 
 ## Troubleshooting
 
-**`--beads-dir ...: no .beads/ directory found`** — the path exists but isn't a rig root. Point `--beads-dir` at a directory whose `.beads/` subdirectory contains `<name>.db`, or at the `.beads/` directory itself.
+**`--project-dir ...: no .beads/ directory found`** — the path exists but isn't a project root. Point `--project-dir` at a directory whose `.beads/` subdirectory contains `<name>.db`, or at the `.beads/` directory itself.
 
-**`--beads-dir and --dolt-url are mutually exclusive`** — pass exactly
+**`--project-dir and --dolt-url are mutually exclusive`** — pass exactly
 one work source. `--beads-url` is an alias for `--dolt-url`, so it is
-also mutually exclusive with `--beads-dir`. The two modes select
+also mutually exclusive with `--project-dir`. The two modes select
 different adaptor implementations; Gemba doesn't mix them.
 
 **Board shows a "degraded" banner** — the adaptor is reachable but returned an `adaptor_degraded` error. For Mode A this is usually `bd` missing from `PATH` or the rig being mid-`bd dolt pull`; for Mode B it means the Dolt server answered but the read failed (check `gt dolt status`).

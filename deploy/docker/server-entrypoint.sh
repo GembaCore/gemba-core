@@ -40,7 +40,8 @@ serve_args=(serve --listen "${LISTEN}" --auth "${AUTH}")
 if truthy "${GEMBA_NOOP:-}"; then
   serve_args+=(--noop)
 else
-  append_flag --beads-dir "${GEMBA_BEADS_DIR:-}"
+  project_dir="${GEMBA_PROJECT_DIR:-${GEMBA_BEADS_DIR:-}}"
+  append_flag --project-dir "${project_dir}"
   append_flag --beads-url "${GEMBA_BEADS_URL:-}"
 fi
 
@@ -77,8 +78,8 @@ fi
 
 log "starting Gemba on ${LISTEN}"
 log "data: ${DATA_DIR}"
-if [ -n "${GEMBA_BEADS_DIR:-}" ]; then
-  log "beads dir: ${GEMBA_BEADS_DIR}"
+if [ -n "${GEMBA_PROJECT_DIR:-${GEMBA_BEADS_DIR:-}}" ]; then
+  log "project dir: ${GEMBA_PROJECT_DIR:-${GEMBA_BEADS_DIR:-}}"
 fi
 if [ -n "${GEMBA_BEADS_URL:-}" ]; then
   log "beads url: ${GEMBA_BEADS_URL}"

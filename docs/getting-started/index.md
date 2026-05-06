@@ -7,7 +7,7 @@ items, configuring agent runtimes, and tuning parallelism.
 
 - **[Running Gemba against your work items](running-against-your-work-items)** — the
   fastest path from `make build` to a Kanban in the browser.
-  Covers both `--beads-dir` (CLI) and `--dolt-url` (direct-SQL) modes,
+  Covers both `--project-dir` (CLI) and `--dolt-url` (direct-SQL) modes,
   Beads-only and Beads-read-only modes, expected banner output, and
   troubleshooting.
 - **[Agent setup](agent-setup)** — the `.gemba/agents.toml` schema
@@ -34,6 +34,10 @@ items, configuring agent runtimes, and tuning parallelism.
   and dispatches them to sticky pooled sessions. Two flows: native
   (local panes) and Gas Town (rigs + polecats). Includes the SPA
   editor at `/settings/pools`.
+- **[Working with Spec Kit](working-with-spec-kit)** — turn
+  `spec.md` user stories and `tasks.md` implementation rows into a
+  staged Beads milestone / epic / story / task tree, then reconcile
+  changes iteratively.
 
 ## Where next
 

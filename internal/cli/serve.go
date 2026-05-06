@@ -42,6 +42,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/server/metrics"
 	"github.com/GembaCore/gemba-core/internal/shader"
 	"github.com/GembaCore/gemba-core/internal/shader/gastown"
+	"github.com/GembaCore/gemba-core/internal/skills/bootstrap_review"
 	"github.com/GembaCore/gemba-core/internal/skills/epic_order"
 	"github.com/GembaCore/gemba-core/internal/skills/escalation_handoff"
 	"github.com/GembaCore/gemba-core/internal/transport/api"
@@ -62,6 +63,9 @@ By default binds to 127.0.0.1:7666 with no authentication. To expose on the
 network, pass --listen with a non-loopback address AND --auth to enable
 authentication. Binding a non-loopback interface without --auth is an error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := normalizeProjectDirFlags(&cfg, cmd.Flags().Changed("project-dir"), cmd.Flags().Changed("beads-dir")); err != nil {
+				return err
+			}
 			if err := cfg.NormalizeListen(cmd.Flags().Changed("port")); err != nil {
 				return err
 			}
@@ -113,18 +117,21 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"parent directory for per-session worktrees "+
 			"(default: sibling 'worktrees' next to repo root)")
 
-	cmd.Flags().StringVar(&cfg.BeadsDir, "beads-dir", "",
-		"path to the beads workspace the WorkPlane adaptor targets "+
+	cmd.Flags().StringVar(&cfg.ProjectDir, "project-dir", "",
+		"path to the project worktree the WorkPlane adaptor targets "+
 			"(required unless --dolt-url is set; mutually exclusive with it)")
+	cmd.Flags().StringVar(&cfg.BeadsDir, "beads-dir", "",
+		"deprecated alias for --project-dir")
+	_ = cmd.Flags().MarkDeprecated("beads-dir", "use --project-dir")
 
 	cmd.Flags().StringVar(&cfg.DoltURL, "dolt-url", "",
 		"mysql://user[:pass]@host:port/dbname of a Dolt server to read/write "+
-			"beads directly (required unless --beads-dir is "+
+			"beads directly (required unless --project-dir is "+
 			"set; mutually exclusive with it)")
 
 	cmd.Flags().BoolVar(&cfg.Noop, "noop", false,
 		"bind the in-memory noop reference WorkPlane + OrchestrationPlane "+
-			"(dev/demo; mutually exclusive with --beads-dir / --dolt-url; "+
+			"(dev/demo; mutually exclusive with --project-dir / --dolt-url; "+
 			"forces --orchestration=noop)")
 
 	cmd.Flags().BoolVar(&cfg.BeadsOnly, "beads-only", false,
@@ -134,7 +141,7 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"run Beads-only with every Beads mutation blocked")
 	cmd.Flags().StringVar(&cfg.BeadsOnlyManifestPath, "beads-history", "",
 		"path to the Beads-only JSONL manifest "+
-			"(default: <beads-dir>/.gemba/session-manifest.jsonl)")
+			"(default: <project-dir>/.gemba/session-manifest.jsonl)")
 	cmd.Flags().StringVar(&cfg.DoltURL, "beads-url", "",
 		"alias for --dolt-url; Beads/Dolt URL to use as the work source")
 	cmd.Flags().BoolVar(&cfg.Restart, "restart", false,
@@ -172,6 +179,9 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 
 func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bool, bannerOut io.Writer) error {
 	applyServeEnvDefaults(&cfg)
+	if cfg.ProjectDir != "" && cfg.BeadsDir == "" {
+		cfg.BeadsDir = cfg.ProjectDir
+	}
 	normalizeServeMode(&cfg)
 
 	if err := cfg.ValidateBindPolicy(); err != nil {
@@ -194,13 +204,13 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		return err
 	}
 
-	// --beads-dir and --dolt-url are mutually exclusive; catch the
+	// --project-dir and --dolt-url are mutually exclusive; catch the
 	// conflict before any further startup work so the operator gets a
 	// clean message instead of silently seeing one ignored.
 	if err := cfg.ValidateWorkPlaneFlags(); err != nil {
 		return err
 	}
-	// --beads-dir, when set, must resolve to a real rig (contains .beads/
+	// --project-dir, when set, must resolve to a real project (contains .beads/
 	// or IS .beads/). Validating here — before any other startup work —
 	// gives the operator an actionable error instead of a later cryptic
 	// "bd: no .beads/ found" from a spawned subprocess. The resolved path
@@ -223,6 +233,7 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		slog.Info("beads-only Dolt URL mode: skipping bd CLI startup probe")
 	}
 	cfg.BeadsDir = resolvedBeadsDir
+	cfg.ProjectDir = resolvedBeadsDir
 	if cfg.BeadsReadOnly && cfg.Restart && cfg.BeadsDir != "" {
 		if err := restartBdReadonly(ctx, cfg.BeadsDir); err != nil {
 			return err
@@ -443,6 +454,10 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		slog.Warn("personas: escalation_handoff.Register failed; skill not exposed",
 			"err", err)
 	}
+	if err := bootstrap_review.Register(skillRegistry); err != nil {
+		slog.Warn("personas: bootstrap_review.Register failed; skill not exposed",
+			"err", err)
+	}
 	personaDispatcher := persona.NewDispatcher(persona.NewAuditLog(""))
 	// Persona registry: load persona TOML files from the workspace's
 	// .gemba/personas/ directory. Missing dir is acceptable — POST
@@ -580,6 +595,29 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	return srv.Shutdown(shutdownCtx)
 }
 
+func normalizeProjectDirFlags(cfg *config.ServeConfig, projectChanged, beadsChanged bool) error {
+	if cfg == nil {
+		return nil
+	}
+	if !projectChanged {
+		return nil
+	}
+	if beadsChanged {
+		projectDir := filepath.Clean(cfg.ProjectDir)
+		beadsDir := filepath.Clean(cfg.BeadsDir)
+		projectAbs, projectErr := filepath.Abs(projectDir)
+		beadsAbs, beadsErr := filepath.Abs(beadsDir)
+		if projectErr == nil && beadsErr == nil {
+			projectDir, beadsDir = projectAbs, beadsAbs
+		}
+		if projectDir != beadsDir {
+			return fmt.Errorf("--project-dir and deprecated --beads-dir both set to different paths; pass only --project-dir")
+		}
+	}
+	cfg.BeadsDir = cfg.ProjectDir
+	return nil
+}
+
 func applyServeEnvDefaults(cfg *config.ServeConfig) {
 	if cfg == nil {
 		return
@@ -593,6 +631,12 @@ func applyServeEnvDefaults(cfg *config.ServeConfig) {
 	if cfg.DoltURL == "" {
 		if v := strings.TrimSpace(os.Getenv("GEMBA_BEADS_URL")); v != "" {
 			cfg.DoltURL = v
+		}
+	}
+	if cfg.BeadsDir == "" {
+		if v := strings.TrimSpace(os.Getenv("GEMBA_PROJECT_DIR")); v != "" {
+			cfg.ProjectDir = v
+			cfg.BeadsDir = v
 		}
 	}
 	if cfg.BeadsDir == "" {
@@ -667,7 +711,7 @@ func shouldProbeBd(cfg config.ServeConfig) bool {
 // the listener opens.
 //
 // Two adaptor paths, selected by flag:
-//   - --beads-dir (or default cwd): shell to the bd CLI (writes OK)
+//   - --project-dir (or default cwd): shell to the bd CLI (writes OK)
 //   - --dolt-url: direct Dolt SQL (writes OK unless --beads-read-only)
 //
 // ValidateWorkPlaneFlags already guaranteed they're not both set, so
@@ -717,7 +761,7 @@ func registerWorkPlane(ctx context.Context, cfg config.ServeConfig) (*workPlaneR
 		slog.Info("cold-start: no projects found and Beads URL is built-in default; "+
 			"WorkPlane will NOT be bound — every project-data route returns 503 "+
 			"adaptor_not_configured until the operator creates a project at /new "+
-			"or restarts with an explicit --dolt-url / --beads-dir",
+			"or restarts with an explicit --dolt-url / --project-dir",
 			"beads_url_source", cfg.BeadsURLSource,
 			"hint", "open / in the SPA; you will be redirected to /new")
 		return &workPlaneReg{
@@ -1346,17 +1390,17 @@ func configureTLS(srv *http.Server, cfg *config.ServeConfig) error {
 }
 
 // loadPersonaRegistry resolves the persona TOML directory from the
-// resolved beads-dir (the workspace root) and loads it. A missing
+// resolved project-dir (the workspace root) and loads it. A missing
 // directory yields an empty registry rather than an error — the
 // operator may not have authored personas yet, and POST /api/consults
 // degrades to 503 cleanly via the lazy-attach gate. A malformed file
 // logs and yields an empty registry so a single bad TOML can't
 // brick the whole serve startup.
 //
-// The personas dir lives at <beads-dir parent>/.gemba/personas — but
+// The personas dir lives at <project-dir>/.gemba/personas — but
 // for the read-only adaptors today the workspace root maps to the
 // dir containing .beads, so .gemba lives alongside .beads. When
-// beads-dir is empty (no WorkPlane bound) the registry stays empty.
+// project-dir is empty (no WorkPlane bound) the registry stays empty.
 func loadPersonaRegistry(cfg config.ServeConfig) *corepersona.Registry {
 	if cfg.BeadsDir == "" {
 		return corepersona.NewRegistry()

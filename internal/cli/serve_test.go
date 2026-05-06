@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -38,24 +39,38 @@ func TestServe_ConfigFlagAccepted(t *testing.T) {
 	}
 }
 
-// TestServe_BeadsDirRejectsMissingPath pins the --beads-dir validation at
+// TestServe_ProjectDirRejectsMissingPath pins the --project-dir validation at
 // the command layer (gm-dir): a non-existent path must fail before the
 // HTTP server starts. The full validation matrix lives in
 // internal/config.TestResolveBeadsDir; this test guards the CLI wiring
 // (flag → ResolveBeadsDir → startup gate).
-func TestServe_BeadsDirRejectsMissingPath(t *testing.T) {
+func TestServe_ProjectDirRejectsMissingPath(t *testing.T) {
 	cmd := newServeCmd(BuildInfo{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--beads-dir", "/definitely/not/a/real/path/gm-dir"})
+	cmd.SetArgs([]string{"--project-dir", "/definitely/not/a/real/path/gm-dir"})
 
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatalf("want error, got nil")
 	}
-	if !strings.Contains(err.Error(), "beads-dir") {
+	if !strings.Contains(err.Error(), "project-dir") {
 		t.Errorf("error missing expected text: %v", err)
+	}
+}
+
+func TestServe_BeadsDirRemainsDeprecatedAlias(t *testing.T) {
+	cmd := newServeCmd(BuildInfo{})
+	if cmd.Flags().Lookup("project-dir") == nil {
+		t.Fatal("--project-dir flag missing from serve command")
+	}
+	f := cmd.Flags().Lookup("beads-dir")
+	if f == nil {
+		t.Fatal("--beads-dir compatibility alias missing from serve command")
+	}
+	if f.Deprecated == "" {
+		t.Fatal("--beads-dir should be marked deprecated")
 	}
 }
 
@@ -105,6 +120,34 @@ func TestServeEnvDefaults_BeadsOnly(t *testing.T) {
 	}
 }
 
+func TestBeadsOnlyProjectDirIsValidLocalMode(t *testing.T) {
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	if err := os.MkdirAll(filepath.Join(project, ".beads"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.ServeConfig{ProjectDir: project, BeadsOnly: true}
+	if err := normalizeProjectDirFlags(&cfg, true, false); err != nil {
+		t.Fatalf("normalizeProjectDirFlags: %v", err)
+	}
+	normalizeServeMode(&cfg)
+	if err := cfg.ValidateWorkPlaneFlags(); err != nil {
+		t.Fatalf("ValidateWorkPlaneFlags: %v", err)
+	}
+	resolved, err := cfg.ResolveBeadsDir()
+	if err != nil {
+		t.Fatalf("ResolveBeadsDir: %v", err)
+	}
+	cfg.BeadsDir = resolved
+	cfg.ProjectDir = resolved
+	if !shouldProbeBd(cfg) {
+		t.Fatal("beads-only project-dir mode should use the local bd adaptor")
+	}
+	if got := cfg.BeadsSource().Kind; got != "project-dir" {
+		t.Fatalf("BeadsSource kind = %q, want project-dir", got)
+	}
+}
+
 func TestNormalizeServeMode_ReadOnlyImpliesBeadsOnly(t *testing.T) {
 	cfg := config.ServeConfig{BeadsReadOnly: true}
 	normalizeServeMode(&cfg)
@@ -129,17 +172,17 @@ func TestServe_OrchestrationDefaultsToNative(t *testing.T) {
 	}
 }
 
-// TestServe_RejectsBothBeadsDirAndDoltURL pins the mutex between the
+// TestServe_RejectsBothProjectDirAndDoltURL pins the mutex between the
 // two workplane selectors at the CLI layer. The rejection must
 // happen before ResolveBeadsDir / NewWorkPlane fires so the operator
 // gets a single, actionable error.
-func TestServe_RejectsBothBeadsDirAndDoltURL(t *testing.T) {
+func TestServe_RejectsBothProjectDirAndDoltURL(t *testing.T) {
 	cmd := newServeCmd(BuildInfo{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{
-		"--beads-dir", "/tmp",
+		"--project-dir", "/tmp",
 		"--dolt-url", "mysql://root@127.0.0.1:3307/gemba",
 	})
 	err := cmd.Execute()
@@ -175,7 +218,7 @@ func TestServe_RejectsTLSCertWithoutKey(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--tls-cert", "/tmp/c.pem", "--beads-dir", "/tmp"})
+	cmd.SetArgs([]string{"--tls-cert", "/tmp/c.pem", "--project-dir", "/tmp"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatalf("want error, got nil")
@@ -197,7 +240,7 @@ func TestServe_RejectsTLSSelfSignedWithCertKey(t *testing.T) {
 		"--tls-self-signed",
 		"--tls-cert", "/tmp/c.pem",
 		"--tls-key", "/tmp/k.pem",
-		"--beads-dir", "/tmp",
+		"--project-dir", "/tmp",
 	})
 	err := cmd.Execute()
 	if err == nil {
@@ -227,16 +270,16 @@ func TestServe_NoopFlagAccepted(t *testing.T) {
 	}
 }
 
-// TestServe_NoopRejectsBeadsDir pins the mutex between --noop and the
+// TestServe_NoopRejectsProjectDir pins the mutex between --noop and the
 // real WorkPlane selectors. The noop adaptor is itself a complete
-// WorkPlane — pairing it with --beads-dir would force the server to
+// WorkPlane — pairing it with --project-dir would force the server to
 // pick one and silently ignore the other, so we reject up front.
-func TestServe_NoopRejectsBeadsDir(t *testing.T) {
+func TestServe_NoopRejectsProjectDir(t *testing.T) {
 	cmd := newServeCmd(BuildInfo{})
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--noop", "--beads-dir", "/tmp"})
+	cmd.SetArgs([]string{"--noop", "--project-dir", "/tmp"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Fatalf("want error, got nil")

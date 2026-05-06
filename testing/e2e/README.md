@@ -60,7 +60,7 @@ pnpm --filter gemba-e2e test:deep          # every @deep spec across the matrix
 Per-worker isolation: each Playwright worker gets its own
 `mkdtemp` directory under `$TMPDIR`. Inside it, `bd init --prefix
 e2e<worker>` creates a fresh `.beads/` with an embedded Dolt
-engine local to that directory, then `gemba serve --beads-dir
+engine local to that directory, then `gemba serve --project-dir
 <td>` boots against it on a free port. Teardown rms the tempdir.
 The shared `:3307` Dolt server is never touched, so deep-mode
 testing can't generate orphan databases.

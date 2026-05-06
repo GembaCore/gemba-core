@@ -116,7 +116,7 @@ formulas/*.formula.toml
 ```
 
 Search paths for formulas:
-1. `<beads-dir>/formulas/` (active project)
+1. `<project-dir>/formulas/` (active project)
 2. `~/.beads/formulas/` (operator)
 3. `$GT_ROOT/.beads/formulas/` (orchestrator)
 

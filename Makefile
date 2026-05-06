@@ -223,7 +223,7 @@ docker-run: docker-image ## run the standard Docker server image on http://local
 	  -p 7666:7666 \
 	  -v gemba-data:/data \
 	  -v "$$(pwd):/work" \
-	  -e GEMBA_BEADS_DIR=/work \
+	  -e GEMBA_PROJECT_DIR=/work \
 	  $(GEMBA_DOCKER_IMAGE)
 
 quickstart-image: ## build the self-contained Docker quickstart image (Gemba + bd + sample Beads)

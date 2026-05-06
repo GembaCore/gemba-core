@@ -1,7 +1,7 @@
 // gm-root.18: the old static workspace-label button is replaced by the
 // ProjectPicker dropdown. The BeadsSource fetch (getServerConfig) is
 // kept only as a tooltip on the picker pill via the context — the label
-// is now the active project name, not the beads-dir basename.
+// is now the active project name, not the project-dir basename.
 import { Command, MessageSquare, Moon, Sun, User } from 'lucide-react';
 import { useTheme } from '@/lib/theme-context';
 import { usePalette } from '@/components/palette/PaletteContext';

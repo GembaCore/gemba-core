@@ -14,7 +14,7 @@ test.describe("@modes beads-only", () => {
       runtime_mode: "beads_only",
       beads_only: true,
       beads_source: {
-        kind: "beads-dir",
+        kind: "project-dir",
         label: "fake-beads",
         detail: "/tmp/fake",
       },

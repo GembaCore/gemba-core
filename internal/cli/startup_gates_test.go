@@ -219,15 +219,15 @@ func TestApplyBeadsURLDefault_CLIFlagWins(t *testing.T) {
 	}
 }
 
-// TestApplyBeadsURLDefault_BeadsDirWins ensures --beads-dir is not
+// TestApplyBeadsURLDefault_ProjectDirWins ensures --project-dir is not
 // overwritten — the bd-CLI path takes priority over the dolt path.
-func TestApplyBeadsURLDefault_BeadsDirWins(t *testing.T) {
-	cfg := config.ServeConfig{BeadsDir: "/tmp/myrig"}
+func TestApplyBeadsURLDefault_ProjectDirWins(t *testing.T) {
+	cfg := config.ServeConfig{ProjectDir: "/tmp/myrig"}
 	if err := applyBeadsURLDefault(&cfg); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.DoltURL != "" {
-		t.Errorf("DoltURL must stay empty when BeadsDir is set; got %q", cfg.DoltURL)
+		t.Errorf("DoltURL must stay empty when ProjectDir is set; got %q", cfg.DoltURL)
 	}
 }
 

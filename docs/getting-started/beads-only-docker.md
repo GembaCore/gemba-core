@@ -10,7 +10,7 @@ Beads adaptor together.
 | Mode | Image | Best for | Writes |
 | --- | --- | --- | --- |
 | Quickstart sample project | `soflo1/gemba-core-quickstart:latest` | First look, demos, screenshots, learning the UI | Writable by default |
-| Beads-only | `soflo1/gemba-core:latest` | Mounting your own Beads worktree or using a Dolt URL | Writable unless the source denies writes |
+| Beads-only | `soflo1/gemba-core:latest` | Mounting your own project worktree or using a Dolt URL | Writable unless the source denies writes |
 | Beads-read-only | Either image with `GEMBA_BEADS_READ_ONLY=true` | Review, audits, sharing a safe UI over real work | Blocked by Gemba before the adaptor |
 
 The UI starts in Beads-only mode with Beads surfaces enabled: the Board
@@ -99,7 +99,7 @@ volume. Reusing the same volume keeps your edits. To reset the demo:
 docker volume rm gemba-quickstart-data
 ```
 
-## Beads-only with your own local Beads worktree
+## Beads-only with your own local project worktree
 
 Use the standard image when you already have a directory containing a
 `.beads` database.
@@ -110,7 +110,7 @@ Use the standard image when you already have a directory containing a
    docker pull soflo1/gemba-core:latest
    ```
 
-2. Start from the Beads worktree directory:
+2. Start from the project worktree directory:
 
    ```bash
    cd /path/to/your/beads-worktree
@@ -121,7 +121,7 @@ Use the standard image when you already have a directory containing a
      -v gemba-data:/data \
      -v "$PWD:/work" \
      -e GEMBA_BEADS_ONLY=true \
-     -e GEMBA_BEADS_DIR=/work \
+     -e GEMBA_PROJECT_DIR=/work \
      soflo1/gemba-core:latest
    ```
 
@@ -180,7 +180,7 @@ docker run --rm -it \
   -v "$PWD:/work" \
   -e GEMBA_BEADS_ONLY=true \
   -e GEMBA_BEADS_READ_ONLY=true \
-  -e GEMBA_BEADS_DIR=/work \
+  -e GEMBA_PROJECT_DIR=/work \
   soflo1/gemba-core:latest
 ```
 
@@ -246,7 +246,7 @@ the printed one-time URL.
 - **No sample data**: remove the demo volume and restart:
   `docker volume rm gemba-quickstart-data`.
 - **Mounted worktree is empty**: make sure you started Docker from the
-  directory that contains `.beads`, or set `GEMBA_BEADS_DIR` to the
+  directory that contains `.beads`, or set `GEMBA_PROJECT_DIR` to the
   container path where that directory is mounted.
 - **Dolt URL cannot connect**: from Docker Desktop use
   `host.docker.internal` for host services; on Linux use the host IP or

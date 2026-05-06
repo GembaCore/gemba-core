@@ -5,7 +5,7 @@ import { useCapabilities } from '@/capabilities';
 import { InteractionPanel } from '@/components/interactions/InteractionPanel';
 import { NewSessionDialog } from '@/components/sessions/NewSessionDialog';
 import { useWorkItem } from '@/hooks/useWorkItems';
-import { useEnsureInteraction } from '@/hooks/useInteractions';
+import { useEnsureInteraction, useSendInteractionTurn } from '@/hooks/useInteractions';
 import {
   decodeInteractionTarget,
   runtimeHostForScope,
@@ -39,6 +39,7 @@ export function InteractionDetail({ id }: { id: string }) {
   const { orchestrationPlane } = useCapabilities();
   const kind = kindForScope(decoded);
   const ensured = useEnsureInteraction(decoded, kind);
+  const sendTurn = useSendInteractionTurn();
   const navigate = useNavigate();
   const [dispatchOpen, setDispatchOpen] = useState(false);
 
@@ -52,6 +53,14 @@ export function InteractionDetail({ id }: { id: string }) {
     <>
       <InteractionPanel
         session={session}
+        onSend={(message) =>
+          sendTurn.mutate({
+            id: session.id,
+            message,
+            kind,
+            scope: decoded,
+          })
+        }
         onAction={(actionId) => {
           if (actionId === 'dispatch' && workItemId) setDispatchOpen(true);
         }}
@@ -105,15 +114,59 @@ function buildInteractionSession(
       },
     ],
     draft: {
-      title: 'Working Brief',
+      title: resolvedScope.type === 'bootstrap' ? 'Bootstrap Review Goal' : 'Working Brief',
       summary:
-        'Use this tab for scoped clarification, refinement, triage, and runtime supervision without leaving the board context.',
+        resolvedScope.type === 'bootstrap'
+          ? 'Translate the bootstrap input into a draft Beads decomposition, shape it through guided review and manual edits, then ratify a finished set that represents the operator perspective.'
+          : 'Use this tab for scoped clarification, refinement, triage, and runtime supervision without leaving the board context.',
       bullets: [
-        'Transcript-bearing exchanges share the same shape across onboarding, PM consults, escalations, walks, and session supervision.',
-        'The UI host remains the RHP while native, Codex, Claude, or Gas Town owns the runtime lifecycle.',
-        'Structured actions can later ratify changes, dispatch sessions, attach evidence, or resolve escalations from this same surface.',
+        ...(resolvedScope.type === 'bootstrap'
+          ? [
+              'Draft beads are not stored in a Beads database until ratified.',
+              'The review should preserve full provider context, including Spec Kit user stories, tasks, acceptance criteria, and draft item tree.',
+              'The final output is a coherent set of milestones, epics, stories, and beads ready for database commit or JSONL export.',
+            ]
+          : [
+              'Transcript-bearing exchanges share the same shape across onboarding, PM consults, escalations, walks, and session supervision.',
+              'The UI host remains the RHP while native, Codex, Claude, or Gas Town owns the runtime lifecycle.',
+              'Structured actions can later ratify changes, dispatch sessions, attach evidence, or resolve escalations from this same surface.',
+            ]),
       ],
     },
+    quickReplies:
+      resolvedScope.type === 'bootstrap'
+        ? [
+            {
+              id: 'looks-good',
+              label: 'Looks good',
+              message: 'This draft looks good. Help me do a final readiness check before I ratify it.',
+            },
+            {
+              id: 'change-things',
+              label: 'I want changes',
+              message:
+                'I want to change some things. Review the draft as a batch and suggest what should be renamed, split, merged, or clarified.',
+            },
+            {
+              id: 'edit-board',
+              label: "I'll edit on board",
+              message:
+                "I'll edit on the board. Keep track of the goal and call out anything I should verify before ratifying.",
+            },
+            {
+              id: 'export-jsonl',
+              label: 'Export JSONL',
+              message:
+                'I want to export this draft as Beads-compatible JSONL instead of committing it to a database right now.',
+            },
+            {
+              id: 'need-questions',
+              label: 'Ask questions',
+              message:
+                'Ask me any clarifying questions needed before this draft becomes milestones, epics, and beads.',
+            },
+          ]
+        : undefined,
     suggestedActions: [
       {
         id: 'refine',
@@ -149,6 +202,8 @@ function buildInteractionSession(
 
 function kindForScope(scope: InteractionScope): InteractionKind {
   switch (scope.type) {
+    case 'bootstrap':
+      return 'pm_consult';
     case 'escalation':
       return 'escalation_triage';
     case 'walk':
@@ -173,6 +228,9 @@ function scopeFromItem(scope: InteractionScope, item: WorkItem | undefined): Int
 }
 
 function promptForScope(scope: InteractionScope, item: WorkItem | undefined): string {
+  if (scope.type === 'bootstrap') {
+    return `Ready to review bootstrap draft ${scope.title ?? scope.id}. Ask clarifying questions, reshape the generated Beads as a batch, then approve the final staged set when it looks right.`;
+  }
   if (!item) {
     return `Ready to work with ${scope.type} ${scope.id}. Load details, then use this surface for follow-up questions, decisions, or runtime handoff.`;
   }
@@ -190,7 +248,7 @@ function capabilitiesForRuntime(host: InteractionSession['runtimeHost']): string
     case 'claude':
       return ['transcript.peek', 'input.send', 'pause.resume', 'evidence.attach'];
     case 'server_persona':
-      return ['suggested_actions.apply', 'ratify'];
+      return ['input.send', 'suggested_actions.apply', 'ratify'];
     case 'manual':
       return ['input.send'];
   }

@@ -30,7 +30,7 @@ if [[ ! -x "${ROOT}/bin/gemba" ]]; then
 fi
 
 echo "==> Booting gemba on :${PORT} against ${RIG}"
-"${ROOT}/bin/gemba" serve --beads-dir "${RIG}" --port "${PORT}" --quiet \
+"${ROOT}/bin/gemba" serve --project-dir "${RIG}" --port "${PORT}" --quiet \
   >/tmp/gemba-screenshots.log 2>&1 &
 GEMBA_PID=$!
 trap 'kill "${GEMBA_PID}" 2>/dev/null || true' EXIT

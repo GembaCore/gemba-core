@@ -1,0 +1,51 @@
+schema_version: "1.0"
+
+extension:
+  id: "gemba"
+  name: "Gemba Beads Sync"
+  version: "0.1.0"
+  description: "Stage and optionally apply Gemba/Beads sync plans after Spec Kit tasks generation"
+  author: "GembaCore"
+  repository: "https://github.com/GembaCore/gemba-core"
+  license: "MIT"
+  homepage: "https://gembacore.github.io/gemba-core/getting-started/working-with-spec-kit/"
+
+requires:
+  speckit_version: ">=0.2.0"
+  commands:
+    - "speckit.tasks"
+  tools:
+    - name: "curl"
+      required: true
+    - name: "jq"
+      required: false
+
+provides:
+  commands:
+    - name: "speckit.gemba.sync"
+      file: "commands/speckit.gemba.sync.md"
+      description: "Preview or apply the Gemba Beads sync plan for the current Spec Kit feature"
+
+  config:
+    - name: "gemba-config.yml"
+      template: "config-template.yml"
+      description: "Gemba API connection and sync policy"
+      required: false
+
+hooks:
+  after_tasks:
+    command: "speckit.gemba.sync"
+    optional: true
+    prompt: "Stage this feature's Gemba/Beads sync plan?"
+    description: "Preview the Gemba Beads milestone/epic/story/task changes after tasks.md generation"
+
+tags:
+  - "gemba"
+  - "beads"
+  - "planning"
+  - "sync"
+
+defaults:
+  api_base: "http://127.0.0.1:7666/api"
+  auto_apply: false
+  allow_deletes: false

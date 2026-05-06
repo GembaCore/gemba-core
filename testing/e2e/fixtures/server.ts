@@ -947,7 +947,7 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   }
   if (isPath(path, '/api/beads/health')) {
     const caps = capabilitiesPlane.get();
-    const source = caps.beads_source ?? { kind: 'beads-dir', label: 'fake-beads', detail: '/tmp/fake' };
+    const source = caps.beads_source ?? { kind: 'project-dir', label: 'fake-beads', detail: '/tmp/fake' };
     const adaptor = adaptorsState.get().find((a) => a.plane === 'work');
     return json({
       source,
@@ -964,7 +964,7 @@ function dispatch(route: Route, stores: FakeStores): unknown {
   }
   if (isPath(path, '/api/beads/health/actions')) {
     const caps = capabilitiesPlane.get();
-    const source = caps.beads_source ?? { kind: 'beads-dir', label: 'fake-beads', detail: '/tmp/fake' };
+    const source = caps.beads_source ?? { kind: 'project-dir', label: 'fake-beads', detail: '/tmp/fake' };
     const adaptor = adaptorsState.get().find((a) => a.plane === 'work');
     const body = parseBody(route.request().postData());
     return json({

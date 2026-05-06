@@ -85,7 +85,7 @@ Proposed CLI shape:
 
 ```bash
 gemba serve --beads-only --beads-url dolt://example/gemba
-gemba serve --beads-only --beads-dir /workspace/.beads
+gemba serve --beads-only --project-dir /workspace/.beads
 gemba serve --beads-only --worktree /workspace/project
 ```
 
@@ -101,10 +101,10 @@ Implemented boot-time controls:
 
 ```bash
 gemba serve --beads-only --beads-url mysql://root@127.0.0.1:3307/gemba
-gemba serve --beads-only --beads-dir /workspace/project
+gemba serve --beads-only --project-dir /workspace/project
 gemba serve --beads-only --beads-history /data/session-manifest.jsonl
 gemba serve --beads-read-only --beads-url mysql://reader@127.0.0.1:3307/gemba
-gemba serve --beads-read-only --beads-dir /workspace/project --restart
+gemba serve --beads-read-only --project-dir /workspace/project --restart
 ```
 
 Container-style environment variables are also honored:
@@ -112,13 +112,13 @@ Container-style environment variables are also honored:
 ```bash
 GEMBA_MODE=beads_only
 GEMBA_BEADS_URL=mysql://root@127.0.0.1:3307/gemba
-GEMBA_BEADS_DIR=/workspace/project
+GEMBA_PROJECT_DIR=/workspace/project
 GEMBA_BEADS_READ_ONLY=true
 GEMBA_BEADS_ONLY_MANIFEST=/data/session-manifest.jsonl
 ```
 
 When `--beads-only` uses a Dolt URL, the `bd` CLI is not required at
-startup. A local `--beads-dir` source still uses the bd adaptor and
+startup. A local `--project-dir` source still uses the bd adaptor and
 therefore still requires `bd`.
 
 ### Help/coaching panel source selection
@@ -433,13 +433,13 @@ The quickstart image:
 
 - includes the `gemba` binary and `bd` CLI;
 - seeds `examples/my-project/seed.json` into `/data/example-project`
-  when neither `GEMBA_BEADS_DIR` nor `GEMBA_BEADS_URL` is supplied;
+  when neither `GEMBA_PROJECT_DIR` nor `GEMBA_BEADS_URL` is supplied;
 - persists the Beads database, auth token, and history manifest in
   `/data`;
 - starts `gemba serve --beads-only` against that source;
 - accepts `GEMBA_BEADS_READ_ONLY=true` to start the same container in
   Beads-read-only mode;
-- accepts `GEMBA_BEADS_DIR=/work` for a mounted local Beads worktree or
+- accepts `GEMBA_PROJECT_DIR=/work` for a mounted local project worktree or
   `GEMBA_BEADS_URL=mysql://...` for direct Dolt URL mode.
 
 Standard server model:
@@ -455,7 +455,7 @@ The standard `Dockerfile` image:
 - does not seed demo data;
 - defaults to
   `gemba serve --listen 0.0.0.0:7666 --auth token --orchestration none`;
-- accepts `GEMBA_BEADS_DIR=/work` for mounted local Beads worktrees and
+- accepts `GEMBA_PROJECT_DIR=/work` for mounted local project worktrees and
   `GEMBA_BEADS_URL=mysql://...` for direct Dolt URL mode;
 - accepts `GEMBA_BEADS_ONLY=true` and `GEMBA_BEADS_READ_ONLY=true` for
   the Beads-only and Beads-read-only variants;
@@ -473,7 +473,7 @@ surface.
 Implemented points:
 
 - CLI/server config parsing for `--beads-only`, `--beads-url`,
-  `--beads-dir`, `--beads-history`, `--beads-read-only`, and matching
+  `--project-dir`, `--beads-history`, `--beads-read-only`, and matching
   environment variables.
 - Dolt URL mode is explicitly writable by default; the direct SQL
   adaptor creates, updates, deletes, labels, parents, and state changes

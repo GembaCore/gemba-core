@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { ensureInteraction } from '@/api/interactions';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ensureInteraction, sendInteractionTurn } from '@/api/interactions';
 import type { InteractionKind, InteractionScope, InteractionSession } from '@/interactions/types';
 import { ApiError } from '@/api/client';
 
@@ -21,3 +21,16 @@ export function useEnsureInteraction(
   });
 }
 
+export function useSendInteractionTurn() {
+  const qc = useQueryClient();
+  return useMutation<
+    InteractionSession,
+    ApiError,
+    { id: string; message: string; kind: InteractionKind; scope: InteractionScope }
+  >({
+    mutationFn: ({ id, message }) => sendInteractionTurn({ id, message }),
+    onSuccess: (session, vars) => {
+      qc.setQueryData(interactionKeys.ensure(vars.kind, vars.scope), session);
+    },
+  });
+}

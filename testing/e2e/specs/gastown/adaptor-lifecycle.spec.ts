@@ -161,7 +161,7 @@ async function startShimmedGastownServer(): Promise<StartedServer> {
     '127.0.0.1',
     '--port',
     String(port),
-    '--beads-dir',
+    '--project-dir',
     beadsRoot,
     '--worktrees-dir',
     worktrees,
