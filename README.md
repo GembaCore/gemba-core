@@ -161,6 +161,21 @@ scores. See
 
 ## 🚦 Status
 
+**First-class operator paths.**
+
+- **Spec Kit support** is now a bootstrap-pack path for turning Spec Kit
+  artifacts into draft Beads milestones, epics, stories, and tasks before
+  ratification. See
+  [Working with Spec Kit](https://gembacore.github.io/gemba-core/getting-started/working-with-spec-kit/)
+  in the docs tree.
+- **Beads-only modes** are supported for running Gemba directly against
+  Beads databases, including writable, read-only, mounted worktree, Dolt
+  URL, and Docker quickstart flows. See
+  [Beads-only Docker](https://gembacore.github.io/gemba-core/getting-started/beads-only-docker/)
+  and
+  [Run Gemba against your work items](https://gembacore.github.io/gemba-core/getting-started/running-against-your-work-items/)
+  in the docs tree.
+
 **Milestone 3 — Native orchestration shipped (April 2026).** Gemba runs
 end-to-end against a Beads rig with native terminal orchestration out of
 the box; work items, escalations, and session state all round-trip
