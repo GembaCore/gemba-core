@@ -2,7 +2,6 @@ import { expect, test } from "../../fixtures/server";
 import { execFileSync } from "node:child_process";
 import { epic, parentChild, workItem } from "../../builders/workitem";
 import { workPlaneManifest } from "../../fixtures/capabilitiesPlane";
-import { BoardPage } from "../../pages/BoardPage";
 
 test.describe("@modes beads-only", () => {
   test("hides orchestration surfaces and presents Cascade plus Flat bead views", async ({
@@ -56,8 +55,7 @@ test.describe("@modes beads-only", () => {
       await route.fallback();
     });
 
-    const board = new BoardPage(page);
-    await board.gotoEpicView();
+    await page.goto("/board");
 
     await expect(page.getByTestId("sidebar-item-board")).toBeVisible();
     await expect(page.getByTestId("sidebar-item-refine")).toBeVisible();
@@ -66,16 +64,16 @@ test.describe("@modes beads-only", () => {
     await expect(page.getByTestId("sidebar-item-walk")).toHaveCount(0);
     await expect(page.getByTestId("sidebar-item-escalations")).toHaveCount(0);
 
-    await expect(page.getByTestId("board-list")).toBeVisible();
-    await expect(page.getByTestId("view-toggle-list")).toHaveAttribute(
-      "data-active",
-      "true",
-    );
+    await expect(page.getByTestId("board-workitem")).toBeVisible();
+    await expect(page.getByTestId(`workitem-card-${milestone.id}-state-pill`)).toBeVisible();
+    await expect(page.getByTestId(`workitem-card-${seeded.id}-state-pill`)).toBeVisible();
+    await expect(page.getByTestId(`workitem-card-${bead.id}-state-pill`)).toBeVisible();
+    await expect(page.getByTestId("view-toggle-list")).toHaveCount(0);
     await expect(page.getByTestId("view-toggle-epic")).toHaveCount(0);
     await expect(page.getByTestId("view-toggle-workitem")).toHaveCount(0);
-    await expect(page.getByTestId("board-list-kind-milestone")).toBeVisible();
+    await expect(page.getByTestId("view-toggle-cascade")).toHaveCount(0);
 
-    await page.getByTestId("view-toggle-cascade").click();
+    await page.goto("/board?layout=cascade");
     await expect(page.getByTestId("beads-cascade")).toBeVisible();
     await expect(
       page.getByTestId(`beads-cascade-row-${milestone.id}`),

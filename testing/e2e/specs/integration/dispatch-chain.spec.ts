@@ -123,7 +123,7 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
 
     // 3. Open the board.
     const network = recordSpawnNetwork(page);
-    await page.goto(`${realServer.baseURL}/board`);
+    await page.goto(`${realServer.baseURL}/board?layout=epic`);
     await page.waitForSelector('[data-testid^="board-epic-cell-"]', { timeout: 20_000 });
 
     // The default swimlane mode hides orphan epics under a separate
@@ -179,8 +179,8 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
     expect(cardBox && cellBox, 'card + cell bounding boxes').toBeTruthy();
     const sx = cardBox!.x + cardBox!.width / 2;
     const sy = cardBox!.y + cardBox!.height / 2;
-    const tx = cellBox!.x + cellBox!.width / 2;
-    const ty = cellBox!.y + cellBox!.height / 2;
+    const tx = cellBox!.x + Math.min(cellBox!.width * 0.35, 140);
+    const ty = cellBox!.y + Math.min(cellBox!.height * 0.35, 80);
 
     await page.mouse.move(sx, sy);
     await page.mouse.down();
@@ -192,29 +192,34 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
     await page.mouse.up();
 
     // 7. PATCH lands first — the SPA optimistically re-renders, then
-    //    fires the network call. Any PATCH against this bead is fine;
-    //    the body should mention the new state_category.
-    await expect.poll(() => network.patches.length, { timeout: 10_000 }).toBeGreaterThan(0);
-    const patchHit =
-      network.patches.find(
-        (p) =>
-          p.url.includes(encodeURIComponent(apiBeadID)) ||
-          p.url.includes(encodeURIComponent(beadID)) ||
-          p.url.includes(encodeURIComponent(shortID)),
-      ) ?? network.patches[0];
-    if (patchHit?.body) {
-      expect(patchHit.body, 'PATCH body should set state_category=started').toContain('started');
-    }
+    //    fires the network call. Other PATCHes can follow quickly when
+    //    dispatch completes, so wait specifically for this bead's
+    //    transition into In Progress instead of asserting the first
+    //    matching request body.
+    const isTargetPatch = (p: { url: string; body: string | null }) =>
+      p.url.includes(encodeURIComponent(apiBeadID)) ||
+      p.url.includes(encodeURIComponent(beadID)) ||
+      p.url.includes(encodeURIComponent(shortID));
+    await expect
+      .poll(
+        () =>
+          network.patches.some(
+            (p) => isTargetPatch(p) && (p.body ?? '').includes('"state_category":"started"'),
+          ),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
 
     // 8. The auto-dispatch loop fires POST /api/sessions once the
     //    state moves to started. Some workspaces gate this behind an
     //    operator confirmation (managed mode); when no POST lands
     //    we still record the chain made it to PATCH and skip the
     //    pane assertion below.
-    const sawPost = await Promise.race([
-      expect.poll(() => network.sessionPosts.length, { timeout: 15_000 }).toBeGreaterThan(0).then(() => true),
-      Promise.resolve(false),
-    ]).catch(() => false);
+    const sawPost = await expect
+      .poll(() => network.sessionPosts.length, { timeout: 15_000 })
+      .toBeGreaterThan(0)
+      .then(() => true)
+      .catch(() => false);
     if (!sawPost) {
       test.skip(true, 'POST /api/sessions never fired — workspace likely in managed mode (gm-5v8v.11)');
     }
