@@ -17,3 +17,25 @@ const (
 	EventEgressRuleCreate Event = "egress.rule.create"
 	EventEgressRuleDelete Event = "egress.rule.delete"
 )
+
+// VM lifecycle audit events (gm-o9t8.3.2.7). Emitted by the firecracker
+// supervisor on successful Start (EventVMSpawn) and on Stop completion
+// (EventVMDestroy). Payload carries vm_id + wsid + the boot parameters
+// on Spawn; vm_id + duration_ms + exit_status on Destroy.
+//
+// EventVMEgressDenied is the runtime egress-deny event that
+// gm-o9t8.3.6.2 will emit when it lands; the constant is declared
+// here so the supervisor (this bead) and the runtime enforcer (the
+// next bead) share the same identifier without one importing the
+// other.
+const (
+	EventVMSpawn        Event = "vm.spawn"
+	EventVMDestroy      Event = "vm.destroy"
+	EventVMEgressDenied Event = "vm.egress.denied"
+)
+
+// KindVMLifecycle is the coarse Kind used by VM lifecycle records.
+// Declared in audit (the package that owns Kind) rather than the
+// supervisor so log readers can filter by kind without a string
+// literal duplicated across surfaces.
+const KindVMLifecycle Kind = "vm_lifecycle"

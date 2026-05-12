@@ -101,6 +101,43 @@ func (m *MemAuditor) Append(_ context.Context, ws, runID string, kind Kind, payl
 	return &rec, nil
 }
 
+// VMLifecycleAdapter bridges the firecracker supervisor's narrow
+// LifecycleAuditor interface (VMEvent(ctx, name, payload)) onto an
+// Auditor. The supervisor cannot import the audit package directly
+// without an import cycle, so this adapter lives here and is wired by
+// the server during construction (gm-o9t8.3.2.7).
+type VMLifecycleAdapter struct{ a Auditor }
+
+// NewVMLifecycleAdapter wraps a so the supervisor can call VMEvent.
+// Nil a yields a nil adapter — callers should pass that nil through
+// to firecracker.Options.Auditor and the supervisor will skip audit.
+func NewVMLifecycleAdapter(a Auditor) *VMLifecycleAdapter {
+	if a == nil {
+		return nil
+	}
+	return &VMLifecycleAdapter{a: a}
+}
+
+// VMEvent satisfies firecracker.LifecycleAuditor. We stamp the supplied
+// event name into the payload under "event", classify the record as
+// KindVMLifecycle, and route wsid (when present in payload) into the
+// Workspace column so log readers can filter per-workspace.
+func (v *VMLifecycleAdapter) VMEvent(ctx context.Context, event string, payload map[string]any) {
+	if v == nil || v.a == nil {
+		return
+	}
+	ws, _ := payload["wsid"].(string)
+	runID, _ := payload["vm_id"].(string)
+	// Copy payload + stamp event so callers don't accidentally mutate
+	// what they passed in.
+	enriched := make(map[string]any, len(payload)+1)
+	for k, val := range payload {
+		enriched[k] = val
+	}
+	enriched["event"] = event
+	_, _ = v.a.Append(ctx, ws, runID, KindVMLifecycle, enriched)
+}
+
 // Query returns a copy of every record with Seq > fromSeq that matches
 // kind (empty kind matches all).
 func (m *MemAuditor) Query(_ context.Context, fromSeq int64, kind Kind) ([]Record, error) {
