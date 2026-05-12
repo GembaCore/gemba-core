@@ -288,6 +288,75 @@ func TestStatus_PrimaryEndpoint_NoRepoNoAgents(t *testing.T) {
 	}
 }
 
+// TestStatus_SendsBearerToken pins the gm-o9t8.1.17 contract: the
+// CLI must route the /workspaces/{wsid}/status probe (and the
+// list-by-status fallbacks) through the typed client so the bearer
+// token reaches the server. We assert by 401'ing requests that
+// arrive without `Authorization: Bearer TESTPAT` and 200'ing the
+// ones that do; the CLI should succeed end-to-end.
+func TestStatus_SendsBearerToken(t *testing.T) {
+	want := "Bearer TESTPAT"
+	handler := http.NewServeMux()
+	handler.HandleFunc("/api/v1/workspaces/_/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != want {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"missing_token","code":"unauthorized"}`))
+			return
+		}
+		// Force the list-fallback path so we cover BOTH endpoints in
+		// one test: primary returns 501, then /api/work-items must
+		// also receive the bearer.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotImplemented)
+		_, _ = w.Write([]byte(`{"error":"not_implemented","message":"stub"}`))
+	})
+	handler.HandleFunc("/api/work-items", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != want {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"error":"missing_token","code":"unauthorized"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	})
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	defer installFakeClient(t, srv.URL)()
+
+	out, errb, err := runCmd(t, "status", "--server", srv.URL)
+	if err != nil {
+		t.Fatalf("status: unexpected error %v\nstderr=%s\nstdout=%s", err, errb, out)
+	}
+	// Empty workspace hint confirms the CLI rendered, not a 401 path.
+	if !strings.Contains(out, "No beads yet") {
+		t.Errorf("expected empty-workspace dashboard, got %q (stderr=%s)", out, errb)
+	}
+}
+
+// TestStatus_Unauthorized_PropagatesError pins the auth-failure path:
+// when the workspace-status probe returns 401, the CLI must surface
+// an error rather than silently fall through to the list endpoint
+// (which would just 401 again with worse context).
+func TestStatus_Unauthorized_PropagatesError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":"missing_token","code":"unauthorized"}`))
+	}))
+	defer srv.Close()
+	defer installFakeClient(t, srv.URL)()
+
+	_, _, err := runCmd(t, "status", "--server", srv.URL)
+	if err == nil {
+		t.Fatalf("status: want error on 401, got nil")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
+		t.Errorf("err should mention unauthorized; got %v", err)
+	}
+}
+
 // TestRootHelpStillWorks ensures the no-args dispatch didn't displace
 // cobra's --help handling.
 func TestRootHelpStillWorks(t *testing.T) {
