@@ -43,12 +43,28 @@ import (
 //     StopVMM (force) on timeout. Wait wraps fc.Machine.Wait into the
 //     same error-channel shape the fallback uses.
 type linuxSupervisor struct {
-	log         *slog.Logger
-	bridgeName  string
-	socketDir   string
-	devMode     bool
-	mu          sync.Mutex
-	tapCounter  int
+	log        *slog.Logger
+	bridgeName string
+	socketDir  string
+	devMode    bool
+	mu         sync.Mutex
+	tapCounter int
+
+	// egress is optional. When set, Start fetches the workspace's
+	// effective rules after boot and installs them via
+	// applyEgressRules. When nil, the supervisor logs at WARN and
+	// proceeds without enforcement — matching the dev-mode contract.
+	egress EgressProvider
+}
+
+// AttachEgress wires an EgressProvider into the supervisor so future
+// Start calls install per-VM nftables rules. Calling this with nil
+// detaches; calling twice replaces. Safe to call before or after the
+// first Start.
+func (s *linuxSupervisor) AttachEgress(p EgressProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.egress = p
 }
 
 // linuxState is what we hide inside VM.state on the Linux path.
@@ -199,6 +215,38 @@ func (s *linuxSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) {
 		close(vm.waitCh)
 	}()
 
+	// Egress enforcement (gm-o9t8.3.6.2). We apply rules *after* the
+	// VM has reached the "machine.Start returned cleanly" milestone
+	// so a guest can't race out a packet before the table is in
+	// place. A failure here aborts the spawn — we tear down the VM
+	// and return the error, so callers never end up with a running
+	// VM that has unbounded egress.
+	s.mu.Lock()
+	provider := s.egress
+	s.mu.Unlock()
+	if provider != nil && !s.devMode {
+		rules, eerr := provider.Effective(ctx, spec.WorkspaceID)
+		if eerr != nil {
+			_ = machine.StopVMM()
+			cancel()
+			return nil, fmt.Errorf("firecracker: fetch effective egress rules: %w", eerr)
+		}
+		rs, aerr := applyEgressRules(ctx, s.log, vm.ID, tapName, rules)
+		if aerr != nil {
+			_ = machine.StopVMM()
+			cancel()
+			return nil, fmt.Errorf("firecracker: apply egress rules: %w", aerr)
+		}
+		if rs != nil {
+			vm.mu.Lock()
+			vm.egressTable = rs.TableName
+			vm.mu.Unlock()
+		}
+	} else if provider == nil {
+		s.log.Warn("firecracker: no egress provider attached; VM has unrestricted outbound network",
+			"vm_id", vm.ID, "workspace_id", spec.WorkspaceID)
+	}
+
 	s.log.Info("firecracker VM started",
 		"vm_id", vm.ID,
 		"workspace_id", spec.WorkspaceID,
@@ -259,6 +307,20 @@ func (s *linuxSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Duratio
 	case <-time.After(2 * time.Second):
 		s.log.Warn("firecracker: waitCh did not drain after StopVMM",
 			"vm_id", vm.ID)
+	}
+
+	// Tear down the per-VM nftables table. Failures here are
+	// non-fatal — the VM is gone, leaking a table is a leak but not
+	// a security regression. The next applyEgressRules call would
+	// clean up the same name anyway.
+	vm.mu.Lock()
+	table := vm.egressTable
+	vm.mu.Unlock()
+	if table != "" {
+		if err := teardownEgressRules(s.log, table); err != nil {
+			s.log.Warn("firecracker: egress teardown failed",
+				"vm_id", vm.ID, "table", table, "err", err)
+		}
 	}
 	return nil
 }

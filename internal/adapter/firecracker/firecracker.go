@@ -26,7 +26,31 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/GembaCore/gemba-core/internal/egress"
 )
+
+// EgressProvider is the supervisor-side view of the egress policy
+// store. We accept the narrow Effective() surface rather than the
+// full egress.Store so callers can plug in any source — the in-mem
+// store under test, the SQL-backed store in production, a stub that
+// always returns Defaults() for cold-start.
+//
+// The supervisor calls Effective once per VM Start and stamps the
+// result onto the per-VM nftables table. TTL-aware refresh is a
+// follow-up (see report).
+type EgressProvider interface {
+	Effective(ctx context.Context, wsid string) ([]egress.Rule, error)
+}
+
+// EgressAware is implemented by both the Linux and fallback
+// supervisors. Callers obtain a *fc.Supervisor and type-assert to
+// EgressAware before plugging in a provider — this keeps the core
+// Supervisor interface unchanged and avoids forcing a second method
+// onto callers (like fake supervisors in tests) that don't need it.
+type EgressAware interface {
+	AttachEgress(p EgressProvider)
+}
 
 // Supervisor is the lifecycle interface for a Firecracker-style VM
 // host. It mirrors `internal/adapter/dolt/supervisor.Supervisor` in
@@ -104,6 +128,12 @@ type VM struct {
 	stopped bool
 	waitCh  chan error
 	once    sync.Once
+
+	// egressTable is the per-VM nftables table name set by the egress
+	// applier during Start. Empty when egress enforcement was not
+	// configured (no provider attached) or when the fallback path
+	// ran. Stop reads it to drive teardownEgressRules.
+	egressTable string
 }
 
 // validate enforces the minimal Spec contract shared by every backend.
