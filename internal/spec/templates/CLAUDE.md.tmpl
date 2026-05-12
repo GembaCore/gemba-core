@@ -1,0 +1,8 @@
+## Working in this project
+
+This project uses **ASDD** (Agentic Spec-Driven Development). Tasks live in `bd`, not in `tasks.md` or `todo.md`. The `tasks.md` file is deprecated and a hook rejects writes to it.
+
+- Add work: edit `specs/<slug>/spec.md`, then run `gemba spec reconcile <slug>`. For bulk imports (RFCs, planning docs, legacy tasks.md from upstream): future `gemba spec analyze <path>` will materialize them as a structured spec — for now, hand-author specs/<slug>/spec.md.
+- Inspect: `gemba bead list` / `gemba bead show <id>`
+- Work: `gemba run <bead>` or `gemba agent dispatch <bead>`
+- Govern: `gemba spec watch <slug>` shows live status

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Gemba project constitution",
+  "type": "object",
+  "properties": {
+    "asdd_mode": {
+      "type": "boolean",
+      "description": "When true, the project uses Agentic Spec-Driven Development (tasks live in bd, not tasks.md)."
+    },
+    "spec_strict": {
+      "type": "boolean",
+      "description": "Master switch: enables strict ASDD enforcement (hooks, lint, preflight)."
+    },
+    "spec_strict_no_tasks_md": {
+      "type": "boolean",
+      "description": "When true, the PreToolUse hook rejects writes to tasks.md and gemba constitution lint reports their presence as an error. Inherits spec_strict by default."
+    }
+  },
+  "additionalProperties": true
+}
