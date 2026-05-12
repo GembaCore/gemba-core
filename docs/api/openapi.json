@@ -43,6 +43,14 @@
     {
       "name": "stub",
       "description": "Routes documented at the URL level only; full request/response schemas land in follow-up beads."
+    },
+    {
+      "name": "govern",
+      "description": "Govern verbs \u2014 spec, decision, and constitution surfaces (gm-o9t8.6/.8/.9/.10/.12). Stubs in M1; real implementation under the ASDD epic gm-v0sp."
+    },
+    {
+      "name": "convenience",
+      "description": "Convenience verbs \u2014 single-shot reads that join across plane boundaries (e.g. workspace status)."
     }
   ],
   "paths": {
@@ -1176,6 +1184,622 @@
         }
       }
     },
+    "/api/v1/workspaces/{wsid}/specs": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "List specs declared in the workspace.",
+        "description": "Read the workspace's spec catalog. Backs `gemba spec ls` and the SPA's Govern tab. Stub: returns 501 until gm-v0sp lands the real listing.",
+        "operationId": "listSpecs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spec list envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}": {
+      "patch": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Mutate spec lifecycle status (freeze / unfreeze / archive).",
+        "description": "PATCH the spec status \u2014 `{\"status\":\"archived\"}` freezes the spec; `{\"status\":\"active\"}` unfreezes. Single PATCH replaces the spec-status verb pair so REST semantics line up with the canonical /api/v1/* surface. Stub: 501 until gm-v0sp.",
+        "operationId": "patchSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "archived"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Spec status updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}/reconcile": {
+      "post": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Reconcile a spec against its current implementation (dry-run or apply).",
+        "description": "Compute the drift between the spec and Beads/source. Default is dry-run (returns the diff). With `?apply=1` the server applies the reconciliation atomically against Beads under the X-GEMBA-Confirm nonce. Stub: 501 until gm-v0sp.",
+        "operationId": "reconcileSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          },
+          {
+            "name": "apply",
+            "in": "query",
+            "required": false,
+            "description": "When `1`, apply the reconcile plan; otherwise return a dry-run diff.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Optional reconcile parameters \u2014 operator-supplied notes, scope filters.",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run plan or applied result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Apply accepted; reconciliation runs asynchronously. Subscribe to `/specs/{slug}/watch` for progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}/watch": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Subscribe to spec reconciliation events (SSE).",
+        "description": "Long-lived `text/event-stream` connection that emits Server-Sent Events as the spec reconciles. Event types (`event:` line) are:\n\n- `bead.status` \u2014 a watched Beads issue changed status. Payload: `{ \"id\": \"...\", \"status\": \"...\", \"updated_at\": \"...\" }`.\n- `spec.drift` \u2014 drift detected between spec and Beads. Payload: `{ \"spec\": \"...\", \"summary\": \"...\", \"changes\": [...] }`.\n- `reconcile.complete` \u2014 reconcile run finished. Payload: `{ \"run_id\": \"...\", \"applied\": true|false, \"errors\": [...] }`.\n\nEach event is `\\n\\n`-terminated; clients tolerate keep-alive comments (`: ping`). Stub: 501 until gm-v0sp.",
+        "operationId": "watchSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream open. Media type is `text/event-stream`; the schema below describes a single event payload, not the line-framed wire format.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "description": "Decoded event payload (the `data:` line of a single SSE frame). The frame's `event:` line is one of `bead.status`, `spec.drift`, or `reconcile.complete`; concrete payload fields vary per type \u2014 see endpoint description.",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "bead.status",
+                        "spec.drift",
+                        "reconcile.complete"
+                      ]
+                    },
+                    "payload": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}/snapshot": {
+      "post": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Snapshot the spec's current rendered state.",
+        "description": "Persist a point-in-time render of the spec + its joined Beads view. Used as the input to `adopt` and as the audit trail for reconciliations. Stub: 501 until gm-v0sp.",
+        "operationId": "snapshotSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot id + metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}/adopt": {
+      "post": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Adopt a snapshot as the spec's canonical baseline.",
+        "description": "Promotes a previously-taken snapshot to the spec's adopted baseline; subsequent reconciles diff against it. Stub: 501 until gm-v0sp.",
+        "operationId": "adoptSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "snapshot_id"
+                ],
+                "properties": {
+                  "snapshot_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot adopted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/decisions": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "List decisions recorded in the workspace.",
+        "description": "Returns the decision log (ADR-shaped records). Stub: 501 until gm-v0sp.",
+        "operationId": "listDecisions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decision list envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Record a new decision.",
+        "description": "Create an ADR-shaped record in the decision log. Stub: 501 until gm-v0sp.",
+        "operationId": "createDecision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "body"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string",
+                    "description": "Markdown body."
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "proposed",
+                      "accepted",
+                      "rejected",
+                      "superseded"
+                    ]
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/decisions/refs": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Cross-reference graph for `constitution lint --strict`.",
+        "description": "Returns the directed graph of decision-to-decision references (and decision-to-spec/work-item refs where declared). Backs `gemba constitution lint --strict`, which walks the graph to detect orphan or cyclic references. Stub: 501 until gm-v0sp.",
+        "operationId": "decisionRefs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reference graph.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/decisions/{id}": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Fetch one decision by id.",
+        "description": "Returns the ADR-shaped record plus its inbound/outbound references. Stub: 501 until gm-v0sp.",
+        "operationId": "getDecision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/DecisionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decision record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/decisions/{id}/lock": {
+      "patch": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Lock or unlock a decision against edits.",
+        "description": "Toggles the decision's `locked` flag. Locked decisions reject subsequent PATCHes from the standard write path so a recorded constitution stays canonical. Stub: 501 until gm-v0sp.",
+        "operationId": "lockDecision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/DecisionID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "locked"
+                ],
+                "properties": {
+                  "locked": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lock state updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/labels": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Catalog of declared vs referenced labels (spec lint --strict).",
+        "description": "Returns the union of labels declared on specs/decisions/work-items and those referenced from spec bodies. `gemba spec lint --strict` consumes the diff to detect typos and orphaned label refs. Stub: 501 until gm-v0sp.",
+        "operationId": "listLabels",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Label catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/status": {
+      "get": {
+        "tags": [
+          "convenience"
+        ],
+        "summary": "Unified workspace status \u2014 backs `gemba` (no args).",
+        "description": "Single-shot read returning the joined work/spec/decision posture for the workspace. The CLI's no-args invocation prints a one-screen summary built from this response. Stub: 501 until gm-v0sp.",
+        "operationId": "workspaceStatus",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace status envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
     "/api/whoami": {
       "get": {
         "tags": [
@@ -1210,7 +1834,80 @@
     }
   },
   "components": {
+    "parameters": {
+      "ConfirmNonce": {
+        "name": "X-GEMBA-Confirm",
+        "in": "header",
+        "required": true,
+        "description": "Idempotency nonce required by every state-mutating endpoint. The value MUST be a UUID v4 the caller generated locally. Replays of the same nonce against the same route return the cached prior response within the nonce TTL (per-process; see internal/server/nonce.go). Missing or malformed values yield 400. Documented under gm-o9t8.14 as the canonical write-confirm header.",
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        }
+      },
+      "WorkspaceID": {
+        "name": "wsid",
+        "in": "path",
+        "required": true,
+        "description": "Workspace identifier \u2014 1:1 with a beads database (see /api/config beads_source).",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "SpecSlug": {
+        "name": "slug",
+        "in": "path",
+        "required": true,
+        "description": "Spec slug \u2014 the URL-safe identifier the spec was created with (matches `gemba spec ls` output).",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "DecisionID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Decision identifier (ADR id).",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
     "responses": {
+      "NotImplemented": {
+        "description": "Endpoint stub \u2014 wire shape is pinned but the server has not yet implemented the operation. Body carries `{ \"error\": { \"code\": \"not_implemented\", \"message\": \"...\" } }`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "error"
+              ],
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "examples": [
+                        "not_implemented"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "BadRequest": {
         "description": "Malformed request \u2014 invalid query parameters or body.",
         "content": {
