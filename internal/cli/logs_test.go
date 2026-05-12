@@ -38,6 +38,7 @@ func TestLogs_FollowStreamsEvents(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
+	defer withRunClientFactory(httpClientFactoryForTests(srv.URL))()
 
 	root := newRootCmd(BuildInfo{})
 	root.SetArgs([]string{"logs", "-f", "gm-r.1", "--base-url", srv.URL, "--max-retries", "0"})
@@ -93,6 +94,7 @@ func TestLogs_FollowReconnectsWithLastEventID(t *testing.T) {
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
+	defer withRunClientFactory(httpClientFactoryForTests(srv.URL))()
 
 	root := newRootCmd(BuildInfo{})
 	root.SetArgs([]string{"logs", "-f", "gm-r.1", "--base-url", srv.URL, "--max-retries", "3"})
@@ -115,5 +117,75 @@ func TestLogs_FollowReconnectsWithLastEventID(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "first") || !strings.Contains(out.String(), "second") {
 		t.Errorf("missing events in output: %q", out.String())
+	}
+}
+
+// TestLogs_ServerFlag verifies the canonical --server flag on `gemba
+// logs -f` (gm-o9t8.1.13).
+func TestLogs_ServerFlag(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		fl := w.(http.Flusher)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fl.Flush()
+		fmt.Fprint(w, "id: 1\nevent: hello\ndata: world\n\n")
+		fl.Flush()
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	defer withRunClientFactory(httpClientFactoryForTests(srv.URL))()
+
+	root := newRootCmd(BuildInfo{})
+	root.SetArgs([]string{"logs", "-f", "gm-r.1", "--server", srv.URL, "--max-retries", "0"})
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	done := make(chan error, 1)
+	go func() { done <- root.Execute() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatalf("timeout; out=%s", out.String())
+	}
+	if !strings.Contains(out.String(), "world") {
+		t.Errorf("missing event payload; got %q", out.String())
+	}
+	if strings.Contains(errOut.String(), "deprecated") {
+		t.Errorf("--server should not emit deprecation warning; stderr=%q", errOut.String())
+	}
+}
+
+// TestLogs_BaseURLDeprecationWarning verifies --base-url emits a
+// stderr warning on `gemba logs` (gm-o9t8.1.13).
+func TestLogs_BaseURLDeprecationWarning(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		fl := w.(http.Flusher)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fl.Flush()
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	defer withRunClientFactory(httpClientFactoryForTests(srv.URL))()
+
+	root := newRootCmd(BuildInfo{})
+	root.SetArgs([]string{"logs", "-f", "gm-r.1", "--base-url", srv.URL, "--max-retries", "0"})
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	done := make(chan error, 1)
+	go func() { done <- root.Execute() }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timeout")
+	}
+	if !strings.Contains(errOut.String(), "--base-url is deprecated") {
+		t.Errorf("expected deprecation warning on stderr, got %q", errOut.String())
 	}
 }

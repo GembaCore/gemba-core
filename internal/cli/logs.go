@@ -1,4 +1,5 @@
 // gm-o9t8.1.5.5 — `gemba logs` CLI.
+// gm-o9t8.1.11    — migrated to the typed client at internal/client.
 //
 // Two modes:
 //
@@ -25,13 +26,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/spf13/cobra"
 
-	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
+	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 	"github.com/GembaCore/gemba-core/internal/sse"
 )
 
@@ -58,19 +57,17 @@ going, up to --max-retries times.`,
 		},
 	}
 	cmd.Flags().BoolP("follow", "f", false, "follow the live event stream")
-	cmd.Flags().String("base-url", "", "base URL of a running gemba serve (default http://localhost:7666)")
+	addServerFlags(cmd)
 	cmd.Flags().Bool("json", false, "print each event's raw JSON payload on its own line")
 	cmd.Flags().Int("max-retries", 5, "max reconnect attempts before giving up")
 	return cmd
 }
 
 func runLogsFollow(cmd *cobra.Command, runID string) error {
-	baseURL, _ := cmd.Flags().GetString("base-url")
-	resolved, err := serverconfig.Resolve(baseURL)
+	server, err := resolveServerFlag(cmd, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
-	baseURL = resolved
 	asJSON, _ := cmd.Flags().GetBool("json")
 	maxRetries, _ := cmd.Flags().GetInt("max-retries")
 
@@ -79,10 +76,15 @@ func runLogsFollow(cmd *cobra.Command, runID string) error {
 		ctx = context.Background()
 	}
 
+	client, err := runClientFactoryFn(server)
+	if err != nil {
+		return err
+	}
+
 	lastID := ""
 	backoff := 250 * time.Millisecond
 	for attempt := 0; ; attempt++ {
-		newLast, err := followOnce(ctx, cmd, baseURL, runID, lastID, asJSON)
+		newLast, err := followOnce(ctx, cmd, client, runID, lastID, asJSON)
 		if newLast != "" {
 			lastID = newLast
 		}
@@ -111,36 +113,16 @@ func runLogsFollow(cmd *cobra.Command, runID string) error {
 // error that ended the stream. A nil error means the server closed
 // cleanly (EOF) — at that point the run is done and we stop retrying.
 // Anything else (network error, non-2xx status) is retryable.
-func followOnce(ctx context.Context, cmd *cobra.Command, baseURL, runID, lastID string, asJSON bool) (string, error) {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return lastID, fmt.Errorf("parse base-url: %w", err)
-	}
-	u.Path = "/events"
-	q := u.Query()
-	q.Set("work_item_id", runID)
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+func followOnce(ctx context.Context, cmd *cobra.Command, client *gembaclient.Client, runID, lastID string, asJSON bool) (string, error) {
+	body, err := client.WorkItemEvents(ctx, runID, lastID)
 	if err != nil {
 		return lastID, err
 	}
-	req.Header.Set("Accept", "text/event-stream")
-	if lastID != "" {
-		req.Header.Set("Last-Event-ID", lastID)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return lastID, fmt.Errorf("GET %s: %w", u.String(), err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return lastID, fmt.Errorf("GET %s: %s", u.String(), resp.Status)
-	}
+	defer body.Close()
 
 	ch := make(chan sse.Event, 32)
 	done := make(chan error, 1)
-	go func() { done <- sse.Consume(ctx, resp.Body, ch) }()
+	go func() { done <- sse.Consume(ctx, body, ch) }()
 
 	out := cmd.OutOrStdout()
 	for {
