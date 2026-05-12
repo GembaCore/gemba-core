@@ -45,22 +45,39 @@ type TokenStore interface {
 	// Put records (tenantID, githubID, deviceLabel, argon2id-hash).
 	// Implementations MUST upsert on (tenantID, deviceLabel) so a
 	// re-login from the same device replaces the prior hash rather
-	// than accumulating dead rows.
+	// than accumulating dead rows. If rec.ID is empty Put assigns
+	// a fresh opaque token id.
 	Put(ctx context.Context, rec TokenRecord) error
 	// VerifyToken finds the record whose hashed value matches the
 	// supplied plaintext token, returning (tenantID, true) on match.
 	// Returns ("", false, nil) when no match — distinct from infra
-	// errors which return ("", false, err).
+	// errors which return ("", false, err). Implementations MUST
+	// skip rows where revoked_at IS NOT NULL and SHOULD best-effort
+	// touch last_used_at on a successful verify.
 	VerifyToken(ctx context.Context, plaintext string) (tenant.ID, bool, error)
+	// List returns metadata for non-revoked tokens belonging to
+	// tenantID. Never returns plaintext or hashes.
+	List(ctx context.Context, tenantID string) ([]TokenInfo, error)
+	// Revoke soft-deletes (tenantID, tokenID). Returns
+	// ErrTokenNotFound when the row is absent or already revoked.
+	Revoke(ctx context.Context, tenantID, tokenID string) error
+	// Rotate issues a fresh bearer + argon2id hash and revokes the
+	// prior row in a single transaction. Returns (plaintext, newID,
+	// deviceLabel). ErrTokenNotFound when (tenantID, tokenID) is
+	// absent or already revoked.
+	Rotate(ctx context.Context, tenantID, tokenID string) (string, string, string, error)
 }
 
 // TokenRecord is one persisted row in the auth_tokens table.
 type TokenRecord struct {
+	ID          string // opaque 32-char hex id; the auth_tokens primary key
 	TenantID    tenant.ID
 	GitHubID    int64
 	DeviceLabel string
 	HashPHC     string // argon2id PHC string; the plaintext is never stored
 	CreatedAt   time.Time
+	LastUsedAt  *time.Time
+	RevokedAt   *time.Time
 }
 
 // oauthLoginRequest is the wire shape the CLI POSTs after completing

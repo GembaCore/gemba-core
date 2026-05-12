@@ -15,6 +15,7 @@ func newAuthCmd() *cobra.Command {
 		Short: "Manage gemba authentication credentials",
 	}
 	cmd.AddCommand(newTokenCmd())
+	cmd.AddCommand(newAuthTokensCmd())
 	return cmd
 }
 

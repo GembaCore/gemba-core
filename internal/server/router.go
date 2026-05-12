@@ -846,6 +846,16 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// gm-o9t8.3.5.1: GitHub OAuth callback. When OAuth is
 		// unconfigured this returns 503 oauth_not_configured.
 		api.Get("/v1/auth/oauth/github/callback", r.oauthCallback)
+
+		// gm-o9t8.3.5.5: OAuth bearer token management surface.
+		// Auth-gated by the shared apiAuth middleware; each handler
+		// further scopes by the bearer's tenant id (so cross-tenant
+		// reads/mutations 404). DELETE + POST are nonce-gated.
+		api.Get("/v1/auth/tokens", r.listAuthTokens)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/v1/auth/tokens/{token_id}", r.revokeAuthToken)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/auth/tokens/{token_id}/rotate", r.rotateAuthToken)
 	})
 
 	// gm-o9t8.3.5.2: device-flow exchange endpoint. Mounted OUTSIDE
