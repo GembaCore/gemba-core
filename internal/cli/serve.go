@@ -27,6 +27,7 @@ import (
 	"github.com/GembaCore/gemba-core/core"
 	"github.com/GembaCore/gemba-core/internal/adapter/bd"
 	"github.com/GembaCore/gemba-core/internal/adapter/dolt"
+	"github.com/GembaCore/gemba-core/internal/adapter/dolt/supervisor"
 	"github.com/GembaCore/gemba-core/internal/adapter/gt"
 	"github.com/GembaCore/gemba-core/internal/adapter/mock"
 	"github.com/GembaCore/gemba-core/internal/adapter/native"
@@ -219,12 +220,47 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	}
 
 	// gm-o9t8.1.2.3: decide embedded-dolt mode before the
-	// WorkPlane-flag validation runs. The supervisor handle is
-	// constructed later (after the router exists) so /api/readyz
-	// can have a target to inspect.
+	// WorkPlane-flag validation runs.
 	if err := applyEmbeddedDoltDefault(&cfg); err != nil {
 		return err
 	}
+
+	// gm-o9t8.1.7: boot the embedded dolt sql-server BEFORE
+	// WorkPlane-flag validation runs. When --embedded-dolt is on and
+	// no external --dolt-url has been supplied, we synthesize a
+	// mysql:// URL from the supervisor's resolved host/port and feed
+	// it into cfg.DoltURL so registerWorkPlane selects the dolt
+	// adaptor against the embedded server. The supervisor handle is
+	// wired into the router for /api/readyz later via
+	// attachEmbeddedDoltToRouter.
+	//
+	// Precedence (matches the bead):
+	//   - --dolt-url set                                  → use it (external Dolt)
+	//   - --embedded-dolt on AND --dolt-url empty         → use supervisor.DSN()
+	//   - neither                                         → ValidateWorkPlaneFlags errors
+	var doltSup *supervisor.Supervisor
+	if cfg.EmbeddedDolt && cfg.DoltURL == "" && cfg.ProjectDir == "" && cfg.BeadsDir == "" && !cfg.Noop {
+		sup, err := bootEmbeddedDoltSupervisor(ctx, &cfg)
+		if err != nil {
+			return err
+		}
+		doltSup = sup
+		if doltSup != nil {
+			cfg.DoltURL = embeddedDoltMySQLURL(doltSup, cfg.DoltEmbeddedDB)
+			cfg.BeadsURLSource = "embedded-dolt"
+		}
+	}
+	defer func() {
+		if doltSup == nil {
+			return
+		}
+		stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := doltSup.Stop(stopCtx); err != nil {
+			slog.Warn("embedded dolt: supervisor stop returned error",
+				"err", err)
+		}
+	}()
 
 	// --project-dir and --dolt-url are mutually exclusive; catch the
 	// conflict before any further startup work so the operator gets a
@@ -563,28 +599,12 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		server.NewRatifier(server.RatifierConfig{}),
 	)
 
-	// gm-o9t8.1.2.3: launch the embedded dolt sql-server supervisor
-	// before the HTTP listener opens, so the very first request that
-	// hits /api/readyz gets a meaningful answer. A failure here is
-	// terminal — we return rather than start serving a degraded
-	// server. The deferred Stop runs AFTER srv.Shutdown returns so
-	// in-flight requests can drain against a live dolt connection
-	// before the child is signalled.
-	doltSup, doltErr := startEmbeddedDolt(ctx, &cfg, handler)
-	if doltErr != nil {
-		return doltErr
-	}
-	defer func() {
-		if doltSup == nil {
-			return
-		}
-		stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		if err := doltSup.Stop(stopCtx); err != nil {
-			slog.Warn("embedded dolt: supervisor stop returned error",
-				"err", err)
-		}
-	}()
+	// gm-o9t8.1.2.3 / gm-o9t8.1.7: the supervisor was booted earlier
+	// (before ValidateWorkPlaneFlags) so its DSN could be injected
+	// into cfg.DoltURL for the dolt WorkPlane adaptor. Now that the
+	// router exists, wire the supervisor's readiness into /api/readyz
+	// so the very first request gets a meaningful answer.
+	attachEmbeddedDoltToRouter(doltSup, handler)
 
 	srv := &http.Server{
 		Addr:              addr,

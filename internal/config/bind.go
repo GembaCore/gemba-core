@@ -192,6 +192,13 @@ type ServeConfig struct {
 	// at startup. Created with 0700 on first launch.
 	DoltDataDir string
 
+	// DoltEmbeddedDB is the name of the MySQL database the dolt
+	// adaptor will open against the embedded supervisor when
+	// --embedded-dolt is on and no external --dolt-url is set
+	// (gm-o9t8.1.7). Defaults to "gemba" at startup. Has no effect
+	// when --dolt-url is set (external Dolt selects its own db).
+	DoltEmbeddedDB string
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —
