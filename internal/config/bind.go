@@ -173,6 +173,25 @@ type ServeConfig struct {
 	// surface (GET / POST / PATCH / DELETE; X-GEMBA-Confirm).
 	CORSAllowedOrigins []string
 
+	// EmbeddedDolt, when true, tells `gemba serve` to spawn and
+	// supervise its own dolt sql-server subprocess instead of
+	// connecting to an externally-managed one (gm-o9t8.1.2.3). The
+	// runtime default lands in applyEmbeddedDoltDefault — true when
+	// no --dolt-url is supplied, false otherwise. Both modes can
+	// coexist; the bd CLI / Dolt adaptors don't care which one is
+	// providing the SQL endpoint.
+	EmbeddedDolt bool
+
+	// EmbeddedDoltSet records whether --embedded-dolt was passed
+	// explicitly on the command line. When false the runtime picks
+	// the default ("true if no --dolt-url else false").
+	EmbeddedDoltSet bool
+
+	// DoltDataDir is the on-disk path the embedded dolt sql-server
+	// uses as its working dir. Empty defaults to "<cwd>/data/dolt"
+	// at startup. Created with 0700 on first launch.
+	DoltDataDir string
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —

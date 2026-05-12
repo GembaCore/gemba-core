@@ -75,6 +75,54 @@
         }
       }
     },
+    "/api/readyz": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Readiness probe. Reflects embedded-dolt supervisor state (gm-o9t8.1.2.3).",
+        "description": "200 when the server is ready to accept requests; 503 when the embedded dolt sql-server supervisor reports not-ready. External-dolt and noop modes always return 200 because readyz cannot make a meaningful upstream claim there.",
+        "operationId": "getReadyz",
+        "responses": {
+          "200": {
+            "description": "Server is ready. Response includes optional `checks` map describing dependency state when an embedded supervisor is attached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string" },
+                      "example": { "dolt": "ok" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server is up but a critical dependency is down (typically the embedded dolt sql-server).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "degraded" },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string" },
+                      "example": { "dolt": "down" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/version": {
       "get": {
         "tags": [
