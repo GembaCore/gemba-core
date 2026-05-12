@@ -2,7 +2,11 @@
 /bin/
 /dist/
 /tmp/
-web/dist/
+# Ignore SPA build outputs, but keep the directory itself tracked via
+# web/dist/.gitkeep so `//go:embed all:web/dist` always finds at least
+# one file on a fresh checkout (before `pnpm build` has been run).
+web/dist/*
+!web/dist/.gitkeep
 web/node_modules/
 testing/acceptance/temperature-spa/demo-artifacts/
 
