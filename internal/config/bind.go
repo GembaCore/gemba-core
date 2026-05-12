@@ -199,6 +199,16 @@ type ServeConfig struct {
 	// when --dolt-url is set (external Dolt selects its own db).
 	DoltEmbeddedDB string
 
+	// WorkspacesRoot is the on-disk parent directory that holds per-
+	// workspace <wsid>/repo/ trees (gm-o9t8.1.16). The router's
+	// /api/v1/workspaces/{wsid}/diff handler resolves
+	// <WorkspacesRoot>/<wsid>/repo/ to find the working tree it
+	// streams `git diff` from. Empty → /diff returns 503
+	// adaptor_not_configured. Defaults at startup to
+	// "<dirname(DoltDataDir)>/workspaces" so the layout follows the
+	// data-dir convention (see internal/server/workspacelayout).
+	WorkspacesRoot string
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —
@@ -343,6 +353,15 @@ func (c ServeConfig) ValidateWorkPlaneFlags() error {
 				"pass one or the other\n" +
 				"  --project-dir routes reads+writes through the bd CLI\n" +
 				"  --dolt-url opens a direct SQL connection to Dolt")
+	}
+	// gm-o9t8.1.15: --project-dir owns its own Dolt config in .beads/
+	// (managed by the bd subprocess). Booting the embedded-dolt
+	// supervisor alongside it leaves the supervisor running but
+	// unused. Reject the combination unless the operator explicitly
+	// opted out via --embedded-dolt=false.
+	if projectDir != "" && c.EmbeddedDoltSet && c.EmbeddedDolt {
+		return fmt.Errorf(
+			"--project-dir owns its own Dolt config; --embedded-dolt is mutually exclusive. Pick one.")
 	}
 	if projectDir == "" && c.DoltURL == "" {
 		return fmt.Errorf(
