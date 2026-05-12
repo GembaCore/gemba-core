@@ -52,6 +52,7 @@ import (
 	"time"
 
 	"github.com/GembaCore/gemba-core/internal/server/httperr"
+	"github.com/GembaCore/gemba-core/internal/server/workspacelayout"
 )
 
 // NewProjectRatifier executes the atomic ratification transaction.
@@ -252,6 +253,15 @@ type RatifierConfig struct {
 	// Now returns the current time; tests pin this for deterministic
 	// timestamps in workspace.toml.
 	Now func() time.Time
+
+	// DataRoot is the gemba-server's data directory — the parent of
+	// the per-workspace data tree at <DataRoot>/workspaces/<id>/
+	// (gm-o9t8.1.2.4). Empty disables per-workspace layout creation;
+	// the ratify transaction still succeeds, and the omission is
+	// surfaced via SeedWarnings so /api/readyz can detect the
+	// inconsistency. Set this in serve wiring once a stable
+	// server-level data dir exists.
+	DataRoot string
 }
 
 // ratifier is the production NewProjectRatifier.
@@ -261,6 +271,7 @@ type ratifier struct {
 	runner             CommandRunner
 	fs                 FilesystemBackend
 	now                func() time.Time
+	dataRoot           string
 }
 
 // NewRatifier builds a production NewProjectRatifier. cmd/gemba serve
@@ -272,6 +283,7 @@ func NewRatifier(cfg RatifierConfig) NewProjectRatifier {
 		runner:             cfg.Runner,
 		fs:                 cfg.FS,
 		now:                cfg.Now,
+		dataRoot:           cfg.DataRoot,
 	}
 	if r.runner == nil {
 		r.runner = execRunner
@@ -422,6 +434,21 @@ func (r *ratifier) Ratify(ctx context.Context, state NewProjectState) (RatifyRes
 			Step: 4, Code: "workspace_toml_failed",
 			Message: "could not write .gemba/workspace.toml",
 			Cause:   err,
+		}
+	}
+
+	// ── Step 4b: ensure the per-workspace data layout (gm-o9t8.1.2.4) ──
+	// Materializes <DataRoot>/workspaces/<id>/{repo,dolt,logs,transcripts}
+	// with 0750. Best-effort: failures surface as SeedWarnings rather
+	// than rolling the transaction back, because the project working
+	// tree (workspace.toml + git + beads DB) is fully usable without
+	// the server-side data tree — /api/readyz reports the gap.
+	// Skipped entirely when DataRoot is empty (legacy serve wirings).
+	var layoutWarnings []string
+	if r.dataRoot != "" {
+		if _, err := workspacelayout.EnsureLayout(name, r.dataRoot); err != nil {
+			layoutWarnings = append(layoutWarnings,
+				"workspace data layout: "+err.Error())
 		}
 	}
 
@@ -580,6 +607,11 @@ func (r *ratifier) Ratify(ctx context.Context, state NewProjectState) (RatifyRes
 	// dirs are skipped silently so a re-ratify (or operator pre-config)
 	// is never clobbered.
 	seedWarnings := r.seedFTUXFiles(target, name)
+	// Merge layout warnings (gm-o9t8.1.2.4) into the same channel so
+	// the SPA's toast renders them uniformly.
+	if len(layoutWarnings) > 0 {
+		seedWarnings = append(layoutWarnings, seedWarnings...)
+	}
 
 	// ── Step 10: stage all files + initial commit ──────────────────
 	if _, err := r.runner(ctx, target, "git", "add", "-A"); err != nil {
