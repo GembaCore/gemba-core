@@ -23,7 +23,7 @@ func contains(s []string, v string) bool {
 
 func TestBeadShow_NoEnrichmentHints(t *testing.T) {
 	root := t.TempDir()
-	out, _, err := runCmd(t, "bead", "show", "gm-1", "--workspace", root)
+	out, _, err := runCmd(t, "bead", "enrichment", "show", "gm-1", "--workspace", root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestBeadShow_NoEnrichmentHints(t *testing.T) {
 
 func TestBeadList_EmptyHints(t *testing.T) {
 	root := t.TempDir()
-	out, _, err := runCmd(t, "bead", "list", "--workspace", root)
+	out, _, err := runCmd(t, "bead", "enrichment", "list", "--workspace", root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestBeadList_EmptyHints(t *testing.T) {
 
 func TestBeadTargetsAdd_PersistsAndLists(t *testing.T) {
 	root := t.TempDir()
-	out, _, err := runCmd(t, "bead", "targets", "add", "gm-1", "internal/auth/", "web/src/Topbar.tsx",
+	out, _, err := runCmd(t, "bead", "enrichment", "targets", "add", "gm-1", "internal/auth/", "web/src/Topbar.tsx",
 		"--workspace", root)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestBeadTargetsAdd_PersistsAndLists(t *testing.T) {
 		t.Errorf("expected 2 targets, got %v", got.Targets)
 	}
 	// And the bead now appears in `bead list`.
-	out, _, err = runCmd(t, "bead", "list", "--workspace", root)
+	out, _, err = runCmd(t, "bead", "enrichment", "list", "--workspace", root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestBeadTargetsRm_DropsEntry(t *testing.T) {
 		BeadID:  "gm-1",
 		Targets: []string{"a.go", "b.go"},
 	})
-	if _, _, err := runCmd(t, "bead", "targets", "rm", "gm-1", "a.go", "--workspace", root); err != nil {
+	if _, _, err := runCmd(t, "bead", "enrichment", "targets", "rm", "gm-1", "a.go", "--workspace", root); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := store.Load(context.Background(), "gm-1")
@@ -95,7 +95,7 @@ func TestBeadTargetsSet_ReplacesAll(t *testing.T) {
 		BeadID:  "gm-1",
 		Targets: []string{"old.go"},
 	})
-	if _, _, err := runCmd(t, "bead", "targets", "set", "gm-1", "new1.go", "new2.go", "--workspace", root); err != nil {
+	if _, _, err := runCmd(t, "bead", "enrichment", "targets", "set", "gm-1", "new1.go", "new2.go", "--workspace", root); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := store.Load(context.Background(), "gm-1")
@@ -112,7 +112,7 @@ func TestBeadTargetsSet_EmptyClearsList(t *testing.T) {
 		BeadID:  "gm-1",
 		Targets: []string{"a.go"},
 	})
-	if _, _, err := runCmd(t, "bead", "targets", "set", "gm-1", "--workspace", root); err != nil {
+	if _, _, err := runCmd(t, "bead", "enrichment", "targets", "set", "gm-1", "--workspace", root); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := store.Load(context.Background(), "gm-1")
@@ -123,7 +123,7 @@ func TestBeadTargetsSet_EmptyClearsList(t *testing.T) {
 
 func TestBeadConceptsAdd_NormalizesAndPersists(t *testing.T) {
 	root := t.TempDir()
-	if _, _, err := runCmd(t, "bead", "concepts", "add", "gm-1", "React Query", "AUTH",
+	if _, _, err := runCmd(t, "bead", "enrichment", "concepts", "add", "gm-1", "React Query", "AUTH",
 		"--workspace", root); err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestBeadConceptsAdd_WarnsOnUnknownTag(t *testing.T) {
 	if err := concepts.SaveVocabulary(root, v); err != nil {
 		t.Fatal(err)
 	}
-	out, errOut, err := runCmd(t, "bead", "concepts", "add", "gm-1", "made-up",
+	out, errOut, err := runCmd(t, "bead", "enrichment", "concepts", "add", "gm-1", "made-up",
 		"--workspace", root)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +164,7 @@ func TestBeadConceptsAdd_ForceSuppressesWarning(t *testing.T) {
 	v := &concepts.Vocabulary{}
 	v.Add(concepts.Term{Name: "auth"})
 	_ = concepts.SaveVocabulary(root, v)
-	_, errOut, err := runCmd(t, "bead", "concepts", "add", "gm-1", "made-up",
+	_, errOut, err := runCmd(t, "bead", "enrichment", "concepts", "add", "gm-1", "made-up",
 		"--workspace", root, "--force")
 	if err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestBeadConceptsAdd_NoVocabularyNoWarn(t *testing.T) {
 	// allow concept tagging silently — the warning system can't
 	// usefully fire when there's nothing to compare against.
 	root := t.TempDir()
-	_, errOut, err := runCmd(t, "bead", "concepts", "add", "gm-1", "anything",
+	_, errOut, err := runCmd(t, "bead", "enrichment", "concepts", "add", "gm-1", "anything",
 		"--workspace", root)
 	if err != nil {
 		t.Fatal(err)
@@ -191,13 +191,13 @@ func TestBeadConceptsAdd_NoVocabularyNoWarn(t *testing.T) {
 
 func TestBeadShow_RendersAfterEdit(t *testing.T) {
 	root := t.TempDir()
-	if _, _, err := runCmd(t, "bead", "targets", "add", "gm-1", "a.go", "--workspace", root); err != nil {
+	if _, _, err := runCmd(t, "bead", "enrichment", "targets", "add", "gm-1", "a.go", "--workspace", root); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := runCmd(t, "bead", "concepts", "add", "gm-1", "auth", "--workspace", root); err != nil {
+	if _, _, err := runCmd(t, "bead", "enrichment", "concepts", "add", "gm-1", "auth", "--workspace", root); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := runCmd(t, "bead", "show", "gm-1", "--workspace", root)
+	out, _, err := runCmd(t, "bead", "enrichment", "show", "gm-1", "--workspace", root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestBeadExtract_HeuristicWritesEnrichment(t *testing.T) {
 	if err := concepts.SaveVocabulary(root, v); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := runCmd(t, "bead", "extract", "gm-1",
+	out, _, err := runCmd(t, "bead", "enrichment", "extract", "gm-1",
 		"--workspace", root,
 		"--title", "Migrate auth to react-query",
 		"--body", "Touches `internal/auth/auth.go` and `web/src/App.tsx`.")
@@ -241,7 +241,7 @@ func TestBeadExtract_HeuristicWritesEnrichment(t *testing.T) {
 
 func TestBeadExtract_DryRunDoesNotPersist(t *testing.T) {
 	root := t.TempDir()
-	out, _, err := runCmd(t, "bead", "extract", "gm-1",
+	out, _, err := runCmd(t, "bead", "enrichment", "extract", "gm-1",
 		"--workspace", root, "--dry-run",
 		"--body", "edits `internal/x/x.go`")
 	if err != nil {
@@ -266,7 +266,7 @@ func TestBeadExtract_MergeUnionsWithExistingOperatorEnrichment(t *testing.T) {
 		Concepts: []string{"keep-me"},
 		Source:   enrichment.SourceOperator,
 	})
-	if _, _, err := runCmd(t, "bead", "extract", "gm-1",
+	if _, _, err := runCmd(t, "bead", "enrichment", "extract", "gm-1",
 		"--workspace", root, "--merge",
 		"--body", "edits `internal/auth/auth.go`"); err != nil {
 		t.Fatal(err)
@@ -290,7 +290,7 @@ func TestBeadExtract_NoMergeReplaces(t *testing.T) {
 		BeadID:  "gm-1",
 		Targets: []string{"old.go"},
 	})
-	if _, _, err := runCmd(t, "bead", "extract", "gm-1",
+	if _, _, err := runCmd(t, "bead", "enrichment", "extract", "gm-1",
 		"--workspace", root,
 		"--body", "edits `internal/new.go`"); err != nil {
 		t.Fatal(err)
@@ -308,7 +308,7 @@ func TestBeadExtract_BodyFileWorks(t *testing.T) {
 		[]byte("touches `internal/x/x.go`"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := runCmd(t, "bead", "extract", "gm-1",
+	if _, _, err := runCmd(t, "bead", "enrichment", "extract", "gm-1",
 		"--workspace", root, "--body-file", bodyPath); err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestBeadBackfill_DryRunDoesNotPersist(t *testing.T) {
 	bdBin := writeFakeBd(t, `[
 		{"id":"gm-1","title":"auth flow","description":"touches `+"`internal/auth/auth.go`"+`"}
 	]`)
-	out, _, err := runCmd(t, "bead", "backfill",
+	out, _, err := runCmd(t, "bead", "enrichment", "backfill",
 		"--workspace", root,
 		"--bd-bin", bdBin,
 		"--dry-run")
@@ -348,7 +348,7 @@ func TestBeadBackfill_PersistsAndStampsSourceBackfill(t *testing.T) {
 	bdBin := writeFakeBd(t, `[
 		{"id":"gm-1","title":"a","description":"edits `+"`internal/x/x.go`"+`"}
 	]`)
-	if _, _, err := runCmd(t, "bead", "backfill",
+	if _, _, err := runCmd(t, "bead", "enrichment", "backfill",
 		"--workspace", root,
 		"--bd-bin", bdBin); err != nil {
 		t.Fatal(err)
@@ -378,7 +378,7 @@ func TestBeadBackfill_SkipExistingPreservesOperatorPin(t *testing.T) {
 		{"id":"gm-1","title":"a","description":"edits `+"`internal/new.go`"+`"},
 		{"id":"gm-2","title":"b","description":"edits `+"`internal/x/x.go`"+`"}
 	]`)
-	out, _, err := runCmd(t, "bead", "backfill",
+	out, _, err := runCmd(t, "bead", "enrichment", "backfill",
 		"--workspace", root,
 		"--bd-bin", bdBin)
 	if err != nil {
@@ -403,7 +403,7 @@ func TestBeadBackfill_FilterRegexNarrows(t *testing.T) {
 		{"id":"gm-s47n-aaa","title":"a","description":"edits `+"`internal/aaa.go`"+`"},
 		{"id":"gm-other-bbb","title":"b","description":"edits `+"`internal/bbb.go`"+`"}
 	]`)
-	out, _, err := runCmd(t, "bead", "backfill",
+	out, _, err := runCmd(t, "bead", "enrichment", "backfill",
 		"--workspace", root,
 		"--bd-bin", bdBin,
 		"--filter", "^gm-s47n")
@@ -439,10 +439,10 @@ func TestBeadShow_AcceptsSlashedID(t *testing.T) {
 	// path safe-id encoding.
 	root := t.TempDir()
 	id := "gemba/gemba/gm-1"
-	if _, _, err := runCmd(t, "bead", "targets", "add", id, "a.go", "--workspace", root); err != nil {
+	if _, _, err := runCmd(t, "bead", "enrichment", "targets", "add", id, "a.go", "--workspace", root); err != nil {
 		t.Fatal(err)
 	}
-	out, _, err := runCmd(t, "bead", "show", id, "--workspace", root)
+	out, _, err := runCmd(t, "bead", "enrichment", "show", id, "--workspace", root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +460,7 @@ func TestBeadShow_AcceptsSlashedID(t *testing.T) {
 
 func TestBeadStatusSet_PersistsAndShows(t *testing.T) {
 	root := t.TempDir()
-	out, _, err := runCmd(t, "bead", "status", "set", "gm-1", "awaiting-design", "--workspace", root)
+	out, _, err := runCmd(t, "bead", "enrichment", "status", "set", "gm-1", "awaiting-design", "--workspace", root)
 	if err != nil {
 		t.Fatalf("status set: %v", err)
 	}
@@ -469,7 +469,7 @@ func TestBeadStatusSet_PersistsAndShows(t *testing.T) {
 	}
 
 	// Show should reflect the persisted value.
-	out, _, err = runCmd(t, "bead", "show", "gm-1", "--workspace", root)
+	out, _, err = runCmd(t, "bead", "enrichment", "show", "gm-1", "--workspace", root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -480,7 +480,7 @@ func TestBeadStatusSet_PersistsAndShows(t *testing.T) {
 
 func TestBeadStatusSet_RejectsUnknownValue(t *testing.T) {
 	root := t.TempDir()
-	_, _, err := runCmd(t, "bead", "status", "set", "gm-1", "blocked", "--workspace", root)
+	_, _, err := runCmd(t, "bead", "enrichment", "status", "set", "gm-1", "blocked", "--workspace", root)
 	if err == nil {
 		t.Fatal("expected error on unknown status")
 	}
@@ -496,7 +496,7 @@ func TestBeadStatusClear_RemovesValue(t *testing.T) {
 		BeadID:         "gm-1",
 		DispatchStatus: enrichment.DispatchNotNow,
 	})
-	if _, _, err := runCmd(t, "bead", "status", "clear", "gm-1", "--workspace", root); err != nil {
+	if _, _, err := runCmd(t, "bead", "enrichment", "status", "clear", "gm-1", "--workspace", root); err != nil {
 		t.Fatal(err)
 	}
 	got, err := store.Load(context.Background(), "gm-1")
@@ -512,7 +512,7 @@ func TestBeadStatusClear_RemovesValue(t *testing.T) {
 
 func TestBeadSizeSet_PersistsAndShows(t *testing.T) {
 	root := t.TempDir()
-	out, _, err := runCmd(t, "bead", "size", "set", "gm-1", "large", "--workspace", root)
+	out, _, err := runCmd(t, "bead", "enrichment", "size", "set", "gm-1", "large", "--workspace", root)
 	if err != nil {
 		t.Fatalf("size set: %v", err)
 	}
@@ -523,7 +523,7 @@ func TestBeadSizeSet_PersistsAndShows(t *testing.T) {
 
 func TestBeadSizeSet_RejectsUnknownBucket(t *testing.T) {
 	root := t.TempDir()
-	_, _, err := runCmd(t, "bead", "size", "set", "gm-1", "xl", "--workspace", root)
+	_, _, err := runCmd(t, "bead", "enrichment", "size", "set", "gm-1", "xl", "--workspace", root)
 	if err == nil {
 		t.Fatal("expected error on unknown bucket")
 	}
@@ -532,7 +532,7 @@ func TestBeadSizeSet_RejectsUnknownBucket(t *testing.T) {
 func TestBeadSizeEstimate_DryRunDoesNotPersist(t *testing.T) {
 	root := t.TempDir()
 	body := strings.Repeat("Detailed body. ", 20) + "\n\n- [ ] one\n- [ ] two\n"
-	out, _, err := runCmd(t, "bead", "size", "estimate", "gm-1",
+	out, _, err := runCmd(t, "bead", "enrichment", "size", "estimate", "gm-1",
 		"--workspace", root, "--body", body, "--dry-run")
 	if err != nil {
 		t.Fatal(err)
@@ -550,7 +550,7 @@ func TestBeadSizeEstimate_DryRunDoesNotPersist(t *testing.T) {
 func TestBeadSizeEstimate_PersistsBucketFromBody(t *testing.T) {
 	root := t.TempDir()
 	body := "tiny one-line bead body"
-	if _, _, err := runCmd(t, "bead", "size", "estimate", "gm-1",
+	if _, _, err := runCmd(t, "bead", "enrichment", "size", "estimate", "gm-1",
 		"--workspace", root, "--body", body); err != nil {
 		t.Fatal(err)
 	}
@@ -570,7 +570,7 @@ func TestBeadSizeEstimate_ReadsBodyFromFile(t *testing.T) {
 	if err := os.WriteFile(bodyPath, []byte("brief description"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := runCmd(t, "bead", "size", "estimate", "gm-1",
+	if _, _, err := runCmd(t, "bead", "enrichment", "size", "estimate", "gm-1",
 		"--workspace", root, "--body-file", bodyPath); err != nil {
 		t.Fatal(err)
 	}

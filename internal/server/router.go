@@ -25,6 +25,7 @@ import (
 	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
 	"github.com/GembaCore/gemba-core/internal/transport/api"
+	"github.com/GembaCore/gemba-core/internal/vault"
 	"github.com/GembaCore/gemba-core/internal/walk"
 	"github.com/GembaCore/gemba-core/internal/workflow"
 )
@@ -187,6 +188,23 @@ type Router struct {
 	// empty the endpoint falls back to "<cwd>/.gemba/personas".
 	personasDir string
 
+	// doltReadyState carries the embedded-dolt supervisor handle that
+	// drives /api/readyz (gm-o9t8.1.2.3). Bind via AttachDoltSupervisor;
+	// nil = external-dolt or noop mode (readyz omits the dolt check).
+	doltReadyState
+
+	// vault is the secrets store backing /api/v1/workspaces/{wsid}/secrets*
+	// (gm-o9t8.3.7). Bind via AttachVault; nil → every secrets endpoint
+	// returns 503 adaptor_not_configured. No endpoint ever exposes
+	// plaintext values — only key listing and write/delete.
+	vault vault.Vault
+
+	// workspacesRoot is the on-disk parent directory holding cloned
+	// per-workspace repos at <root>/<wsid>/repo/ (gm-o9t8.1.4.3 +
+	// gm-o9t8.1.6.2 diff streaming). Bind via AttachWorkspacesRoot;
+	// empty → /api/v1/workspaces/{wsid}/diff returns 503.
+	workspacesRoot string
+
 	mux http.Handler
 }
 
@@ -280,7 +298,17 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		}
 
 		api.Get("/health", r.health)
+		// gm-o9t8.1.2.3: readiness probe that reflects embedded
+		// dependency state. /health stays a pure liveness probe;
+		// /readyz returns 503 when the embedded dolt sql-server
+		// is unreachable so orchestrators can drain traffic.
+		api.Get("/readyz", r.readyz)
 		api.Get("/version", r.version)
+		// gm-o9t8.1.1.2: identity probe for the CLI `gemba login` /
+		// `gemba whoami` flow. Auth-gated; returns the subject the
+		// bearer/cookie maps to (v1: a static "operator" — see
+		// whoami.go for the multi-identity follow-up).
+		api.Get("/whoami", r.whoami)
 		api.Get("/config", r.config)
 		api.Get("/beads-history", r.beadsHistory)
 		api.Get("/beads/health", r.beadsHealth)
@@ -376,6 +404,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Patch("/work-items/{id}", r.patchWorkItem)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Delete("/work-items/{id}", r.deleteWorkItem)
+		// gm-o9t8.1.3.2: 501 stub for `gemba bead note`. Wire surface
+		// pinned here; persistence semantics land in a follow-up bead.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/work-items/{id}/notes", r.noteWorkItemStub)
 		// gm-e4.3.2: out-of-process notify endpoint. Auth-gated;
 		// NOT nonce-gated — the caller is server-internal plumbing
 		// (the bd post-commit git hook from gm-e4.3.3, ops scripts).
@@ -676,6 +708,55 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// KindAdaptorDegraded so the SPA's Insights panel can render
 		// an "awaiting Prometheus" stub. Read-only — no nonce gate.
 		api.Get("/v1/metrics/series", r.metricsSeries)
+
+		// gm-o9t8.14 — Govern + Convenience verb surface stubs. Wire
+		// shape pinned; all handlers return 501 with the
+		// not_implemented envelope until the ASDD epic (gm-v0sp)
+		// lands. Auth applies via the shared apiAuth middleware on
+		// the /api block; write endpoints additionally require the
+		// X-GEMBA-Confirm nonce.
+		//
+		// Spec family (govern):
+		api.Get("/v1/workspaces/{wsid}/specs", r.listSpecsStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Patch("/v1/workspaces/{wsid}/specs/{slug}", r.patchSpecStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/specs/{slug}/reconcile", r.reconcileSpecStub)
+		api.Get("/v1/workspaces/{wsid}/specs/{slug}/watch", r.watchSpecStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/specs/{slug}/snapshot", r.snapshotSpecStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/specs/{slug}/adopt", r.adoptSpecStub)
+
+		// Decision family (govern):
+		api.Get("/v1/workspaces/{wsid}/decisions", r.listDecisionsStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/decisions", r.createDecisionStub)
+		api.Get("/v1/workspaces/{wsid}/decisions/refs", r.decisionRefsStub)
+		api.Get("/v1/workspaces/{wsid}/decisions/{id}", r.getDecisionStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Patch("/v1/workspaces/{wsid}/decisions/{id}/lock", r.lockDecisionStub)
+
+		// Constitution / spec-lint reads (govern):
+		api.Get("/v1/workspaces/{wsid}/labels", r.listLabelsStub)
+
+		// gm-o9t8.3.7: workspace secrets vault. Three routes, no plaintext
+		// read endpoint by design. Writes carry the X-GEMBA-Confirm nonce
+		// gate like every other mutation.
+		api.Get("/v1/workspaces/{wsid}/secrets", r.listWorkspaceSecrets)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/secrets/{key}", r.putWorkspaceSecret)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/v1/workspaces/{wsid}/secrets/{key}", r.deleteWorkspaceSecret)
+
+		// Convenience verb — gemba no-args (gm-o9t8.1.4.4: real handler,
+		// replaced the 501 stub):
+		api.Get("/v1/workspaces/{wsid}/status", r.workspaceStatus)
+
+		// gm-o9t8.1.6.2: stream `git diff` from the server-side
+		// workspace repo. GET, so no nonce gate; auth applies via
+		// the shared apiAuth middleware on the /api block.
+		api.Get("/v1/workspaces/{wsid}/diff", r.workspaceDiffHandler)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

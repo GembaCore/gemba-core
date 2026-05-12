@@ -27,6 +27,7 @@ import (
 	"github.com/GembaCore/gemba-core/core"
 	"github.com/GembaCore/gemba-core/internal/adapter/bd"
 	"github.com/GembaCore/gemba-core/internal/adapter/dolt"
+	"github.com/GembaCore/gemba-core/internal/adapter/dolt/supervisor"
 	"github.com/GembaCore/gemba-core/internal/adapter/gt"
 	"github.com/GembaCore/gemba-core/internal/adapter/mock"
 	"github.com/GembaCore/gemba-core/internal/adapter/native"
@@ -63,6 +64,7 @@ By default binds to 127.0.0.1:7666 with no authentication. To expose on the
 network, pass --listen with a non-loopback address AND --auth to enable
 authentication. Binding a non-loopback interface without --auth is an error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg.EmbeddedDoltSet = cmd.Flags().Changed("embedded-dolt")
 			if err := normalizeProjectDirFlags(&cfg, cmd.Flags().Changed("project-dir"), cmd.Flags().Changed("beads-dir")); err != nil {
 				return err
 			}
@@ -128,6 +130,37 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"mysql://user[:pass]@host:port/dbname of a Dolt server to read/write "+
 			"beads directly (required unless --project-dir is "+
 			"set; mutually exclusive with it)")
+
+	// gm-o9t8.1.2.3: embedded dolt sql-server supervisor. Default is
+	// "true unless --dolt-url is set" (resolved in applyEmbeddedDoltDefault).
+	// When true, `gemba serve` spawns dolt sql-server as a child process
+	// bound to a free loopback port, supervises it, and tears it down on
+	// shutdown. The bd / Dolt WorkPlane adaptors then point at it via the
+	// supervisor's DSN — no separate `dolt sql-server` invocation required.
+	cmd.Flags().BoolVar(&cfg.EmbeddedDolt, "embedded-dolt", true,
+		"spawn and supervise an embedded dolt sql-server child process "+
+			"(default: true when --dolt-url is unset; false otherwise)")
+	cmd.Flags().StringVar(&cfg.DoltDataDir, "dolt-data-dir", "",
+		"on-disk directory the embedded dolt sql-server uses as its data dir "+
+			"(default: <cwd>/data/dolt; created with 0700 on first launch)")
+
+	// gm-o9t8.1.16: parent dir holding per-workspace <wsid>/repo/
+	// trees. Wired into the router via AttachWorkspacesRoot so
+	// /api/v1/workspaces/{wsid}/diff resolves to a real working tree.
+	// Empty → /diff returns 503 adaptor_not_configured. Default lands
+	// in applyWorkspacesRootDefault: <dirname(--dolt-data-dir)>/workspaces.
+	cmd.Flags().StringVar(&cfg.WorkspacesRoot, "workspaces-root", "",
+		"parent directory holding per-workspace <wsid>/repo/ trees "+
+			"served by /api/v1/workspaces/{wsid}/diff "+
+			"(default: <dirname(--dolt-data-dir)>/workspaces)")
+
+	// gm-o9t8.3.7: on-disk secrets vault. AES-256-GCM with a per-
+	// workspace DEK wrapped by the KEK read from GEMBA_VAULT_KEY.
+	// Default path is <dirname(--dolt-data-dir)>/vault.db so the
+	// data layout mirrors WorkspacesRoot.
+	cmd.Flags().StringVar(&cfg.VaultPath, "vault-path", "",
+		"path to the encrypted secrets vault file "+
+			"(default: <dirname(--dolt-data-dir)>/vault.db)")
 
 	cmd.Flags().BoolVar(&cfg.Noop, "noop", false,
 		"bind the in-memory noop reference WorkPlane + OrchestrationPlane "+
@@ -203,6 +236,59 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	if err := applyPromURLDefault(&cfg); err != nil {
 		return err
 	}
+
+	// gm-o9t8.1.2.3: decide embedded-dolt mode before the
+	// WorkPlane-flag validation runs.
+	if err := applyEmbeddedDoltDefault(&cfg); err != nil {
+		return err
+	}
+
+	// gm-o9t8.1.7: boot the embedded dolt sql-server BEFORE
+	// WorkPlane-flag validation runs. When --embedded-dolt is on and
+	// no external --dolt-url has been supplied, we synthesize a
+	// mysql:// URL from the supervisor's resolved host/port and feed
+	// it into cfg.DoltURL so registerWorkPlane selects the dolt
+	// adaptor against the embedded server. The supervisor handle is
+	// wired into the router for /api/readyz later via
+	// attachEmbeddedDoltToRouter.
+	//
+	// Precedence (matches the bead):
+	//   - --dolt-url set                                  → use it (external Dolt)
+	//   - --embedded-dolt on AND --dolt-url empty         → use supervisor.DSN()
+	//   - neither                                         → ValidateWorkPlaneFlags errors
+	var doltSup *supervisor.Supervisor
+	if cfg.EmbeddedDolt && cfg.DoltURL == "" && cfg.ProjectDir == "" && cfg.BeadsDir == "" && !cfg.Noop {
+		sup, err := bootEmbeddedDoltSupervisor(ctx, &cfg)
+		if err != nil {
+			return err
+		}
+		doltSup = sup
+		if doltSup != nil {
+			// gm-o9t8.1.14: ensure the bd schema is present on the
+			// supervised dolt server before any downstream adaptor
+			// connects. On a fresh data dir this shells out to `bd init
+			// --server --external …`; on a previously-bootstrapped data
+			// dir it's a no-op. Without this, the dolt WorkPlane
+			// adaptor would trip its schema_migrations probe on first
+			// boot.
+			if err := bootstrapEmbeddedDoltSchema(ctx, doltSup, &cfg); err != nil {
+				return err
+			}
+			cfg.DoltURL = embeddedDoltMySQLURL(doltSup, cfg.DoltEmbeddedDB)
+			cfg.BeadsURLSource = "embedded-dolt"
+		}
+	}
+	defer func() {
+		if doltSup == nil {
+			return
+		}
+		stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := doltSup.Stop(stopCtx); err != nil {
+			slog.Warn("embedded dolt: supervisor stop returned error",
+				"err", err)
+		}
+	}()
 
 	// --project-dir and --dolt-url are mutually exclusive; catch the
 	// conflict before any further startup work so the operator gets a
@@ -540,6 +626,32 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		onboarder.NewSkillTurner(onboarder.DefaultResolver(cfg.ConfigPath)),
 		server.NewRatifier(server.RatifierConfig{}),
 	)
+
+	// gm-o9t8.1.2.3 / gm-o9t8.1.7: the supervisor was booted earlier
+	// (before ValidateWorkPlaneFlags) so its DSN could be injected
+	// into cfg.DoltURL for the dolt WorkPlane adaptor. Now that the
+	// router exists, wire the supervisor's readiness into /api/readyz
+	// so the very first request gets a meaningful answer.
+	attachEmbeddedDoltToRouter(doltSup, handler)
+
+	// gm-o9t8.1.16: wire the diff endpoint to its on-disk root.
+	// Without this, /api/v1/workspaces/{wsid}/diff returns 503
+	// adaptor_not_configured in production. Default resolution lands
+	// in applyWorkspacesRootDefault.
+	if root := resolveWorkspacesRoot(&cfg); root != "" {
+		handler.AttachWorkspacesRoot(root)
+	}
+
+	// gm-o9t8.3.7: build the workspace secrets vault and attach it
+	// to the router. KEK resolution: GEMBA_VAULT_KEY env > generated
+	// ephemeral key (WARN). Path defaults to vault.db alongside the
+	// dolt data dir.
+	if v, vErr := buildVault(&cfg); vErr != nil {
+		slog.Warn("vault: failed to build; secrets endpoints will return 503",
+			"err", vErr)
+	} else if v != nil {
+		handler.AttachVault(v)
+	}
 
 	srv := &http.Server{
 		Addr:              addr,

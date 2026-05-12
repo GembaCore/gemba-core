@@ -14,18 +14,59 @@ import (
 	"github.com/GembaCore/gemba-core/internal/enrichment"
 )
 
-// newBeadCmd builds the `gemba bead` subtree (gm-s47n.1.3). Provides
-// the operator surface for viewing and overriding the targets[] +
-// concepts[] enrichment a bead carries — the data layer the planner
-// reads when scoring conflicts and affinity.
+// newBeadCmd builds the `gemba bead` subtree.
+//
+// Two families live here:
+//
+//   - CRUD (create, list, show, update, close, note) — talks to a
+//     remote gemba server through the typed client. See bead_crud.go.
+//     gm-o9t8.1.3.2.
+//   - `enrichment` subgroup — the original gm-s47n.1.3 surface for
+//     viewing and overriding per-bead planner enrichment (targets +
+//     concepts, dispatch status, t-shirt size, extract/backfill,
+//     enrichment list/show). Lives under `gemba bead enrichment …`
+//     to free up the cleaner verbs for the CRUD family.
 //
 // Until gm-s47n.1.1 lands the WorkItem.targets / .concepts schema
-// the storage backend is a per-bead JSON file under
+// the enrichment storage backend is a per-bead JSON file under
 // .gemba/enrichment/. The CLI surface is the same either way; only
 // the [enrichment.Store] implementation flips.
 func newBeadCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bead",
+		Short: "Create, list, update, and enrich beads (work items)",
+		Long: `Operator surface for beads — gemba's first-class work item.
+
+Top-level verbs talk to the remote gemba server through the typed
+client (gm-o9t8.1.3.2):
+
+  gemba bead create   — POST a new work item
+  gemba bead list     — list work items, optional filters
+  gemba bead show     — fetch one work item by id
+  gemba bead update   — PATCH a work item
+  gemba bead close    — close a work item (PATCH state=completed)
+  gemba bead note     — append a free-form note to a work item
+
+The 'enrichment' subgroup keeps the original local-store planner-
+enrichment surface (targets, concepts, dispatch status, size,
+extract, backfill): see "gemba bead enrichment --help".`,
+	}
+	cmd.AddCommand(
+		newBeadEnrichmentCmd(),
+	)
+	for _, sub := range newBeadCRUDCommands() {
+		cmd.AddCommand(sub)
+	}
+	return cmd
+}
+
+// newBeadEnrichmentCmd is the parent for the per-bead planner
+// enrichment surface (gm-s47n.1.3). It owns the subcommands that
+// previously lived directly under `gemba bead`. The semantics of each
+// inner verb are unchanged; only the parent path moved.
+func newBeadEnrichmentCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "enrichment",
 		Short: "View and override per-bead planner enrichment (targets + concepts)",
 		Long: `Operator surface for the gm-s47n.1 enrichment data the planner
 reads off every bead.

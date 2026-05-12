@@ -43,6 +43,14 @@
     {
       "name": "stub",
       "description": "Routes documented at the URL level only; full request/response schemas land in follow-up beads."
+    },
+    {
+      "name": "govern",
+      "description": "Govern verbs \u2014 spec, decision, and constitution surfaces (gm-o9t8.6/.8/.9/.10/.12). Stubs in M1; real implementation under the ASDD epic gm-v0sp."
+    },
+    {
+      "name": "convenience",
+      "description": "Convenience verbs \u2014 single-shot reads that join across plane boundaries (e.g. workspace status)."
     }
   ],
   "paths": {
@@ -60,6 +68,68 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/readyz": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Readiness probe. Reflects embedded-dolt supervisor state (gm-o9t8.1.2.3).",
+        "description": "200 when the server is ready to accept requests; 503 when the embedded dolt sql-server supervisor reports not-ready. External-dolt and noop modes always return 200 because readyz cannot make a meaningful upstream claim there.",
+        "operationId": "getReadyz",
+        "responses": {
+          "200": {
+            "description": "Server is ready. Response includes optional `checks` map describing dependency state when an embedded supervisor is attached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "example": {
+                        "dolt": "ok"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Server is up but a critical dependency is down (typically the embedded dolt sql-server).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "degraded"
+                    },
+                    "checks": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "example": {
+                        "dolt": "down"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -190,6 +260,44 @@
             "$ref": "#/components/responses/AdaptorUnavailable"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "work"
+        ],
+        "summary": "Create a new WorkItem via the bound WorkPlane adaptor.",
+        "operationId": "createWorkItem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created work item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
       }
     },
     "/api/work-items/{id}": {
@@ -262,6 +370,55 @@
           },
           "500": {
             "$ref": "#/components/responses/Unsupported"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "work"
+        ],
+        "summary": "Update fields on a WorkItem (incl. status / state transitions).",
+        "operationId": "updateWorkItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Workspace-prefixed bead id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated work item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "503": {
             "$ref": "#/components/responses/AdaptorUnavailable"
@@ -970,7 +1127,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "Conflict — either the session state has changed since the modal opened (`error` = `stale_state`) or the target directory already exists (`error` = `dir_exists`).",
+            "description": "Conflict \u2014 either the session state has changed since the modal opened (`error` = `stale_state`) or the target directory already exists (`error` = `dir_exists`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1034,7 +1191,7 @@
             }
           },
           "400": {
-            "description": "Validation failure — missing or empty `project_name`.",
+            "description": "Validation failure \u2014 missing or empty `project_name`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1078,7 +1235,7 @@
         "operationId": "probeOnboarder",
         "responses": {
           "200": {
-            "description": "Probe result. Always 200 — `available` is the operative signal; when false, `reason` carries the operator-facing diagnostic.",
+            "description": "Probe result. Always 200 \u2014 `available` is the operative signal; when false, `reason` carries the operator-facing diagnostic.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1095,7 +1252,7 @@
         "tags": [
           "work"
         ],
-        "summary": "Enumerate projects discovered under the configured `default_dir` and any `extra_roots` (gm-root.17.14). Each entry carries a `kind` classifying its setup state — `complete`, `needs_workspace`, or `needs_repo`.",
+        "summary": "Enumerate projects discovered under the configured `default_dir` and any `extra_roots` (gm-root.17.14). Each entry carries a `kind` classifying its setup state \u2014 `complete`, `needs_workspace`, or `needs_repo`.",
         "operationId": "listProjects",
         "responses": {
           "200": {
@@ -1154,7 +1311,7 @@
             "$ref": "#/components/responses/BadRequest"
           },
           "409": {
-            "description": "Conflict — `mode=\"navigate\"` and the target repo already contains a `.beads/` directory the server refuses to clobber (`error` = `beads_dir_exists`).",
+            "description": "Conflict \u2014 `mode=\"navigate\"` and the target repo already contains a `.beads/` directory the server refuses to clobber (`error` = `beads_dir_exists`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1175,12 +1332,1109 @@
           }
         }
       }
+    },
+    "/api/v1/workspaces/{wsid}/specs": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "List specs declared in the workspace.",
+        "description": "Read the workspace's spec catalog. Backs `gemba spec ls` and the SPA's Govern tab. Stub: returns 501 until gm-v0sp lands the real listing.",
+        "operationId": "listSpecs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Spec list envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}": {
+      "patch": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Mutate spec lifecycle status (freeze / unfreeze / archive).",
+        "description": "PATCH the spec status \u2014 `{\"status\":\"archived\"}` freezes the spec; `{\"status\":\"active\"}` unfreezes. Single PATCH replaces the spec-status verb pair so REST semantics line up with the canonical /api/v1/* surface. Stub: 501 until gm-v0sp.",
+        "operationId": "patchSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "archived"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Spec status updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}/reconcile": {
+      "post": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Reconcile a spec against its current implementation (dry-run or apply).",
+        "description": "Compute the drift between the spec and Beads/source. Default is dry-run (returns the diff). With `?apply=1` the server applies the reconciliation atomically against Beads under the X-GEMBA-Confirm nonce. Stub: 501 until gm-v0sp.",
+        "operationId": "reconcileSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          },
+          {
+            "name": "apply",
+            "in": "query",
+            "required": false,
+            "description": "When `1`, apply the reconcile plan; otherwise return a dry-run diff.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "Optional reconcile parameters \u2014 operator-supplied notes, scope filters.",
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dry-run plan or applied result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Apply accepted; reconciliation runs asynchronously. Subscribe to `/specs/{slug}/watch` for progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}/watch": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Subscribe to spec reconciliation events (SSE).",
+        "description": "Long-lived `text/event-stream` connection that emits Server-Sent Events as the spec reconciles. Event types (`event:` line) are:\n\n- `bead.status` \u2014 a watched Beads issue changed status. Payload: `{ \"id\": \"...\", \"status\": \"...\", \"updated_at\": \"...\" }`.\n- `spec.drift` \u2014 drift detected between spec and Beads. Payload: `{ \"spec\": \"...\", \"summary\": \"...\", \"changes\": [...] }`.\n- `reconcile.complete` \u2014 reconcile run finished. Payload: `{ \"run_id\": \"...\", \"applied\": true|false, \"errors\": [...] }`.\n\nEach event is `\\n\\n`-terminated; clients tolerate keep-alive comments (`: ping`). Stub: 501 until gm-v0sp.",
+        "operationId": "watchSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE stream open. Media type is `text/event-stream`; the schema below describes a single event payload, not the line-framed wire format.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "object",
+                  "description": "Decoded event payload (the `data:` line of a single SSE frame). The frame's `event:` line is one of `bead.status`, `spec.drift`, or `reconcile.complete`; concrete payload fields vary per type \u2014 see endpoint description.",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "bead.status",
+                        "spec.drift",
+                        "reconcile.complete"
+                      ]
+                    },
+                    "payload": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}/snapshot": {
+      "post": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Snapshot the spec's current rendered state.",
+        "description": "Persist a point-in-time render of the spec + its joined Beads view. Used as the input to `adopt` and as the audit trail for reconciliations. Stub: 501 until gm-v0sp.",
+        "operationId": "snapshotSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot id + metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/specs/{slug}/adopt": {
+      "post": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Adopt a snapshot as the spec's canonical baseline.",
+        "description": "Promotes a previously-taken snapshot to the spec's adopted baseline; subsequent reconciles diff against it. Stub: 501 until gm-v0sp.",
+        "operationId": "adoptSpec",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/SpecSlug"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "snapshot_id"
+                ],
+                "properties": {
+                  "snapshot_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Snapshot adopted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/decisions": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "List decisions recorded in the workspace.",
+        "description": "Returns the decision log (ADR-shaped records). Stub: 501 until gm-v0sp.",
+        "operationId": "listDecisions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decision list envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Record a new decision.",
+        "description": "Create an ADR-shaped record in the decision log. Stub: 501 until gm-v0sp.",
+        "operationId": "createDecision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "title",
+                  "body"
+                ],
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  },
+                  "body": {
+                    "type": "string",
+                    "description": "Markdown body."
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "proposed",
+                      "accepted",
+                      "rejected",
+                      "superseded"
+                    ]
+                  },
+                  "labels": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Decision recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/decisions/refs": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Cross-reference graph for `constitution lint --strict`.",
+        "description": "Returns the directed graph of decision-to-decision references (and decision-to-spec/work-item refs where declared). Backs `gemba constitution lint --strict`, which walks the graph to detect orphan or cyclic references. Stub: 501 until gm-v0sp.",
+        "operationId": "decisionRefs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reference graph.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/decisions/{id}": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Fetch one decision by id.",
+        "description": "Returns the ADR-shaped record plus its inbound/outbound references. Stub: 501 until gm-v0sp.",
+        "operationId": "getDecision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/DecisionID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Decision record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/decisions/{id}/lock": {
+      "patch": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Lock or unlock a decision against edits.",
+        "description": "Toggles the decision's `locked` flag. Locked decisions reject subsequent PATCHes from the standard write path so a recorded constitution stays canonical. Stub: 501 until gm-v0sp.",
+        "operationId": "lockDecision",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ConfirmNonce"
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "$ref": "#/components/parameters/DecisionID"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "locked"
+                ],
+                "properties": {
+                  "locked": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lock state updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/labels": {
+      "get": {
+        "tags": [
+          "govern"
+        ],
+        "summary": "Catalog of declared vs referenced labels (spec lint --strict).",
+        "description": "Returns the union of labels declared on specs/decisions/work-items and those referenced from spec bodies. `gemba spec lint --strict` consumes the diff to detect typos and orphaned label refs. Stub: 501 until gm-v0sp.",
+        "operationId": "listLabels",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Label catalog.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/secrets": {
+      "get": {
+        "tags": [
+          "vault"
+        ],
+        "summary": "List the keys of secrets stored for a workspace.",
+        "description": "Returns the lexicographically sorted list of keys stored under the workspace. NO endpoint exposes plaintext values \u2014 the only consumer of decrypted values is the in-process secret injector for spawned agent sessions.",
+        "operationId": "listWorkspaceSecrets",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Key list (no values).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretKeyList"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/secrets/{key}": {
+      "post": {
+        "tags": [
+          "vault"
+        ],
+        "summary": "Store or replace a secret value for a workspace.",
+        "description": "Persists the value under (wsid, key) using envelope encryption (AES-256-GCM, per-workspace DEK wrapped by the server-wide KEK). Idempotency is gated by X-GEMBA-Confirm.",
+        "operationId": "putWorkspaceSecret",
+        "parameters": [
+          {
+            "name": "X-GEMBA-Confirm",
+            "in": "header",
+            "required": true,
+            "description": "Idempotency nonce. Replays of the same nonce return the cached response.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Secret key (typically an environment variable name).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Secret stored."
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vault"
+        ],
+        "summary": "Delete a workspace secret (idempotent).",
+        "description": "Removes (wsid, key) from the vault. Idempotent \u2014 deleting an absent key still returns 204.",
+        "operationId": "deleteWorkspaceSecret",
+        "parameters": [
+          {
+            "name": "X-GEMBA-Confirm",
+            "in": "header",
+            "required": true,
+            "description": "Idempotency nonce. Replays of the same nonce return the cached response.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Secret key.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Secret removed (or already absent)."
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/status": {
+      "get": {
+        "tags": [
+          "convenience"
+        ],
+        "summary": "Unified workspace status \u2014 backs `gemba` (no args).",
+        "description": "Single-shot read returning the joined work / spec / decision posture for the workspace. The CLI's no-args invocation prints a one-screen summary built from this response. Each section degrades to zero / null when the corresponding subsystem isn't wired (no clone yet \u2192 repo=null; no WorkPlane bound \u2192 beads all-zero).",
+        "operationId": "workspaceStatus",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace status envelope.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "workspace_id",
+                    "mode",
+                    "beads",
+                    "agents"
+                  ],
+                  "properties": {
+                    "workspace_id": {
+                      "type": "string",
+                      "description": "The workspace id this status is for; echoes the {wsid} path parameter."
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "ad-hoc",
+                        "scaffolded",
+                        "governed",
+                        "reverse-governed"
+                      ],
+                      "description": "Workspace mode (gm-o9t8.8). Only 'ad-hoc' is implemented in v1; the others require the ASDD spec/lockfile machinery (epic gm-v0sp)."
+                    },
+                    "repo": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "Git posture for the workspace clone. Null when the workspace hasn't been cloned / initialized yet.",
+                      "required": [
+                        "head",
+                        "dirty",
+                        "branch"
+                      ],
+                      "properties": {
+                        "head": {
+                          "type": "string",
+                          "description": "Full SHA of HEAD."
+                        },
+                        "dirty": {
+                          "type": "boolean",
+                          "description": "True iff `git status --porcelain` is non-empty."
+                        },
+                        "branch": {
+                          "type": "string",
+                          "description": "Symbolic ref name of HEAD (e.g. 'main')."
+                        }
+                      }
+                    },
+                    "beads": {
+                      "type": "object",
+                      "description": "Counts across the bead lifecycle buckets that drive the dashboard.",
+                      "required": [
+                        "ready",
+                        "in_flight",
+                        "blocked",
+                        "open_total",
+                        "closed_today"
+                      ],
+                      "properties": {
+                        "ready": {
+                          "type": "integer",
+                          "description": "Beads in native 'ready' status."
+                        },
+                        "in_flight": {
+                          "type": "integer",
+                          "description": "Beads in native 'in_progress' status."
+                        },
+                        "blocked": {
+                          "type": "integer",
+                          "description": "Beads in native 'blocked' status."
+                        },
+                        "open_total": {
+                          "type": "integer",
+                          "description": "Count of every non-terminal bead (state_category in backlog | unstarted | staged | started)."
+                        },
+                        "closed_today": {
+                          "type": "integer",
+                          "description": "Beads that transitioned to a terminal state_category in the last 24h."
+                        }
+                      }
+                    },
+                    "agents": {
+                      "type": "object",
+                      "description": "Agent / run summary derived from OrchestrationPlane.ListSessions.",
+                      "required": [
+                        "active"
+                      ],
+                      "properties": {
+                        "active": {
+                          "type": "integer",
+                          "description": "Count of non-terminal sessions with a heartbeat or start within the active window (currently 5 minutes)."
+                        },
+                        "last_run_id": {
+                          "type": "string",
+                          "description": "Session id of the most recent run."
+                        },
+                        "last_run_status": {
+                          "type": "string",
+                          "description": "SessionStatus value of the most recent run."
+                        },
+                        "last_run_summary": {
+                          "type": "string",
+                          "description": "Best-effort one-line description of the most recent run (today: '<agent_id> on <assignment_id>')."
+                        }
+                      }
+                    },
+                    "embedded_dolt": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "Embedded-dolt supervisor posture (gm-o9t8.1.9). Null when --embedded-dolt is off (external Dolt via --dolt-url) or the noop adaptor is bound. Populated when the gemba-server runs its own dolt sql-server subprocess.",
+                      "required": [
+                        "enabled",
+                        "state",
+                        "port",
+                        "data_dir",
+                        "restart_count"
+                      ],
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "Always true when the field is present (sentinel for the SPA)."
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "ready",
+                            "restarting",
+                            "failed",
+                            "stopped"
+                          ],
+                          "description": "Coarse-grained lifecycle state. The SPA renders a degraded-state banner whenever this is anything other than 'ready'."
+                        },
+                        "port": {
+                          "type": "integer",
+                          "description": "Loopback TCP port the supervised dolt sql-server is bound to."
+                        },
+                        "data_dir": {
+                          "type": "string",
+                          "description": "Filesystem path the supervised dolt sql-server uses for its data."
+                        },
+                        "restart_count": {
+                          "type": "integer",
+                          "description": "Cumulative number of subprocess respawns triggered by failing health probes since the supervisor started. The initial spawn does not count."
+                        },
+                        "last_error": {
+                          "type": "string",
+                          "description": "Most recent probe / supervise error. Absent when the supervisor is healthy."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/diff": {
+      "get": {
+        "tags": [
+          "convenience"
+        ],
+        "summary": "Stream `git diff` from the server-side workspace repo.",
+        "description": "Spawns `git diff` (or `git diff --cached` when `staged=true`) in the workspace repo at `<workspaces_root>/<wsid>/repo/` and streams stdout straight to the response body as `text/x-patch`. Auth-gated; GET only, so no `X-GEMBA-Confirm` nonce. Path filters are validated against an allow-list to reject `..`, absolute paths, and shell metacharacters. Returns 503 when the server has no workspaces root configured, 404 when the workspace repo is missing, and 400 for unsafe path filters.",
+        "operationId": "workspaceDiff",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "name": "staged",
+            "in": "query",
+            "required": false,
+            "description": "When true, run `git diff --cached` to show staged changes only.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "description": "Optional repeatable path filter (equivalent to `git diff -- <paths>`). Only safe relative paths inside the repo are accepted.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Streamed `git diff` output. Empty body when there are no changes.",
+            "content": {
+              "text/x-patch": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "Authentication required."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Workspaces root not configured on this server.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/whoami": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Identity probe \u2014 returns the subject the bearer/cookie maps to.",
+        "description": "Used by `gemba login` to validate a personal access token and by `gemba whoami` to confirm an existing credential is still accepted. The auth middleware gates this route; an unauthenticated call returns 401 before the handler runs (gm-o9t8.1.1.2).",
+        "operationId": "getWhoami",
+        "responses": {
+          "200": {
+            "description": "Authenticated identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoamiResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/work-items/{id}/notes": {
+      "post": {
+        "tags": [
+          "work"
+        ],
+        "summary": "Append a free-form operator note to a WorkItem (stub; gm-o9t8.1.3.2).",
+        "description": "Stub endpoint. Pinned shape so the typed client and CLI can target it day-one; backend storage lands in a follow-up bead.",
+        "operationId": "noteWorkItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "note"
+                ],
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
+          }
+        }
+      }
     }
   },
   "components": {
+    "parameters": {
+      "ConfirmNonce": {
+        "name": "X-GEMBA-Confirm",
+        "in": "header",
+        "required": true,
+        "description": "Idempotency nonce required by every state-mutating endpoint. The value MUST be a UUID v4 the caller generated locally. Replays of the same nonce against the same route return the cached prior response within the nonce TTL (per-process; see internal/server/nonce.go). Missing or malformed values yield 400. Documented under gm-o9t8.14 as the canonical write-confirm header.",
+        "schema": {
+          "type": "string",
+          "format": "uuid",
+          "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+        }
+      },
+      "WorkspaceID": {
+        "name": "wsid",
+        "in": "path",
+        "required": true,
+        "description": "Workspace identifier \u2014 1:1 with a beads database (see /api/config beads_source).",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "SpecSlug": {
+        "name": "slug",
+        "in": "path",
+        "required": true,
+        "description": "Spec slug \u2014 the URL-safe identifier the spec was created with (matches `gemba spec ls` output).",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "DecisionID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Decision identifier (ADR id).",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
     "responses": {
+      "NotImplemented": {
+        "description": "Endpoint stub \u2014 wire shape is pinned but the server has not yet implemented the operation. Body carries `{ \"error\": { \"code\": \"not_implemented\", \"message\": \"...\" } }`.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "required": [
+                "error"
+              ],
+              "properties": {
+                "error": {
+                  "type": "object",
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "examples": [
+                        "not_implemented"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "BadRequest": {
-        "description": "Malformed request — invalid query parameters or body.",
+        "description": "Malformed request \u2014 invalid query parameters or body.",
         "content": {
           "application/json": {
             "schema": {
@@ -1221,6 +2475,35 @@
       }
     },
     "schemas": {
+      "SecretKeyList": {
+        "type": "object",
+        "description": "Key listing for a workspace's vault. Never includes plaintext values.",
+        "required": [
+          "keys"
+        ],
+        "properties": {
+          "keys": {
+            "type": "array",
+            "description": "Lexicographically sorted secret keys for the workspace.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SecretPutRequest": {
+        "type": "object",
+        "description": "Body for POST /api/v1/workspaces/{wsid}/secrets/{key}. The value is stored encrypted at rest under a per-workspace DEK.",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "Plaintext secret value. The server never persists this verbatim; it is sealed with AES-256-GCM under the workspace DEK."
+          }
+        }
+      },
       "Error": {
         "type": "object",
         "description": "Shared error envelope (gm-faz). `error` is a stable token the SPA branches on; `message` is human-readable and may be surfaced verbatim.",
@@ -1279,7 +2562,7 @@
       },
       "BeadsSource": {
         "type": "object",
-        "description": "Workspace identity — 1:1 with a beads database (gm-77u). Detail strips credentials when source is a dolt-url.",
+        "description": "Workspace identity \u2014 1:1 with a beads database (gm-77u). Detail strips credentials when source is a dolt-url.",
         "required": [
           "kind",
           "label"
@@ -2299,7 +3582,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Intra-tree refs (e.g. `milestone:0/epic:1/bead:2`). Ratification resolves these to real bd-… ids in step 8a."
+            "description": "Intra-tree refs (e.g. `milestone:0/epic:1/bead:2`). Ratification resolves these to real bd-\u2026 ids in step 8a."
           },
           "BlocksRefs": {
             "type": "array",
@@ -2643,12 +3926,12 @@
         "properties": {
           "message": {
             "type": "string",
-            "description": "Operator message. Free text — the skill parses intent."
+            "description": "Operator message. Free text \u2014 the skill parses intent."
           },
           "edits": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Optional in-place edits the operator made to the plan preview pane since the last turn. Open shape — the skill interprets the path-keyed diff."
+            "description": "Optional in-place edits the operator made to the plan preview pane since the last turn. Open shape \u2014 the skill interprets the path-keyed diff."
           }
         }
       },
@@ -2764,7 +4047,7 @@
       },
       "CreateProjectRequest": {
         "type": "object",
-        "description": "Body for `POST /api/v1/newproject/create` — the lightweight project-creation path. No session, no Onboarder, no LLM. The server runs the same atomic ratify transaction the conversational flow uses, but with an empty Milestones[] tree (gm-root.17.13).",
+        "description": "Body for `POST /api/v1/newproject/create` \u2014 the lightweight project-creation path. No session, no Onboarder, no LLM. The server runs the same atomic ratify transaction the conversational flow uses, but with an empty Milestones[] tree (gm-root.17.13).",
         "required": [
           "project_name"
         ],
@@ -2799,7 +4082,7 @@
       },
       "ProjectKind": {
         "type": "string",
-        "description": "Setup-state classification for a discovered project (gm-root.17.14). `complete` — has a beads DB, a `.gemba/workspace.toml`, and is inside a git repo; the picker switches to it directly. `needs_workspace` — has a beads DB but no `.gemba/workspace.toml`. `needs_repo` — has a `.gemba/workspace.toml` but is not inside a git repo. Open string at the wire so future kinds don't break clients.",
+        "description": "Setup-state classification for a discovered project (gm-root.17.14). `complete` \u2014 has a beads DB, a `.gemba/workspace.toml`, and is inside a git repo; the picker switches to it directly. `needs_workspace` \u2014 has a beads DB but no `.gemba/workspace.toml`. `needs_repo` \u2014 has a `.gemba/workspace.toml` but is not inside a git repo. Open string at the wire so future kinds don't break clients.",
         "enum": [
           "complete",
           "needs_workspace",
@@ -2850,7 +4133,7 @@
       },
       "BindProjectRequest": {
         "type": "object",
-        "description": "Body for `POST /api/v1/projects/bind`. `mode=\"create\"` runs `git init` at `beads_db_path` (which must equal `target_repo_path`) and writes `.gemba/workspace.toml` in place. `mode=\"navigate\"` copies the beads DB at `beads_db_path/.beads/` into `target_repo_path/.beads/` and writes `.gemba/workspace.toml` at `target_repo_path` — `target_repo_path` must already be a git working tree.",
+        "description": "Body for `POST /api/v1/projects/bind`. `mode=\"create\"` runs `git init` at `beads_db_path` (which must equal `target_repo_path`) and writes `.gemba/workspace.toml` in place. `mode=\"navigate\"` copies the beads DB at `beads_db_path/.beads/` into `target_repo_path/.beads/` and writes `.gemba/workspace.toml` at `target_repo_path` \u2014 `target_repo_path` must already be a git working tree.",
         "required": [
           "beads_db_path",
           "target_repo_path",
@@ -2896,7 +4179,7 @@
       },
       "PersonaPersonality": {
         "type": "object",
-        "description": "gm-9rv §1 — decorative voice/tone qualifier. Optional.",
+        "description": "gm-9rv \u00a71 \u2014 decorative voice/tone qualifier. Optional.",
         "properties": {
           "id": {
             "type": "string"
@@ -2914,7 +4197,7 @@
       },
       "PersonaPerspective": {
         "type": "object",
-        "description": "gm-9rv §2 — deterministic lens. Optional.",
+        "description": "gm-9rv \u00a72 \u2014 deterministic lens. Optional.",
         "properties": {
           "statement": {
             "type": "string"
@@ -2935,7 +4218,7 @@
       },
       "PersonaPurview": {
         "type": "object",
-        "description": "gm-9rv §3 — gate authority by phase. Optional.",
+        "description": "gm-9rv \u00a73 \u2014 gate authority by phase. Optional.",
         "properties": {
           "domain": {
             "type": "string"
@@ -3412,6 +4695,81 @@
           "story_count": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "WhoamiResponse": {
+        "type": "object",
+        "required": [
+          "subject",
+          "server_version"
+        ],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Identity the credential maps to. v1 returns a static 'operator' for the single-token model; multi-identity arrives with M3 OAuth."
+          },
+          "server_version": {
+            "type": "string",
+            "description": "Build version of the gemba server."
+          }
+        }
+      },
+      "UnauthorizedResponse": {
+        "type": "object",
+        "required": [
+          "error",
+          "code"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateWorkItemRequest": {
+        "type": "object",
+        "description": "Envelope for POST /api/work-items. Mirrors transport.CreateWorkItemRequest.",
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/WorkItem"
+          }
+        }
+      },
+      "WorkItemPatch": {
+        "type": "object",
+        "description": "Partial update for a WorkItem. Mirrors core.WorkItemPatch \u2014 every field is optional.",
+        "additionalProperties": true,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "state_category": {
+            "$ref": "#/components/schemas/StateCategory"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "parent_id": {
+            "type": "string"
           }
         }
       }

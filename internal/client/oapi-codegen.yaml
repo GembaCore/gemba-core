@@ -1,0 +1,24 @@
+# oapi-codegen config for the gemba typed Go client (gm-o9t8.1.1.4).
+#
+# Source: ../server/openapi/openapi.json (the server's embedded spec),
+# preprocessed to a 3.0-compatible form at gen/openapi-3.0.json.
+# Output: gen/client.gen.go (typed client + request/response models).
+#
+# Notes
+# -----
+# - `output.response-type-suffix: HTTP` is required because the spec
+#   defines a schema named `StartNewProjectResponse` that would
+#   otherwise collide with the auto-generated response wrapper for the
+#   `startNewProject` operation.
+# - oapi-codegen v2.7.x supports OpenAPI 3.1 with a best-effort warning;
+#   the preprocessor at preprocess_spec.go normalizes the two
+#   `type: [X, "null"]` properties to `nullable: true` so codegen
+#   completes without errors.
+package: gen
+output: gen/client.gen.go
+generate:
+  client: true
+  models: true
+output-options:
+  skip-prune: true
+  response-type-suffix: HTTP
