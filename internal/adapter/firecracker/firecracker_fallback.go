@@ -32,7 +32,9 @@ import (
 //   - All bookkeeping is guarded by VM.mu; Stop is idempotent via
 //     the VM.stopped flag and VM.once.
 type fallbackSupervisor struct {
-	log *slog.Logger
+	log     *slog.Logger
+	vault   VaultInjector
+	auditor LifecycleAuditor
 }
 
 // fallbackState is what we store in VM.state on the non-Linux path.
@@ -46,10 +48,21 @@ type fallbackState struct {
 // On non-Linux this is always the subprocess fallback. Logger may be
 // nil — slog.Default() is used in that case.
 func NewSupervisor(log *slog.Logger) Supervisor {
+	return NewSupervisorWithOptions(Options{Logger: log})
+}
+
+// NewSupervisorWithOptions returns a fallback Supervisor wired with the
+// supplied dependencies (vault, audit). gm-o9t8.3.2.5 and 3.2.7.
+func NewSupervisorWithOptions(opts Options) Supervisor {
+	log, _ := opts.Logger.(*slog.Logger)
 	if log == nil {
 		log = slog.Default()
 	}
-	return &fallbackSupervisor{log: log}
+	return &fallbackSupervisor{
+		log:     log,
+		vault:   opts.Vault,
+		auditor: opts.Auditor,
+	}
 }
 
 // Start spawns the dispatch subprocess and returns immediately. There
@@ -85,8 +98,21 @@ func (s *fallbackSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) 
 	// Inject secrets as env on top of the parent env. We do NOT strip
 	// the parent env — dev workflows need PATH, HOME, etc. for the
 	// bash -c command to function.
+	//
+	// gm-o9t8.3.2.5: pull boot-time secrets from the workspace vault
+	// first, then merge with explicit Spec.Secrets (explicit wins).
+	// Nil vault is a normal config — only explicit secrets are used.
 	cmd.Env = os.Environ()
-	for k, v := range spec.Secrets {
+	mergedSecrets := spec.Secrets
+	if s.vault != nil {
+		vaultSecrets, verr := s.vault.Inject(ctx, spec.WorkspaceID)
+		if verr != nil {
+			cancel()
+			return nil, fmt.Errorf("firecracker: vault.Inject: %w", verr)
+		}
+		mergedSecrets = mergeSecrets(vaultSecrets, spec.Secrets)
+	}
+	for k, v := range mergedSecrets {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
@@ -169,11 +195,24 @@ func (s *fallbackSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) 
 		"workspace_id", spec.WorkspaceID,
 		"pid", cmd.Process.Pid)
 
+	// gm-o9t8.3.2.7: emit VM-spawn lifecycle event.
+	if s.auditor != nil {
+		s.auditor.VMEvent(ctx, "vm.spawn", map[string]any{
+			"vm_id":       vm.ID,
+			"wsid":        spec.WorkspaceID,
+			"kernel_path": spec.KernelPath,
+			"mem_mb":      spec.MemMB,
+			"cpus":        spec.CPUCount,
+		})
+	}
+
 	return vm, nil
 }
 
 // Stop terminates the subprocess. Sends SIGTERM, waits up to timeout
-// for a clean exit, then SIGKILLs via cancel(). Idempotent.
+// for a clean exit, then SIGKILLs via cancel(). Idempotent. On the
+// first Stop, emits a vm.destroy audit event with the VM's wall-clock
+// duration and exit status (gm-o9t8.3.2.7).
 func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Duration) error {
 	if vm == nil {
 		return errors.New("firecracker: Stop called with nil VM")
@@ -183,6 +222,21 @@ func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Dura
 	if !firstStop {
 		return nil
 	}
+
+	// Compute duration eagerly — emit it on the audit event regardless
+	// of which exit path we take below. Exit status is filled in once
+	// we know it; default "killed" if we don't drain waitCh in time.
+	startedAt := vm.StartedAt
+	exitStatus := "killed"
+	defer func() {
+		if s.auditor != nil {
+			s.auditor.VMEvent(ctx, "vm.destroy", map[string]any{
+				"vm_id":       vm.ID,
+				"duration_ms": time.Since(startedAt).Milliseconds(),
+				"exit_status": exitStatus,
+			})
+		}
+	}()
 
 	st, ok := vm.state.(*fallbackState)
 	if !ok || st == nil {
@@ -204,6 +258,7 @@ func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Dura
 	select {
 	case <-vm.waitCh:
 		// Already exited.
+		exitStatus = "clean"
 		if st.volsDir != "" {
 			_ = os.RemoveAll(st.volsDir)
 		}
@@ -220,6 +275,7 @@ func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Dura
 	// caller doesn't see a stale "running" view on subsequent Wait.
 	select {
 	case <-vm.waitCh:
+		exitStatus = "killed"
 	case <-time.After(2 * time.Second):
 		// Give up — the OS should have reaped by now. Log and return
 		// without erroring; the goroutine will close waitCh eventually.

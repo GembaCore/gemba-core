@@ -147,6 +147,54 @@ func (s Spec) defaults() Spec {
 	return s
 }
 
+// VaultInjector is the narrow surface the supervisor uses to pull
+// boot-time secrets out of the workspace vault (gm-o9t8.3.2.5). It is
+// satisfied by *vault.boltVault — keeping the dependency as an
+// interface lets tests inject fakes and avoids an import cycle on
+// internal/vault from this low-level adapter package.
+type VaultInjector interface {
+	Inject(ctx context.Context, wsid string) (map[string]string, error)
+}
+
+// Options is the construction surface for the Supervisor that wants
+// dependencies wired explicitly (vault for boot-time secret injection,
+// audit for lifecycle events — see gm-o9t8.3.2.5 and gm-o9t8.3.2.7).
+// Existing callers can keep using NewSupervisor(log) which routes
+// through Options with nil dependencies.
+type Options struct {
+	// Logger may be nil — slog.Default() is used in that case.
+	Logger any // *slog.Logger; "any" to avoid platform-specific imports here
+
+	// Vault is the secrets provider for boot-time injection. When nil,
+	// only explicit Spec.Secrets are passed to the guest.
+	Vault VaultInjector
+
+	// Auditor receives VM lifecycle events (Spawn/Destroy). Nil-safe.
+	Auditor LifecycleAuditor
+}
+
+// LifecycleAuditor is the narrow audit hook the supervisor calls on
+// Start success / Stop completion (gm-o9t8.3.2.7). Modeled as an
+// interface to avoid the supervisor importing the audit package
+// directly — the server wires a tiny adapter.
+type LifecycleAuditor interface {
+	VMEvent(ctx context.Context, event string, payload map[string]any)
+}
+
+// mergeSecrets returns explicit-wins union of vault-supplied secrets
+// and Spec.Secrets. Either side may be nil. The returned map is a
+// fresh allocation — callers may mutate it freely.
+func mergeSecrets(vaultSecrets, explicit map[string]string) map[string]string {
+	out := make(map[string]string, len(vaultSecrets)+len(explicit))
+	for k, v := range vaultSecrets {
+		out[k] = v
+	}
+	for k, v := range explicit {
+		out[k] = v // explicit wins
+	}
+	return out
+}
+
 // errAlreadyStopped is returned by the internal stop path when a VM
 // has already been torn down. Promoted to a no-op nil return at the
 // public Supervisor.Stop boundary so callers can stop idempotently.
