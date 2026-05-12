@@ -11,12 +11,15 @@
 // without refactoring the command.
 //
 // Data path (v1, pragmatic):
-//   1. Try GET /api/v1/workspaces/{wsid}/status. This endpoint is a
-//      501 stub today (server-side: internal/server/status.go,
-//      gm-o9t8.14). On 501 we fall back to combining
-//      GET /api/work-items?status=ready + ?status=in_progress and
-//      compute counts client-side. When the real handler lands
-//      this CLI consumes its response unchanged.
+//   1. Try GET /api/v1/workspaces/{wsid}/status (gm-o9t8.1.4.4). On a
+//      200 we drive the dashboard's counts + mode + repo banner off
+//      that response and only fetch the Ready / In Flight item lists
+//      from /api/work-items (the status endpoint returns counts, not
+//      bead rows, so the renderer still needs the rows for its tables).
+//   2. Fallback for legacy servers: if the status endpoint returns 501
+//      (older server with the stub) or 404 (wsid not registered), or
+//      we hit a network error talking to it, the CLI falls back to
+//      assembling everything from /api/work-items?status=... lists.
 //
 // Flags:
 //
@@ -106,6 +109,43 @@ type statusPayload struct {
 	OpenTotal   int             `json:"open_total"`
 	ClosedToday int             `json:"closed_today"`
 	CacheAge    time.Duration   `json:"cache_age_ns"`
+	// Repo + Agents are populated only when the primary status
+	// endpoint is available. Nil / zero in the fallback path.
+	Repo   *workspaceRepoStatus  `json:"repo,omitempty"`
+	Agents *workspaceAgentStatus `json:"agents,omitempty"`
+}
+
+// workspaceStatusResponse mirrors WorkspaceStatusResponse in
+// internal/server/status.go. Kept as a private wire type here so the
+// CLI doesn't import the server package (and accidentally drag in its
+// dependency closure).
+type workspaceStatusResponse struct {
+	WorkspaceID string                `json:"workspace_id"`
+	Mode        string                `json:"mode"`
+	Repo        *workspaceRepoStatus  `json:"repo"`
+	Beads       workspaceBeadCounts   `json:"beads"`
+	Agents      *workspaceAgentStatus `json:"agents"`
+}
+
+type workspaceRepoStatus struct {
+	Head   string `json:"head"`
+	Dirty  bool   `json:"dirty"`
+	Branch string `json:"branch"`
+}
+
+type workspaceBeadCounts struct {
+	Ready       int `json:"ready"`
+	InFlight    int `json:"in_flight"`
+	Blocked     int `json:"blocked"`
+	OpenTotal   int `json:"open_total"`
+	ClosedToday int `json:"closed_today"`
+}
+
+type workspaceAgentStatus struct {
+	Active         int    `json:"active"`
+	LastRunID      string `json:"last_run_id,omitempty"`
+	LastRunStatus  string `json:"last_run_status,omitempty"`
+	LastRunSummary string `json:"last_run_summary,omitempty"`
 }
 
 func runStatus(cmd *cobra.Command, server string, asJSON, modeOnly bool) error {
@@ -149,18 +189,38 @@ func runStatus(cmd *cobra.Command, server string, asJSON, modeOnly bool) error {
 	return nil
 }
 
-// fetchStatus tries the workspace status endpoint first; on 501 it
-// falls back to assembling the dashboard from /api/work-items.
+// fetchStatus tries the workspace status endpoint first; if the
+// server returns the real envelope we drive counts + mode + repo off
+// that response and only fetch Ready / In Flight item rows (which the
+// status endpoint doesn't carry). On a 501 / 404 or transport error
+// we fall back to assembling everything from /api/work-items.
 func fetchStatus(ctx context.Context, c *gembaclient.Client, srv string) (statusPayload, error) {
-	// Attempt the canonical endpoint. If it ever returns 200, decode
-	// directly into statusPayload (fields the server omits stay zero
-	// and the renderer copes).
-	if payload, ok, err := tryWorkspaceStatus(ctx, c, srv); err != nil {
-		// Hard network/server error — surface immediately.
-		return statusPayload{}, err
-	} else if ok {
-		return payload, nil
+	if resp, ok, err := tryWorkspaceStatus(ctx, c, srv); err == nil && ok {
+		// Primary path: status endpoint returned 200. Fetch the item
+		// rows the dashboard renders — counts come from the envelope.
+		ready, err := c.ListWorkItems(ctx, gembaclient.ListWorkItemsFilter{Status: "ready"})
+		if err != nil {
+			return statusPayload{}, err
+		}
+		inflight, err := c.ListWorkItems(ctx, gembaclient.ListWorkItemsFilter{Status: "in_progress"})
+		if err != nil {
+			return statusPayload{}, err
+		}
+		return statusPayload{
+			Workspace:   resp.WorkspaceID,
+			Mode:        resp.Mode,
+			Ready:       ready,
+			InFlight:    inflight,
+			OpenTotal:   resp.Beads.OpenTotal,
+			ClosedToday: resp.Beads.ClosedToday,
+			Repo:        resp.Repo,
+			Agents:      resp.Agents,
+		}, nil
 	}
+	// err != nil from tryWorkspaceStatus is intentionally non-fatal:
+	// transport errors against the status endpoint fall back to the
+	// list-based path, which uses the typed client and surfaces a
+	// proper error if the underlying server is truly unreachable.
 	// Fallback: list-by-status + compute counts.
 	ready, err := c.ListWorkItems(ctx, gembaclient.ListWorkItemsFilter{Status: "ready"})
 	if err != nil {
@@ -199,40 +259,44 @@ func fetchStatus(ctx context.Context, c *gembaclient.Client, srv string) (status
 
 // tryWorkspaceStatus probes /api/v1/workspaces/_/status. We use the
 // special wsid "_" so the call works against any server without
-// requiring the caller to know its workspace id; the real handler is
-// expected to resolve this to "the default workspace for the
-// authenticated user" when it lands. Returns (payload, ok, err) where
-// ok=false signals "fall back" (501 or 404) and a non-nil err signals
-// a fatal transport/auth problem.
-func tryWorkspaceStatus(ctx context.Context, c *gembaclient.Client, srv string) (statusPayload, bool, error) {
+// requiring the caller to know its workspace id; the server resolves
+// this to "the active workspace for the authenticated user".
+//
+// Returns (resp, ok, err) where:
+//   - ok=true: the server returned the new 200 envelope; use it
+//   - ok=false, err=nil: graceful fallback signal — the endpoint
+//     returned 501 (older server with the stub) or 404 (wsid not
+//     registered yet on this server)
+//   - err != nil: transport / decode error. Treated as graceful
+//     fallback by the caller (the list path will surface a real
+//     error if the server is truly unreachable).
+func tryWorkspaceStatus(ctx context.Context, c *gembaclient.Client, srv string) (workspaceStatusResponse, bool, error) {
 	url := strings.TrimRight(srv, "/") + "/api/v1/workspaces/_/status"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return statusPayload{}, false, err
+		return workspaceStatusResponse{}, false, err
 	}
 	req.Header.Set("Accept", "application/json")
-	// Auth headers ride through the same path bead_crud uses by
-	// going through the client's doJSON for actual data fetches.
-	// This probe deliberately uses http.DefaultClient with no auth:
-	// the stub returns 501 regardless. When the real handler lands,
-	// route this through the typed client.
+	// Routing through http.DefaultClient keeps this probe cheap +
+	// auth-free; the list endpoints (which DO need auth) flow through
+	// the typed client and will surface a 401 with a real error
+	// envelope. When per-tenant auth lands on the status endpoint,
+	// thread the typed client's transport here.
 	_ = c
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		// Network errors are fatal — don't silently fall back, the
-		// list calls will fail the same way.
-		return statusPayload{}, false, err
+		return workspaceStatusResponse{}, false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotImplemented || resp.StatusCode == http.StatusNotFound {
-		return statusPayload{}, false, nil
+		return workspaceStatusResponse{}, false, nil
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return statusPayload{}, false, fmt.Errorf("workspace status: %s", resp.Status)
+		return workspaceStatusResponse{}, false, fmt.Errorf("workspace status: %s", resp.Status)
 	}
-	var payload statusPayload
+	var payload workspaceStatusResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return statusPayload{}, false, fmt.Errorf("decode workspace status: %w", err)
+		return workspaceStatusResponse{}, false, fmt.Errorf("decode workspace status: %w", err)
 	}
 	return payload, true, nil
 }
@@ -265,7 +329,40 @@ func renderAdHoc(w io.Writer, p statusPayload) {
 	if p.CacheAge > 0 {
 		cache = fmt.Sprintf(" (cached %s ago)", humanDuration(p.CacheAge))
 	}
-	fmt.Fprintf(w, "gemba · workspace: %s · server: %s%s\n\n", ws, srv, cache)
+	fmt.Fprintf(w, "gemba · workspace: %s · server: %s%s\n", ws, srv, cache)
+
+	// Repo banner — only present when the new /workspaces/{wsid}/
+	// status endpoint is in play and the workspace has a clone.
+	if p.Repo != nil && p.Repo.Head != "" {
+		head := p.Repo.Head
+		if len(head) > 12 {
+			head = head[:12]
+		}
+		dirty := ""
+		if p.Repo.Dirty {
+			dirty = " · dirty"
+		}
+		branch := p.Repo.Branch
+		if branch == "" {
+			branch = "(detached)"
+		}
+		fmt.Fprintf(w, "repo · %s @ %s%s\n", branch, head, dirty)
+	}
+	// Agents banner — only when we have a run on record.
+	if p.Agents != nil && (p.Agents.Active > 0 || p.Agents.LastRunID != "") {
+		switch {
+		case p.Agents.LastRunID != "":
+			summary := p.Agents.LastRunSummary
+			if summary == "" {
+				summary = p.Agents.LastRunStatus
+			}
+			fmt.Fprintf(w, "agents · %d active · last run %s (%s)\n",
+				p.Agents.Active, p.Agents.LastRunID, summary)
+		default:
+			fmt.Fprintf(w, "agents · %d active\n", p.Agents.Active)
+		}
+	}
+	fmt.Fprintln(w)
 
 	if len(p.Ready) == 0 && len(p.InFlight) == 0 && p.OpenTotal == 0 {
 		fmt.Fprintln(w, "No beads yet. Try `gemba bead create` to get started.")
