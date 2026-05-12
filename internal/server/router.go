@@ -676,6 +676,40 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// KindAdaptorDegraded so the SPA's Insights panel can render
 		// an "awaiting Prometheus" stub. Read-only — no nonce gate.
 		api.Get("/v1/metrics/series", r.metricsSeries)
+
+		// gm-o9t8.14 — Govern + Convenience verb surface stubs. Wire
+		// shape pinned; all handlers return 501 with the
+		// not_implemented envelope until the ASDD epic (gm-v0sp)
+		// lands. Auth applies via the shared apiAuth middleware on
+		// the /api block; write endpoints additionally require the
+		// X-GEMBA-Confirm nonce.
+		//
+		// Spec family (govern):
+		api.Get("/v1/workspaces/{wsid}/specs", r.listSpecsStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Patch("/v1/workspaces/{wsid}/specs/{slug}", r.patchSpecStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/specs/{slug}/reconcile", r.reconcileSpecStub)
+		api.Get("/v1/workspaces/{wsid}/specs/{slug}/watch", r.watchSpecStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/specs/{slug}/snapshot", r.snapshotSpecStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/specs/{slug}/adopt", r.adoptSpecStub)
+
+		// Decision family (govern):
+		api.Get("/v1/workspaces/{wsid}/decisions", r.listDecisionsStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/decisions", r.createDecisionStub)
+		api.Get("/v1/workspaces/{wsid}/decisions/refs", r.decisionRefsStub)
+		api.Get("/v1/workspaces/{wsid}/decisions/{id}", r.getDecisionStub)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Patch("/v1/workspaces/{wsid}/decisions/{id}/lock", r.lockDecisionStub)
+
+		// Constitution / spec-lint reads (govern):
+		api.Get("/v1/workspaces/{wsid}/labels", r.listLabelsStub)
+
+		// Convenience verb — gemba no-args:
+		api.Get("/v1/workspaces/{wsid}/status", r.workspaceStatusStub)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

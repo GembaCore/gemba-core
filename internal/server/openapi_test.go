@@ -102,10 +102,72 @@ func TestOpenAPI_DocumentsKeyEndpoints(t *testing.T) {
 		"/api/escalations",
 		"/api/capabilities",
 		"/api/openapi.json",
+		// gm-o9t8.14 — Govern + Convenience verbs.
+		"/api/v1/workspaces/{wsid}/specs",
+		"/api/v1/workspaces/{wsid}/specs/{slug}",
+		"/api/v1/workspaces/{wsid}/specs/{slug}/reconcile",
+		"/api/v1/workspaces/{wsid}/specs/{slug}/watch",
+		"/api/v1/workspaces/{wsid}/specs/{slug}/snapshot",
+		"/api/v1/workspaces/{wsid}/specs/{slug}/adopt",
+		"/api/v1/workspaces/{wsid}/decisions",
+		"/api/v1/workspaces/{wsid}/decisions/refs",
+		"/api/v1/workspaces/{wsid}/decisions/{id}",
+		"/api/v1/workspaces/{wsid}/decisions/{id}/lock",
+		"/api/v1/workspaces/{wsid}/labels",
+		"/api/v1/workspaces/{wsid}/status",
 	}
 	for _, p := range want {
 		if _, ok := doc.Paths[p]; !ok {
 			t.Errorf("paths is missing %q", p)
+		}
+	}
+}
+
+// TestOpenAPI_GovernEndpointsHaveSummaryAndResponses — every Govern /
+// Convenience path entry (gm-o9t8.14) must declare a summary,
+// description, and at least one response per HTTP method. Catches
+// half-finished spec edits at PR time.
+func TestOpenAPI_GovernEndpointsHaveSummaryAndResponses(t *testing.T) {
+	var doc struct {
+		Paths map[string]map[string]struct {
+			Summary     string         `json:"summary"`
+			Description string         `json:"description"`
+			Responses   map[string]any `json:"responses"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(OpenAPISpec(), &doc); err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	governPaths := []string{
+		"/api/v1/workspaces/{wsid}/specs",
+		"/api/v1/workspaces/{wsid}/specs/{slug}",
+		"/api/v1/workspaces/{wsid}/specs/{slug}/reconcile",
+		"/api/v1/workspaces/{wsid}/specs/{slug}/watch",
+		"/api/v1/workspaces/{wsid}/specs/{slug}/snapshot",
+		"/api/v1/workspaces/{wsid}/specs/{slug}/adopt",
+		"/api/v1/workspaces/{wsid}/decisions",
+		"/api/v1/workspaces/{wsid}/decisions/refs",
+		"/api/v1/workspaces/{wsid}/decisions/{id}",
+		"/api/v1/workspaces/{wsid}/decisions/{id}/lock",
+		"/api/v1/workspaces/{wsid}/labels",
+		"/api/v1/workspaces/{wsid}/status",
+	}
+	for _, p := range governPaths {
+		ops, ok := doc.Paths[p]
+		if !ok {
+			t.Errorf("missing path %q", p)
+			continue
+		}
+		for method, op := range ops {
+			if op.Summary == "" {
+				t.Errorf("%s %s: missing summary", method, p)
+			}
+			if op.Description == "" {
+				t.Errorf("%s %s: missing description", method, p)
+			}
+			if len(op.Responses) == 0 {
+				t.Errorf("%s %s: must declare at least one response", method, p)
+			}
 		}
 	}
 }
