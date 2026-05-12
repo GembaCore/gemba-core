@@ -1333,6 +1333,57 @@
         }
       }
     },
+    "/api/v1/tenants/{tid}": {
+      "get": {
+        "tags": [
+          "tenants"
+        ],
+        "summary": "Get tenant metadata.",
+        "description": "Returns the tenant row identified by `tid`. The handler is owner-only: the requested `tid` must equal the request's bearer-bound tenant id, otherwise the server returns 403 cross_tenant_access. Full admin/list endpoints land with gm-o9t8.3.1 follow-ups; OAuth-bound bearer→tenant resolution lands with gm-o9t8.3.5.",
+        "operationId": "getTenant",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/TenantID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tenant metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["id", "kind", "created_at"],
+                  "properties": {
+                    "id": {"type": "string", "description": "Tenant id (matches the `tid` path parameter)."},
+                    "kind": {"type": "string", "enum": ["user", "org", "system"]},
+                    "github_login": {"type": "string", "description": "Linked GitHub login; omitted when the tenant has no GitHub identity (e.g. `t-default`)."},
+                    "github_id": {"type": "integer", "format": "int64", "description": "Linked GitHub numeric id; omitted when the tenant has no GitHub identity."},
+                    "created_at": {"type": "string", "format": "date-time"}
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed tenant id.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "403": {
+            "description": "Cross-tenant access denied — requested tid does not match the bearer-bound tenant.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "404": {
+            "description": "Tenant id is well-formed but absent from the tenants table.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "503": {
+            "description": "Tenant store is not attached to the running router (boot order / unconfigured).",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{wsid}/specs": {
       "get": {
         "tags": [
@@ -2375,9 +2426,20 @@
         "name": "wsid",
         "in": "path",
         "required": true,
-        "description": "Workspace identifier \u2014 1:1 with a beads database (see /api/config beads_source).",
+        "description": "Workspace identifier. Canonical form is `<tenant-prefix>:<slug>` where tenant-prefix is the first 6 characters of the owning tenant id (e.g. `t-abcd:my-project`). A bare `<slug>` (no colon) is accepted for M1 backwards compatibility and resolves to the well-known DefaultTenant (`t-default`). The server rejects cross-tenant access with 403 when the wsid's tenant-prefix does not match the request's bearer-bound tenant. Pinned in decision gm-o9t8.3.9.",
         "schema": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^(t-[a-z0-9]+:[^/]+|[^:/]+)$"
+        }
+      },
+      "TenantID": {
+        "name": "tid",
+        "in": "path",
+        "required": true,
+        "description": "Tenant identifier. Format `t-<8 lowercase alphanumeric>` (RFC 4648 base32 alphabet relaxed to include `0-9`), or the well-known constant `t-default` used for single-user installs and the M1 upgrade path. Pinned in decision gm-o9t8.3.9.",
+        "schema": {
+          "type": "string",
+          "pattern": "^(t-default|t-[a-z0-9]{8})$"
         }
       },
       "SpecSlug": {

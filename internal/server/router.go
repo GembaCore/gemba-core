@@ -24,6 +24,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/persona"
 	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
+	"github.com/GembaCore/gemba-core/internal/tenant"
 	"github.com/GembaCore/gemba-core/internal/transport/api"
 	"github.com/GembaCore/gemba-core/internal/vault"
 	"github.com/GembaCore/gemba-core/internal/walk"
@@ -205,6 +206,12 @@ type Router struct {
 	// empty → /api/v1/workspaces/{wsid}/diff returns 503.
 	workspacesRoot string
 
+	// tenantStore backs GET /api/v1/tenants/{tid} (gm-o9t8.3.9). When
+	// nil the handler returns 503 adaptor_not_configured; cmd/gemba
+	// serve attaches a real store (SQLStore or MemStore) via
+	// AttachTenantStore after the Dolt pool is up.
+	tenantStore tenant.Store
+
 	mux http.Handler
 }
 
@@ -287,6 +294,12 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		if apiAuth != nil {
 			api.Use(apiAuth)
 		}
+		// gm-o9t8.3.9: attach the bearer-bound tenant to every
+		// authenticated request's context. The OAuth resolver lands
+		// in gm-o9t8.3.5; until then SingleUserResolver answers
+		// DefaultTenant. WithTenant runs AFTER apiAuth so it can
+		// assume credentials are valid.
+		api.Use(tracemw.WithTenant(tracemw.SingleUserResolver()))
 		api.NotFound(apiNotFound)
 		api.MethodNotAllowed(apiNotFound)
 
@@ -716,47 +729,63 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// the /api block; write endpoints additionally require the
 		// X-GEMBA-Confirm nonce.
 		//
-		// Spec family (govern):
-		api.Get("/v1/workspaces/{wsid}/specs", r.listSpecsStub)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Patch("/v1/workspaces/{wsid}/specs/{slug}", r.patchSpecStub)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Post("/v1/workspaces/{wsid}/specs/{slug}/reconcile", r.reconcileSpecStub)
-		api.Get("/v1/workspaces/{wsid}/specs/{slug}/watch", r.watchSpecStub)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Post("/v1/workspaces/{wsid}/specs/{slug}/snapshot", r.snapshotSpecStub)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Post("/v1/workspaces/{wsid}/specs/{slug}/adopt", r.adoptSpecStub)
+		// gm-o9t8.3.9: every /api/v1/workspaces/{wsid}/... route
+		// runs through RequireWSIDTenantMatch so a bearer scoped to
+		// tenant A cannot poke at tenant B's wsids. Bare-wsid M1
+		// routes still work because both sides default to
+		// DefaultTenant. WithTenant on the /api block has already
+		// stamped the bearer's tenant on the context.
+		api.Group(func(ws chi.Router) {
+			ws.Use(tracemw.RequireWSIDTenantMatch)
 
-		// Decision family (govern):
-		api.Get("/v1/workspaces/{wsid}/decisions", r.listDecisionsStub)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Post("/v1/workspaces/{wsid}/decisions", r.createDecisionStub)
-		api.Get("/v1/workspaces/{wsid}/decisions/refs", r.decisionRefsStub)
-		api.Get("/v1/workspaces/{wsid}/decisions/{id}", r.getDecisionStub)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Patch("/v1/workspaces/{wsid}/decisions/{id}/lock", r.lockDecisionStub)
+			// Spec family (govern):
+			ws.Get("/v1/workspaces/{wsid}/specs", r.listSpecsStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Patch("/v1/workspaces/{wsid}/specs/{slug}", r.patchSpecStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/specs/{slug}/reconcile", r.reconcileSpecStub)
+			ws.Get("/v1/workspaces/{wsid}/specs/{slug}/watch", r.watchSpecStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/specs/{slug}/snapshot", r.snapshotSpecStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/specs/{slug}/adopt", r.adoptSpecStub)
 
-		// Constitution / spec-lint reads (govern):
-		api.Get("/v1/workspaces/{wsid}/labels", r.listLabelsStub)
+			// Decision family (govern):
+			ws.Get("/v1/workspaces/{wsid}/decisions", r.listDecisionsStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/decisions", r.createDecisionStub)
+			ws.Get("/v1/workspaces/{wsid}/decisions/refs", r.decisionRefsStub)
+			ws.Get("/v1/workspaces/{wsid}/decisions/{id}", r.getDecisionStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Patch("/v1/workspaces/{wsid}/decisions/{id}/lock", r.lockDecisionStub)
 
-		// gm-o9t8.3.7: workspace secrets vault. Three routes, no plaintext
-		// read endpoint by design. Writes carry the X-GEMBA-Confirm nonce
-		// gate like every other mutation.
-		api.Get("/v1/workspaces/{wsid}/secrets", r.listWorkspaceSecrets)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Post("/v1/workspaces/{wsid}/secrets/{key}", r.putWorkspaceSecret)
-		api.With(requireConfirmNonce(r.nonceCache)).
-			Delete("/v1/workspaces/{wsid}/secrets/{key}", r.deleteWorkspaceSecret)
+			// Constitution / spec-lint reads (govern):
+			ws.Get("/v1/workspaces/{wsid}/labels", r.listLabelsStub)
 
-		// Convenience verb — gemba no-args (gm-o9t8.1.4.4: real handler,
-		// replaced the 501 stub):
-		api.Get("/v1/workspaces/{wsid}/status", r.workspaceStatus)
+			// gm-o9t8.3.7: workspace secrets vault. Three routes, no
+			// plaintext read endpoint by design. Writes carry the
+			// X-GEMBA-Confirm nonce gate like every other mutation.
+			ws.Get("/v1/workspaces/{wsid}/secrets", r.listWorkspaceSecrets)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/secrets/{key}", r.putWorkspaceSecret)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Delete("/v1/workspaces/{wsid}/secrets/{key}", r.deleteWorkspaceSecret)
 
-		// gm-o9t8.1.6.2: stream `git diff` from the server-side
-		// workspace repo. GET, so no nonce gate; auth applies via
-		// the shared apiAuth middleware on the /api block.
-		api.Get("/v1/workspaces/{wsid}/diff", r.workspaceDiffHandler)
+			// Convenience verb — gemba no-args (gm-o9t8.1.4.4:
+			// real handler, replaced the 501 stub):
+			ws.Get("/v1/workspaces/{wsid}/status", r.workspaceStatus)
+
+			// gm-o9t8.1.6.2: stream `git diff` from the server-side
+			// workspace repo. GET, so no nonce gate; auth applies
+			// via the shared apiAuth middleware on the /api block.
+			ws.Get("/v1/workspaces/{wsid}/diff", r.workspaceDiffHandler)
+		})
+
+		// gm-o9t8.3.9: tenant metadata. Auth-gated by the shared
+		// /api middleware; the handler itself enforces "requested
+		// tid == bearer tid" so the route is owner-only without a
+		// dedicated admin role.
+		api.Get("/v1/tenants/{tid}", r.getTenant)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

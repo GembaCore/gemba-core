@@ -40,6 +40,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/persona"
 	"github.com/GembaCore/gemba-core/internal/personas/onboarder"
 	"github.com/GembaCore/gemba-core/internal/server"
+	"github.com/GembaCore/gemba-core/internal/tenant"
 	"github.com/GembaCore/gemba-core/internal/server/metrics"
 	"github.com/GembaCore/gemba-core/internal/shader"
 	"github.com/GembaCore/gemba-core/internal/shader/gastown"
@@ -651,6 +652,18 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 			"err", vErr)
 	} else if v != nil {
 		handler.AttachVault(v)
+	}
+
+	// gm-o9t8.3.9: attach a tenant store so GET /api/v1/tenants/{tid}
+	// returns metadata in single-user mode. The foundation story
+	// always seeds an in-memory store with DefaultTenant; the Dolt-
+	// backed SQLStore + OAuth-driven tenant creation lands in the
+	// follow-up (gm-o9t8.3.5).
+	tenantStore := tenant.NewMemStore()
+	if err := tenantStore.Migrate(ctx); err != nil {
+		slog.Warn("tenant store seed failed; /api/v1/tenants returns 503", "err", err)
+	} else {
+		handler.AttachTenantStore(tenantStore)
 	}
 
 	srv := &http.Server{
