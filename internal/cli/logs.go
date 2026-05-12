@@ -31,6 +31,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
 	"github.com/GembaCore/gemba-core/internal/sse"
 )
 
@@ -65,9 +66,11 @@ going, up to --max-retries times.`,
 
 func runLogsFollow(cmd *cobra.Command, runID string) error {
 	baseURL, _ := cmd.Flags().GetString("base-url")
-	if baseURL == "" {
-		baseURL = "http://localhost:7666"
+	resolved, err := serverconfig.Resolve(baseURL)
+	if err != nil {
+		return err
 	}
+	baseURL = resolved
 	asJSON, _ := cmd.Flags().GetBool("json")
 	maxRetries, _ := cmd.Flags().GetInt("max-retries")
 

@@ -31,6 +31,7 @@ import (
 
 	"github.com/GembaCore/gemba-core/internal/auth/credstore"
 	gembaclient "github.com/GembaCore/gemba-core/internal/client"
+	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
 )
 
 // whoamiResponse mirrors internal/server/whoami.go's wire shape.
@@ -164,8 +165,9 @@ Token sources, in priority order:
 
 Full OAuth is deferred to M3. v1 only accepts PATs.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if server == "" {
-				return errors.New("--server is required")
+			resolved, err := serverconfig.Resolve(server)
+			if err != nil {
+				return err
 			}
 			tok, err := resolveLoginToken(cmd.InOrStdin(), cmd.OutOrStdout(), token, tokenStdin)
 			if err != nil {
@@ -181,7 +183,7 @@ Full OAuth is deferred to M3. v1 only accepts PATs.`,
 			}
 			caller := defaultWhoamiCaller(nil)
 			return runLogin(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(),
-				server, tok, path, caller)
+				resolved, tok, path, caller)
 		},
 	}
 	cmd.Flags().StringVar(&server, "server", "", "gemba server base URL (e.g. http://localhost:7666)")
@@ -288,9 +290,23 @@ entry, that entry is used. With zero entries the command prints
 				}
 				path = p
 			}
+			// Run the URL resolver first; if any explicit source (flag,
+			// env, or config.toml) is set, that wins over the credstore's
+			// "single stored server" auto-pick. With no explicit source
+			// we hand "" to runWhoami so the credstore fallback still
+			// works (a fresh login + whoami round-trip without ever
+			// touching --server should keep working).
+			detail, err := serverconfig.ResolveDetail(server)
+			if err != nil {
+				return err
+			}
+			chosen := ""
+			if detail.Source != serverconfig.SourceDefault {
+				chosen = detail.URL
+			}
 			caller := typedClientWhoamiCaller(path)
 			return runWhoami(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(),
-				server, path, asJSON, caller)
+				chosen, path, asJSON, caller)
 		},
 	}
 	cmd.Flags().StringVar(&server, "server", "", "gemba server URL (defaults to the only stored server)")

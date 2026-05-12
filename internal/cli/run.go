@@ -28,6 +28,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
 	"github.com/GembaCore/gemba-core/internal/sse"
 )
 
@@ -61,9 +62,11 @@ item. Ctrl+C detaches without killing the run; resume later with:
 
 func runRunCmd(cmd *cobra.Command, beadID string) error {
 	baseURL, _ := cmd.Flags().GetString("base-url")
-	if baseURL == "" {
-		baseURL = "http://localhost:7666"
+	resolved, err := serverconfig.Resolve(baseURL)
+	if err != nil {
+		return err
 	}
+	baseURL = resolved
 	asJSON, _ := cmd.Flags().GetBool("json")
 	noAttach, _ := cmd.Flags().GetBool("no-attach")
 	agentType, _ := cmd.Flags().GetString("agent-type")
