@@ -281,6 +281,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 
 		api.Get("/health", r.health)
 		api.Get("/version", r.version)
+		// gm-o9t8.1.1.2: identity probe for the CLI `gemba login` /
+		// `gemba whoami` flow. Auth-gated; returns the subject the
+		// bearer/cookie maps to (v1: a static "operator" — see
+		// whoami.go for the multi-identity follow-up).
+		api.Get("/whoami", r.whoami)
 		api.Get("/config", r.config)
 		api.Get("/beads-history", r.beadsHistory)
 		api.Get("/beads/health", r.beadsHealth)

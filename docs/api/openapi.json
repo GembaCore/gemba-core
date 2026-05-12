@@ -970,7 +970,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "Conflict — either the session state has changed since the modal opened (`error` = `stale_state`) or the target directory already exists (`error` = `dir_exists`).",
+            "description": "Conflict \u2014 either the session state has changed since the modal opened (`error` = `stale_state`) or the target directory already exists (`error` = `dir_exists`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1034,7 +1034,7 @@
             }
           },
           "400": {
-            "description": "Validation failure — missing or empty `project_name`.",
+            "description": "Validation failure \u2014 missing or empty `project_name`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1078,7 +1078,7 @@
         "operationId": "probeOnboarder",
         "responses": {
           "200": {
-            "description": "Probe result. Always 200 — `available` is the operative signal; when false, `reason` carries the operator-facing diagnostic.",
+            "description": "Probe result. Always 200 \u2014 `available` is the operative signal; when false, `reason` carries the operator-facing diagnostic.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1095,7 +1095,7 @@
         "tags": [
           "work"
         ],
-        "summary": "Enumerate projects discovered under the configured `default_dir` and any `extra_roots` (gm-root.17.14). Each entry carries a `kind` classifying its setup state — `complete`, `needs_workspace`, or `needs_repo`.",
+        "summary": "Enumerate projects discovered under the configured `default_dir` and any `extra_roots` (gm-root.17.14). Each entry carries a `kind` classifying its setup state \u2014 `complete`, `needs_workspace`, or `needs_repo`.",
         "operationId": "listProjects",
         "responses": {
           "200": {
@@ -1154,7 +1154,7 @@
             "$ref": "#/components/responses/BadRequest"
           },
           "409": {
-            "description": "Conflict — `mode=\"navigate\"` and the target repo already contains a `.beads/` directory the server refuses to clobber (`error` = `beads_dir_exists`).",
+            "description": "Conflict \u2014 `mode=\"navigate\"` and the target repo already contains a `.beads/` directory the server refuses to clobber (`error` = `beads_dir_exists`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -1175,12 +1175,44 @@
           }
         }
       }
+    },
+    "/api/whoami": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Identity probe \u2014 returns the subject the bearer/cookie maps to.",
+        "description": "Used by `gemba login` to validate a personal access token and by `gemba whoami` to confirm an existing credential is still accepted. The auth middleware gates this route; an unauthenticated call returns 401 before the handler runs (gm-o9t8.1.1.2).",
+        "operationId": "getWhoami",
+        "responses": {
+          "200": {
+            "description": "Authenticated identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WhoamiResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid credentials.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "responses": {
       "BadRequest": {
-        "description": "Malformed request — invalid query parameters or body.",
+        "description": "Malformed request \u2014 invalid query parameters or body.",
         "content": {
           "application/json": {
             "schema": {
@@ -1279,7 +1311,7 @@
       },
       "BeadsSource": {
         "type": "object",
-        "description": "Workspace identity — 1:1 with a beads database (gm-77u). Detail strips credentials when source is a dolt-url.",
+        "description": "Workspace identity \u2014 1:1 with a beads database (gm-77u). Detail strips credentials when source is a dolt-url.",
         "required": [
           "kind",
           "label"
@@ -2299,7 +2331,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Intra-tree refs (e.g. `milestone:0/epic:1/bead:2`). Ratification resolves these to real bd-… ids in step 8a."
+            "description": "Intra-tree refs (e.g. `milestone:0/epic:1/bead:2`). Ratification resolves these to real bd-\u2026 ids in step 8a."
           },
           "BlocksRefs": {
             "type": "array",
@@ -2643,12 +2675,12 @@
         "properties": {
           "message": {
             "type": "string",
-            "description": "Operator message. Free text — the skill parses intent."
+            "description": "Operator message. Free text \u2014 the skill parses intent."
           },
           "edits": {
             "type": "object",
             "additionalProperties": true,
-            "description": "Optional in-place edits the operator made to the plan preview pane since the last turn. Open shape — the skill interprets the path-keyed diff."
+            "description": "Optional in-place edits the operator made to the plan preview pane since the last turn. Open shape \u2014 the skill interprets the path-keyed diff."
           }
         }
       },
@@ -2764,7 +2796,7 @@
       },
       "CreateProjectRequest": {
         "type": "object",
-        "description": "Body for `POST /api/v1/newproject/create` — the lightweight project-creation path. No session, no Onboarder, no LLM. The server runs the same atomic ratify transaction the conversational flow uses, but with an empty Milestones[] tree (gm-root.17.13).",
+        "description": "Body for `POST /api/v1/newproject/create` \u2014 the lightweight project-creation path. No session, no Onboarder, no LLM. The server runs the same atomic ratify transaction the conversational flow uses, but with an empty Milestones[] tree (gm-root.17.13).",
         "required": [
           "project_name"
         ],
@@ -2799,7 +2831,7 @@
       },
       "ProjectKind": {
         "type": "string",
-        "description": "Setup-state classification for a discovered project (gm-root.17.14). `complete` — has a beads DB, a `.gemba/workspace.toml`, and is inside a git repo; the picker switches to it directly. `needs_workspace` — has a beads DB but no `.gemba/workspace.toml`. `needs_repo` — has a `.gemba/workspace.toml` but is not inside a git repo. Open string at the wire so future kinds don't break clients.",
+        "description": "Setup-state classification for a discovered project (gm-root.17.14). `complete` \u2014 has a beads DB, a `.gemba/workspace.toml`, and is inside a git repo; the picker switches to it directly. `needs_workspace` \u2014 has a beads DB but no `.gemba/workspace.toml`. `needs_repo` \u2014 has a `.gemba/workspace.toml` but is not inside a git repo. Open string at the wire so future kinds don't break clients.",
         "enum": [
           "complete",
           "needs_workspace",
@@ -2850,7 +2882,7 @@
       },
       "BindProjectRequest": {
         "type": "object",
-        "description": "Body for `POST /api/v1/projects/bind`. `mode=\"create\"` runs `git init` at `beads_db_path` (which must equal `target_repo_path`) and writes `.gemba/workspace.toml` in place. `mode=\"navigate\"` copies the beads DB at `beads_db_path/.beads/` into `target_repo_path/.beads/` and writes `.gemba/workspace.toml` at `target_repo_path` — `target_repo_path` must already be a git working tree.",
+        "description": "Body for `POST /api/v1/projects/bind`. `mode=\"create\"` runs `git init` at `beads_db_path` (which must equal `target_repo_path`) and writes `.gemba/workspace.toml` in place. `mode=\"navigate\"` copies the beads DB at `beads_db_path/.beads/` into `target_repo_path/.beads/` and writes `.gemba/workspace.toml` at `target_repo_path` \u2014 `target_repo_path` must already be a git working tree.",
         "required": [
           "beads_db_path",
           "target_repo_path",
@@ -2896,7 +2928,7 @@
       },
       "PersonaPersonality": {
         "type": "object",
-        "description": "gm-9rv §1 — decorative voice/tone qualifier. Optional.",
+        "description": "gm-9rv \u00a71 \u2014 decorative voice/tone qualifier. Optional.",
         "properties": {
           "id": {
             "type": "string"
@@ -2914,7 +2946,7 @@
       },
       "PersonaPerspective": {
         "type": "object",
-        "description": "gm-9rv §2 — deterministic lens. Optional.",
+        "description": "gm-9rv \u00a72 \u2014 deterministic lens. Optional.",
         "properties": {
           "statement": {
             "type": "string"
@@ -2935,7 +2967,7 @@
       },
       "PersonaPurview": {
         "type": "object",
-        "description": "gm-9rv §3 — gate authority by phase. Optional.",
+        "description": "gm-9rv \u00a73 \u2014 gate authority by phase. Optional.",
         "properties": {
           "domain": {
             "type": "string"
@@ -3412,6 +3444,38 @@
           "story_count": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "WhoamiResponse": {
+        "type": "object",
+        "required": [
+          "subject",
+          "server_version"
+        ],
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Identity the credential maps to. v1 returns a static 'operator' for the single-token model; multi-identity arrives with M3 OAuth."
+          },
+          "server_version": {
+            "type": "string",
+            "description": "Build version of the gemba server."
+          }
+        }
+      },
+      "UnauthorizedResponse": {
+        "type": "object",
+        "required": [
+          "error",
+          "code"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
           }
         }
       }
