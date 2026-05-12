@@ -49,16 +49,55 @@ Three storage planes, each with a clear escape hatch:
 
 ## 4. CLI surface
 
-Thin client. No local source checkout. No local Dolt server. Stores credentials and a small read-only metadata cache (last-seen ready beads, last-seen workspace status) so commands like `gemba bead list` and `gemba` (no args) work offline. Writes always require connectivity to the gemba server.
+Thin client. No local source checkout required for read paths. Stores credentials and a small read-only metadata cache (last-seen ready beads, last-seen workspace status) so `gemba` (no args), `gemba bead list`, and `gemba constitution show` work offline. Writes always require connectivity to the gemba server.
 
-Verbs split by intent:
+The verb space splits into **five groups** plus a small convenience set. The split follows the gemba mental model: declarative intent (what the project *should* be) lives separately from imperative ledger writes (what the project *is doing right now*), and both live separately from execution, observation, and break-glass.
 
-- **Intent** — `gemba bead`, `gemba plan`, `gemba design`. Manipulate project state via RPC; the server writes Dolt.
-- **Dispatch** — `gemba run <phase>`, `gemba agent dispatch <bead>`, `gemba stop`. Kick off agent work on the workspace VM; stream events back.
-- **Inspect** — `gemba logs`, `gemba diff`, `gemba show`. Read agent output, pending diffs, workspace state.
-- **Escape hatch** — `gemba shell` (TTY into workspace VM), `gemba port-forward <port>`, `gemba code` (launches VS Code Remote SSH).
+| Group | Owns | Verbs |
+|---|---|---|
+| **Govern** | Declarative intent; documents that constrain the ledger | `spec new`, `spec lint`, `spec reconcile`, `spec watch`, `spec snapshot`, `spec adopt`, `spec freeze`, `spec unfreeze`, `spec import`, `spec list`, `spec move`, `decision add/lock/unlock/list/show`, `constitution init/show/lint/edit` |
+| **Ledger** | Imperative bead CRUD; the operational record | `bead create/update/close/list/show/comment/mail` |
+| **Dispatch** | Kick off agent work on the workspace VM | `run <phase>`, `agent dispatch <bead>`, `stop` |
+| **Inspect** | Read-only views | `logs`, `diff`, `show`, `status` |
+| **Escape** | Break-glass into the workspace | `shell` (TTY), `port-forward <port>`, `code` (launches VS Code Remote SSH) |
 
-Acceptance test for the agent-ops vision: a user should be able to do 80% of their daily work without invoking the escape hatch.
+Plus convenience: `init`, `login`, `gemba` (no args, equivalent to `gemba status`).
+
+### Local / Server / Server-streamed
+
+Every verb has exactly one home. Govern is mixed because spec docs live in git; bead/decision writes need the server.
+
+- **Local** — pure ops on git-tracked files (spec.md, lockfile, constitution.md). Works without `gemba login`. No bd mutations. Examples: `spec new`, `spec lint` (default), `constitution init/show/edit`, `spec freeze` (local edit + auto-chained reconcile).
+- **Server** — needs the server because it reads or writes bd state. Required: nonce + audit on writes. Examples: `spec reconcile`, `spec snapshot`, `spec adopt`, `decision *`, `bead *`, `gemba init`, dispatch verbs.
+- **Server-streamed** — long-lived SSE channel for live views. Examples: `spec watch`, parts of `gemba status` and `logs`.
+
+Lint commands (`spec lint`, `constitution lint`) follow a `--strict` pattern: pure local validation by default; opt-in server-aware checks for schema and cross-reference verification. This matches the offline-CLI promise and gives CI a clean stricter mode.
+
+### Mode awareness
+
+`gemba` (no args) and `gemba status` are **mode-aware**. The workspace is in one of four modes depending on local frontmatter and lockfile state:
+
+- **Ad-hoc** — no specs/*/ dirs. Output: ready beads + in-flight + counts.
+- **Scaffolded** — specs exist but all archived. Output: archived rollup + ready beads.
+- **Governed** — at least one live spec. Output: spec header (slug, last reconcile, compact T-NN progress bar `✓✓✓ 🟡 ○○○`, drift count) first; ready beads grouped into "under spec" and "off-spec".
+- **Reverse-governed** — Governed plus a lockfile flag `adopted_from_bead_state: true`. Same output as Governed plus a one-line banner that clears after first manual edit.
+
+Mode detection is local (no server call); the server only supplies counts via `GET /workspaces/:wsid/specs` and `GET /workspaces/:wsid/status`. Scriptable variants: `gemba status --json` and `gemba status --mode`.
+
+### Slug resolution
+
+When a spec verb runs, the slug is resolved before the HTTP call in this order:
+
+1. Explicit `--spec <slug>` flag wins.
+2. CWD inside `specs/<slug>/...` infers `<slug>`.
+3. If exactly one live spec exists in the workspace, that slug is inferred.
+4. Otherwise the CLI errors with the list of live slugs and asks for `--spec`.
+
+Spec-list verbs (`spec list`, `gemba status`) work without a resolved slug.
+
+### Acceptance test
+
+A user should be able to do 80% of their daily work — author a spec, reconcile it into beads, dispatch agents, observe progress, close beads, snapshot for retro — without invoking the Escape group.
 
 ## 5. Workspace lifecycle
 
