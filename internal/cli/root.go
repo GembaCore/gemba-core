@@ -61,6 +61,8 @@ See https://github.com/GembaCore/gemba-core for documentation.`,
 		newAgentCmd(),
 		newSizeCalibrationCmd(),
 		newNewProjectCmd(),
+		newRunCmd(),
+		newLogsCmd(),
 	)
 
 	return root
