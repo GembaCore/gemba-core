@@ -189,6 +189,105 @@ func TestStatus_ServerUnreachable(t *testing.T) {
 	}
 }
 
+// newStatusFakeServerNewEndpoint wires a fake server that returns the
+// real gm-o9t8.1.4.4 200 envelope from /api/v1/workspaces/{wsid}/status,
+// plus /api/work-items for the row fetches the dashboard still needs.
+// Tests use this to confirm the dashboard renders from the primary
+// endpoint (counts + repo + agents come from the envelope; row tables
+// come from the list endpoints).
+func newStatusFakeServerNewEndpoint(t *testing.T, statusBody string, byStatus map[string]string) *httptest.Server {
+	t.Helper()
+	handler := http.NewServeMux()
+	handler.HandleFunc("/api/v1/workspaces/_/status", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(statusBody))
+	})
+	handler.HandleFunc("/api/work-items", func(w http.ResponseWriter, r *http.Request) {
+		status := r.URL.Query().Get("status")
+		body, ok := byStatus[status]
+		if !ok {
+			body = `{"items":[]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	})
+	return httptest.NewServer(handler)
+}
+
+// TestStatus_PrimaryEndpointDrivesDashboard pins the gm-o9t8.1.4.4
+// contract: when the status endpoint returns 200 with the new shape,
+// the CLI uses it as primary and renders the repo + agents banners
+// in addition to the ready / in-flight tables.
+func TestStatus_PrimaryEndpointDrivesDashboard(t *testing.T) {
+	statusBody := `{
+		"workspace_id": "demo",
+		"mode": "ad-hoc",
+		"repo":   {"head":"abc1234def56789","dirty":true,"branch":"main"},
+		"beads":  {"ready":4,"in_flight":1,"blocked":0,"open_total":13,"closed_today":4},
+		"agents": {"active":1,"last_run_id":"sess-42","last_run_status":"working","last_run_summary":"agent-1 on gm-foo"}
+	}`
+	srv := newStatusFakeServerNewEndpoint(t, statusBody, map[string]string{
+		"ready":       `{"items":[{"id":"gm-abcd","title":"Add /healthz endpoint","kind":"task","status":"ready","state_category":"unstarted","priority":1}]}`,
+		"in_progress": `{"items":[{"id":"gm-mnop","title":"Investigate prod 502s","kind":"task","status":"in_progress","state_category":"started","priority":0}]}`,
+	})
+	defer srv.Close()
+	defer installFakeClient(t, srv.URL)()
+
+	out, _, err := runCmd(t, "status", "--server", srv.URL)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	// Banners derived from the new endpoint.
+	for _, want := range []string{
+		"repo · main @ abc1234def56", // first 12 chars of head
+		"dirty",
+		"agents · 1 active",
+		"sess-42",
+		"agent-1 on gm-foo",
+		// Counts come from the envelope (13 / 4), not the row count.
+		"13 open total",
+		"4 closed today",
+		// Tables still render from /api/work-items.
+		"gm-abcd",
+		"gm-mnop",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\n--- got ---\n%s", want, out)
+		}
+	}
+}
+
+// TestStatus_PrimaryEndpoint_NoRepoNoAgents covers the "empty
+// workspace" path of the new endpoint: counts are zero, repo is null,
+// agents is null. The dashboard must NOT print phantom banners and
+// must drop back to the "No beads yet" hint.
+func TestStatus_PrimaryEndpoint_NoRepoNoAgents(t *testing.T) {
+	statusBody := `{
+		"workspace_id": "demo",
+		"mode": "ad-hoc",
+		"repo": null,
+		"beads":  {"ready":0,"in_flight":0,"blocked":0,"open_total":0,"closed_today":0},
+		"agents": null
+	}`
+	srv := newStatusFakeServerNewEndpoint(t, statusBody, nil)
+	defer srv.Close()
+	defer installFakeClient(t, srv.URL)()
+
+	out, _, err := runCmd(t, "status", "--server", srv.URL)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out, "No beads yet") {
+		t.Errorf("expected empty-workspace hint; got %q", out)
+	}
+	if strings.Contains(out, "repo · ") {
+		t.Errorf("repo banner should be absent when repo=null; got %q", out)
+	}
+	if strings.Contains(out, "agents · ") {
+		t.Errorf("agents banner should be absent when agents=null; got %q", out)
+	}
+}
+
 // TestRootHelpStillWorks ensures the no-args dispatch didn't displace
 // cobra's --help handling.
 func TestRootHelpStillWorks(t *testing.T) {

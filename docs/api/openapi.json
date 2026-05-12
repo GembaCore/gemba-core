@@ -1925,7 +1925,7 @@
           "convenience"
         ],
         "summary": "Unified workspace status \u2014 backs `gemba` (no args).",
-        "description": "Single-shot read returning the joined work/spec/decision posture for the workspace. The CLI's no-args invocation prints a one-screen summary built from this response. Stub: 501 until gm-v0sp.",
+        "description": "Single-shot read returning the joined work / spec / decision posture for the workspace. The CLI's no-args invocation prints a one-screen summary built from this response. Each section degrades to zero / null when the corresponding subsystem isn't wired (no clone yet \u2192 repo=null; no WorkPlane bound \u2192 beads all-zero).",
         "operationId": "workspaceStatus",
         "parameters": [
           {
@@ -1938,13 +1938,114 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "required": [
+                    "workspace_id",
+                    "mode",
+                    "beads",
+                    "agents"
+                  ],
+                  "properties": {
+                    "workspace_id": {
+                      "type": "string",
+                      "description": "The workspace id this status is for; echoes the {wsid} path parameter."
+                    },
+                    "mode": {
+                      "type": "string",
+                      "enum": [
+                        "ad-hoc",
+                        "scaffolded",
+                        "governed",
+                        "reverse-governed"
+                      ],
+                      "description": "Workspace mode (gm-o9t8.8). Only 'ad-hoc' is implemented in v1; the others require the ASDD spec/lockfile machinery (epic gm-v0sp)."
+                    },
+                    "repo": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "Git posture for the workspace clone. Null when the workspace hasn't been cloned / initialized yet.",
+                      "required": [
+                        "head",
+                        "dirty",
+                        "branch"
+                      ],
+                      "properties": {
+                        "head": {
+                          "type": "string",
+                          "description": "Full SHA of HEAD."
+                        },
+                        "dirty": {
+                          "type": "boolean",
+                          "description": "True iff `git status --porcelain` is non-empty."
+                        },
+                        "branch": {
+                          "type": "string",
+                          "description": "Symbolic ref name of HEAD (e.g. 'main')."
+                        }
+                      }
+                    },
+                    "beads": {
+                      "type": "object",
+                      "description": "Counts across the bead lifecycle buckets that drive the dashboard.",
+                      "required": [
+                        "ready",
+                        "in_flight",
+                        "blocked",
+                        "open_total",
+                        "closed_today"
+                      ],
+                      "properties": {
+                        "ready": {
+                          "type": "integer",
+                          "description": "Beads in native 'ready' status."
+                        },
+                        "in_flight": {
+                          "type": "integer",
+                          "description": "Beads in native 'in_progress' status."
+                        },
+                        "blocked": {
+                          "type": "integer",
+                          "description": "Beads in native 'blocked' status."
+                        },
+                        "open_total": {
+                          "type": "integer",
+                          "description": "Count of every non-terminal bead (state_category in backlog | unstarted | staged | started)."
+                        },
+                        "closed_today": {
+                          "type": "integer",
+                          "description": "Beads that transitioned to a terminal state_category in the last 24h."
+                        }
+                      }
+                    },
+                    "agents": {
+                      "type": "object",
+                      "description": "Agent / run summary derived from OrchestrationPlane.ListSessions.",
+                      "required": [
+                        "active"
+                      ],
+                      "properties": {
+                        "active": {
+                          "type": "integer",
+                          "description": "Count of non-terminal sessions with a heartbeat or start within the active window (currently 5 minutes)."
+                        },
+                        "last_run_id": {
+                          "type": "string",
+                          "description": "Session id of the most recent run."
+                        },
+                        "last_run_status": {
+                          "type": "string",
+                          "description": "SessionStatus value of the most recent run."
+                        },
+                        "last_run_summary": {
+                          "type": "string",
+                          "description": "Best-effort one-line description of the most recent run (today: '<agent_id> on <assignment_id>')."
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
-          },
-          "501": {
-            "$ref": "#/components/responses/NotImplemented"
           }
         }
       }

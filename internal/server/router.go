@@ -733,8 +733,9 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// Constitution / spec-lint reads (govern):
 		api.Get("/v1/workspaces/{wsid}/labels", r.listLabelsStub)
 
-		// Convenience verb — gemba no-args:
-		api.Get("/v1/workspaces/{wsid}/status", r.workspaceStatusStub)
+		// Convenience verb — gemba no-args (gm-o9t8.1.4.4: real handler,
+		// replaced the 501 stub):
+		api.Get("/v1/workspaces/{wsid}/status", r.workspaceStatus)
 
 		// gm-o9t8.1.6.2: stream `git diff` from the server-side
 		// workspace repo. GET, so no nonce gate; auth applies via
