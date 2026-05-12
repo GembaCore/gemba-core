@@ -51,7 +51,6 @@ testing/e2e/playwright/.cache/
 .logs/
 __pycache__/
 state.json
-CLAUDE.md
 CLAUDE.local.md
 
 # Rig-level beads config (machine-specific; storage is in Dolt server)
