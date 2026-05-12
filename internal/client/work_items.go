@@ -188,6 +188,72 @@ func (c *Client) PatchWorkItem(ctx context.Context, id string, patch core.WorkIt
 	return &out, nil
 }
 
+// CascadeDispatchResponse mirrors the subset of the server's
+// cascadeDispatchResponse envelope that the CLI consumes
+// (gm-o9t8.1.5.5). Decoupled from the server-side type so the wire
+// client stays independent of internal/server.
+type CascadeDispatchResponse struct {
+	WrapperID  string                    `json:"wrapper_id"`
+	Dispatched []CascadeDispatchedItem   `json:"dispatched"`
+	Blocked    []string                  `json:"blocked,omitempty"`
+	Skipped    []string                  `json:"skipped,omitempty"`
+	Errors     []CascadeDispatchError    `json:"errors,omitempty"`
+}
+
+// CascadeDispatchedItem is one entry in the Dispatched slice.
+type CascadeDispatchedItem struct {
+	WorkItemID string `json:"work_item_id"`
+	SessionID  string `json:"session_id,omitempty"`
+}
+
+// CascadeDispatchError is one entry in the Errors slice.
+type CascadeDispatchError struct {
+	WorkItemID string `json:"work_item_id"`
+	Message    string `json:"message"`
+}
+
+// CascadeDispatchInput is the optional body POSTed to
+// /api/work-items/{id}/cascade-dispatch. Fields default to "no
+// override" when zero.
+type CascadeDispatchInput struct {
+	AgentType string `json:"agent_type,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+// CascadeDispatchWorkItem POSTs to /api/work-items/{id}/cascade-dispatch
+// and decodes the wrapper response. The wrapper_id is the cascade run
+// id (used by `gemba logs -f <run_id>`). X-GEMBA-Confirm is
+// auto-injected by the wrapper's request editors.
+func (c *Client) CascadeDispatchWorkItem(ctx context.Context, id string, in CascadeDispatchInput) (*CascadeDispatchResponse, error) {
+	if strings.TrimSpace(id) == "" {
+		return nil, fmt.Errorf("cascade dispatch: id is required")
+	}
+	body := map[string]any{}
+	if in.AgentType != "" {
+		body["agent_type"] = in.AgentType
+	}
+	if in.Limit > 0 {
+		body["limit"] = in.Limit
+	}
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("cascade dispatch: marshal: %w", err)
+	}
+	path := "/api/work-items/" + url.PathEscape(id) + "/cascade-dispatch"
+	resp, raw, err := c.doJSON(ctx, http.MethodPost, path, buf)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, mapErr(resp, raw)
+	}
+	var out CascadeDispatchResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("cascade dispatch: decode response: %w", err)
+	}
+	return &out, nil
+}
+
 // NoteWorkItem appends a free-form operator note to a work item.
 //
 // Backed by POST /api/work-items/{id}/notes which is currently a 501

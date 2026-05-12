@@ -1,4 +1,5 @@
 // gm-o9t8.1.5.5 — `gemba run` CLI.
+// gm-o9t8.1.11    — migrated to the typed client at internal/client.
 //
 // One-shot operator command: dispatch the cascade leaves under <bead>,
 // then attach to the live /events stream filtered to that work item.
@@ -8,7 +9,8 @@
 //
 // Flags:
 //
-//	--base-url URL   target server (default http://localhost:7666)
+//	--server URL     target server (canonical)
+//	--base-url URL   deprecated alias for --server
 //	--json           emit raw SSE data lines (one JSON event per line)
 //	--no-attach      skip the SSE step; equivalent to `gemba agent dispatch`
 //	--agent-type     forwarded to the cascade-dispatch request
@@ -20,15 +22,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/spf13/cobra"
 
-	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
+	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 	"github.com/GembaCore/gemba-core/internal/sse"
 )
 
@@ -52,7 +53,7 @@ item. Ctrl+C detaches without killing the run; resume later with:
 			return runRunCmd(cmd, args[0])
 		},
 	}
-	cmd.Flags().String("base-url", "", "base URL of a running gemba serve (default http://localhost:7666)")
+	addServerFlags(cmd)
 	cmd.Flags().Bool("json", false, "print each event's raw JSON payload on its own line")
 	cmd.Flags().Bool("no-attach", false, "skip the SSE attach (fire-and-forget)")
 	cmd.Flags().String("agent-type", "", "agent_type to pass to cascade-dispatch")
@@ -61,12 +62,10 @@ item. Ctrl+C detaches without killing the run; resume later with:
 }
 
 func runRunCmd(cmd *cobra.Command, beadID string) error {
-	baseURL, _ := cmd.Flags().GetString("base-url")
-	resolved, err := serverconfig.Resolve(baseURL)
+	server, err := resolveServerFlag(cmd, cmd.ErrOrStderr())
 	if err != nil {
 		return err
 	}
-	baseURL = resolved
 	asJSON, _ := cmd.Flags().GetBool("json")
 	noAttach, _ := cmd.Flags().GetBool("no-attach")
 	agentType, _ := cmd.Flags().GetString("agent-type")
@@ -77,9 +76,16 @@ func runRunCmd(cmd *cobra.Command, beadID string) error {
 		ctx = context.Background()
 	}
 
-	resp, err := postCascadeDispatch(ctx, baseURL, beadID, agentType, limit)
+	client, err := runClientFactoryFn(server)
 	if err != nil {
 		return err
+	}
+	resp, err := client.CascadeDispatchWorkItem(ctx, beadID, gembaclient.CascadeDispatchInput{
+		AgentType: agentType,
+		Limit:     limit,
+	})
+	if err != nil {
+		return mapDispatchErr(err)
 	}
 	runID := resp.WrapperID
 	if runID == "" {
@@ -97,7 +103,7 @@ func runRunCmd(cmd *cobra.Command, beadID string) error {
 	defer stop()
 
 	detached := false
-	err = attachEvents(sseCtx, cmd, baseURL, runID, "", asJSON)
+	err = attachEvents(sseCtx, cmd, client, runID, "", asJSON)
 	if err != nil {
 		// signal.NotifyContext fires ctx.Err() == context.Canceled on
 		// SIGINT. Treat that path as a clean detach rather than an
@@ -118,45 +124,25 @@ func runRunCmd(cmd *cobra.Command, beadID string) error {
 	return nil
 }
 
-// attachEvents opens GET /events filtered to work_item_id=runID and
-// pipes parsed SSE events to cmd.OutOrStdout. When asJSON is true the
-// raw data payload is emitted verbatim (one JSON object per line);
+// attachEvents opens the work-item event stream via the typed client
+// and pipes parsed SSE events to cmd.OutOrStdout. When asJSON is true
+// the raw data payload is emitted verbatim (one JSON object per line);
 // otherwise we render a short human line "<event-type> <data>".
 //
 // lastEventID, if non-empty, is sent as Last-Event-ID so the server
 // can (eventually) replay missed events. Today the server doesn't act
 // on it (see events_stream.go), but sending it costs nothing and makes
 // the client forward-compatible.
-func attachEvents(ctx context.Context, cmd *cobra.Command, baseURL, runID, lastEventID string, asJSON bool) error {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return fmt.Errorf("parse base-url: %w", err)
-	}
-	u.Path = "/events"
-	q := u.Query()
-	q.Set("work_item_id", runID)
-	u.RawQuery = q.Encode()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+func attachEvents(ctx context.Context, cmd *cobra.Command, client *gembaclient.Client, runID, lastEventID string, asJSON bool) error {
+	body, err := client.WorkItemEvents(ctx, runID, lastEventID)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Accept", "text/event-stream")
-	if lastEventID != "" {
-		req.Header.Set("Last-Event-ID", lastEventID)
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("GET %s: %w", u.String(), err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return fmt.Errorf("GET %s: %s", u.String(), resp.Status)
-	}
+	defer body.Close()
 
 	ch := make(chan sse.Event, 32)
 	done := make(chan error, 1)
-	go func() { done <- sse.Consume(ctx, resp.Body, ch) }()
+	go func() { done <- sse.Consume(ctx, body, ch) }()
 
 	out := cmd.OutOrStdout()
 	for {
@@ -184,7 +170,7 @@ func attachEvents(ctx context.Context, cmd *cobra.Command, baseURL, runID, lastE
 	}
 }
 
-func renderEvent(out interface{ Write(p []byte) (int, error) }, ev sse.Event, asJSON bool) {
+func renderEvent(out io.Writer, ev sse.Event, asJSON bool) {
 	if asJSON {
 		fmt.Fprintf(out, "%s\n", ev.Data)
 		return

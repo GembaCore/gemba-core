@@ -1,10 +1,12 @@
 // gm-o9t8.1.5.5 — `gemba agent dispatch` CLI.
+// gm-o9t8.1.11    — migrated to the typed client at internal/client.
 //
 // Fire-and-forget cascade dispatch. POSTs the bead's id to
-// /api/work-items/{id}/cascade-dispatch and prints the resulting run
-// id (the cascade wrapper id) to stdout. Operators chain this with
-// `gemba logs -f <run_id>` when they want to attach to the live event
-// stream after the fact.
+// /api/work-items/{id}/cascade-dispatch via the typed client (which
+// auto-injects Authorization + X-GEMBA-Confirm + User-Agent) and prints
+// the resulting run id (the cascade wrapper id) to stdout. Operators
+// chain this with `gemba logs -f <run_id>` when they want to attach to
+// the live event stream after the fact.
 //
 // Sibling commands:
 //
@@ -18,36 +20,14 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 
 	"github.com/spf13/cobra"
 
-	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
+	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 )
-
-// cascadeDispatchRespEnvelope is the subset of cascadeDispatchResponse
-// (internal/server/work_items_cascade.go) we consume on the CLI side.
-// We deliberately don't import the server struct — the CLI is a wire
-// client and decouples from server-internal types.
-type cascadeDispatchRespEnvelope struct {
-	WrapperID  string `json:"wrapper_id"`
-	Dispatched []struct {
-		WorkItemID string `json:"work_item_id"`
-		SessionID  string `json:"session_id,omitempty"`
-	} `json:"dispatched"`
-	Blocked []string `json:"blocked,omitempty"`
-	Skipped []string `json:"skipped,omitempty"`
-	Errors  []struct {
-		WorkItemID string `json:"work_item_id"`
-		Message    string `json:"message"`
-	} `json:"errors,omitempty"`
-}
 
 func newAgentDispatchCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -62,12 +42,10 @@ Resume the live event stream later with:
   gemba logs -f <run-id>`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			baseURL, _ := cmd.Flags().GetString("base-url")
-			resolved, err := serverconfig.Resolve(baseURL)
+			server, err := resolveServerFlag(cmd, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
-			baseURL = resolved
 			agentType, _ := cmd.Flags().GetString("agent-type")
 			limit, _ := cmd.Flags().GetInt("limit")
 
@@ -75,9 +53,17 @@ Resume the live event stream later with:
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			resp, err := postCascadeDispatch(ctx, baseURL, args[0], agentType, limit)
+
+			client, err := runClientFactoryFn(server)
 			if err != nil {
 				return err
+			}
+			resp, err := client.CascadeDispatchWorkItem(ctx, args[0], gembaclient.CascadeDispatchInput{
+				AgentType: agentType,
+				Limit:     limit,
+			})
+			if err != nil {
+				return mapDispatchErr(err)
 			}
 			runID := resp.WrapperID
 			if runID == "" {
@@ -87,48 +73,23 @@ Resume the live event stream later with:
 			return nil
 		},
 	}
-	cmd.Flags().String("base-url", "", "base URL of a running gemba serve (default http://localhost:7666)")
+	addServerFlags(cmd)
 	cmd.Flags().String("agent-type", "", "agent_type to pass to cascade-dispatch (optional)")
 	cmd.Flags().Int("limit", 0, "limit on dispatched leaves (0 = server default)")
 	return cmd
 }
 
-// postCascadeDispatch issues POST /api/work-items/{id}/cascade-dispatch
-// and decodes the wrapper response. Returns the decoded envelope or a
-// wrapped error on transport / status failure.
-func postCascadeDispatch(ctx context.Context, baseURL, beadID, agentType string, limit int) (*cascadeDispatchRespEnvelope, error) {
-	u, err := url.Parse(baseURL)
-	if err != nil {
-		return nil, fmt.Errorf("parse base-url: %w", err)
+// mapDispatchErr surfaces well-known sentinels with the same exit-code
+// contract as `gemba bead` (4=unauthorized, 5=not found). For other
+// failures the error is returned verbatim so cobra prints it.
+func mapDispatchErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, gembaclient.ErrUnauthorized):
+		return &exitError{code: 4, err: err}
+	case errors.Is(err, gembaclient.ErrNotFound):
+		return &exitError{code: 5, err: err}
 	}
-	u.Path = "/api/work-items/" + url.PathEscape(beadID) + "/cascade-dispatch"
-
-	body := map[string]any{}
-	if agentType != "" {
-		body["agent_type"] = agentType
-	}
-	if limit > 0 {
-		body["limit"] = limit
-	}
-	buf, _ := json.Marshal(body)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(buf))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	httpResp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("POST %s: %w", u.String(), err)
-	}
-	defer httpResp.Body.Close()
-	if httpResp.StatusCode/100 != 2 {
-		raw, _ := io.ReadAll(httpResp.Body)
-		return nil, fmt.Errorf("POST %s: %s: %s", u.String(), httpResp.Status, string(raw))
-	}
-	var out cascadeDispatchRespEnvelope
-	if err := json.NewDecoder(httpResp.Body).Decode(&out); err != nil {
-		return nil, fmt.Errorf("decode cascade-dispatch response: %w", err)
-	}
-	return &out, nil
+	return err
 }
