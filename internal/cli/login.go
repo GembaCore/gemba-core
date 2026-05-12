@@ -5,6 +5,12 @@
 // internal/auth/credstore). whoami reads the same file and confirms
 // the credential is still valid by re-calling /api/whoami.
 //
+// gm-o9t8.1.1.4: whoami is wired through the typed Go client at
+// internal/client. login intentionally keeps its ad-hoc HTTP path
+// because it has to validate a token BEFORE there is anything in the
+// credstore for the new typed client to read — a chicken-and-egg the
+// credstore-default client can't resolve.
+//
 // PAT-only for v1. Full OAuth lands in M3.
 
 package cli
@@ -24,6 +30,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/GembaCore/gemba-core/internal/auth/credstore"
+	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 )
 
 // whoamiResponse mirrors internal/server/whoami.go's wire shape.
@@ -73,6 +80,40 @@ func defaultWhoamiCaller(client *http.Client) whoamiCaller {
 		var out whoamiResponse
 		if err := json.Unmarshal(body, &out); err != nil {
 			return whoamiResponse{}, fmt.Errorf("decode response: %w", err)
+		}
+		return out, nil
+	}
+}
+
+// typedClientWhoamiCaller is the production whoami probe for `gemba
+// whoami` — built on the typed Go client (gm-o9t8.1.1.4). The factory
+// returns a whoamiCaller (server, token) → identity so the runWhoami
+// signature stays unchanged and the existing test suite continues to
+// inject an httptest-backed caller.
+//
+// credPath threads through to internal/client.WithCredentialsPath so
+// the --credentials-path flag still routes everything (login + whoami)
+// to the same on-disk store.
+func typedClientWhoamiCaller(credPath string) whoamiCaller {
+	return func(ctx context.Context, server, token string) (whoamiResponse, error) {
+		opts := []gembaclient.Option{gembaclient.WithToken(token)}
+		if credPath != "" {
+			opts = append(opts, gembaclient.WithCredentialsPath(credPath))
+		}
+		c, err := gembaclient.New(server, opts...)
+		if err != nil {
+			return whoamiResponse{}, err
+		}
+		resp, err := c.Whoami(ctx)
+		if err != nil {
+			return whoamiResponse{}, err
+		}
+		out := whoamiResponse{}
+		if resp.Subject != "" {
+			out.Subject = resp.Subject
+		}
+		if resp.ServerVersion != "" {
+			out.ServerVersion = resp.ServerVersion
 		}
 		return out, nil
 	}
@@ -247,7 +288,7 @@ entry, that entry is used. With zero entries the command prints
 				}
 				path = p
 			}
-			caller := defaultWhoamiCaller(nil)
+			caller := typedClientWhoamiCaller(path)
 			return runWhoami(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(),
 				server, path, asJSON, caller)
 		},
