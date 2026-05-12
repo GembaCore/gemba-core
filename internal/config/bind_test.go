@@ -312,6 +312,46 @@ func TestValidateWorkPlaneFlags(t *testing.T) {
 	}
 }
 
+// TestValidateWorkPlaneFlags_ProjectDirWithEmbeddedDolt_Rejected pins
+// gm-o9t8.1.15: --project-dir owns its own Dolt config in .beads/, so
+// running the embedded-dolt supervisor alongside leaves the supervisor
+// running but unused. The combination must be rejected unless the
+// operator explicitly opted out via --embedded-dolt=false.
+func TestValidateWorkPlaneFlags_ProjectDirWithEmbeddedDolt_Rejected(t *testing.T) {
+	cfg := ServeConfig{
+		ProjectDir:      "/tmp/gm",
+		EmbeddedDolt:    true,
+		EmbeddedDoltSet: true,
+	}
+	err := cfg.ValidateWorkPlaneFlags()
+	if err == nil {
+		t.Fatalf("want error for --project-dir + --embedded-dolt; got nil")
+	}
+	for _, want := range []string{"--project-dir", "--embedded-dolt", "mutually exclusive"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q; got %q", want, err.Error())
+		}
+	}
+
+	// Explicit opt-out (--embedded-dolt=false) must be accepted.
+	cfgOptOut := ServeConfig{
+		ProjectDir:      "/tmp/gm",
+		EmbeddedDolt:    false,
+		EmbeddedDoltSet: true,
+	}
+	if err := cfgOptOut.ValidateWorkPlaneFlags(); err != nil {
+		t.Fatalf("--embedded-dolt=false should be accepted; got %v", err)
+	}
+
+	// Default (--embedded-dolt unset) must be accepted: applyEmbeddedDoltDefault
+	// will turn it off when --project-dir is set; the validator only
+	// rejects an explicit --embedded-dolt=true.
+	cfgDefault := ServeConfig{ProjectDir: "/tmp/gm", EmbeddedDolt: true}
+	if err := cfgDefault.ValidateWorkPlaneFlags(); err != nil {
+		t.Fatalf("--embedded-dolt unset should be accepted; got %v", err)
+	}
+}
+
 // TestValidateWorkPlaneFlags_NeitherSetMentionsBothFlags pins the
 // shape of the "no WorkPlane selected" error: both flag names must
 // appear verbatim so the operator can copy-paste the fix without

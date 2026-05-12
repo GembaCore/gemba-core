@@ -344,6 +344,15 @@ func (c ServeConfig) ValidateWorkPlaneFlags() error {
 				"  --project-dir routes reads+writes through the bd CLI\n" +
 				"  --dolt-url opens a direct SQL connection to Dolt")
 	}
+	// gm-o9t8.1.15: --project-dir owns its own Dolt config in .beads/
+	// (managed by the bd subprocess). Booting the embedded-dolt
+	// supervisor alongside it leaves the supervisor running but
+	// unused. Reject the combination unless the operator explicitly
+	// opted out via --embedded-dolt=false.
+	if projectDir != "" && c.EmbeddedDoltSet && c.EmbeddedDolt {
+		return fmt.Errorf(
+			"--project-dir owns its own Dolt config; --embedded-dolt is mutually exclusive. Pick one.")
+	}
 	if projectDir == "" && c.DoltURL == "" {
 		return fmt.Errorf(
 			"no WorkPlane selected; pass --project-dir <path>, " +
