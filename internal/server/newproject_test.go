@@ -285,6 +285,48 @@ func TestRatify_HappyPath(t *testing.T) {
 	}
 }
 
+// TestRatify_CreatesWorkspaceDataLayout verifies gm-o9t8.1.2.4: when
+// DataRoot is wired, ratify materializes
+// <DataRoot>/workspaces/<name>/{repo,dolt,logs,transcripts} with 0750.
+func TestRatify_CreatesWorkspaceDataLayout(t *testing.T) {
+	projTmp := t.TempDir()
+	dataRoot := t.TempDir()
+	stub := newStubRunner()
+	rfr := NewRatifier(RatifierConfig{
+		DefaultDirOverride: projTmp,
+		DataRoot:           dataRoot,
+		Runner:             stub.run,
+	})
+
+	resp, err := rfr.Ratify(context.Background(), sampleState())
+	if err != nil {
+		t.Fatalf("Ratify: %v", err)
+	}
+	if len(resp.SeedWarnings) > 0 {
+		// Warnings about layout would carry the prefix; surface them
+		// loudly if present so the test signal is unambiguous.
+		for _, w := range resp.SeedWarnings {
+			if strings.HasPrefix(w, "workspace data layout:") {
+				t.Fatalf("unexpected layout warning: %s", w)
+			}
+		}
+	}
+	wsRoot := filepath.Join(dataRoot, "workspaces", "demo")
+	for _, sub := range []string{"repo", "dolt", "logs", "transcripts"} {
+		p := filepath.Join(wsRoot, sub)
+		st, err := os.Stat(p)
+		if err != nil {
+			t.Fatalf("stat %q: %v", p, err)
+		}
+		if !st.IsDir() {
+			t.Fatalf("%q is not a directory", p)
+		}
+		if got := st.Mode().Perm(); got != 0o750 {
+			t.Errorf("perm %q: got %#o, want 0750", p, got)
+		}
+	}
+}
+
 // ─── Failure-path rollback tests ────────────────────────────────────
 
 func TestRatify_DirAlreadyExists_NeverDeletes(t *testing.T) {
