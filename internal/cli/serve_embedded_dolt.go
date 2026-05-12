@@ -2,11 +2,16 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
 
 	"github.com/GembaCore/gemba-core/internal/adapter/dolt/supervisor"
 	"github.com/GembaCore/gemba-core/internal/config"
@@ -103,6 +108,128 @@ func bootEmbeddedDoltSupervisor(ctx context.Context, cfg *config.ServeConfig) (*
 		"data_dir", cfg.DoltDataDir,
 		"dsn_for_clients", sup.DSN())
 	return sup, nil
+}
+
+// bootstrapEmbeddedDoltSchema ensures the bd schema is present on the
+// supervised embedded dolt server (gm-o9t8.1.14). On a fresh data dir
+// the dolt server comes up empty — no `gemba` database, no
+// `schema_migrations` table — and the dolt WorkPlane adaptor then
+// trips its startup probe with "schema_migrations probe failed". The
+// step that normally installs the schema is `bd init --server
+// --external …`, which a hand-driven operator runs once before booting
+// gemba. Doing it automatically on first start removes that friction.
+//
+// Strategy:
+//
+//  1. Connect to the supervisor via DSN(). If the configured database
+//     (cfg.DoltEmbeddedDB) exists AND contains a `schema_migrations`
+//     table, return nil — the bootstrap has already run.
+//  2. Otherwise, shell out to `bd init --server --external
+//     --server-host 127.0.0.1 --server-port <port> --server-user root
+//     --database <db> --non-interactive` in a temp working directory.
+//     The bd CLI owns the schema; we just trigger it.
+//  3. Re-verify; surface the original probe failure to the caller if
+//     bootstrap silently didn't materialize the table.
+//
+// Idempotent: when the schema is already there, the function returns
+// nil without invoking bd. No-op when sup is nil (external dolt mode
+// — the operator is responsible for their own schema).
+func bootstrapEmbeddedDoltSchema(ctx context.Context, sup *supervisor.Supervisor, cfg *config.ServeConfig) error {
+	if sup == nil || cfg == nil {
+		return nil
+	}
+	db := cfg.DoltEmbeddedDB
+	if db == "" {
+		db = defaultEmbeddedDoltDB
+	}
+
+	if ok, err := embeddedDoltSchemaPresent(ctx, sup.DSN(), db); err != nil {
+		return fmt.Errorf("embedded dolt: schema probe: %w", err)
+	} else if ok {
+		slog.Debug("embedded dolt: schema already bootstrapped",
+			"database", db)
+		return nil
+	}
+
+	slog.Info("embedded dolt: empty data dir detected; bootstrapping bd schema",
+		"database", db, "port", sup.Port())
+
+	// bd init creates .beads/ in cwd. Use a throwaway temp dir so we
+	// don't leave a stray .beads/ next to the gemba binary; the
+	// schema lands on the dolt server (the durable artifact), and
+	// the local .beads/ is incidental.
+	tmpDir, err := os.MkdirTemp("", "gemba-embedded-dolt-bootstrap-")
+	if err != nil {
+		return fmt.Errorf("embedded dolt: mkdtemp for bd init: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	bdCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(bdCtx, "bd", "init",
+		"--server", "--external",
+		"--server-host", "127.0.0.1",
+		"--server-port", strconv.Itoa(sup.Port()),
+		"--server-user", "root",
+		"--database", db,
+		"--non-interactive",
+	)
+	cmd.Dir = tmpDir
+	cmd.Env = append(os.Environ(), "BD_NON_INTERACTIVE=1")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("embedded dolt: bd init failed: %w\n%s", err, out)
+	}
+
+	// Re-probe so we surface a clear error if bd reported success but
+	// the schema didn't actually land (shouldn't happen, but the
+	// downstream adaptor will fail with a worse message if we don't
+	// catch it here).
+	if ok, err := embeddedDoltSchemaPresent(ctx, sup.DSN(), db); err != nil {
+		return fmt.Errorf("embedded dolt: post-bootstrap schema probe: %w", err)
+	} else if !ok {
+		return fmt.Errorf("embedded dolt: bd init reported success but schema_migrations is still missing in %q", db)
+	}
+	slog.Info("embedded dolt: bd schema bootstrap complete", "database", db)
+	return nil
+}
+
+// embeddedDoltSchemaPresent reports whether the named database exists
+// on the supervisor AND has a `schema_migrations` table. Both are
+// required: bd init creates the database (so a missing one means a
+// fresh data dir) AND populates schema_migrations (so a present db
+// without it is a half-init that bd would refuse to use anyway).
+func embeddedDoltSchemaPresent(ctx context.Context, dsn, database string) (bool, error) {
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		return false, fmt.Errorf("sql.Open: %w", err)
+	}
+	defer db.Close()
+	if err := db.PingContext(probeCtx); err != nil {
+		return false, fmt.Errorf("ping: %w", err)
+	}
+	var name string
+	row := db.QueryRowContext(probeCtx,
+		"SELECT SCHEMA_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
+		database)
+	if err := row.Scan(&name); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("probe database: %w", err)
+	}
+	var tbl string
+	row = db.QueryRowContext(probeCtx,
+		"SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'schema_migrations'",
+		database)
+	if err := row.Scan(&tbl); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, fmt.Errorf("probe schema_migrations: %w", err)
+	}
+	return true, nil
 }
 
 // attachEmbeddedDoltToRouter wires the supervisor's Ready() into the

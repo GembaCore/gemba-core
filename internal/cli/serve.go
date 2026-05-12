@@ -256,6 +256,16 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		}
 		doltSup = sup
 		if doltSup != nil {
+			// gm-o9t8.1.14: ensure the bd schema is present on the
+			// supervised dolt server before any downstream adaptor
+			// connects. On a fresh data dir this shells out to `bd init
+			// --server --external …`; on a previously-bootstrapped data
+			// dir it's a no-op. Without this, the dolt WorkPlane
+			// adaptor would trip its schema_migrations probe on first
+			// boot.
+			if err := bootstrapEmbeddedDoltSchema(ctx, doltSup, &cfg); err != nil {
+				return err
+			}
 			cfg.DoltURL = embeddedDoltMySQLURL(doltSup, cfg.DoltEmbeddedDB)
 			cfg.BeadsURLSource = "embedded-dolt"
 		}
