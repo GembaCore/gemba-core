@@ -27,13 +27,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/GembaCore/gemba-core/core"
 	gembaclient "github.com/GembaCore/gemba-core/internal/client"
+	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
 )
 
 // clientFactory is the seam tests use to inject a pre-baked typed
@@ -55,20 +55,12 @@ func withCrudFactory(f clientFactory) func() {
 	return func() { crudFactory = prev }
 }
 
-// resolveServer chooses a server URL. Flag wins; falls back to
-// GEMBA_SERVER. Empty string means "let the typed client read the
-// credstore default" — handled by gembaclient.New today via the
-// `--server` requirement on its side, which we surface as an error
-// here so the user gets a friendly message instead of a network
-// failure.
+// resolveServer chooses a server URL using the documented precedence
+// in internal/cli/serverconfig (flag → GEMBA_SERVER → config.toml →
+// compiled-in default). Wrapped to keep call sites un-touched as we
+// fold in env + file fallbacks (gm-o9t8.1.1.3).
 func resolveServer(flag string) (string, error) {
-	if strings.TrimSpace(flag) != "" {
-		return strings.TrimSpace(flag), nil
-	}
-	if v := strings.TrimSpace(os.Getenv("GEMBA_SERVER")); v != "" {
-		return v, nil
-	}
-	return "", errors.New("--server is required (or set GEMBA_SERVER)")
+	return serverconfig.Resolve(flag)
 }
 
 // mapExit translates a typed-client error to (exit-code, message).

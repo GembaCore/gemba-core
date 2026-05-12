@@ -27,6 +27,8 @@ import (
 	"net/url"
 
 	"github.com/spf13/cobra"
+
+	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
 )
 
 // cascadeDispatchRespEnvelope is the subset of cascadeDispatchResponse
@@ -61,9 +63,11 @@ Resume the live event stream later with:
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			baseURL, _ := cmd.Flags().GetString("base-url")
-			if baseURL == "" {
-				baseURL = "http://localhost:7666"
+			resolved, err := serverconfig.Resolve(baseURL)
+			if err != nil {
+				return err
 			}
+			baseURL = resolved
 			agentType, _ := cmd.Flags().GetString("agent-type")
 			limit, _ := cmd.Flags().GetInt("limit")
 
