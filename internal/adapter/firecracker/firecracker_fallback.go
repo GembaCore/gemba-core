@@ -37,8 +37,9 @@ type fallbackSupervisor struct {
 
 // fallbackState is what we store in VM.state on the non-Linux path.
 type fallbackState struct {
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
+	cmd     *exec.Cmd
+	cancel  context.CancelFunc
+	volsDir string // per-VM tmpdir holding symlinks to mounted volumes
 }
 
 // NewSupervisor returns a Supervisor wired for the current platform.
@@ -89,6 +90,40 @@ func (s *fallbackSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) 
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
 
+	// gm-o9t8.3.2.4: stage VolumeMounts into a per-VM tmpdir. We
+	// symlink each HostPath into <volsDir>/vol<N>/ so the subprocess
+	// can read mounted data without us mutating the original host
+	// path. Env hints (GEMBA_VOL_<N>_PATH / _GUEST / _RO) tell the
+	// inner process where the symlink and the intended GuestPath
+	// land — the fallback can't actually move data into a guest VM,
+	// but the contract is "you can read your mount via $GEMBA_VOL_N_PATH".
+	var volsDir string
+	if len(spec.VolumeMounts) > 0 {
+		var derr error
+		volsDir, derr = os.MkdirTemp("", "gemba-vols-"+id+"-")
+		if derr != nil {
+			cancel()
+			return nil, fmt.Errorf("firecracker: stage volume mounts: %w", derr)
+		}
+		for i, vmnt := range spec.VolumeMounts {
+			link := fmt.Sprintf("%s/vol%d", volsDir, i)
+			if err := os.Symlink(vmnt.HostPath, link); err != nil {
+				_ = os.RemoveAll(volsDir)
+				cancel()
+				return nil, fmt.Errorf("firecracker: symlink volume %d: %w", i, err)
+			}
+			ro := "0"
+			if vmnt.ReadOnly {
+				ro = "1"
+			}
+			cmd.Env = append(cmd.Env,
+				fmt.Sprintf("GEMBA_VOL_%d_PATH=%s", i, link),
+				fmt.Sprintf("GEMBA_VOL_%d_GUEST=%s", i, vmnt.GuestPath),
+				fmt.Sprintf("GEMBA_VOL_%d_RO=%s", i, ro),
+			)
+		}
+	}
+
 	// Apply unix process-group isolation when available. The helper
 	// lives in fallback_unix.go / fallback_windows.go.
 	cmd.SysProcAttr = newFallbackProcAttr()
@@ -103,8 +138,9 @@ func (s *fallbackSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) 
 		IPAddr:    "127.0.0.1",
 		StartedAt: time.Now(),
 		state: &fallbackState{
-			cmd:    cmd,
-			cancel: cancel,
+			cmd:     cmd,
+			cancel:  cancel,
+			volsDir: volsDir,
 		},
 		waitCh: make(chan error, 1),
 	}
@@ -168,6 +204,9 @@ func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Dura
 	select {
 	case <-vm.waitCh:
 		// Already exited.
+		if st.volsDir != "" {
+			_ = os.RemoveAll(st.volsDir)
+		}
 		return nil
 	case <-time.After(timeout):
 		// Force-kill via cancel().
@@ -186,6 +225,9 @@ func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Dura
 		// without erroring; the goroutine will close waitCh eventually.
 		s.log.Warn("firecracker fallback: waitCh did not drain after kill",
 			"vm_id", vm.ID)
+	}
+	if st.volsDir != "" {
+		_ = os.RemoveAll(st.volsDir)
 	}
 	return nil
 }

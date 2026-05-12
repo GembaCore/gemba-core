@@ -108,18 +108,34 @@ func (s *linuxSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) {
 	tapName := fmt.Sprintf("tap-gm-%d", s.tapCounter)
 	s.mu.Unlock()
 
+	// gm-o9t8.3.2.4: translate VolumeMounts into additional virtio-blk
+	// Drives. v1 attaches the host path as a block device; the in-guest
+	// init is responsible for mounting drive-N at the corresponding
+	// GuestPath. virtio-fs (which would let us pass GuestPath directly)
+	// needs an out-of-band virtiofsd daemon and lands in a follow-up.
+	drives := []models.Drive{
+		{
+			DriveID:      fc.String("rootfs"),
+			PathOnHost:   fc.String(spec.RootfsPath),
+			IsRootDevice: fc.Bool(true),
+			IsReadOnly:   fc.Bool(false),
+		},
+	}
+	for i, vm := range spec.VolumeMounts {
+		driveID := fmt.Sprintf("vol%d", i)
+		drives = append(drives, models.Drive{
+			DriveID:      fc.String(driveID),
+			PathOnHost:   fc.String(vm.HostPath),
+			IsRootDevice: fc.Bool(false),
+			IsReadOnly:   fc.Bool(vm.ReadOnly),
+		})
+	}
+
 	cfg := fc.Config{
 		SocketPath:      socketPath,
 		KernelImagePath: spec.KernelPath,
 		KernelArgs:      "console=ttyS0 reboot=k panic=1 pci=off",
-		Drives: []models.Drive{
-			{
-				DriveID:      fc.String("rootfs"),
-				PathOnHost:   fc.String(spec.RootfsPath),
-				IsRootDevice: fc.Bool(true),
-				IsReadOnly:   fc.Bool(false),
-			},
-		},
+		Drives:          drives,
 		MachineCfg: models.MachineConfiguration{
 			VcpuCount:  fc.Int64(int64(spec.CPUCount)),
 			MemSizeMib: fc.Int64(int64(spec.MemMB)),

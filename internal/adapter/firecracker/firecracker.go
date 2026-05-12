@@ -24,6 +24,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -107,9 +109,27 @@ type VM struct {
 }
 
 // validate enforces the minimal Spec contract shared by every backend.
+// gm-o9t8.3.2.4: also validates each VolumeMount — HostPath must exist
+// on disk (we check at Start time so subprocesses or microVMs never
+// boot with a phantom mount), and GuestPath must be an absolute path
+// so it lands at a deterministic location inside the guest.
 func (s Spec) validate() error {
 	if s.WorkspaceID == "" {
 		return errors.New("firecracker: Spec.WorkspaceID is required")
+	}
+	for i, vm := range s.VolumeMounts {
+		if vm.HostPath == "" {
+			return fmt.Errorf("firecracker: VolumeMounts[%d].HostPath is required", i)
+		}
+		if vm.GuestPath == "" {
+			return fmt.Errorf("firecracker: VolumeMounts[%d].GuestPath is required", i)
+		}
+		if !filepath.IsAbs(vm.GuestPath) {
+			return fmt.Errorf("firecracker: VolumeMounts[%d].GuestPath %q must be absolute", i, vm.GuestPath)
+		}
+		if _, err := os.Stat(vm.HostPath); err != nil {
+			return fmt.Errorf("firecracker: VolumeMounts[%d].HostPath %q: %w", i, vm.HostPath, err)
+		}
 	}
 	return nil
 }
