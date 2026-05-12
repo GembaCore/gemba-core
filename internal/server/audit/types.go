@@ -16,4 +16,12 @@ type Event string
 const (
 	EventEgressRuleCreate Event = "egress.rule.create"
 	EventEgressRuleDelete Event = "egress.rule.delete"
+
+	// EventVMEgressDenied is emitted by the runtime enforcer
+	// (gm-o9t8.3.6.2) when a Firecracker VM's outbound traffic is
+	// dropped by an egress rule. V1 emits a periodic summary record
+	// rather than one-per-drop; full real-time deny streaming is a
+	// follow-up. The payload carries the workspace id, vm id, the
+	// rule id that fired, and an integer drop count for the window.
+	EventVMEgressDenied Event = "vm.egress.denied"
 )
