@@ -391,6 +391,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Patch("/work-items/{id}", r.patchWorkItem)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Delete("/work-items/{id}", r.deleteWorkItem)
+		// gm-o9t8.1.3.2: 501 stub for `gemba bead note`. Wire surface
+		// pinned here; persistence semantics land in a follow-up bead.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/work-items/{id}/notes", r.noteWorkItemStub)
 		// gm-e4.3.2: out-of-process notify endpoint. Auth-gated;
 		// NOT nonce-gated — the caller is server-internal plumbing
 		// (the bd post-commit git hook from gm-e4.3.3, ops scripts).
