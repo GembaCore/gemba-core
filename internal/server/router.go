@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/GembaCore/gemba-core/internal/adapter/registry"
 	"github.com/GembaCore/gemba-core/internal/auth"
+	"github.com/GembaCore/gemba-core/internal/auth/oauth"
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 	"github.com/GembaCore/gemba-core/internal/core/phase"
@@ -211,6 +213,32 @@ type Router struct {
 	// serve attaches a real store (SQLStore or MemStore) via
 	// AttachTenantStore after the Dolt pool is up.
 	tenantStore tenant.Store
+
+	// oauth backs the GitHub OAuth callback + device-flow login
+	// handlers (gm-o9t8.3.5). Nil = OAuth is unconfigured; the route
+	// returns 503 oauth_not_configured. cmd/gemba serve constructs
+	// the handle from --oauth-github-* flags and calls AttachOAuth.
+	oauth *oauth.OAuth
+
+	// oauthTokenStore stores hashed gemba bearer tokens minted by the
+	// OAuth login handler (gm-o9t8.3.5.2). Nil when OAuth is
+	// unconfigured; cmd/gemba serve attaches a SQL-backed store at
+	// boot and tests inject the in-memory store.
+	oauthTokenStore TokenStore
+
+	// githubUserFetcherOverride is the test seam for the OAuth login
+	// handler. Production runs leave this nil and the handler calls
+	// r.oauth.FetchUser (which hits api.github.com). Tests assign a
+	// closure that returns a canned GitHubUser so the end-to-end
+	// flow runs against httptest.Server without any network traffic.
+	githubUserFetcherOverride func(ctx context.Context, token string) (oauth.GitHubUser, error)
+
+	// auditEmit, when non-nil, is invoked on auth.login success. The
+	// audit logger lives outside this router (cmd/gemba serve owns
+	// its lifecycle), so we plumb a closure rather than couple the
+	// router to internal/server/audit. Nil = no audit emission, which
+	// is the zero-delta default for this slice.
+	auditEmit func(ctx context.Context, event string, payload any) error
 
 	mux http.Handler
 }
@@ -786,7 +814,21 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// tid == bearer tid" so the route is owner-only without a
 		// dedicated admin role.
 		api.Get("/v1/tenants/{tid}", r.getTenant)
+
+		// gm-o9t8.3.5.1: GitHub OAuth callback. When OAuth is
+		// unconfigured this returns 503 oauth_not_configured so a
+		// caller hitting an OAuth-disabled server fails with a
+		// clear envelope instead of an opaque 404.
+		api.Get("/v1/auth/oauth/github/callback", r.oauthCallback)
 	})
+
+	// gm-o9t8.3.5.2: device-flow exchange endpoint. Mounted OUTSIDE
+	// the apiAuth-protected /api block because the CLI calls it
+	// before it has a gemba bearer — by definition, this endpoint
+	// IS where the bearer is minted. The handler validates the
+	// supplied GitHub OAuth token against api.github.com itself.
+	mux.Method(http.MethodPost, "/api/v1/auth/oauth/github/login",
+		http.HandlerFunc(r.oauthLogin))
 
 	mux.Route("/events", func(ev chi.Router) {
 		if apiAuth != nil {
@@ -889,6 +931,33 @@ func (r *Router) AttachMetricsHandler(h http.Handler) { r.metricsHandler = h }
 // don't depend on a real Prometheus instance. cmd/gemba serve does
 // not call this — production runs use the default 15s-timeout client.
 func (r *Router) AttachMetricsHTTPClient(c *http.Client) { r.metricsHTTPClient = c }
+
+// AttachOAuth wires the GitHub OAuth handle (gm-o9t8.3.5). Nil disables
+// the callback + device-login routes (they 503 with oauth_not_configured).
+// cmd/gemba serve calls this once at boot after parsing the OAuth flags.
+func (r *Router) AttachOAuth(o *oauth.OAuth) { r.oauth = o }
+
+// AttachOAuthTokenStore wires the gemba bearer-token store the OAuth
+// login handler mints into. Nil leaves /api/v1/auth/oauth/github/login
+// returning 503 even when an OAuth handle is attached — both halves
+// are required for the device-flow to complete.
+func (r *Router) AttachOAuthTokenStore(s TokenStore) { r.oauthTokenStore = s }
+
+// AttachAuditEmit wires a best-effort audit hook the OAuth login
+// handler invokes on success. Tests and the no-audit production
+// default leave it nil. Mirror of the AttachMetricsHandler pattern:
+// optional, attach late, fail open when absent.
+func (r *Router) AttachAuditEmit(fn func(ctx context.Context, event string, payload any) error) {
+	r.auditEmit = fn
+}
+
+// SetGitHubUserFetcherForTest is the test seam for the OAuth login
+// handler. Production callers never use this. Exported (test-only
+// hook) rather than declared in oauth_test.go so the cli_test package
+// can wire an httptest-backed fetcher without an internal export.
+func (r *Router) SetGitHubUserFetcherForTest(fn func(ctx context.Context, token string) (oauth.GitHubUser, error)) {
+	r.githubUserFetcherOverride = fn
+}
 
 // metricsAdapter dereferences the Router's metrics handler at request
 // time, so the route can be registered before the handler is set.

@@ -514,3 +514,43 @@ func TestBeadsSource(t *testing.T) {
 		})
 	}
 }
+
+// gm-o9t8.3.5.1 — config-validation matrix for OAuth + MultiTenant.
+func TestOAuthConfigMatrix(t *testing.T) {
+	cases := []struct {
+		name          string
+		cfg           ServeConfig
+		wantEnabled   bool
+		wantMTErr     bool
+	}{
+		{"single_user_unset", ServeConfig{}, false, false},
+		{"single_user_oauth_set", ServeConfig{
+			OAuthGitHubClientID: "id", OAuthGitHubClientSecret: "sec",
+		}, true, false},
+		{"multi_tenant_without_oauth", ServeConfig{
+			MultiTenantMode: true,
+		}, false, true},
+		{"multi_tenant_partial", ServeConfig{
+			MultiTenantMode: true, OAuthGitHubClientID: "id",
+		}, false, true},
+		{"multi_tenant_with_oauth", ServeConfig{
+			MultiTenantMode:         true,
+			OAuthGitHubClientID:     "id",
+			OAuthGitHubClientSecret: "sec",
+		}, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.OAuthEnabled(); got != tc.wantEnabled {
+				t.Fatalf("OAuthEnabled: got %v want %v", got, tc.wantEnabled)
+			}
+			err := tc.cfg.ValidateOAuthForMultiTenant()
+			if tc.wantMTErr && err == nil {
+				t.Fatalf("ValidateOAuthForMultiTenant: want error, got nil")
+			}
+			if !tc.wantMTErr && err != nil {
+				t.Fatalf("ValidateOAuthForMultiTenant: unexpected error: %v", err)
+			}
+		})
+	}
+}
