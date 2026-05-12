@@ -91,11 +91,18 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": { "type": "string", "example": "ok" },
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
                     "checks": {
                       "type": "object",
-                      "additionalProperties": { "type": "string" },
-                      "example": { "dolt": "ok" }
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "example": {
+                        "dolt": "ok"
+                      }
                     }
                   }
                 }
@@ -109,11 +116,18 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": { "type": "string", "example": "degraded" },
+                    "status": {
+                      "type": "string",
+                      "example": "degraded"
+                    },
                     "checks": {
                       "type": "object",
-                      "additionalProperties": { "type": "string" },
-                      "example": { "dolt": "down" }
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "example": {
+                        "dolt": "down"
+                      }
                     }
                   }
                 }
@@ -246,6 +260,44 @@
             "$ref": "#/components/responses/AdaptorUnavailable"
           }
         }
+      },
+      "post": {
+        "tags": [
+          "work"
+        ],
+        "summary": "Create a new WorkItem via the bound WorkPlane adaptor.",
+        "operationId": "createWorkItem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created work item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
       }
     },
     "/api/work-items/{id}": {
@@ -318,6 +370,55 @@
           },
           "500": {
             "$ref": "#/components/responses/Unsupported"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "work"
+        ],
+        "summary": "Update fields on a WorkItem (incl. status / state transitions).",
+        "operationId": "updateWorkItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Workspace-prefixed bead id.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkItemPatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated work item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkItem"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           },
           "503": {
             "$ref": "#/components/responses/AdaptorUnavailable"
@@ -1876,6 +1977,49 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/work-items/{id}/notes": {
+      "post": {
+        "tags": [
+          "work"
+        ],
+        "summary": "Append a free-form operator note to a WorkItem (stub; gm-o9t8.1.3.2).",
+        "description": "Stub endpoint. Pinned shape so the typed client and CLI can target it day-one; backend storage lands in a follow-up bead.",
+        "operationId": "noteWorkItem",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "note"
+                ],
+                "properties": {
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "501": {
+            "$ref": "#/components/responses/NotImplemented"
           }
         }
       }
@@ -4220,6 +4364,49 @@
             "type": "string"
           },
           "code": {
+            "type": "string"
+          }
+        }
+      },
+      "CreateWorkItemRequest": {
+        "type": "object",
+        "description": "Envelope for POST /api/work-items. Mirrors transport.CreateWorkItemRequest.",
+        "required": [
+          "item"
+        ],
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/WorkItem"
+          }
+        }
+      },
+      "WorkItemPatch": {
+        "type": "object",
+        "description": "Partial update for a WorkItem. Mirrors core.WorkItemPatch \u2014 every field is optional.",
+        "additionalProperties": true,
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "state_category": {
+            "$ref": "#/components/schemas/StateCategory"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "parent_id": {
             "type": "string"
           }
         }
