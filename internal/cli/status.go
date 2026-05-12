@@ -30,7 +30,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -370,7 +369,3 @@ func humanDuration(d time.Duration) string {
 	}
 }
 
-// asExitError unwraps a runWithExit-wrapped error so the root
-// no-args path can surface it the same way. Currently unused but
-// kept for parity with the bead_crud exit code surface.
-var _ = errors.Unwrap
