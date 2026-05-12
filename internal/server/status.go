@@ -45,11 +45,33 @@ import (
 // semantics so an unresolvable subsystem renders as null rather than as
 // a misleading zero.
 type WorkspaceStatusResponse struct {
-	WorkspaceID string                  `json:"workspace_id"`
-	Mode        string                  `json:"mode"`
-	Repo        *WorkspaceRepoStatus    `json:"repo"`
-	Beads       WorkspaceBeadCounts     `json:"beads"`
-	Agents      WorkspaceAgentSummary   `json:"agents"`
+	WorkspaceID   string                `json:"workspace_id"`
+	Mode          string                `json:"mode"`
+	Repo          *WorkspaceRepoStatus  `json:"repo"`
+	Beads         WorkspaceBeadCounts   `json:"beads"`
+	Agents        WorkspaceAgentSummary `json:"agents"`
+	EmbeddedDolt  *EmbeddedDoltStatus   `json:"embedded_dolt"`
+}
+
+// EmbeddedDoltStatus surfaces the embedded-dolt supervisor's posture so
+// the SPA can render a degraded-state banner when the subprocess is
+// restarting or has given up (gm-o9t8.1.9). Null when the supervisor
+// isn't wired (external Dolt via --dolt-url, or the noop adaptor).
+//
+// State values:
+//
+//   - "starting"   — Start() in flight; first SELECT 1 hasn't landed yet
+//   - "ready"      — last probe succeeded; subprocess healthy
+//   - "restarting" — a recent probe failed; supervisor is in backoff /
+//                    respawn between probes
+//   - "failed"     — maxConsecutiveFailures exhausted; supervisor gave up
+type EmbeddedDoltStatus struct {
+	Enabled      bool   `json:"enabled"`
+	State        string `json:"state"`
+	Port         int    `json:"port"`
+	DataDir      string `json:"data_dir"`
+	RestartCount int64  `json:"restart_count"`
+	LastError    string `json:"last_error,omitempty"`
 }
 
 // WorkspaceRepoStatus carries the git posture for the workspace repo.
@@ -134,7 +156,34 @@ func (r *Router) workspaceStatus(w http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	// Embedded-dolt stripe (gm-o9t8.1.9). Only populated when the
+	// attached supervisor implements the richer DoltStatusReporter
+	// surface — preserves the existing `--dolt-url` / no-checker
+	// modes where embedded_dolt stays null.
+	r.doltMu.RLock()
+	sup := r.doltSupervisor
+	r.doltMu.RUnlock()
+	if reporter, ok := sup.(DoltStatusReporter); ok {
+		resp.EmbeddedDolt = embeddedDoltStatus(reporter)
+	}
+
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// embeddedDoltStatus converts a DoltStatusReporter into the JSON
+// payload the SPA consumes. Pulled out for test reuse.
+func embeddedDoltStatus(r DoltStatusReporter) *EmbeddedDoltStatus {
+	out := &EmbeddedDoltStatus{
+		Enabled:      true,
+		State:        r.State(),
+		Port:         r.Port(),
+		DataDir:      r.DataDir(),
+		RestartCount: r.RestartCount(),
+	}
+	if err := r.LastError(); err != nil {
+		out.LastError = err.Error()
+	}
+	return out
 }
 
 // resolveWorkspacePath maps a wsid to a workspace root on disk. It

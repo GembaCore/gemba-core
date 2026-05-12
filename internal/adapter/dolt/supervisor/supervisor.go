@@ -110,6 +110,25 @@ type Supervisor struct {
 	ready   atomic.Bool
 	stopped atomic.Bool
 
+	// restartCount is incremented every time the supervisor decides
+	// to (re)spawn a replacement subprocess after a failing health
+	// probe. The initial Start spawn does NOT count — it's the steady
+	// state. Read by RestartCount() for the /api/v1/workspaces/{wsid}/
+	// status embedded-dolt stripe (gm-o9t8.1.9).
+	restartCount atomic.Int64
+
+	// lastErr stores the most recent terminal / probe error so the
+	// status handler can surface a `last_error` in the degraded-state
+	// banner. Cleared on a successful probe; sticky across the
+	// "giving up" terminal transition.
+	lastErr atomic.Pointer[error]
+
+	// starting flips to true the moment Start is called and to false
+	// once awaitReady returns nil for the first time. It lets the
+	// status handler distinguish the "still starting" lane from the
+	// "ready then went sideways → restarting" lane.
+	starting atomic.Bool
+
 	done    chan struct{}      // closed when the supervisor permanently fails
 	doneErr atomic.Pointer[error]
 
@@ -190,11 +209,55 @@ func (s *Supervisor) Err() error {
 	return nil
 }
 
+// RestartCount returns the cumulative number of subprocess respawns
+// triggered by failing health probes since this Supervisor was
+// constructed. The initial Start spawn does not count.
+func (s *Supervisor) RestartCount() int64 { return s.restartCount.Load() }
+
+// LastError returns the most recent probe / supervise error, or nil
+// when none has been observed (or when the last probe succeeded).
+// Cleared on a successful health check; sticky across the "giving up"
+// terminal transition (in which case Err() == LastError()).
+func (s *Supervisor) LastError() error {
+	if p := s.lastErr.Load(); p != nil {
+		return *p
+	}
+	return nil
+}
+
+// State returns the supervisor's coarse-grained lifecycle state for
+// status / UI purposes. Values: "starting", "ready", "restarting",
+// "failed", "stopped". Distinct from Ready() which is a boolean.
+func (s *Supervisor) State() string {
+	if s.stopped.Load() {
+		return "stopped"
+	}
+	// "failed" beats every other state — done channel closed with a
+	// non-nil terminal error.
+	select {
+	case <-s.done:
+		if s.Err() != nil {
+			return "failed"
+		}
+		return "stopped"
+	default:
+	}
+	if s.ready.Load() {
+		return "ready"
+	}
+	if s.starting.Load() {
+		return "starting"
+	}
+	return "restarting"
+}
+
 // Start launches the dolt subprocess and blocks until either a
 // SELECT 1 probe succeeds, ctx is cancelled, or startupReadyTimeout
 // elapses. Returns nil on success. The caller MUST eventually call
 // Stop to release the subprocess and goroutines, even on error.
 func (s *Supervisor) Start(ctx context.Context) error {
+	s.starting.Store(true)
+	defer s.starting.Store(false)
 	// Ensure data dir exists with 0700 mode.
 	if err := os.MkdirAll(s.cfg.DataDir, 0o700); err != nil {
 		return fmt.Errorf("supervisor: mkdir %q: %w", s.cfg.DataDir, err)
@@ -380,12 +443,15 @@ func (s *Supervisor) supervise(ctx context.Context) {
 		cancel()
 		if err == nil {
 			s.ready.Store(true)
+			s.lastErr.Store(nil)
 			failures = 0
 			delay = backoffBase
 			continue
 		}
 
 		s.ready.Store(false)
+		probeErr := err
+		s.lastErr.Store(&probeErr)
 		failures++
 		s.log.Warn("supervisor: dolt health check failed",
 			"err", err, "consecutive_failures", failures)
@@ -394,6 +460,7 @@ func (s *Supervisor) supervise(ctx context.Context) {
 			finalErr := fmt.Errorf("dolt sql-server failed %d consecutive health checks: %w",
 				failures, err)
 			s.doneErr.Store(&finalErr)
+			s.lastErr.Store(&finalErr)
 			s.log.Error("supervisor: giving up on dolt",
 				"err", finalErr)
 			select {
@@ -415,7 +482,10 @@ func (s *Supervisor) supervise(ctx context.Context) {
 		}
 		delay = nextBackoff(delay)
 
+		s.restartCount.Add(1)
 		if err := s.spawn(ctx); err != nil {
+			respawnErr := err
+			s.lastErr.Store(&respawnErr)
 			s.log.Warn("supervisor: respawn failed",
 				"err", err, "consecutive_failures", failures)
 			continue

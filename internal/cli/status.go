@@ -109,10 +109,12 @@ type statusPayload struct {
 	OpenTotal   int             `json:"open_total"`
 	ClosedToday int             `json:"closed_today"`
 	CacheAge    time.Duration   `json:"cache_age_ns"`
-	// Repo + Agents are populated only when the primary status
-	// endpoint is available. Nil / zero in the fallback path.
-	Repo   *workspaceRepoStatus  `json:"repo,omitempty"`
-	Agents *workspaceAgentStatus `json:"agents,omitempty"`
+	// Repo + Agents + EmbeddedDolt are populated only when the
+	// primary status endpoint is available. Nil / zero in the
+	// fallback path.
+	Repo         *workspaceRepoStatus  `json:"repo,omitempty"`
+	Agents       *workspaceAgentStatus `json:"agents,omitempty"`
+	EmbeddedDolt *embeddedDoltStatus   `json:"embedded_dolt,omitempty"`
 }
 
 // workspaceStatusResponse mirrors WorkspaceStatusResponse in
@@ -120,11 +122,23 @@ type statusPayload struct {
 // CLI doesn't import the server package (and accidentally drag in its
 // dependency closure).
 type workspaceStatusResponse struct {
-	WorkspaceID string                `json:"workspace_id"`
-	Mode        string                `json:"mode"`
-	Repo        *workspaceRepoStatus  `json:"repo"`
-	Beads       workspaceBeadCounts   `json:"beads"`
-	Agents      *workspaceAgentStatus `json:"agents"`
+	WorkspaceID  string                `json:"workspace_id"`
+	Mode         string                `json:"mode"`
+	Repo         *workspaceRepoStatus  `json:"repo"`
+	Beads        workspaceBeadCounts   `json:"beads"`
+	Agents       *workspaceAgentStatus `json:"agents"`
+	EmbeddedDolt *embeddedDoltStatus   `json:"embedded_dolt"`
+}
+
+// embeddedDoltStatus mirrors EmbeddedDoltStatus from the server. Drives
+// the degraded-state banner in the Ad-hoc dashboard (gm-o9t8.1.9).
+type embeddedDoltStatus struct {
+	Enabled      bool   `json:"enabled"`
+	State        string `json:"state"`
+	Port         int    `json:"port"`
+	DataDir      string `json:"data_dir"`
+	RestartCount int64  `json:"restart_count"`
+	LastError    string `json:"last_error,omitempty"`
 }
 
 type workspaceRepoStatus struct {
@@ -207,14 +221,15 @@ func fetchStatus(ctx context.Context, c *gembaclient.Client, srv string) (status
 			return statusPayload{}, err
 		}
 		return statusPayload{
-			Workspace:   resp.WorkspaceID,
-			Mode:        resp.Mode,
-			Ready:       ready,
-			InFlight:    inflight,
-			OpenTotal:   resp.Beads.OpenTotal,
-			ClosedToday: resp.Beads.ClosedToday,
-			Repo:        resp.Repo,
-			Agents:      resp.Agents,
+			Workspace:    resp.WorkspaceID,
+			Mode:         resp.Mode,
+			Ready:        ready,
+			InFlight:     inflight,
+			OpenTotal:    resp.Beads.OpenTotal,
+			ClosedToday:  resp.Beads.ClosedToday,
+			Repo:         resp.Repo,
+			Agents:       resp.Agents,
+			EmbeddedDolt: resp.EmbeddedDolt,
 		}, nil
 	}
 	// err != nil from tryWorkspaceStatus is intentionally non-fatal:
@@ -348,6 +363,24 @@ func renderAdHoc(w io.Writer, p statusPayload) {
 		}
 		fmt.Fprintf(w, "repo · %s @ %s%s\n", branch, head, dirty)
 	}
+	// Embedded-dolt degraded-state banner (gm-o9t8.1.9). Only shown
+	// when the supervisor is wired AND not in the steady "ready" state
+	// — otherwise the banner would scream on every dashboard render.
+	if p.EmbeddedDolt != nil && p.EmbeddedDolt.Enabled && p.EmbeddedDolt.State != "ready" {
+		msg := fmt.Sprintf("⚠ embedded-dolt: %s", p.EmbeddedDolt.State)
+		if p.EmbeddedDolt.RestartCount > 0 {
+			noun := "restarts"
+			if p.EmbeddedDolt.RestartCount == 1 {
+				noun = "restart"
+			}
+			msg += fmt.Sprintf(" (%d %s)", p.EmbeddedDolt.RestartCount, noun)
+		}
+		if p.EmbeddedDolt.LastError != "" {
+			msg += " · " + p.EmbeddedDolt.LastError
+		}
+		fmt.Fprintln(w, msg)
+	}
+
 	// Agents banner — only when we have a run on record.
 	if p.Agents != nil && (p.Agents.Active > 0 || p.Agents.LastRunID != "") {
 		switch {

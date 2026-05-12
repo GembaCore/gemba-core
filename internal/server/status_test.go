@@ -213,6 +213,158 @@ func (f *fakeOrch) ListSessions(_ context.Context, _ core.SessionFilter) ([]core
 	return f.sessions, nil
 }
 
+// fakeDoltReporter is a minimal DoltStatusReporter for status tests.
+type fakeDoltReporter struct {
+	ready    bool
+	state    string
+	port     int
+	dataDir  string
+	restarts int64
+	lastErr  error
+}
+
+func (f *fakeDoltReporter) Ready() bool         { return f.ready }
+func (f *fakeDoltReporter) State() string       { return f.state }
+func (f *fakeDoltReporter) Port() int           { return f.port }
+func (f *fakeDoltReporter) DataDir() string     { return f.dataDir }
+func (f *fakeDoltReporter) RestartCount() int64 { return f.restarts }
+func (f *fakeDoltReporter) LastError() error    { return f.lastErr }
+
+// readyOnly is a DoltReadyChecker that doesn't satisfy
+// DoltStatusReporter. Verifies the status handler omits embedded_dolt
+// when only the narrow surface is attached.
+type readyOnly struct{ ready bool }
+
+func (r *readyOnly) Ready() bool { return r.ready }
+
+// TestWorkspaceStatus_EmbeddedDolt_Populated verifies the embedded_dolt
+// stripe carries the reporter's posture when a richer supervisor is
+// attached (gm-o9t8.1.9).
+func TestWorkspaceStatus_EmbeddedDolt_Populated(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "x.toml")}
+	h := NewRouter(cfg, fakeSPA(), nil)
+	h.AttachDoltSupervisor(&fakeDoltReporter{
+		ready: true, state: "ready", port: 12345,
+		dataDir: "/var/lib/gemba/data/dolt", restarts: 0,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	var resp WorkspaceStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt == nil {
+		t.Fatalf("embedded_dolt should be populated when a reporter is attached")
+	}
+	if resp.EmbeddedDolt.State != "ready" {
+		t.Errorf("state = %q, want ready", resp.EmbeddedDolt.State)
+	}
+	if resp.EmbeddedDolt.Port != 12345 {
+		t.Errorf("port = %d, want 12345", resp.EmbeddedDolt.Port)
+	}
+	if !resp.EmbeddedDolt.Enabled {
+		t.Errorf("enabled should be true")
+	}
+}
+
+// TestWorkspaceStatus_EmbeddedDolt_Restarting covers the degraded path
+// — state=restarting + non-zero restart count + non-empty last error.
+func TestWorkspaceStatus_EmbeddedDolt_Restarting(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "x.toml")}
+	h := NewRouter(cfg, fakeSPA(), nil)
+	h.AttachDoltSupervisor(&fakeDoltReporter{
+		state: "restarting", port: 12345,
+		dataDir: "/tmp/dolt", restarts: 3,
+		lastErr: errSentinel("SELECT 1: connection refused"),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var resp WorkspaceStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt == nil || resp.EmbeddedDolt.State != "restarting" {
+		t.Errorf("expected state=restarting, got %+v", resp.EmbeddedDolt)
+	}
+	if resp.EmbeddedDolt.RestartCount != 3 {
+		t.Errorf("restart_count = %d, want 3", resp.EmbeddedDolt.RestartCount)
+	}
+	if resp.EmbeddedDolt.LastError == "" {
+		t.Errorf("last_error should be populated")
+	}
+}
+
+// TestWorkspaceStatus_EmbeddedDolt_Failed covers the terminal "gave up"
+// state — the SPA banner needs to show this distinctly.
+func TestWorkspaceStatus_EmbeddedDolt_Failed(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "x.toml")}
+	h := NewRouter(cfg, fakeSPA(), nil)
+	h.AttachDoltSupervisor(&fakeDoltReporter{
+		state: "failed", restarts: 5,
+		lastErr: errSentinel("gave up after 5 consecutive failures"),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var resp WorkspaceStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt == nil || resp.EmbeddedDolt.State != "failed" {
+		t.Errorf("expected state=failed, got %+v", resp.EmbeddedDolt)
+	}
+}
+
+// TestWorkspaceStatus_EmbeddedDolt_NotEnabled keeps the no-supervisor
+// path null and the ready-only (narrow surface) path null. Both lanes
+// resolve to "external Dolt or noop — no embedded posture to report".
+func TestWorkspaceStatus_EmbeddedDolt_NotEnabled(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "x.toml")}
+	h := NewRouter(cfg, fakeSPA(), nil)
+
+	// 1. No supervisor attached at all.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var resp WorkspaceStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt != nil {
+		t.Errorf("no supervisor → embedded_dolt should be null, got %+v", resp.EmbeddedDolt)
+	}
+
+	// 2. Narrow checker attached — embedded_dolt still null.
+	h.AttachDoltSupervisor(&readyOnly{ready: true})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	h.ServeHTTP(rec, req)
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt != nil {
+		t.Errorf("narrow checker → embedded_dolt should be null, got %+v", resp.EmbeddedDolt)
+	}
+}
+
+// errSentinel is a tiny string-based error type so the test doesn't
+// pull in fmt/errors fluff at the file top.
+type errSentinel string
+
+func (e errSentinel) Error() string { return string(e) }
+
 // mustGit is a tiny helper around exec.Command for the repo-seeding
 // path. Failures are fatal because they'd corrupt later assertions.
 func mustGit(t *testing.T, dir string, args ...string) {
