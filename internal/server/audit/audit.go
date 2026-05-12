@@ -25,14 +25,28 @@ const KeyEnv = "GEMBA_AUDIT_KEY"
 type Kind string
 
 const (
-	KindFileWrite       Kind = "file_write"
-	KindFileDelete      Kind = "file_delete"
-	KindCommandRun      Kind = "command_run"
-	KindBeadMutation    Kind = "bead_mutation"
-	KindAgentStarted    Kind = "agent_started"
-	KindAgentCompleted  Kind = "agent_completed"
-	KindAgentFailed     Kind = "agent_failed"
-	KindSecretInjected  Kind = "secret_injected"
+	KindFileWrite      Kind = "file_write"
+	KindFileDelete     Kind = "file_delete"
+	KindCommandRun     Kind = "command_run"
+	KindBeadMutation   Kind = "bead_mutation"
+	KindAgentStarted   Kind = "agent_started"
+	KindAgentCompleted Kind = "agent_completed"
+	KindAgentFailed    Kind = "agent_failed"
+	KindSecretInjected Kind = "secret_injected"
+
+	// gm-o9t8.3.1.1: tenant admin lifecycle events. Emitted by the
+	// /api/v1/tenants CRUD handlers. Payload carries the tenant id
+	// plus a sparse delta (kind on Create; updated fields on Update;
+	// "force" flag on Delete).
+	EventTenantCreate Kind = "tenant.create"
+	EventTenantUpdate Kind = "tenant.update"
+	EventTenantDelete Kind = "tenant.delete"
+
+	// EventBeadCreate is the canonical bead-mutation create event;
+	// gm-o9t8.3.1.1 mirrors this pattern for the tenant CRUD audit
+	// hooks. Other bead mutations continue to use KindBeadMutation
+	// until the migration to per-action kinds lands.
+	EventBeadCreate Kind = "bead.create"
 )
 
 // Record is one append-only audit entry. The JSON form is what's written

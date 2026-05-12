@@ -1333,6 +1333,102 @@
         }
       }
     },
+    "/api/v1/tenants": {
+      "get": {
+        "tags": ["tenants"],
+        "summary": "List tenants (admin).",
+        "description": "Admin-only paginated list of tenant rows. v1 admin gating treats any valid bearer as admin; the OAuth-bound role check lands with gm-o9t8.3.5.3. Pagination via `?limit=` (default 50) and `?after=<tenant-id>` (exclusive lower bound; ids ascending).",
+        "operationId": "listTenants",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "integer", "minimum": 0}
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "string", "pattern": "^(t-default|t-[a-z0-9]{8})$"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of tenants ordered by id ascending.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["tenants"],
+                  "properties": {
+                    "tenants": {
+                      "type": "array",
+                      "items": {"$ref": "#/components/schemas/Tenant"}
+                    },
+                    "next_after": {
+                      "type": "string",
+                      "description": "Cursor for the next page; empty when no more rows."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Malformed pagination parameter.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "503": {
+            "description": "Tenant store is not attached.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
+        }
+      },
+      "post": {
+        "tags": ["tenants"],
+        "summary": "Create a tenant (admin).",
+        "description": "Mint a new tenant row. Admin-only; nonce-gated. `kind` is restricted to `user` or `org` — the reserved `system` kind exists only for the seeded `t-default` row.",
+        "operationId": "createTenant",
+        "parameters": [
+          {"$ref": "#/components/parameters/ConfirmNonce"}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["kind"],
+                "properties": {
+                  "github_login": {"type": "string"},
+                  "github_id": {"type": "integer", "format": "int64"},
+                  "kind": {"type": "string", "enum": ["user", "org"]}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Tenant created.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Tenant"}}}
+          },
+          "400": {
+            "description": "Malformed body or invalid kind.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "409": {
+            "description": "Duplicate tenant id or github identity.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "503": {
+            "description": "Tenant store is not attached.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
+        }
+      }
+    },
     "/api/v1/tenants/{tid}": {
       "get": {
         "tags": [
@@ -1351,17 +1447,7 @@
             "description": "Tenant metadata.",
             "content": {
               "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["id", "kind", "created_at"],
-                  "properties": {
-                    "id": {"type": "string", "description": "Tenant id (matches the `tid` path parameter)."},
-                    "kind": {"type": "string", "enum": ["user", "org", "system"]},
-                    "github_login": {"type": "string", "description": "Linked GitHub login; omitted when the tenant has no GitHub identity (e.g. `t-default`)."},
-                    "github_id": {"type": "integer", "format": "int64", "description": "Linked GitHub numeric id; omitted when the tenant has no GitHub identity."},
-                    "created_at": {"type": "string", "format": "date-time"}
-                  }
-                }
+                "schema": {"$ref": "#/components/schemas/Tenant"}
               }
             }
           },
@@ -1379,6 +1465,82 @@
           },
           "503": {
             "description": "Tenant store is not attached to the running router (boot order / unconfigured).",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
+        }
+      },
+      "patch": {
+        "tags": ["tenants"],
+        "summary": "Update mutable tenant fields (admin).",
+        "description": "Patch the mutable fields on a tenant row. Only `github_login` is mutable in v1; `kind` and `github_id` rotation are rejected with 400 immutable_field. Admin-only; nonce-gated.",
+        "operationId": "patchTenant",
+        "parameters": [
+          {"$ref": "#/components/parameters/ConfirmNonce"},
+          {"$ref": "#/components/parameters/TenantID"}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "github_login": {"type": "string"}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated tenant.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Tenant"}}}
+          },
+          "400": {
+            "description": "Malformed body or attempt to mutate an immutable field.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "404": {
+            "description": "Tenant not found.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "503": {
+            "description": "Tenant store is not attached.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          }
+        }
+      },
+      "delete": {
+        "tags": ["tenants"],
+        "summary": "Delete a tenant (admin).",
+        "description": "Soft-delete a tenant row. Refuses with 409 workspaces_present while any workspace still references the tenant; pass `?force=1` to bypass the guard. The reserved `t-default` row is permanently undeletable and returns 400 default_tenant_undeletable. Admin-only; nonce-gated.",
+        "operationId": "deleteTenant",
+        "parameters": [
+          {"$ref": "#/components/parameters/ConfirmNonce"},
+          {"$ref": "#/components/parameters/TenantID"},
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {"type": "string", "enum": ["1"]}
+          }
+        ],
+        "responses": {
+          "204": {"description": "Tenant deleted."},
+          "400": {
+            "description": "Malformed tenant id, or attempt to delete `t-default`.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "404": {
+            "description": "Tenant not found.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "409": {
+            "description": "Workspaces still reference this tenant; pass `?force=1` to override.",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
+          },
+          "503": {
+            "description": "Tenant store is not attached.",
             "content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}
           }
         }
@@ -2564,6 +2726,18 @@
             "type": "string",
             "description": "Plaintext secret value. The server never persists this verbatim; it is sealed with AES-256-GCM under the workspace DEK."
           }
+        }
+      },
+      "Tenant": {
+        "type": "object",
+        "description": "Tenant row. github_login/github_id are omitted when the tenant has no GitHub identity (e.g. `t-default`).",
+        "required": ["id", "kind", "created_at"],
+        "properties": {
+          "id": {"type": "string", "description": "Tenant id."},
+          "kind": {"type": "string", "enum": ["user", "org", "system"]},
+          "github_login": {"type": "string"},
+          "github_id": {"type": "integer", "format": "int64"},
+          "created_at": {"type": "string", "format": "date-time"}
         }
       },
       "Error": {
