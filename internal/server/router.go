@@ -192,6 +192,12 @@ type Router struct {
 	// nil = external-dolt or noop mode (readyz omits the dolt check).
 	doltReadyState
 
+	// workspacesRoot is the on-disk parent directory holding cloned
+	// per-workspace repos at <root>/<wsid>/repo/ (gm-o9t8.1.4.3 +
+	// gm-o9t8.1.6.2 diff streaming). Bind via AttachWorkspacesRoot;
+	// empty → /api/v1/workspaces/{wsid}/diff returns 503.
+	workspacesRoot string
+
 	mux http.Handler
 }
 
@@ -729,6 +735,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 
 		// Convenience verb — gemba no-args:
 		api.Get("/v1/workspaces/{wsid}/status", r.workspaceStatusStub)
+
+		// gm-o9t8.1.6.2: stream `git diff` from the server-side
+		// workspace repo. GET, so no nonce gate; auth applies via
+		// the shared apiAuth middleware on the /api block.
+		api.Get("/v1/workspaces/{wsid}/diff", r.workspaceDiffHandler)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {
