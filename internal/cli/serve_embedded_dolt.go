@@ -116,6 +116,31 @@ func attachEmbeddedDoltToRouter(sup *supervisor.Supervisor, handler *server.Rout
 	handler.AttachDoltSupervisor(sup)
 }
 
+// resolveWorkspacesRoot returns the on-disk root the diff handler
+// uses to locate <wsid>/repo/ trees (gm-o9t8.1.16). Resolution order:
+//
+//  1. --workspaces-root explicitly set → honor verbatim
+//  2. --dolt-data-dir set (or defaulted) → "<dirname(DoltDataDir)>/workspaces"
+//  3. otherwise → "" (router leaves /diff returning 503)
+//
+// The convention follows internal/server/workspacelayout: workspace
+// trees live at "<data-dir>/workspaces/<id>" where <data-dir> is the
+// gemba-server's data dir (the directory that also holds the shared
+// dolt/ subtree). The default folds DoltDataDir back to its parent to
+// match.
+func resolveWorkspacesRoot(cfg *config.ServeConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.WorkspacesRoot != "" {
+		return cfg.WorkspacesRoot
+	}
+	if cfg.DoltDataDir != "" {
+		return filepath.Join(filepath.Dir(cfg.DoltDataDir), "workspaces")
+	}
+	return ""
+}
+
 // embeddedDoltMySQLURL builds the mysql:// URL the dolt WorkPlane
 // adaptor consumes (parseDoltURL in internal/adapter/dolt/workplane.go).
 // The supervisor's DSN is go-sql-driver-native — "user@tcp(host:port)/"

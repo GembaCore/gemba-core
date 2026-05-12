@@ -144,6 +144,16 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"on-disk directory the embedded dolt sql-server uses as its data dir "+
 			"(default: <cwd>/data/dolt; created with 0700 on first launch)")
 
+	// gm-o9t8.1.16: parent dir holding per-workspace <wsid>/repo/
+	// trees. Wired into the router via AttachWorkspacesRoot so
+	// /api/v1/workspaces/{wsid}/diff resolves to a real working tree.
+	// Empty → /diff returns 503 adaptor_not_configured. Default lands
+	// in applyWorkspacesRootDefault: <dirname(--dolt-data-dir)>/workspaces.
+	cmd.Flags().StringVar(&cfg.WorkspacesRoot, "workspaces-root", "",
+		"parent directory holding per-workspace <wsid>/repo/ trees "+
+			"served by /api/v1/workspaces/{wsid}/diff "+
+			"(default: <dirname(--dolt-data-dir)>/workspaces)")
+
 	cmd.Flags().BoolVar(&cfg.Noop, "noop", false,
 		"bind the in-memory noop reference WorkPlane + OrchestrationPlane "+
 			"(dev/demo; mutually exclusive with --project-dir / --dolt-url; "+
@@ -605,6 +615,14 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// router exists, wire the supervisor's readiness into /api/readyz
 	// so the very first request gets a meaningful answer.
 	attachEmbeddedDoltToRouter(doltSup, handler)
+
+	// gm-o9t8.1.16: wire the diff endpoint to its on-disk root.
+	// Without this, /api/v1/workspaces/{wsid}/diff returns 503
+	// adaptor_not_configured in production. Default resolution lands
+	// in applyWorkspacesRootDefault.
+	if root := resolveWorkspacesRoot(&cfg); root != "" {
+		handler.AttachWorkspacesRoot(root)
+	}
 
 	srv := &http.Server{
 		Addr:              addr,

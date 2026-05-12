@@ -199,6 +199,16 @@ type ServeConfig struct {
 	// when --dolt-url is set (external Dolt selects its own db).
 	DoltEmbeddedDB string
 
+	// WorkspacesRoot is the on-disk parent directory that holds per-
+	// workspace <wsid>/repo/ trees (gm-o9t8.1.16). The router's
+	// /api/v1/workspaces/{wsid}/diff handler resolves
+	// <WorkspacesRoot>/<wsid>/repo/ to find the working tree it
+	// streams `git diff` from. Empty → /diff returns 503
+	// adaptor_not_configured. Defaults at startup to
+	// "<dirname(DoltDataDir)>/workspaces" so the layout follows the
+	// data-dir convention (see internal/server/workspacelayout).
+	WorkspacesRoot string
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —
