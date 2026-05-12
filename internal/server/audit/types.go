@@ -16,4 +16,11 @@ type Event string
 const (
 	EventEgressRuleCreate Event = "egress.rule.create"
 	EventEgressRuleDelete Event = "egress.rule.delete"
+
+	// Auth token management audit events (gm-o9t8.3.5.5). Emitted by
+	// the /api/v1/auth/tokens DELETE + .../rotate POST handlers when
+	// a user revokes or rotates a bearer they own. Tied to a tenant id
+	// + token id; no plaintext or hash material appears in the payload.
+	EventAuthTokenRevoke Event = "auth.token.revoke"
+	EventAuthTokenRotate Event = "auth.token.rotate"
 )
