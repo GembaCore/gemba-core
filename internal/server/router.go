@@ -728,7 +728,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		api.Get("/v1/workspaces/{wsid}/labels", r.listLabelsStub)
 
 		// Convenience verb — gemba no-args:
-		api.Get("/v1/workspaces/{wsid}/status", r.workspaceStatusStub)
+		api.Get("/v1/workspaces/{wsid}/status", r.workspaceStatus)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {
