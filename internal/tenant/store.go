@@ -125,8 +125,27 @@ const createTenantsTable = `CREATE TABLE IF NOT EXISTS tenants (
 	UNIQUE KEY idx_tenants_github_id    (github_id)
 )`
 
-// Migrate ensures the tenants table exists and seeds the DefaultTenant
-// row if the table is empty. Safe to call on every server boot.
+// createAuthTokensTable is the migration for the OAuth-minted gemba
+// bearer store (gm-o9t8.3.5.2). Idempotent. Lives next to the tenants
+// table because the lifecycle is identical: both seed on first boot
+// and never require manual intervention. The runtime read/write
+// implementation lives in internal/server (so the tenant package
+// doesn't take a dependency on auth hashing), but the DDL stays here
+// so a single tenant.Migrate call provisions everything the
+// multi-tenant control plane needs.
+const createAuthTokensTable = `CREATE TABLE IF NOT EXISTS auth_tokens (
+	tenant_id     VARCHAR(16)  NOT NULL,
+	github_id     BIGINT       NOT NULL,
+	device_label  VARCHAR(64)  NOT NULL,
+	hash_phc      TEXT         NOT NULL,
+	created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	PRIMARY KEY (tenant_id, device_label),
+	KEY idx_auth_tokens_github_id (github_id)
+)`
+
+// Migrate ensures the tenants + auth_tokens tables exist and seeds
+// the DefaultTenant row if the tenants table is empty. Safe to call
+// on every server boot.
 //
 // Seeding policy: we only insert DefaultTenant when the table has no
 // rows. Operators upgrading from M1 get the seed automatically; fresh
@@ -135,6 +154,9 @@ const createTenantsTable = `CREATE TABLE IF NOT EXISTS tenants (
 func (s *SQLStore) Migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, createTenantsTable); err != nil {
 		return fmt.Errorf("tenant: create tenants table: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, createAuthTokensTable); err != nil {
+		return fmt.Errorf("tenant: create auth_tokens table: %w", err)
 	}
 	var n int
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM tenants").Scan(&n); err != nil {

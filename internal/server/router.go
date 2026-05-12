@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/GembaCore/gemba-core/internal/adapter/registry"
 	"github.com/GembaCore/gemba-core/internal/auth"
+	"github.com/GembaCore/gemba-core/internal/auth/oauth"
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 	"github.com/GembaCore/gemba-core/internal/core/phase"
@@ -215,24 +217,34 @@ type Router struct {
 	tenantStore tenant.Store
 
 	// egressStore backs /api/v1/workspaces/{wsid}/egress-rules* (gm-o9t8.3.6.1).
-	// nil → every egress endpoint returns 503 adaptor_not_configured.
-	// Runtime enforcement (3.6.2) reads via Effective(); the storage
-	// layer here is the same code path operators write through.
 	egressStore   egress.Store
 	egressAuditor EgressAuditor
 
-	// auditor is the append-only audit sink used by admin-plane
-	// handlers (gm-o9t8.3.1.1: tenant CRUD, and successor admin
-	// surfaces). Optional — nil disables audit emission. AttachAuditor
-	// wires in production logger.
+	// auditor backs admin-plane handlers (gm-o9t8.3.1.1 tenant CRUD).
+	// Optional — nil disables audit emission.
 	auditor audit.Auditor
 
 	// tenantWorkspaceCount returns the number of workspaces still
-	// referencing a tenant. The tenant DELETE handler consults this
-	// to refuse soft-delete while workspaces exist (unless ?force=1
-	// is passed). Stays a hook so the workspace catalogue can land
-	// in a later bead without rewriting this surface. Nil ⇒ assume 0.
+	// referencing a tenant. Tenant DELETE consults this. Nil ⇒ assume 0.
 	tenantWorkspaceCount tenantWorkspaceCountFn
+
+	// oauth backs the GitHub OAuth callback + device-flow login (gm-o9t8.3.5).
+	// Nil = OAuth unconfigured; routes return 503 oauth_not_configured.
+	oauth *oauth.OAuth
+
+	// oauthTokenStore stores hashed gemba bearer tokens minted by the
+	// OAuth login handler (gm-o9t8.3.5.2).
+	oauthTokenStore TokenStore
+
+	// githubUserFetcherOverride is the test seam; production calls oauth.FetchUser.
+	githubUserFetcherOverride func(ctx context.Context, token string) (oauth.GitHubUser, error)
+
+	// auditEmit is the closure-based audit hook for the OAuth slice;
+	// kept separate from the typed `auditor` field above because the
+	// OAuth subagent landed before the typed audit.Auditor refactor.
+	// Future work consolidates the two paths.
+	auditEmit func(ctx context.Context, event string, payload any) error
+
 
 	mux http.Handler
 }
@@ -822,8 +834,7 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 
 		// gm-o9t8.3.1.1: tenant admin CRUD. Admin-only — the v1
 		// stub treats any valid bearer as admin (same stance as
-		// the audit surface). Mutations are nonce-gated through
-		// requireConfirmNonce, mirroring the other write routes.
+		// the audit surface). Mutations are nonce-gated.
 		api.Get("/v1/tenants", r.listTenants)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/tenants", r.createTenant)
@@ -831,7 +842,19 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Patch("/v1/tenants/{tid}", r.patchTenant)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Delete("/v1/tenants/{tid}", r.deleteTenant)
+
+		// gm-o9t8.3.5.1: GitHub OAuth callback. When OAuth is
+		// unconfigured this returns 503 oauth_not_configured.
+		api.Get("/v1/auth/oauth/github/callback", r.oauthCallback)
 	})
+
+	// gm-o9t8.3.5.2: device-flow exchange endpoint. Mounted OUTSIDE
+	// the apiAuth-protected /api block because the CLI calls it
+	// before it has a gemba bearer — by definition, this endpoint
+	// IS where the bearer is minted. The handler validates the
+	// supplied GitHub OAuth token against api.github.com itself.
+	mux.Method(http.MethodPost, "/api/v1/auth/oauth/github/login",
+		http.HandlerFunc(r.oauthLogin))
 
 	mux.Route("/events", func(ev chi.Router) {
 		if apiAuth != nil {
@@ -934,6 +957,33 @@ func (r *Router) AttachMetricsHandler(h http.Handler) { r.metricsHandler = h }
 // don't depend on a real Prometheus instance. cmd/gemba serve does
 // not call this — production runs use the default 15s-timeout client.
 func (r *Router) AttachMetricsHTTPClient(c *http.Client) { r.metricsHTTPClient = c }
+
+// AttachOAuth wires the GitHub OAuth handle (gm-o9t8.3.5). Nil disables
+// the callback + device-login routes (they 503 with oauth_not_configured).
+// cmd/gemba serve calls this once at boot after parsing the OAuth flags.
+func (r *Router) AttachOAuth(o *oauth.OAuth) { r.oauth = o }
+
+// AttachOAuthTokenStore wires the gemba bearer-token store the OAuth
+// login handler mints into. Nil leaves /api/v1/auth/oauth/github/login
+// returning 503 even when an OAuth handle is attached — both halves
+// are required for the device-flow to complete.
+func (r *Router) AttachOAuthTokenStore(s TokenStore) { r.oauthTokenStore = s }
+
+// AttachAuditEmit wires a best-effort audit hook the OAuth login
+// handler invokes on success. Tests and the no-audit production
+// default leave it nil. Mirror of the AttachMetricsHandler pattern:
+// optional, attach late, fail open when absent.
+func (r *Router) AttachAuditEmit(fn func(ctx context.Context, event string, payload any) error) {
+	r.auditEmit = fn
+}
+
+// SetGitHubUserFetcherForTest is the test seam for the OAuth login
+// handler. Production callers never use this. Exported (test-only
+// hook) rather than declared in oauth_test.go so the cli_test package
+// can wire an httptest-backed fetcher without an internal export.
+func (r *Router) SetGitHubUserFetcherForTest(fn func(ctx context.Context, token string) (oauth.GitHubUser, error)) {
+	r.githubUserFetcherOverride = fn
+}
 
 // metricsAdapter dereferences the Router's metrics handler at request
 // time, so the route can be registered before the handler is set.

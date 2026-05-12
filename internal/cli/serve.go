@@ -35,6 +35,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
 	"github.com/GembaCore/gemba-core/internal/adapter/noop"
 	"github.com/GembaCore/gemba-core/internal/auth"
+	"github.com/GembaCore/gemba-core/internal/auth/oauth"
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 	"github.com/GembaCore/gemba-core/internal/persona"
@@ -208,6 +209,17 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"path to pool.toml declaring [pool.<rig>.<persona>] blocks "+
 			"(default: probe .gemba/pool.toml; missing → no pools)")
 
+	// gm-o9t8.3.5.1: GitHub OAuth app config. Both flags must be set
+	// to enable OAuth — half-configured server refuses to boot. The
+	// secret is intentionally redacted from log output (slog never
+	// touches it; help text does not echo a value).
+	cmd.Flags().StringVar(&cfg.OAuthGitHubClientID, "oauth-github-client-id", "",
+		"GitHub OAuth app client id (required with --oauth-github-client-secret to enable OAuth)")
+	cmd.Flags().StringVar(&cfg.OAuthGitHubClientSecret, "oauth-github-client-secret", "",
+		"GitHub OAuth app client secret (treated as a secret; never logged)")
+	cmd.Flags().BoolVar(&cfg.MultiTenantMode, "multi-tenant", false,
+		"enable constitution.multi_tenant_mode; requires GitHub OAuth to be configured")
+
 	return cmd
 }
 
@@ -219,6 +231,12 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	normalizeServeMode(&cfg)
 
 	if err := cfg.ValidateBindPolicy(); err != nil {
+		return err
+	}
+
+	// gm-o9t8.3.5.1: refuse to boot a multi-tenant rig without OAuth.
+	// Single-user installs (the default) skip this check.
+	if err := cfg.ValidateOAuthForMultiTenant(); err != nil {
 		return err
 	}
 
@@ -666,6 +684,27 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		handler.AttachTenantStore(tenantStore)
 	}
 
+	// gm-o9t8.3.5: GitHub OAuth wiring. Construct the OAuth handle
+	// from the resolved flags; ErrUnconfigured means OAuth is opt-in
+	// and the operator hasn't opted in, which is fine — the callback
+	// + login routes return 503 oauth_not_configured on their own.
+	// ErrPartialConfig is operator error and was already caught by
+	// ValidateOAuthForMultiTenant above for the multi-tenant case;
+	// in single-user mode a partial config is also wrong, so we
+	// warn loudly and leave OAuth disabled.
+	if oa, oaErr := oauth.New(oauth.Config{
+		GitHubClientID:     cfg.OAuthGitHubClientID,
+		GitHubClientSecret: cfg.OAuthGitHubClientSecret,
+	}); oaErr == nil {
+		handler.AttachOAuth(oa)
+		handler.AttachOAuthTokenStore(server.NewMemTokenStore())
+		slog.Info("oauth: GitHub OAuth configured",
+			"client_id_prefix", safeIDPrefix(cfg.OAuthGitHubClientID))
+	} else if errors.Is(oaErr, oauth.ErrPartialConfig) {
+		slog.Warn("oauth: half-configured; routes will 503", "err", oaErr)
+	}
+	// ErrUnconfigured → no log; OAuth is opt-in and silent by default.
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -774,6 +813,22 @@ func applyServeEnvDefaults(cfg *config.ServeConfig) {
 			cfg.BeadsOnlyManifestPath = v
 		}
 	}
+	// gm-o9t8.3.5.1: GitHub OAuth credentials from env. Flag wins;
+	// env is the deployment-friendly path (env vars survive
+	// systemd/k8s redeploys without modifying argv).
+	if cfg.OAuthGitHubClientID == "" {
+		if v := strings.TrimSpace(os.Getenv("GEMBA_OAUTH_GITHUB_CLIENT_ID")); v != "" {
+			cfg.OAuthGitHubClientID = v
+		}
+	}
+	if cfg.OAuthGitHubClientSecret == "" {
+		if v := strings.TrimSpace(os.Getenv("GEMBA_OAUTH_GITHUB_CLIENT_SECRET")); v != "" {
+			cfg.OAuthGitHubClientSecret = v
+		}
+	}
+	if !cfg.MultiTenantMode && truthyEnv(os.Getenv("GEMBA_MULTI_TENANT")) {
+		cfg.MultiTenantMode = true
+	}
 }
 
 func normalizeServeMode(cfg *config.ServeConfig) {
@@ -783,6 +838,17 @@ func normalizeServeMode(cfg *config.ServeConfig) {
 	if cfg.BeadsReadOnly {
 		cfg.BeadsOnly = true
 	}
+}
+
+// safeIDPrefix returns the first 8 chars of an OAuth client id for
+// observability logging — enough to identify which app is configured
+// without dumping the full id (which is not secret, but cluttery).
+func safeIDPrefix(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8] + "..."
 }
 
 func truthyEnv(v string) bool {

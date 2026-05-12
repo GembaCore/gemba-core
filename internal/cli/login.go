@@ -146,30 +146,37 @@ func parseErrorEnvelope(body []byte, status int) string {
 // newLoginCmd builds the `gemba login` subcommand.
 func newLoginCmd() *cobra.Command {
 	var (
-		server      string
-		token       string
-		tokenStdin  bool
-		credPath    string
+		server         string
+		token          string
+		tokenStdin     bool
+		credPath       string
+		useGitHub      bool
+		githubClientID string
 	)
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Authenticate the CLI to a gemba server with a personal access token",
-		Long: `Validates a personal access token against <server>/api/whoami and,
-on success, persists the credential to ~/.config/gemba/credentials.json
-(file mode 0600) so subsequent CLI calls can re-use it.
+		Short: "Authenticate the CLI to a gemba server",
+		Long: `Authenticates the CLI to a gemba server and persists the resulting
+credential to ~/.config/gemba/credentials.json (file mode 0600).
 
-Token sources, in priority order:
-  --token <pat>        flag value (visible in ps; prefer for scripted use)
-  --token-stdin        read a single line from stdin
-  interactive prompt   from /dev/tty with input masked
+Two flows:
 
-Full OAuth is deferred to M3. v1 only accepts PATs.`,
+  --github            GitHub OAuth device flow (gm-o9t8.3.5.2). The CLI
+                      prints a user code + verification URL, polls
+                      GitHub for the access token, then exchanges it
+                      with the gemba server for a gemba bearer.
+                      Client id resolution: --github-client-id flag >
+                      GEMBA_OAUTH_GITHUB_CLIENT_ID env.
+
+  (default) PAT       Validate a personal access token against
+                      <server>/api/whoami. Token sources, in priority
+                      order:
+                        --token <pat>      flag value
+                        --token-stdin      read a single line from stdin
+                        interactive prompt from /dev/tty with masking
+`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			resolved, err := serverconfig.Resolve(server)
-			if err != nil {
-				return err
-			}
-			tok, err := resolveLoginToken(cmd.InOrStdin(), cmd.OutOrStdout(), token, tokenStdin)
 			if err != nil {
 				return err
 			}
@@ -181,6 +188,22 @@ Full OAuth is deferred to M3. v1 only accepts PATs.`,
 				}
 				path = p
 			}
+			if useGitHub {
+				clientID := strings.TrimSpace(githubClientID)
+				if clientID == "" {
+					clientID = strings.TrimSpace(os.Getenv("GEMBA_OAUTH_GITHUB_CLIENT_ID"))
+				}
+				cfg := githubDeviceFlowConfig{
+					ClientID:    clientID,
+					GembaServer: resolved,
+				}
+				return runGitHubLogin(cmd.Context(), cmd.OutOrStdout(),
+					cmd.ErrOrStderr(), cfg, path)
+			}
+			tok, err := resolveLoginToken(cmd.InOrStdin(), cmd.OutOrStdout(), token, tokenStdin)
+			if err != nil {
+				return err
+			}
 			caller := defaultWhoamiCaller(nil)
 			return runLogin(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(),
 				resolved, tok, path, caller)
@@ -191,6 +214,10 @@ Full OAuth is deferred to M3. v1 only accepts PATs.`,
 	cmd.Flags().BoolVar(&tokenStdin, "token-stdin", false, "read the token from stdin")
 	cmd.Flags().StringVar(&credPath, "credentials-path", "",
 		"override the credentials file path (default: $XDG_CONFIG_HOME/gemba/credentials.json)")
+	cmd.Flags().BoolVar(&useGitHub, "github", false,
+		"authenticate via GitHub OAuth device flow (gm-o9t8.3.5.2)")
+	cmd.Flags().StringVar(&githubClientID, "github-client-id", "",
+		"GitHub OAuth app client id (default: $GEMBA_OAUTH_GITHUB_CLIENT_ID)")
 	return cmd
 }
 

@@ -216,6 +216,26 @@ type ServeConfig struct {
 	// the GEMBA_VAULT_KEY env var; absent → ephemeral key + WARN.
 	VaultPath string
 
+	// OAuthGitHubClientID is the GitHub OAuth app's client_id used by
+	// the device-flow login (gm-o9t8.3.5.1). Empty disables OAuth on
+	// the server; the legacy single-user PAT path keeps working.
+	//
+	// Resolution: --oauth-github-client-id flag wins; otherwise the
+	// GEMBA_OAUTH_GITHUB_CLIENT_ID env var.
+	OAuthGitHubClientID string
+
+	// OAuthGitHubClientSecret is the GitHub OAuth app's client_secret.
+	// Treated as a secret: never logged, never echoed in help output,
+	// and redacted in any error string that surfaces it. Required
+	// together with OAuthGitHubClientID for OAuthEnabled to flip true.
+	OAuthGitHubClientSecret string
+
+	// MultiTenantMode is the constitution.multi_tenant_mode flag. When
+	// true, OAuth MUST be configured (both client id and secret) or
+	// the server refuses to boot. Single-user / DefaultTenant mode
+	// leaves this false and the PAT path is sufficient.
+	MultiTenantMode bool
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —
@@ -264,6 +284,33 @@ func (c *ServeConfig) NormalizeListen(portFlagSet bool) error {
 	c.Listen = host
 	c.Port = p
 	return nil
+}
+
+// OAuthEnabled reports whether the GitHub OAuth device-flow login is
+// configured. The login endpoints and callback route return 503 when
+// this returns false. Derived (not a flag): true iff both
+// OAuthGitHubClientID and OAuthGitHubClientSecret are non-empty.
+func (c ServeConfig) OAuthEnabled() bool {
+	return strings.TrimSpace(c.OAuthGitHubClientID) != "" &&
+		strings.TrimSpace(c.OAuthGitHubClientSecret) != ""
+}
+
+// ValidateOAuthForMultiTenant enforces the multi-tenant gate: when
+// MultiTenantMode is true the OAuth app config MUST be set or the
+// server refuses to boot. Single-user installs (MultiTenantMode=false)
+// pass through unconditionally — OAuth stays opt-in.
+func (c ServeConfig) ValidateOAuthForMultiTenant() error {
+	if !c.MultiTenantMode {
+		return nil
+	}
+	if c.OAuthEnabled() {
+		return nil
+	}
+	return fmt.Errorf(
+		"multi-tenant mode requires GitHub OAuth: pass " +
+			"--oauth-github-client-id and --oauth-github-client-secret " +
+			"(or set GEMBA_OAUTH_GITHUB_CLIENT_ID / " +
+			"GEMBA_OAUTH_GITHUB_CLIENT_SECRET)")
 }
 
 // EffectiveAuthMode returns the auth mode that will actually be applied,
