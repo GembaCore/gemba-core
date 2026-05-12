@@ -23,6 +23,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/egress"
 	"github.com/GembaCore/gemba-core/internal/events"
 	"github.com/GembaCore/gemba-core/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/server/audit"
 	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
 	"github.com/GembaCore/gemba-core/internal/tenant"
@@ -219,6 +220,19 @@ type Router struct {
 	// layer here is the same code path operators write through.
 	egressStore   egress.Store
 	egressAuditor EgressAuditor
+
+	// auditor is the append-only audit sink used by admin-plane
+	// handlers (gm-o9t8.3.1.1: tenant CRUD, and successor admin
+	// surfaces). Optional — nil disables audit emission. AttachAuditor
+	// wires in production logger.
+	auditor audit.Auditor
+
+	// tenantWorkspaceCount returns the number of workspaces still
+	// referencing a tenant. The tenant DELETE handler consults this
+	// to refuse soft-delete while workspaces exist (unless ?force=1
+	// is passed). Stays a hook so the workspace catalogue can land
+	// in a later bead without rewriting this surface. Nil ⇒ assume 0.
+	tenantWorkspaceCount tenantWorkspaceCountFn
 
 	mux http.Handler
 }
@@ -805,6 +819,18 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// tid == bearer tid" so the route is owner-only without a
 		// dedicated admin role.
 		api.Get("/v1/tenants/{tid}", r.getTenant)
+
+		// gm-o9t8.3.1.1: tenant admin CRUD. Admin-only — the v1
+		// stub treats any valid bearer as admin (same stance as
+		// the audit surface). Mutations are nonce-gated through
+		// requireConfirmNonce, mirroring the other write routes.
+		api.Get("/v1/tenants", r.listTenants)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/tenants", r.createTenant)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Patch("/v1/tenants/{tid}", r.patchTenant)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/v1/tenants/{tid}", r.deleteTenant)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

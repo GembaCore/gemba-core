@@ -36,6 +36,27 @@ type Tenant struct {
 // matches. Callers use errors.Is to distinguish from infra errors.
 var ErrTenantNotFound = errors.New("tenant: not found")
 
+// ErrTenantExists is returned by Create when a row with the same id
+// (or unique key) already exists.
+var ErrTenantExists = errors.New("tenant: already exists")
+
+// Update carries the mutable fields a PATCH /tenants/{tid} call may
+// touch. Nil pointers mean "leave unchanged"; non-nil pointers replace
+// the stored value. Only github_login is mutable today; kind /
+// github_id rotation lands with the OAuth story (gm-o9t8.3.5).
+type Update struct {
+	GitHubLogin *string
+}
+
+// ListOptions controls Store.List pagination. Limit clamps page size
+// (zero / negative → store default, currently 50). After is an
+// exclusive lower bound on tenant id; the empty string returns the
+// first page.
+type ListOptions struct {
+	Limit int
+	After ID
+}
+
 // Store is the persistence contract for tenants. The full OAuth
 // surface (link/unlink, GitHub-id rotation) lands in gm-o9t8.3.5; the
 // gm-o9t8.3.9 foundation only needs read access, an insert for the
@@ -51,11 +72,25 @@ type Store interface {
 	// numeric id, or ErrTenantNotFound. Used during OAuth callback
 	// (gm-o9t8.3.5) and by the bearer → tenant resolution stub.
 	GetByGitHub(ctx context.Context, githubID int64) (Tenant, error)
-	// List returns every tenant ordered by created_at ascending.
-	// Admin-only consumers; the full list is expected to be small
-	// (operator + a handful of orgs) for the foreseeable future.
-	List(ctx context.Context) ([]Tenant, error)
+	// List returns tenants ordered by id ascending, honouring the
+	// pagination knobs in opts. Admin-only consumers; the full list
+	// is expected to be small (operator + a handful of orgs) for the
+	// foreseeable future, but the page primitive future-proofs the
+	// shape against larger SaaS deployments.
+	List(ctx context.Context, opts ListOptions) ([]Tenant, error)
+	// Update mutates the row for id with the non-nil fields in u.
+	// Returns ErrTenantNotFound when the row is absent. The
+	// DefaultTenant row is mutable through this surface (operators
+	// may need to link a GitHub identity to it post-OAuth).
+	Update(ctx context.Context, id ID, u Update) (Tenant, error)
+	// Delete removes the row for id. Returns ErrTenantNotFound when
+	// the row is absent. Callers are responsible for any cross-row
+	// referential checks (workspaces-still-exist, etc.).
+	Delete(ctx context.Context, id ID) error
 }
+
+// defaultListLimit caps page size when ListOptions.Limit is unset.
+const defaultListLimit = 50
 
 // SQLStore is the production Store backed by the same Dolt SQL pool
 // the WorkPlane adaptor uses. It owns the `tenants` table; the bd
@@ -147,10 +182,18 @@ func (s *SQLStore) Create(ctx context.Context, t Tenant) error {
 	return nil
 }
 
-// List implements Store.
-func (s *SQLStore) List(ctx context.Context) ([]Tenant, error) {
+// List implements Store with id-ordered pagination.
+func (s *SQLStore) List(ctx context.Context, opts ListOptions) ([]Tenant, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, github_login, github_id, kind, created_at FROM tenants ORDER BY created_at ASC`)
+		`SELECT id, github_login, github_id, kind, created_at
+		 FROM tenants
+		 WHERE id > ?
+		 ORDER BY id ASC
+		 LIMIT ?`, string(opts.After), limit)
 	if err != nil {
 		return nil, fmt.Errorf("tenant: list: %w", err)
 	}
@@ -164,6 +207,35 @@ func (s *SQLStore) List(ctx context.Context) ([]Tenant, error) {
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// Update implements Store. The implementation builds a sparse UPDATE
+// so unchanged columns keep their stored value (including NULL).
+func (s *SQLStore) Update(ctx context.Context, id ID, u Update) (Tenant, error) {
+	if u.GitHubLogin != nil {
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE tenants SET github_login = ? WHERE id = ?`,
+			nullableString(u.GitHubLogin), string(id)); err != nil {
+			return Tenant{}, fmt.Errorf("tenant: update %s: %w", id, err)
+		}
+	}
+	return s.Get(ctx, id)
+}
+
+// Delete implements Store.
+func (s *SQLStore) Delete(ctx context.Context, id ID) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM tenants WHERE id = ?`, string(id))
+	if err != nil {
+		return fmt.Errorf("tenant: delete %s: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("tenant: delete %s rows: %w", id, err)
+	}
+	if n == 0 {
+		return ErrTenantNotFound
+	}
+	return nil
 }
 
 // scanner abstracts *sql.Row and *sql.Rows so scanTenant works for
@@ -266,7 +338,7 @@ func (m *MemStore) Create(_ context.Context, t Tenant) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if _, exists := m.byID[t.ID]; exists {
-		return fmt.Errorf("tenant: duplicate id %s", t.ID)
+		return fmt.Errorf("%w: %s", ErrTenantExists, t.ID)
 	}
 	m.byID[t.ID] = t
 	if t.GitHubID != nil {
@@ -286,12 +358,82 @@ func (m *MemStore) GetByGitHub(_ context.Context, githubID int64) (Tenant, error
 	return t, nil
 }
 
-func (m *MemStore) List(_ context.Context) ([]Tenant, error) {
+// List returns tenants ordered by id ascending. We sort a snapshot of
+// the keys rather than relying on insertion order so the pagination
+// "after" cursor is meaningful for callers that interleave Create with
+// List.
+func (m *MemStore) List(_ context.Context, opts ListOptions) ([]Tenant, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]Tenant, 0, len(m.created))
-	for _, id := range m.created {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultListLimit
+	}
+	ids := make([]ID, 0, len(m.byID))
+	for id := range m.byID {
+		ids = append(ids, id)
+	}
+	sortIDs(ids)
+	out := make([]Tenant, 0, limit)
+	for _, id := range ids {
+		if id <= opts.After {
+			continue
+		}
 		out = append(out, m.byID[id])
+		if len(out) >= limit {
+			break
+		}
 	}
 	return out, nil
+}
+
+// Update implements Store.
+func (m *MemStore) Update(_ context.Context, id ID, u Update) (Tenant, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.byID[id]
+	if !ok {
+		return Tenant{}, ErrTenantNotFound
+	}
+	if u.GitHubLogin != nil {
+		v := *u.GitHubLogin
+		t.GitHubLogin = &v
+	}
+	m.byID[id] = t
+	return t, nil
+}
+
+// Delete implements Store.
+func (m *MemStore) Delete(_ context.Context, id ID) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	t, ok := m.byID[id]
+	if !ok {
+		return ErrTenantNotFound
+	}
+	delete(m.byID, id)
+	if t.GitHubID != nil {
+		delete(m.byGHID, *t.GitHubID)
+	}
+	for i, x := range m.created {
+		if x == id {
+			m.created = append(m.created[:i], m.created[i+1:]...)
+			break
+		}
+	}
+	return nil
+}
+
+// sortIDs sorts an []ID in ascending order. Pulled out of List so the
+// sort import sits next to the call site that needs it.
+func sortIDs(ids []ID) {
+	// hand-rolled insertion sort — N is tiny (operator + a handful
+	// of orgs) and avoids pulling sort just for this surface.
+	for i := 1; i < len(ids); i++ {
+		j := i
+		for j > 0 && ids[j-1] > ids[j] {
+			ids[j-1], ids[j] = ids[j], ids[j-1]
+			j--
+		}
+	}
 }
