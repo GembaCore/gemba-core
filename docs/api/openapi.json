@@ -2090,6 +2090,106 @@
         }
       }
     },
+    "/api/v1/workspaces/{wsid}/egress-rules": {
+      "get": {
+        "tags": ["egress"],
+        "summary": "List the workspace's egress rules.",
+        "description": "Returns rules the workspace owns. Defaults (the hard-coded baseline allow-list + terminal default-deny) are excluded unless ?include_defaults=1 is set, in which case they are returned in a separate `defaults` field. Runtime enforcement (gm-o9t8.3.6.2) consumes /effective; this endpoint is for editing.",
+        "operationId": "listEgressRules",
+        "parameters": [
+          {"$ref": "#/components/parameters/WorkspaceID"},
+          {
+            "name": "include_defaults",
+            "in": "query",
+            "required": false,
+            "description": "Set to 1 to include the baseline defaults alongside workspace rules.",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace rules (and optionally the baseline defaults).",
+            "content": {"application/json": {"schema": {"type": "object"}}}
+          },
+          "503": {"$ref": "#/components/responses/AdaptorUnavailable"}
+        }
+      },
+      "post": {
+        "tags": ["egress"],
+        "summary": "Create or replace an egress rule.",
+        "description": "Upserts a workspace-owned rule. Default rule ids (default-*) are rejected — baselines are immutable. Idempotency is gated by X-GEMBA-Confirm.",
+        "operationId": "createEgressRule",
+        "parameters": [
+          {
+            "name": "X-GEMBA-Confirm",
+            "in": "header",
+            "required": true,
+            "description": "Idempotency nonce.",
+            "schema": {"type": "string"}
+          },
+          {"$ref": "#/components/parameters/WorkspaceID"}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"type": "object"}}}
+        },
+        "responses": {
+          "201": {
+            "description": "Rule created.",
+            "content": {"application/json": {"schema": {"type": "object"}}}
+          },
+          "400": {"description": "Validation error or attempt to overwrite a default rule."},
+          "503": {"$ref": "#/components/responses/AdaptorUnavailable"}
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/egress-rules/{id}": {
+      "delete": {
+        "tags": ["egress"],
+        "summary": "Delete an egress rule (workspace-owned only).",
+        "description": "Removes (wsid, id). Default rule ids are rejected — baselines are immutable. Returns 404 if the id is unknown.",
+        "operationId": "deleteEgressRule",
+        "parameters": [
+          {
+            "name": "X-GEMBA-Confirm",
+            "in": "header",
+            "required": true,
+            "description": "Idempotency nonce.",
+            "schema": {"type": "string"}
+          },
+          {"$ref": "#/components/parameters/WorkspaceID"},
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Rule id (workspace-owned).",
+            "schema": {"type": "string"}
+          }
+        ],
+        "responses": {
+          "204": {"description": "Rule removed."},
+          "400": {"description": "Attempt to delete a default rule."},
+          "404": {"description": "Rule id not found in this workspace."},
+          "503": {"$ref": "#/components/responses/AdaptorUnavailable"}
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/egress-rules/effective": {
+      "get": {
+        "tags": ["egress"],
+        "summary": "Preview the effective egress ruleset (workspace + defaults).",
+        "description": "Returns the merged + priority-sorted view (descending — higher priority wins). The runtime enforcer (gm-o9t8.3.6.2) consumes the same ordering; this endpoint is the operator-facing preview.",
+        "operationId": "effectiveEgressRules",
+        "parameters": [{"$ref": "#/components/parameters/WorkspaceID"}],
+        "responses": {
+          "200": {
+            "description": "Joined rules in priority order.",
+            "content": {"application/json": {"schema": {"type": "object"}}}
+          },
+          "503": {"$ref": "#/components/responses/AdaptorUnavailable"}
+        }
+      }
+    },
     "/api/v1/workspaces/{wsid}/status": {
       "get": {
         "tags": [
