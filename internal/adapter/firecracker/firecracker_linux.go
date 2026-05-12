@@ -47,20 +47,17 @@ type linuxSupervisor struct {
 	bridgeName string
 	socketDir  string
 	devMode    bool
+	vault      VaultInjector
+	auditor    LifecycleAuditor
 	mu         sync.Mutex
 	tapCounter int
 
 	// egress is optional. When set, Start fetches the workspace's
-	// effective rules after boot and installs them via
-	// applyEgressRules. When nil, the supervisor logs at WARN and
-	// proceeds without enforcement — matching the dev-mode contract.
+	// effective rules after boot and installs them via applyEgressRules.
 	egress EgressProvider
 }
 
-// AttachEgress wires an EgressProvider into the supervisor so future
-// Start calls install per-VM nftables rules. Calling this with nil
-// detaches; calling twice replaces. Safe to call before or after the
-// first Start.
+// AttachEgress wires an EgressProvider into the supervisor.
 func (s *linuxSupervisor) AttachEgress(p EgressProvider) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -80,6 +77,13 @@ type linuxState struct {
 // the supervisor — Start will be the call that fails, which keeps the
 // API surface uniform between platforms.
 func NewSupervisor(log *slog.Logger) Supervisor {
+	return NewSupervisorWithOptions(Options{Logger: log})
+}
+
+// NewSupervisorWithOptions returns a Linux Supervisor wired with the
+// supplied dependencies (vault, audit). gm-o9t8.3.2.5 and 3.2.7.
+func NewSupervisorWithOptions(opts Options) Supervisor {
+	log, _ := opts.Logger.(*slog.Logger)
 	if log == nil {
 		log = slog.Default()
 	}
@@ -93,6 +97,8 @@ func NewSupervisor(log *slog.Logger) Supervisor {
 		// dispatch path compile-test on a Linux laptop without the
 		// real image artifacts (those land in gm-o9t8.3.2.2).
 		devMode: true,
+		vault:   opts.Vault,
+		auditor: opts.Auditor,
 	}
 }
 
@@ -124,18 +130,34 @@ func (s *linuxSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) {
 	tapName := fmt.Sprintf("tap-gm-%d", s.tapCounter)
 	s.mu.Unlock()
 
+	// gm-o9t8.3.2.4: translate VolumeMounts into additional virtio-blk
+	// Drives. v1 attaches the host path as a block device; the in-guest
+	// init is responsible for mounting drive-N at the corresponding
+	// GuestPath. virtio-fs (which would let us pass GuestPath directly)
+	// needs an out-of-band virtiofsd daemon and lands in a follow-up.
+	drives := []models.Drive{
+		{
+			DriveID:      fc.String("rootfs"),
+			PathOnHost:   fc.String(spec.RootfsPath),
+			IsRootDevice: fc.Bool(true),
+			IsReadOnly:   fc.Bool(false),
+		},
+	}
+	for i, vm := range spec.VolumeMounts {
+		driveID := fmt.Sprintf("vol%d", i)
+		drives = append(drives, models.Drive{
+			DriveID:      fc.String(driveID),
+			PathOnHost:   fc.String(vm.HostPath),
+			IsRootDevice: fc.Bool(false),
+			IsReadOnly:   fc.Bool(vm.ReadOnly),
+		})
+	}
+
 	cfg := fc.Config{
 		SocketPath:      socketPath,
 		KernelImagePath: spec.KernelPath,
 		KernelArgs:      "console=ttyS0 reboot=k panic=1 pci=off",
-		Drives: []models.Drive{
-			{
-				DriveID:      fc.String("rootfs"),
-				PathOnHost:   fc.String(spec.RootfsPath),
-				IsRootDevice: fc.Bool(true),
-				IsReadOnly:   fc.Bool(false),
-			},
-		},
+		Drives:          drives,
 		MachineCfg: models.MachineConfiguration{
 			VcpuCount:  fc.Int64(int64(spec.CPUCount)),
 			MemSizeMib: fc.Int64(int64(spec.MemMB)),
@@ -179,9 +201,20 @@ func (s *linuxSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) {
 		return nil, fmt.Errorf("firecracker: machine.Start: %w", err)
 	}
 
-	// Push secrets into MMDS so the guest init can read them.
-	if len(spec.Secrets) > 0 {
-		payload := map[string]any{"secrets": spec.Secrets}
+	// gm-o9t8.3.2.5: pull boot-time secrets from the workspace vault,
+	// then merge with explicit Spec.Secrets (explicit wins). Push the
+	// merged map into MMDS so the guest init can read it.
+	mergedSecrets := spec.Secrets
+	if s.vault != nil {
+		vaultSecrets, verr := s.vault.Inject(ctx, spec.WorkspaceID)
+		if verr != nil {
+			cancel()
+			return nil, fmt.Errorf("firecracker: vault.Inject: %w", verr)
+		}
+		mergedSecrets = mergeSecrets(vaultSecrets, spec.Secrets)
+	}
+	if len(mergedSecrets) > 0 {
+		payload := map[string]any{"secrets": mergedSecrets}
 		if data, jerr := json.Marshal(payload); jerr == nil {
 			if merr := machine.SetMetadata(ctx, json.RawMessage(data)); merr != nil {
 				s.log.Warn("firecracker: SetMetadata failed; secrets not in guest",
@@ -253,6 +286,17 @@ func (s *linuxSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) {
 		"socket", socketPath,
 		"tap", tapName)
 
+	// gm-o9t8.3.2.7: emit VM-spawn lifecycle event.
+	if s.auditor != nil {
+		s.auditor.VMEvent(ctx, "vm.spawn", map[string]any{
+			"vm_id":       vm.ID,
+			"wsid":        spec.WorkspaceID,
+			"kernel_path": spec.KernelPath,
+			"mem_mb":      spec.MemMB,
+			"cpus":        spec.CPUCount,
+		})
+	}
+
 	return vm, nil
 }
 
@@ -274,6 +318,19 @@ func (s *linuxSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Duratio
 	vm.stopped = true
 	vm.mu.Unlock()
 
+	// Track for the vm.destroy audit event (gm-o9t8.3.2.7).
+	startedAt := vm.StartedAt
+	exitStatus := "killed"
+	defer func() {
+		if s.auditor != nil {
+			s.auditor.VMEvent(ctx, "vm.destroy", map[string]any{
+				"vm_id":       vm.ID,
+				"duration_ms": time.Since(startedAt).Milliseconds(),
+				"exit_status": exitStatus,
+			})
+		}
+	}()
+
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -290,6 +347,7 @@ func (s *linuxSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Duratio
 
 	select {
 	case <-vm.waitCh:
+		exitStatus = "clean"
 		return nil
 	case <-time.After(timeout):
 		// Force kill via StopVMM + ctx cancel.

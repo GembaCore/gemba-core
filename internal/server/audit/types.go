@@ -25,3 +25,18 @@ const (
 	// full real-time deny streaming is a follow-up.
 	EventVMEgressDenied Event = "vm.egress.denied"
 )
+
+// VM lifecycle audit events (gm-o9t8.3.2.7). Emitted by the firecracker
+// supervisor on successful Start (EventVMSpawn) and on Stop completion
+// (EventVMDestroy). EventVMEgressDenied lives in the block above (kept
+// adjacent to the other egress events).
+const (
+	EventVMSpawn   Event = "vm.spawn"
+	EventVMDestroy Event = "vm.destroy"
+)
+
+// KindVMLifecycle is the coarse Kind used by VM lifecycle records.
+// Declared in audit (the package that owns Kind) rather than the
+// supervisor so log readers can filter by kind without a string
+// literal duplicated across surfaces.
+const KindVMLifecycle Kind = "vm_lifecycle"

@@ -35,15 +35,16 @@ type fallbackSupervisor struct {
 	log *slog.Logger
 	mu  sync.Mutex
 
+	vault   VaultInjector
+	auditor LifecycleAuditor
+
 	// egress is plumbed for source-compatibility with the Linux
-	// supervisor: AttachEgress works here too, but Start only logs
-	// the plan rather than installing nftables rules (see
-	// egress_other.go for rationale).
+	// supervisor: AttachEgress works here, but Start only logs
+	// the plan rather than installing nftables rules.
 	egress EgressProvider
 }
 
-// AttachEgress is the fallback's pass-through. Stored but used only
-// to log the rule plan during Start; nftables is unavailable here.
+// AttachEgress is the fallback's pass-through; nftables unavailable here.
 func (s *fallbackSupervisor) AttachEgress(p EgressProvider) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -52,18 +53,30 @@ func (s *fallbackSupervisor) AttachEgress(p EgressProvider) {
 
 // fallbackState is what we store in VM.state on the non-Linux path.
 type fallbackState struct {
-	cmd    *exec.Cmd
-	cancel context.CancelFunc
+	cmd     *exec.Cmd
+	cancel  context.CancelFunc
+	volsDir string // per-VM tmpdir holding symlinks to mounted volumes
 }
 
 // NewSupervisor returns a Supervisor wired for the current platform.
 // On non-Linux this is always the subprocess fallback. Logger may be
 // nil — slog.Default() is used in that case.
 func NewSupervisor(log *slog.Logger) Supervisor {
+	return NewSupervisorWithOptions(Options{Logger: log})
+}
+
+// NewSupervisorWithOptions returns a fallback Supervisor wired with the
+// supplied dependencies (vault, audit). gm-o9t8.3.2.5 and 3.2.7.
+func NewSupervisorWithOptions(opts Options) Supervisor {
+	log, _ := opts.Logger.(*slog.Logger)
 	if log == nil {
 		log = slog.Default()
 	}
-	return &fallbackSupervisor{log: log}
+	return &fallbackSupervisor{
+		log:     log,
+		vault:   opts.Vault,
+		auditor: opts.Auditor,
+	}
 }
 
 // Start spawns the dispatch subprocess and returns immediately. There
@@ -99,9 +112,56 @@ func (s *fallbackSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) 
 	// Inject secrets as env on top of the parent env. We do NOT strip
 	// the parent env — dev workflows need PATH, HOME, etc. for the
 	// bash -c command to function.
+	//
+	// gm-o9t8.3.2.5: pull boot-time secrets from the workspace vault
+	// first, then merge with explicit Spec.Secrets (explicit wins).
+	// Nil vault is a normal config — only explicit secrets are used.
 	cmd.Env = os.Environ()
-	for k, v := range spec.Secrets {
+	mergedSecrets := spec.Secrets
+	if s.vault != nil {
+		vaultSecrets, verr := s.vault.Inject(ctx, spec.WorkspaceID)
+		if verr != nil {
+			cancel()
+			return nil, fmt.Errorf("firecracker: vault.Inject: %w", verr)
+		}
+		mergedSecrets = mergeSecrets(vaultSecrets, spec.Secrets)
+	}
+	for k, v := range mergedSecrets {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// gm-o9t8.3.2.4: stage VolumeMounts into a per-VM tmpdir. We
+	// symlink each HostPath into <volsDir>/vol<N>/ so the subprocess
+	// can read mounted data without us mutating the original host
+	// path. Env hints (GEMBA_VOL_<N>_PATH / _GUEST / _RO) tell the
+	// inner process where the symlink and the intended GuestPath
+	// land — the fallback can't actually move data into a guest VM,
+	// but the contract is "you can read your mount via $GEMBA_VOL_N_PATH".
+	var volsDir string
+	if len(spec.VolumeMounts) > 0 {
+		var derr error
+		volsDir, derr = os.MkdirTemp("", "gemba-vols-"+id+"-")
+		if derr != nil {
+			cancel()
+			return nil, fmt.Errorf("firecracker: stage volume mounts: %w", derr)
+		}
+		for i, vmnt := range spec.VolumeMounts {
+			link := fmt.Sprintf("%s/vol%d", volsDir, i)
+			if err := os.Symlink(vmnt.HostPath, link); err != nil {
+				_ = os.RemoveAll(volsDir)
+				cancel()
+				return nil, fmt.Errorf("firecracker: symlink volume %d: %w", i, err)
+			}
+			ro := "0"
+			if vmnt.ReadOnly {
+				ro = "1"
+			}
+			cmd.Env = append(cmd.Env,
+				fmt.Sprintf("GEMBA_VOL_%d_PATH=%s", i, link),
+				fmt.Sprintf("GEMBA_VOL_%d_GUEST=%s", i, vmnt.GuestPath),
+				fmt.Sprintf("GEMBA_VOL_%d_RO=%s", i, ro),
+			)
+		}
 	}
 
 	// Apply unix process-group isolation when available. The helper
@@ -118,8 +178,9 @@ func (s *fallbackSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) 
 		IPAddr:    "127.0.0.1",
 		StartedAt: time.Now(),
 		state: &fallbackState{
-			cmd:    cmd,
-			cancel: cancel,
+			cmd:     cmd,
+			cancel:  cancel,
+			volsDir: volsDir,
 		},
 		waitCh: make(chan error, 1),
 	}
@@ -165,11 +226,24 @@ func (s *fallbackSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) 
 		"workspace_id", spec.WorkspaceID,
 		"pid", cmd.Process.Pid)
 
+	// gm-o9t8.3.2.7: emit VM-spawn lifecycle event.
+	if s.auditor != nil {
+		s.auditor.VMEvent(ctx, "vm.spawn", map[string]any{
+			"vm_id":       vm.ID,
+			"wsid":        spec.WorkspaceID,
+			"kernel_path": spec.KernelPath,
+			"mem_mb":      spec.MemMB,
+			"cpus":        spec.CPUCount,
+		})
+	}
+
 	return vm, nil
 }
 
 // Stop terminates the subprocess. Sends SIGTERM, waits up to timeout
-// for a clean exit, then SIGKILLs via cancel(). Idempotent.
+// for a clean exit, then SIGKILLs via cancel(). Idempotent. On the
+// first Stop, emits a vm.destroy audit event with the VM's wall-clock
+// duration and exit status (gm-o9t8.3.2.7).
 func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Duration) error {
 	if vm == nil {
 		return errors.New("firecracker: Stop called with nil VM")
@@ -179,6 +253,21 @@ func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Dura
 	if !firstStop {
 		return nil
 	}
+
+	// Compute duration eagerly — emit it on the audit event regardless
+	// of which exit path we take below. Exit status is filled in once
+	// we know it; default "killed" if we don't drain waitCh in time.
+	startedAt := vm.StartedAt
+	exitStatus := "killed"
+	defer func() {
+		if s.auditor != nil {
+			s.auditor.VMEvent(ctx, "vm.destroy", map[string]any{
+				"vm_id":       vm.ID,
+				"duration_ms": time.Since(startedAt).Milliseconds(),
+				"exit_status": exitStatus,
+			})
+		}
+	}()
 
 	st, ok := vm.state.(*fallbackState)
 	if !ok || st == nil {
@@ -200,6 +289,10 @@ func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Dura
 	select {
 	case <-vm.waitCh:
 		// Already exited.
+		exitStatus = "clean"
+		if st.volsDir != "" {
+			_ = os.RemoveAll(st.volsDir)
+		}
 		return nil
 	case <-time.After(timeout):
 		// Force-kill via cancel().
@@ -213,11 +306,15 @@ func (s *fallbackSupervisor) Stop(ctx context.Context, vm *VM, timeout time.Dura
 	// caller doesn't see a stale "running" view on subsequent Wait.
 	select {
 	case <-vm.waitCh:
+		exitStatus = "killed"
 	case <-time.After(2 * time.Second):
 		// Give up — the OS should have reaped by now. Log and return
 		// without erroring; the goroutine will close waitCh eventually.
 		s.log.Warn("firecracker fallback: waitCh did not drain after kill",
 			"vm_id", vm.ID)
+	}
+	if st.volsDir != "" {
+		_ = os.RemoveAll(st.volsDir)
 	}
 	return nil
 }
