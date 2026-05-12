@@ -1,0 +1,16 @@
+{
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "matchTools": ["Write", "Edit", "NotebookEdit"],
+      "command": "gemba spec hook deprecated-task-list",
+      "description": "ASDD: reject writes to tasks.md / todo.md"
+    },
+    {
+      "event": "PreToolUse",
+      "matchTools": ["Bash"],
+      "command": "gemba spec hook deprecated-task-list-bash",
+      "description": "ASDD: catch sed/cat redirects to tasks.md"
+    }
+  ]
+}
