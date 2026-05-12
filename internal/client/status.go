@@ -50,16 +50,29 @@ type WorkspaceAgentStatus struct {
 	LastRunSummary string `json:"last_run_summary,omitempty"`
 }
 
+// EmbeddedDoltStatus mirrors the supervisor stripe in the status
+// response (gm-o9t8.1.9). Populated when the server has --embedded-dolt
+// enabled; null/omitted when using an external Dolt via --dolt-url.
+type EmbeddedDoltStatus struct {
+	Enabled      bool   `json:"enabled"`
+	State        string `json:"state"`
+	Port         int    `json:"port"`
+	DataDir      string `json:"data_dir"`
+	RestartCount int64  `json:"restart_count"`
+	LastError    string `json:"last_error,omitempty"`
+}
+
 // WorkspaceStatusResponse is the unified envelope the workspace status
 // endpoint returns on 200. Field-for-field mirror of
 // internal/server.WorkspaceStatusResponse; kept here so the client
 // package stays independent of the server package.
 type WorkspaceStatusResponse struct {
-	WorkspaceID string                `json:"workspace_id"`
-	Mode        string                `json:"mode"`
-	Repo        *WorkspaceRepoStatus  `json:"repo"`
-	Beads       WorkspaceBeadCounts   `json:"beads"`
-	Agents      *WorkspaceAgentStatus `json:"agents"`
+	WorkspaceID  string                `json:"workspace_id"`
+	Mode         string                `json:"mode"`
+	Repo         *WorkspaceRepoStatus  `json:"repo"`
+	Beads        WorkspaceBeadCounts   `json:"beads"`
+	Agents       *WorkspaceAgentStatus `json:"agents"`
+	EmbeddedDolt *EmbeddedDoltStatus   `json:"embedded_dolt,omitempty"`
 }
 
 // WorkspaceStatus GETs /api/v1/workspaces/{wsid}/status. Pass "_" as

@@ -26,11 +26,16 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -45,11 +50,33 @@ import (
 // semantics so an unresolvable subsystem renders as null rather than as
 // a misleading zero.
 type WorkspaceStatusResponse struct {
-	WorkspaceID string                  `json:"workspace_id"`
-	Mode        string                  `json:"mode"`
-	Repo        *WorkspaceRepoStatus    `json:"repo"`
-	Beads       WorkspaceBeadCounts     `json:"beads"`
-	Agents      WorkspaceAgentSummary   `json:"agents"`
+	WorkspaceID   string                `json:"workspace_id"`
+	Mode          string                `json:"mode"`
+	Repo          *WorkspaceRepoStatus  `json:"repo"`
+	Beads         WorkspaceBeadCounts   `json:"beads"`
+	Agents        WorkspaceAgentSummary `json:"agents"`
+	EmbeddedDolt  *EmbeddedDoltStatus   `json:"embedded_dolt"`
+}
+
+// EmbeddedDoltStatus surfaces the embedded-dolt supervisor's posture so
+// the SPA can render a degraded-state banner when the subprocess is
+// restarting or has given up (gm-o9t8.1.9). Null when the supervisor
+// isn't wired (external Dolt via --dolt-url, or the noop adaptor).
+//
+// State values:
+//
+//   - "starting"   — Start() in flight; first SELECT 1 hasn't landed yet
+//   - "ready"      — last probe succeeded; subprocess healthy
+//   - "restarting" — a recent probe failed; supervisor is in backoff /
+//                    respawn between probes
+//   - "failed"     — maxConsecutiveFailures exhausted; supervisor gave up
+type EmbeddedDoltStatus struct {
+	Enabled      bool   `json:"enabled"`
+	State        string `json:"state"`
+	Port         int    `json:"port"`
+	DataDir      string `json:"data_dir"`
+	RestartCount int64  `json:"restart_count"`
+	LastError    string `json:"last_error,omitempty"`
 }
 
 // WorkspaceRepoStatus carries the git posture for the workspace repo.
@@ -127,14 +154,48 @@ func (r *Router) workspaceStatus(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Agent stripe via the OrchestrationPlane's session list. Same
-	// degradation rules as beads.
+	// degradation rules as beads. The transcripts directory (when
+	// resolvable) is used to summarise the most recent run with the
+	// real terminal-event details rather than the legacy "agent on
+	// assignment" placeholder (gm-o9t8.1.18).
 	if r.host != nil {
 		if op := r.host.OrchestrationPlane(); op != nil {
-			resp.Agents = collectAgentSummary(req.Context(), op)
+			transcriptsDir := ""
+			if strings.TrimSpace(r.workspacesRoot) != "" && strings.TrimSpace(wsid) != "" {
+				transcriptsDir = filepath.Join(r.workspacesRoot, wsid, "transcripts")
+			}
+			resp.Agents = collectAgentSummaryWithTranscripts(req.Context(), op, transcriptsDir)
 		}
 	}
 
+	// Embedded-dolt stripe (gm-o9t8.1.9). Only populated when the
+	// attached supervisor implements the richer DoltStatusReporter
+	// surface — preserves the existing `--dolt-url` / no-checker
+	// modes where embedded_dolt stays null.
+	r.doltMu.RLock()
+	sup := r.doltSupervisor
+	r.doltMu.RUnlock()
+	if reporter, ok := sup.(DoltStatusReporter); ok {
+		resp.EmbeddedDolt = embeddedDoltStatus(reporter)
+	}
+
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// embeddedDoltStatus converts a DoltStatusReporter into the JSON
+// payload the SPA consumes. Pulled out for test reuse.
+func embeddedDoltStatus(r DoltStatusReporter) *EmbeddedDoltStatus {
+	out := &EmbeddedDoltStatus{
+		Enabled:      true,
+		State:        r.State(),
+		Port:         r.Port(),
+		DataDir:      r.DataDir(),
+		RestartCount: r.RestartCount(),
+	}
+	if err := r.LastError(); err != nil {
+		out.LastError = err.Error()
+	}
+	return out
 }
 
 // resolveWorkspacePath maps a wsid to a workspace root on disk. It
@@ -302,6 +363,15 @@ func collectBeadCounts(ctx context.Context, wp core.WorkPlane) WorkspaceBeadCoun
 // can't answer "what was the last run?" after a restart. Sessions are
 // the durable record.
 func collectAgentSummary(ctx context.Context, op core.OrchestrationPlaneAdaptor) WorkspaceAgentSummary {
+	return collectAgentSummaryWithTranscripts(ctx, op, "")
+}
+
+// collectAgentSummaryWithTranscripts is the transcripts-aware variant
+// gm-o9t8.1.18 wires in. transcriptsDir may be "" — in which case the
+// summary falls back to today's "<agent_id> on <assignment_id>" shape.
+// Splitting it out (rather than reaching for r.workspacesRoot inside
+// the original) keeps the no-arg helper test-friendly.
+func collectAgentSummaryWithTranscripts(ctx context.Context, op core.OrchestrationPlaneAdaptor, transcriptsDir string) WorkspaceAgentSummary {
 	summary := WorkspaceAgentSummary{}
 
 	sessions, err := op.ListSessions(ctx, core.SessionFilter{IncludeTerminal: true})
@@ -323,7 +393,7 @@ func collectAgentSummary(ctx context.Context, op core.OrchestrationPlaneAdaptor)
 	if latest != nil {
 		summary.LastRunID = latest.ID
 		summary.LastRunStatus = string(latest.Status)
-		summary.LastRunSummary = sessionSummary(latest)
+		summary.LastRunSummary = runSummary(latest, transcriptsDir, now)
 	}
 	return summary
 }
@@ -363,9 +433,9 @@ func sessionRecency(s *core.Session) time.Time {
 	return t
 }
 
-// sessionSummary builds a one-line description of a session for the
-// dashboard. The shape is `<agent_id> on <assignment_id>`; transcript
-// summarisation is a follow-up.
+// sessionSummary builds a fallback one-line description of a session
+// for the dashboard when no transcript is available. The shape is
+// `<agent_id> on <assignment_id>` (the SA12-era placeholder).
 func sessionSummary(s *core.Session) string {
 	switch {
 	case s.AgentID != "" && s.AssignmentID != "":
@@ -377,3 +447,236 @@ func sessionSummary(s *core.Session) string {
 	}
 	return ""
 }
+
+// transcriptSummaryMaxLen caps the bead_note_appended text we inline
+// into the dashboard. 120 is wide enough for a real one-liner ("agent
+// landed gm-abc.3 with 4 tests added") without wrapping in a typical
+// terminal pane.
+const transcriptSummaryMaxLen = 120
+
+// transcriptTerminalEvents are the event_type values runSummary
+// recognises as terminal. A transcript whose last event has any of
+// these types is treated as a finished run.
+var transcriptTerminalEvents = map[string]struct{}{
+	"completed": {},
+	"failed":    {},
+	"cancelled": {},
+	"timeout":   {},
+}
+
+// runSummary builds the `last_run_summary` string for the dashboard.
+//
+// Precedence (gm-o9t8.1.18):
+//
+//  1. If a transcript exists for the run AND contains a
+//     `bead_note_appended` event with non-empty `note` text, surface
+//     `<state> · <truncated note>`. The note is what the operator
+//     actually wrote about the run; it beats any inferred reason.
+//  2. Otherwise, if the transcript ends on a terminal event, surface
+//     `<event_type> · <summary or reason>` — falling back to just
+//     `<event_type>` when no reason text is present.
+//  3. For in-flight runs (no terminal event yet) report
+//     `running · <wallclock elapsed>`.
+//  4. When no transcript exists at all, fall back to today's behaviour
+//     so the dashboard stays useful on a freshly-ratified workspace
+//     that hasn't yet recorded any runs.
+//
+// Errors reading the transcript directory are non-fatal — the fallback
+// path renders. The CLI dashboard prefers a partial render over a
+// broken one.
+func runSummary(s *core.Session, transcriptsDir string, now time.Time) string {
+	if transcriptsDir == "" || s == nil {
+		return sessionSummary(s)
+	}
+	path := transcriptPathForSession(transcriptsDir, s)
+	if path == "" {
+		// In-flight run with no transcript yet — fall back to the
+		// legacy text so we never render an empty summary.
+		return sessionSummary(s)
+	}
+	terminal, note, reason, hasTerminal := readTranscriptTail(path)
+	if note != "" {
+		state := terminal
+		if state == "" {
+			state = runStateForFallback(s, hasTerminal)
+		}
+		return state + " · " + truncateSummary(note, transcriptSummaryMaxLen)
+	}
+	if hasTerminal {
+		out := terminal
+		if reason != "" {
+			out += " · " + truncateSummary(reason, transcriptSummaryMaxLen)
+		}
+		return out
+	}
+	// In-flight (no terminal event yet but transcript exists).
+	start := s.StartedAt
+	if start.IsZero() {
+		return "running"
+	}
+	elapsed := now.Sub(start)
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	return fmt.Sprintf("running · %s elapsed", shortDuration(elapsed))
+}
+
+// transcriptPathForSession picks the JSONL file for s under
+// transcriptsDir. Layout per gm-o9t8.1.5.4 is
+// `<transcriptsDir>/<run_id>/`; we pick the most recent regular file
+// inside that directory (writers may rotate). When the directory is
+// absent or empty the helper returns "" so the caller can choose its
+// fallback.
+func transcriptPathForSession(transcriptsDir string, s *core.Session) string {
+	if s.ID == "" {
+		return ""
+	}
+	runDir := filepath.Join(transcriptsDir, s.ID)
+	info, err := os.Stat(runDir)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	entries, err := os.ReadDir(runDir)
+	if err != nil {
+		return ""
+	}
+	type fileInfo struct {
+		path string
+		mod  time.Time
+	}
+	var files []fileInfo
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		fi, err := e.Info()
+		if err != nil {
+			continue
+		}
+		files = append(files, fileInfo{
+			path: filepath.Join(runDir, e.Name()),
+			mod:  fi.ModTime(),
+		})
+	}
+	if len(files) == 0 {
+		return ""
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].mod.After(files[j].mod) })
+	return files[0].path
+}
+
+// readTranscriptTail walks the JSONL transcript at path and returns:
+//
+//   - terminalType: the event_type of the last terminal event, or ""
+//   - note:         the latest bead_note_appended note text (preferred
+//                   summary signal), or ""
+//   - reason:       the "summary" / "reason" field of the terminal
+//                   event when present, or ""
+//   - hasTerminal:  true iff we observed any terminal event
+//
+// Parse errors per line are ignored — a corrupt line shouldn't poison
+// the entire summary. The whole transcript is walked so a
+// bead_note_appended that lands BEFORE the terminal event is still
+// picked up.
+func readTranscriptTail(path string) (terminalType, note, reason string, hasTerminal bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", "", "", false
+	}
+	defer f.Close()
+	// Allow longer-than-bufio-default lines; transcript events can
+	// carry tool output blobs.
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
+	type rawEvent struct {
+		EventType string `json:"event_type"`
+		Summary   string `json:"summary"`
+		Reason    string `json:"reason"`
+		Note      string `json:"note"`
+	}
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var ev rawEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			continue
+		}
+		if ev.EventType == "bead_note_appended" && ev.Note != "" {
+			note = ev.Note
+		}
+		if _, ok := transcriptTerminalEvents[ev.EventType]; ok {
+			terminalType = ev.EventType
+			hasTerminal = true
+			if ev.Summary != "" {
+				reason = ev.Summary
+			} else if ev.Reason != "" {
+				reason = ev.Reason
+			} else {
+				reason = ""
+			}
+		}
+	}
+	// Discard scanner errors — partial-summary is better than no
+	// summary. Suppress lint by reading the error.
+	_ = scanner.Err()
+	return terminalType, note, reason, hasTerminal
+}
+
+// runStateForFallback maps a session to the lifecycle word we'd print
+// when a bead_note_appended event has no neighbouring terminal event.
+// Used so the `<state> · <note>` shape always renders sensibly.
+func runStateForFallback(s *core.Session, hasTerminal bool) string {
+	if hasTerminal {
+		return "completed"
+	}
+	if s == nil {
+		return "running"
+	}
+	switch s.Status {
+	case core.SessionCompleted:
+		return "completed"
+	case core.SessionFailed:
+		return "failed"
+	}
+	return "running"
+}
+
+// truncateSummary clips s to at most n runes, appending an ellipsis
+// when it trimmed anything. Rune-aware so multibyte strings aren't
+// sliced mid-codepoint.
+func truncateSummary(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	if n <= 1 {
+		return string(runes[:n])
+	}
+	return string(runes[:n-1]) + "…"
+}
+
+// shortDuration renders an elapsed duration as the dashboard expects
+// ("12s", "4m", "3h"). Kept here so the server doesn't reach into the
+// CLI for the formatter.
+func shortDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
+}
+
+// (io.EOF dance left here for godoc readability — readTranscriptTail
+// drains scanner errors silently above.)
+var _ = io.EOF

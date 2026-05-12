@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -212,6 +213,307 @@ type fakeOrch struct {
 func (f *fakeOrch) ListSessions(_ context.Context, _ core.SessionFilter) ([]core.Session, error) {
 	return f.sessions, nil
 }
+
+// TestRunSummary_NoTranscriptFallback covers the "no transcripts dir
+// yet" path — runSummary falls back to the legacy
+// `<agent_id> on <assignment_id>` shape so the dashboard renders on a
+// freshly-ratified workspace (gm-o9t8.1.18).
+func TestRunSummary_NoTranscriptFallback(t *testing.T) {
+	s := &core.Session{ID: "sess-1", AgentID: "agent-1", AssignmentID: "gm-abc.3"}
+	// transcriptsDir = "" → fallback path.
+	got := runSummary(s, "", time.Now())
+	if got != "agent-1 on gm-abc.3" {
+		t.Errorf("runSummary fallback = %q, want %q", got, "agent-1 on gm-abc.3")
+	}
+}
+
+// TestRunSummary_TerminalEventOnly seeds a transcript whose last event
+// is a `completed` with a `summary` field; runSummary should surface
+// `completed · <summary>`.
+func TestRunSummary_TerminalEventOnly(t *testing.T) {
+	dir := t.TempDir()
+	runDir := filepath.Join(dir, "sess-1")
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	tr := filepath.Join(runDir, "events.jsonl")
+	body := strings.Join([]string{
+		`{"event_type":"started"}`,
+		`{"event_type":"completed","summary":"agent landed gm-abc.3"}`,
+	}, "\n")
+	if err := os.WriteFile(tr, []byte(body), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	s := &core.Session{ID: "sess-1", AgentID: "agent-1", AssignmentID: "gm-abc.3",
+		Status: core.SessionCompleted}
+	got := runSummary(s, dir, time.Now())
+	want := "completed · agent landed gm-abc.3"
+	if got != want {
+		t.Errorf("runSummary = %q, want %q", got, want)
+	}
+}
+
+// TestRunSummary_FailureWithReason seeds a failed terminal event with
+// a `reason` field; the summary surfaces `failed · <reason>`.
+func TestRunSummary_FailureWithReason(t *testing.T) {
+	dir := t.TempDir()
+	runDir := filepath.Join(dir, "sess-2")
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	tr := filepath.Join(runDir, "events.jsonl")
+	body := `{"event_type":"failed","reason":"go test ./... returned non-zero"}`
+	if err := os.WriteFile(tr, []byte(body), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	s := &core.Session{ID: "sess-2", Status: core.SessionFailed}
+	got := runSummary(s, dir, time.Now())
+	if got != "failed · go test ./... returned non-zero" {
+		t.Errorf("runSummary = %q", got)
+	}
+}
+
+// TestRunSummary_BeadNoteWins covers the precedence rule: when a
+// transcript carries a bead_note_appended event, that note text is the
+// summary even if a terminal event also has a summary field.
+func TestRunSummary_BeadNoteWins(t *testing.T) {
+	dir := t.TempDir()
+	runDir := filepath.Join(dir, "sess-3")
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	tr := filepath.Join(runDir, "events.jsonl")
+	body := strings.Join([]string{
+		`{"event_type":"started"}`,
+		`{"event_type":"bead_note_appended","note":"operator: shipped /healthz endpoint"}`,
+		`{"event_type":"completed","summary":"agent on gm-foo"}`,
+	}, "\n")
+	if err := os.WriteFile(tr, []byte(body), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	s := &core.Session{ID: "sess-3", Status: core.SessionCompleted}
+	got := runSummary(s, dir, time.Now())
+	want := "completed · operator: shipped /healthz endpoint"
+	if got != want {
+		t.Errorf("runSummary = %q, want %q", got, want)
+	}
+}
+
+// TestRunSummary_BeadNoteTruncated keeps notes from blowing out the
+// dashboard line width.
+func TestRunSummary_BeadNoteTruncated(t *testing.T) {
+	dir := t.TempDir()
+	runDir := filepath.Join(dir, "sess-4")
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	tr := filepath.Join(runDir, "events.jsonl")
+	longNote := strings.Repeat("a", 200)
+	body := `{"event_type":"bead_note_appended","note":"` + longNote + `"}` + "\n" +
+		`{"event_type":"completed"}`
+	if err := os.WriteFile(tr, []byte(body), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	s := &core.Session{ID: "sess-4", Status: core.SessionCompleted}
+	got := runSummary(s, dir, time.Now())
+	if !strings.HasPrefix(got, "completed · ") {
+		t.Fatalf("missing prefix: %q", got)
+	}
+	// state + " · " + 120 truncated runes.
+	bodyPart := strings.TrimPrefix(got, "completed · ")
+	if len([]rune(bodyPart)) > 120 {
+		t.Errorf("truncation failed: %d runes", len([]rune(bodyPart)))
+	}
+}
+
+// TestRunSummary_InFlightRun covers the "transcript exists but no
+// terminal event yet" path — summary should report `running · <elapsed>`.
+func TestRunSummary_InFlightRun(t *testing.T) {
+	dir := t.TempDir()
+	runDir := filepath.Join(dir, "sess-5")
+	if err := os.MkdirAll(runDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	tr := filepath.Join(runDir, "events.jsonl")
+	if err := os.WriteFile(tr, []byte(`{"event_type":"started"}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	s := &core.Session{ID: "sess-5", Status: core.SessionWorking,
+		StartedAt: now.Add(-4 * time.Minute)}
+	got := runSummary(s, dir, now)
+	if !strings.HasPrefix(got, "running · ") {
+		t.Errorf("runSummary = %q, want 'running · ...' prefix", got)
+	}
+	if !strings.Contains(got, "elapsed") {
+		t.Errorf("expected elapsed suffix; got %q", got)
+	}
+}
+
+// TestRunSummary_MissingTranscriptDir covers the path where the
+// session's run-id directory simply doesn't exist (e.g. an external
+// adaptor that never writes transcripts). Falls back to the legacy
+// shape rather than emitting an empty line.
+func TestRunSummary_MissingTranscriptDir(t *testing.T) {
+	dir := t.TempDir() // exists but no run subdirs.
+	s := &core.Session{ID: "sess-6", AgentID: "agent-x", AssignmentID: "gm-7"}
+	got := runSummary(s, dir, time.Now())
+	if got != "agent-x on gm-7" {
+		t.Errorf("runSummary = %q, want fallback %q", got, "agent-x on gm-7")
+	}
+}
+
+// fakeDoltReporter is a minimal DoltStatusReporter for status tests.
+type fakeDoltReporter struct {
+	ready    bool
+	state    string
+	port     int
+	dataDir  string
+	restarts int64
+	lastErr  error
+}
+
+func (f *fakeDoltReporter) Ready() bool         { return f.ready }
+func (f *fakeDoltReporter) State() string       { return f.state }
+func (f *fakeDoltReporter) Port() int           { return f.port }
+func (f *fakeDoltReporter) DataDir() string     { return f.dataDir }
+func (f *fakeDoltReporter) RestartCount() int64 { return f.restarts }
+func (f *fakeDoltReporter) LastError() error    { return f.lastErr }
+
+// readyOnly is a DoltReadyChecker that doesn't satisfy
+// DoltStatusReporter. Verifies the status handler omits embedded_dolt
+// when only the narrow surface is attached.
+type readyOnly struct{ ready bool }
+
+func (r *readyOnly) Ready() bool { return r.ready }
+
+// TestWorkspaceStatus_EmbeddedDolt_Populated verifies the embedded_dolt
+// stripe carries the reporter's posture when a richer supervisor is
+// attached (gm-o9t8.1.9).
+func TestWorkspaceStatus_EmbeddedDolt_Populated(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "x.toml")}
+	h := NewRouter(cfg, fakeSPA(), nil)
+	h.AttachDoltSupervisor(&fakeDoltReporter{
+		ready: true, state: "ready", port: 12345,
+		dataDir: "/var/lib/gemba/data/dolt", restarts: 0,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%q", rec.Code, rec.Body.String())
+	}
+	var resp WorkspaceStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt == nil {
+		t.Fatalf("embedded_dolt should be populated when a reporter is attached")
+	}
+	if resp.EmbeddedDolt.State != "ready" {
+		t.Errorf("state = %q, want ready", resp.EmbeddedDolt.State)
+	}
+	if resp.EmbeddedDolt.Port != 12345 {
+		t.Errorf("port = %d, want 12345", resp.EmbeddedDolt.Port)
+	}
+	if !resp.EmbeddedDolt.Enabled {
+		t.Errorf("enabled should be true")
+	}
+}
+
+// TestWorkspaceStatus_EmbeddedDolt_Restarting covers the degraded path
+// — state=restarting + non-zero restart count + non-empty last error.
+func TestWorkspaceStatus_EmbeddedDolt_Restarting(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "x.toml")}
+	h := NewRouter(cfg, fakeSPA(), nil)
+	h.AttachDoltSupervisor(&fakeDoltReporter{
+		state: "restarting", port: 12345,
+		dataDir: "/tmp/dolt", restarts: 3,
+		lastErr: errSentinel("SELECT 1: connection refused"),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var resp WorkspaceStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt == nil || resp.EmbeddedDolt.State != "restarting" {
+		t.Errorf("expected state=restarting, got %+v", resp.EmbeddedDolt)
+	}
+	if resp.EmbeddedDolt.RestartCount != 3 {
+		t.Errorf("restart_count = %d, want 3", resp.EmbeddedDolt.RestartCount)
+	}
+	if resp.EmbeddedDolt.LastError == "" {
+		t.Errorf("last_error should be populated")
+	}
+}
+
+// TestWorkspaceStatus_EmbeddedDolt_Failed covers the terminal "gave up"
+// state — the SPA banner needs to show this distinctly.
+func TestWorkspaceStatus_EmbeddedDolt_Failed(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "x.toml")}
+	h := NewRouter(cfg, fakeSPA(), nil)
+	h.AttachDoltSupervisor(&fakeDoltReporter{
+		state: "failed", restarts: 5,
+		lastErr: errSentinel("gave up after 5 consecutive failures"),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var resp WorkspaceStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt == nil || resp.EmbeddedDolt.State != "failed" {
+		t.Errorf("expected state=failed, got %+v", resp.EmbeddedDolt)
+	}
+}
+
+// TestWorkspaceStatus_EmbeddedDolt_NotEnabled keeps the no-supervisor
+// path null and the ready-only (narrow surface) path null. Both lanes
+// resolve to "external Dolt or noop — no embedded posture to report".
+func TestWorkspaceStatus_EmbeddedDolt_NotEnabled(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cfg := config.ServeConfig{ConfigPath: filepath.Join(t.TempDir(), "x.toml")}
+	h := NewRouter(cfg, fakeSPA(), nil)
+
+	// 1. No supervisor attached at all.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var resp WorkspaceStatusResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt != nil {
+		t.Errorf("no supervisor → embedded_dolt should be null, got %+v", resp.EmbeddedDolt)
+	}
+
+	// 2. Narrow checker attached — embedded_dolt still null.
+	h.AttachDoltSupervisor(&readyOnly{ready: true})
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/workspaces/dummy/status", nil)
+	h.ServeHTTP(rec, req)
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EmbeddedDolt != nil {
+		t.Errorf("narrow checker → embedded_dolt should be null, got %+v", resp.EmbeddedDolt)
+	}
+}
+
+// errSentinel is a tiny string-based error type so the test doesn't
+// pull in fmt/errors fluff at the file top.
+type errSentinel string
+
+func (e errSentinel) Error() string { return string(e) }
 
 // mustGit is a tiny helper around exec.Command for the repo-seeding
 // path. Failures are fatal because they'd corrupt later assertions.

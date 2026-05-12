@@ -329,7 +329,6 @@ func TestStatus_SendsBearerToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("status: unexpected error %v\nstderr=%s\nstdout=%s", err, errb, out)
 	}
-	// Empty workspace hint confirms the CLI rendered, not a 401 path.
 	if !strings.Contains(out, "No beads yet") {
 		t.Errorf("expected empty-workspace dashboard, got %q (stderr=%s)", out, errb)
 	}
@@ -337,8 +336,7 @@ func TestStatus_SendsBearerToken(t *testing.T) {
 
 // TestStatus_Unauthorized_PropagatesError pins the auth-failure path:
 // when the workspace-status probe returns 401, the CLI must surface
-// an error rather than silently fall through to the list endpoint
-// (which would just 401 again with worse context).
+// an error rather than silently fall through to the list endpoint.
 func TestStatus_Unauthorized_PropagatesError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -354,6 +352,118 @@ func TestStatus_Unauthorized_PropagatesError(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(err.Error()), "unauthorized") {
 		t.Errorf("err should mention unauthorized; got %v", err)
+	}
+}
+
+// TestStatus_EmbeddedDoltBanner_Restarting verifies the dashboard
+// prints the degraded-state banner when the server reports the
+// embedded supervisor is restarting (gm-o9t8.1.9).
+func TestStatus_EmbeddedDoltBanner_Restarting(t *testing.T) {
+	statusBody := `{
+		"workspace_id": "demo",
+		"mode": "ad-hoc",
+		"repo": null,
+		"beads":  {"ready":0,"in_flight":0,"blocked":0,"open_total":0,"closed_today":0},
+		"agents": null,
+		"embedded_dolt": {
+			"enabled": true, "state": "restarting", "port": 12345,
+			"data_dir": "/var/lib/gemba/data/dolt",
+			"restart_count": 3, "last_error": "SELECT 1: connection refused"
+		}
+	}`
+	srv := newStatusFakeServerNewEndpoint(t, statusBody, nil)
+	defer srv.Close()
+	defer installFakeClient(t, srv.URL)()
+
+	out, _, err := runCmd(t, "status", "--server", srv.URL)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	for _, want := range []string{
+		"embedded-dolt: restarting",
+		"3 restarts",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\n--- got ---\n%s", want, out)
+		}
+	}
+}
+
+// TestStatus_EmbeddedDoltBanner_HiddenWhenReady covers the steady-state
+// path: state=ready → no banner, even though the field is present.
+func TestStatus_EmbeddedDoltBanner_HiddenWhenReady(t *testing.T) {
+	statusBody := `{
+		"workspace_id": "demo",
+		"mode": "ad-hoc",
+		"repo": null,
+		"beads":  {"ready":0,"in_flight":0,"blocked":0,"open_total":0,"closed_today":0},
+		"agents": null,
+		"embedded_dolt": {
+			"enabled": true, "state": "ready", "port": 12345,
+			"data_dir": "/tmp/dolt", "restart_count": 0
+		}
+	}`
+	srv := newStatusFakeServerNewEndpoint(t, statusBody, nil)
+	defer srv.Close()
+	defer installFakeClient(t, srv.URL)()
+
+	out, _, err := runCmd(t, "status", "--server", srv.URL)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if strings.Contains(out, "embedded-dolt") {
+		t.Errorf("banner should NOT print when state=ready; got %q", out)
+	}
+}
+
+// TestStatus_EmbeddedDoltBanner_Failed pins the terminal banner shape.
+func TestStatus_EmbeddedDoltBanner_Failed(t *testing.T) {
+	statusBody := `{
+		"workspace_id": "demo",
+		"mode": "ad-hoc",
+		"repo": null,
+		"beads":  {"ready":0,"in_flight":0,"blocked":0,"open_total":0,"closed_today":0},
+		"agents": null,
+		"embedded_dolt": {
+			"enabled": true, "state": "failed", "port": 12345,
+			"data_dir": "/tmp/dolt", "restart_count": 5,
+			"last_error": "gave up after 5 consecutive failures"
+		}
+	}`
+	srv := newStatusFakeServerNewEndpoint(t, statusBody, nil)
+	defer srv.Close()
+	defer installFakeClient(t, srv.URL)()
+
+	out, _, err := runCmd(t, "status", "--server", srv.URL)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !strings.Contains(out, "embedded-dolt: failed") {
+		t.Errorf("expected 'embedded-dolt: failed' banner; got %q", out)
+	}
+}
+
+// TestStatus_EmbeddedDoltBanner_NotEnabled keeps the no-banner path
+// when the server reports embedded_dolt=null (external Dolt mode).
+func TestStatus_EmbeddedDoltBanner_NotEnabled(t *testing.T) {
+	statusBody := `{
+		"workspace_id": "demo",
+		"mode": "ad-hoc",
+		"repo": null,
+		"beads":  {"ready":0,"in_flight":0,"blocked":0,"open_total":0,"closed_today":0},
+		"agents": null,
+		"embedded_dolt": null
+	}`
+	srv := newStatusFakeServerNewEndpoint(t, statusBody, nil)
+	defer srv.Close()
+	defer installFakeClient(t, srv.URL)()
+
+	out, _, err := runCmd(t, "status", "--server", srv.URL)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if strings.Contains(out, "embedded-dolt") {
+		t.Errorf("banner should be absent when embedded_dolt=null; got %q", out)
 	}
 }
 

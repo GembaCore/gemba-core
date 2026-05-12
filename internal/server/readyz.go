@@ -12,6 +12,22 @@ type DoltReadyChecker interface {
 	Ready() bool
 }
 
+// DoltStatusReporter is the richer status surface
+// /api/v1/workspaces/{wsid}/status type-asserts onto its
+// DoltReadyChecker handle to power the SPA's degraded-state banner
+// (gm-o9t8.1.9). Implemented by *supervisor.Supervisor. The status
+// handler tolerates a checker that does NOT satisfy this interface
+// (test stubs, future no-op modes) — the embedded_dolt field stays
+// null in that case.
+type DoltStatusReporter interface {
+	DoltReadyChecker
+	State() string
+	Port() int
+	DataDir() string
+	RestartCount() int64
+	LastError() error
+}
+
 // AttachDoltSupervisor wires a DoltReadyChecker into the router so the
 // /api/readyz endpoint can reflect embedded-dolt health. Nil detaches.
 //

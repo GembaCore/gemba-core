@@ -108,10 +108,12 @@ type statusPayload struct {
 	OpenTotal   int             `json:"open_total"`
 	ClosedToday int             `json:"closed_today"`
 	CacheAge    time.Duration   `json:"cache_age_ns"`
-	// Repo + Agents are populated only when the primary status
-	// endpoint is available. Nil / zero in the fallback path.
-	Repo   *gembaclient.WorkspaceRepoStatus  `json:"repo,omitempty"`
-	Agents *gembaclient.WorkspaceAgentStatus `json:"agents,omitempty"`
+	// Repo + Agents + EmbeddedDolt are populated only when the
+	// primary status endpoint is available. Nil / zero in the
+	// fallback path.
+	Repo         *gembaclient.WorkspaceRepoStatus  `json:"repo,omitempty"`
+	Agents       *gembaclient.WorkspaceAgentStatus `json:"agents,omitempty"`
+	EmbeddedDolt *gembaclient.EmbeddedDoltStatus   `json:"embedded_dolt,omitempty"`
 }
 
 func runStatus(cmd *cobra.Command, server string, asJSON, modeOnly bool) error {
@@ -181,14 +183,15 @@ func fetchStatus(ctx context.Context, c *gembaclient.Client, srv string) (status
 			return statusPayload{}, err
 		}
 		return statusPayload{
-			Workspace:   resp.WorkspaceID,
-			Mode:        resp.Mode,
-			Ready:       ready,
-			InFlight:    inflight,
-			OpenTotal:   resp.Beads.OpenTotal,
-			ClosedToday: resp.Beads.ClosedToday,
-			Repo:        resp.Repo,
-			Agents:      resp.Agents,
+			Workspace:    resp.WorkspaceID,
+			Mode:         resp.Mode,
+			Ready:        ready,
+			InFlight:     inflight,
+			OpenTotal:    resp.Beads.OpenTotal,
+			ClosedToday:  resp.Beads.ClosedToday,
+			Repo:         resp.Repo,
+			Agents:       resp.Agents,
+			EmbeddedDolt: resp.EmbeddedDolt,
 		}, nil
 	}
 	// Fallback (501 / 404 from primary): list-by-status + compute counts.
@@ -300,6 +303,24 @@ func renderAdHoc(w io.Writer, p statusPayload) {
 		}
 		fmt.Fprintf(w, "repo · %s @ %s%s\n", branch, head, dirty)
 	}
+	// Embedded-dolt degraded-state banner (gm-o9t8.1.9). Only shown
+	// when the supervisor is wired AND not in the steady "ready" state
+	// — otherwise the banner would scream on every dashboard render.
+	if p.EmbeddedDolt != nil && p.EmbeddedDolt.Enabled && p.EmbeddedDolt.State != "ready" {
+		msg := fmt.Sprintf("⚠ embedded-dolt: %s", p.EmbeddedDolt.State)
+		if p.EmbeddedDolt.RestartCount > 0 {
+			noun := "restarts"
+			if p.EmbeddedDolt.RestartCount == 1 {
+				noun = "restart"
+			}
+			msg += fmt.Sprintf(" (%d %s)", p.EmbeddedDolt.RestartCount, noun)
+		}
+		if p.EmbeddedDolt.LastError != "" {
+			msg += " · " + p.EmbeddedDolt.LastError
+		}
+		fmt.Fprintln(w, msg)
+	}
+
 	// Agents banner — only when we have a run on record.
 	if p.Agents != nil && (p.Agents.Active > 0 || p.Agents.LastRunID != "") {
 		switch {

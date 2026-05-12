@@ -2041,6 +2041,51 @@
                           "description": "Best-effort one-line description of the most recent run (today: '<agent_id> on <assignment_id>')."
                         }
                       }
+                    },
+                    "embedded_dolt": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "Embedded-dolt supervisor posture (gm-o9t8.1.9). Null when --embedded-dolt is off (external Dolt via --dolt-url) or the noop adaptor is bound. Populated when the gemba-server runs its own dolt sql-server subprocess.",
+                      "required": [
+                        "enabled",
+                        "state",
+                        "port",
+                        "data_dir",
+                        "restart_count"
+                      ],
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "description": "Always true when the field is present (sentinel for the SPA)."
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "starting",
+                            "ready",
+                            "restarting",
+                            "failed",
+                            "stopped"
+                          ],
+                          "description": "Coarse-grained lifecycle state. The SPA renders a degraded-state banner whenever this is anything other than 'ready'."
+                        },
+                        "port": {
+                          "type": "integer",
+                          "description": "Loopback TCP port the supervised dolt sql-server is bound to."
+                        },
+                        "data_dir": {
+                          "type": "string",
+                          "description": "Filesystem path the supervised dolt sql-server uses for its data."
+                        },
+                        "restart_count": {
+                          "type": "integer",
+                          "description": "Cumulative number of subprocess respawns triggered by failing health probes since the supervisor started. The initial spawn does not count."
+                        },
+                        "last_error": {
+                          "type": "string",
+                          "description": "Most recent probe / supervise error. Absent when the supervisor is healthy."
+                        }
+                      }
                     }
                   }
                 }
