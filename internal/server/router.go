@@ -187,6 +187,11 @@ type Router struct {
 	// empty the endpoint falls back to "<cwd>/.gemba/personas".
 	personasDir string
 
+	// doltReadyState carries the embedded-dolt supervisor handle that
+	// drives /api/readyz (gm-o9t8.1.2.3). Bind via AttachDoltSupervisor;
+	// nil = external-dolt or noop mode (readyz omits the dolt check).
+	doltReadyState
+
 	mux http.Handler
 }
 
@@ -280,6 +285,11 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		}
 
 		api.Get("/health", r.health)
+		// gm-o9t8.1.2.3: readiness probe that reflects embedded
+		// dependency state. /health stays a pure liveness probe;
+		// /readyz returns 503 when the embedded dolt sql-server
+		// is unreachable so orchestrators can drain traffic.
+		api.Get("/readyz", r.readyz)
 		api.Get("/version", r.version)
 		api.Get("/config", r.config)
 		api.Get("/beads-history", r.beadsHistory)

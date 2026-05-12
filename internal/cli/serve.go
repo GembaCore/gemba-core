@@ -63,6 +63,7 @@ By default binds to 127.0.0.1:7666 with no authentication. To expose on the
 network, pass --listen with a non-loopback address AND --auth to enable
 authentication. Binding a non-loopback interface without --auth is an error.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg.EmbeddedDoltSet = cmd.Flags().Changed("embedded-dolt")
 			if err := normalizeProjectDirFlags(&cfg, cmd.Flags().Changed("project-dir"), cmd.Flags().Changed("beads-dir")); err != nil {
 				return err
 			}
@@ -128,6 +129,19 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"mysql://user[:pass]@host:port/dbname of a Dolt server to read/write "+
 			"beads directly (required unless --project-dir is "+
 			"set; mutually exclusive with it)")
+
+	// gm-o9t8.1.2.3: embedded dolt sql-server supervisor. Default is
+	// "true unless --dolt-url is set" (resolved in applyEmbeddedDoltDefault).
+	// When true, `gemba serve` spawns dolt sql-server as a child process
+	// bound to a free loopback port, supervises it, and tears it down on
+	// shutdown. The bd / Dolt WorkPlane adaptors then point at it via the
+	// supervisor's DSN — no separate `dolt sql-server` invocation required.
+	cmd.Flags().BoolVar(&cfg.EmbeddedDolt, "embedded-dolt", true,
+		"spawn and supervise an embedded dolt sql-server child process "+
+			"(default: true when --dolt-url is unset; false otherwise)")
+	cmd.Flags().StringVar(&cfg.DoltDataDir, "dolt-data-dir", "",
+		"on-disk directory the embedded dolt sql-server uses as its data dir "+
+			"(default: <cwd>/data/dolt; created with 0700 on first launch)")
 
 	cmd.Flags().BoolVar(&cfg.Noop, "noop", false,
 		"bind the in-memory noop reference WorkPlane + OrchestrationPlane "+
@@ -201,6 +215,14 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// /api/v1/metrics/series proxy queries. CLI > PROM_URL env >
 	// [metrics].prom_url > "" (unconfigured; handler returns 503).
 	if err := applyPromURLDefault(&cfg); err != nil {
+		return err
+	}
+
+	// gm-o9t8.1.2.3: decide embedded-dolt mode before the
+	// WorkPlane-flag validation runs. The supervisor handle is
+	// constructed later (after the router exists) so /api/readyz
+	// can have a target to inspect.
+	if err := applyEmbeddedDoltDefault(&cfg); err != nil {
 		return err
 	}
 
@@ -540,6 +562,29 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		onboarder.NewSkillTurner(onboarder.DefaultResolver(cfg.ConfigPath)),
 		server.NewRatifier(server.RatifierConfig{}),
 	)
+
+	// gm-o9t8.1.2.3: launch the embedded dolt sql-server supervisor
+	// before the HTTP listener opens, so the very first request that
+	// hits /api/readyz gets a meaningful answer. A failure here is
+	// terminal — we return rather than start serving a degraded
+	// server. The deferred Stop runs AFTER srv.Shutdown returns so
+	// in-flight requests can drain against a live dolt connection
+	// before the child is signalled.
+	doltSup, doltErr := startEmbeddedDolt(ctx, &cfg, handler)
+	if doltErr != nil {
+		return doltErr
+	}
+	defer func() {
+		if doltSup == nil {
+			return
+		}
+		stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := doltSup.Stop(stopCtx); err != nil {
+			slog.Warn("embedded dolt: supervisor stop returned error",
+				"err", err)
+		}
+	}()
 
 	srv := &http.Server{
 		Addr:              addr,
