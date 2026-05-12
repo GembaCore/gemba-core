@@ -20,6 +20,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 	"github.com/GembaCore/gemba-core/internal/core/phase"
+	"github.com/GembaCore/gemba-core/internal/egress"
 	"github.com/GembaCore/gemba-core/internal/events"
 	"github.com/GembaCore/gemba-core/internal/persona"
 	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
@@ -211,6 +212,13 @@ type Router struct {
 	// serve attaches a real store (SQLStore or MemStore) via
 	// AttachTenantStore after the Dolt pool is up.
 	tenantStore tenant.Store
+
+	// egressStore backs /api/v1/workspaces/{wsid}/egress-rules* (gm-o9t8.3.6.1).
+	// nil → every egress endpoint returns 503 adaptor_not_configured.
+	// Runtime enforcement (3.6.2) reads via Effective(); the storage
+	// layer here is the same code path operators write through.
+	egressStore   egress.Store
+	egressAuditor EgressAuditor
 
 	mux http.Handler
 }
@@ -770,6 +778,17 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 				Post("/v1/workspaces/{wsid}/secrets/{key}", r.putWorkspaceSecret)
 			ws.With(requireConfirmNonce(r.nonceCache)).
 				Delete("/v1/workspaces/{wsid}/secrets/{key}", r.deleteWorkspaceSecret)
+
+			// gm-o9t8.3.6.1: per-workspace egress policy storage.
+			// Effective() merges workspace rules with the hardcoded
+			// baseline; the runtime enforcer (3.6.2) consumes the
+			// same view. Defaults can never be deleted.
+			ws.Get("/v1/workspaces/{wsid}/egress-rules", r.listEgressRules)
+			ws.Get("/v1/workspaces/{wsid}/egress-rules/effective", r.effectiveEgressRules)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/egress-rules", r.createEgressRule)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Delete("/v1/workspaces/{wsid}/egress-rules/{id}", r.deleteEgressRule)
 
 			// Convenience verb — gemba no-args (gm-o9t8.1.4.4:
 			// real handler, replaced the 501 stub):
