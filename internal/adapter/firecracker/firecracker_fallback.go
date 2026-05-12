@@ -33,6 +33,21 @@ import (
 //     the VM.stopped flag and VM.once.
 type fallbackSupervisor struct {
 	log *slog.Logger
+	mu  sync.Mutex
+
+	// egress is plumbed for source-compatibility with the Linux
+	// supervisor: AttachEgress works here too, but Start only logs
+	// the plan rather than installing nftables rules (see
+	// egress_other.go for rationale).
+	egress EgressProvider
+}
+
+// AttachEgress is the fallback's pass-through. Stored but used only
+// to log the rule plan during Start; nftables is unavailable here.
+func (s *fallbackSupervisor) AttachEgress(p EgressProvider) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.egress = p
 }
 
 // fallbackState is what we store in VM.state on the non-Linux path.
@@ -127,6 +142,23 @@ func (s *fallbackSupervisor) Start(ctx context.Context, spec Spec) (*VM, error) 
 		vm.waitCh <- err
 		close(vm.waitCh)
 	}()
+
+	// Fallback egress: source-compatible with the Linux path. We
+	// fetch and translate the rules so dispatch + CLI tooling can
+	// inspect the plan, but the actual nftables install is a no-op
+	// on non-Linux. See egress_other.go for why.
+	s.mu.Lock()
+	provider := s.egress
+	s.mu.Unlock()
+	if provider != nil {
+		rules, eerr := provider.Effective(ctx, spec.WorkspaceID)
+		if eerr == nil {
+			_, _ = applyEgressRules(ctx, s.log, vm.ID, "" /* no tap on fallback */, rules)
+		} else {
+			s.log.Warn("firecracker fallback: egress lookup failed; proceeding without plan",
+				"vm_id", vm.ID, "err", eerr)
+		}
+	}
 
 	s.log.Info("firecracker fallback VM started",
 		"vm_id", vm.ID,
