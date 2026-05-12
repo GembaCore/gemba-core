@@ -209,6 +209,13 @@ type ServeConfig struct {
 	// data-dir convention (see internal/server/workspacelayout).
 	WorkspacesRoot string
 
+	// VaultPath is the on-disk file backing the secrets vault
+	// (gm-o9t8.3.7). Empty defaults at startup to
+	// "<dirname(DoltDataDir)>/vault.db" — the same data-dir
+	// convention as WorkspacesRoot. The 32-byte KEK is read from
+	// the GEMBA_VAULT_KEY env var; absent → ephemeral key + WARN.
+	VaultPath string
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —

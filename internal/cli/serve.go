@@ -154,6 +154,14 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 			"served by /api/v1/workspaces/{wsid}/diff "+
 			"(default: <dirname(--dolt-data-dir)>/workspaces)")
 
+	// gm-o9t8.3.7: on-disk secrets vault. AES-256-GCM with a per-
+	// workspace DEK wrapped by the KEK read from GEMBA_VAULT_KEY.
+	// Default path is <dirname(--dolt-data-dir)>/vault.db so the
+	// data layout mirrors WorkspacesRoot.
+	cmd.Flags().StringVar(&cfg.VaultPath, "vault-path", "",
+		"path to the encrypted secrets vault file "+
+			"(default: <dirname(--dolt-data-dir)>/vault.db)")
+
 	cmd.Flags().BoolVar(&cfg.Noop, "noop", false,
 		"bind the in-memory noop reference WorkPlane + OrchestrationPlane "+
 			"(dev/demo; mutually exclusive with --project-dir / --dolt-url; "+
@@ -632,6 +640,17 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 	// in applyWorkspacesRootDefault.
 	if root := resolveWorkspacesRoot(&cfg); root != "" {
 		handler.AttachWorkspacesRoot(root)
+	}
+
+	// gm-o9t8.3.7: build the workspace secrets vault and attach it
+	// to the router. KEK resolution: GEMBA_VAULT_KEY env > generated
+	// ephemeral key (WARN). Path defaults to vault.db alongside the
+	// dolt data dir.
+	if v, vErr := buildVault(&cfg); vErr != nil {
+		slog.Warn("vault: failed to build; secrets endpoints will return 503",
+			"err", vErr)
+	} else if v != nil {
+		handler.AttachVault(v)
 	}
 
 	srv := &http.Server{

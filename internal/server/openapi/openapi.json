@@ -1919,6 +1919,126 @@
         }
       }
     },
+    "/api/v1/workspaces/{wsid}/secrets": {
+      "get": {
+        "tags": [
+          "vault"
+        ],
+        "summary": "List the keys of secrets stored for a workspace.",
+        "description": "Returns the lexicographically sorted list of keys stored under the workspace. NO endpoint exposes plaintext values \u2014 the only consumer of decrypted values is the in-process secret injector for spawned agent sessions.",
+        "operationId": "listWorkspaceSecrets",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Key list (no values).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretKeyList"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{wsid}/secrets/{key}": {
+      "post": {
+        "tags": [
+          "vault"
+        ],
+        "summary": "Store or replace a secret value for a workspace.",
+        "description": "Persists the value under (wsid, key) using envelope encryption (AES-256-GCM, per-workspace DEK wrapped by the server-wide KEK). Idempotency is gated by X-GEMBA-Confirm.",
+        "operationId": "putWorkspaceSecret",
+        "parameters": [
+          {
+            "name": "X-GEMBA-Confirm",
+            "in": "header",
+            "required": true,
+            "description": "Idempotency nonce. Replays of the same nonce return the cached response.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Secret key (typically an environment variable name).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Secret stored."
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vault"
+        ],
+        "summary": "Delete a workspace secret (idempotent).",
+        "description": "Removes (wsid, key) from the vault. Idempotent \u2014 deleting an absent key still returns 204.",
+        "operationId": "deleteWorkspaceSecret",
+        "parameters": [
+          {
+            "name": "X-GEMBA-Confirm",
+            "in": "header",
+            "required": true,
+            "description": "Idempotency nonce. Replays of the same nonce return the cached response.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "description": "Secret key.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Secret removed (or already absent)."
+          },
+          "503": {
+            "$ref": "#/components/responses/AdaptorUnavailable"
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{wsid}/status": {
       "get": {
         "tags": [
@@ -2355,6 +2475,35 @@
       }
     },
     "schemas": {
+      "SecretKeyList": {
+        "type": "object",
+        "description": "Key listing for a workspace's vault. Never includes plaintext values.",
+        "required": [
+          "keys"
+        ],
+        "properties": {
+          "keys": {
+            "type": "array",
+            "description": "Lexicographically sorted secret keys for the workspace.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SecretPutRequest": {
+        "type": "object",
+        "description": "Body for POST /api/v1/workspaces/{wsid}/secrets/{key}. The value is stored encrypted at rest under a per-workspace DEK.",
+        "required": [
+          "value"
+        ],
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "Plaintext secret value. The server never persists this verbatim; it is sealed with AES-256-GCM under the workspace DEK."
+          }
+        }
+      },
       "Error": {
         "type": "object",
         "description": "Shared error envelope (gm-faz). `error` is a stable token the SPA branches on; `message` is human-readable and may be surfaced verbatim.",

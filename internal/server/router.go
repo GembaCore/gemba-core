@@ -25,6 +25,7 @@ import (
 	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
 	"github.com/GembaCore/gemba-core/internal/transport/api"
+	"github.com/GembaCore/gemba-core/internal/vault"
 	"github.com/GembaCore/gemba-core/internal/walk"
 	"github.com/GembaCore/gemba-core/internal/workflow"
 )
@@ -191,6 +192,12 @@ type Router struct {
 	// drives /api/readyz (gm-o9t8.1.2.3). Bind via AttachDoltSupervisor;
 	// nil = external-dolt or noop mode (readyz omits the dolt check).
 	doltReadyState
+
+	// vault is the secrets store backing /api/v1/workspaces/{wsid}/secrets*
+	// (gm-o9t8.3.7). Bind via AttachVault; nil → every secrets endpoint
+	// returns 503 adaptor_not_configured. No endpoint ever exposes
+	// plaintext values — only key listing and write/delete.
+	vault vault.Vault
 
 	// workspacesRoot is the on-disk parent directory holding cloned
 	// per-workspace repos at <root>/<wsid>/repo/ (gm-o9t8.1.4.3 +
@@ -732,6 +739,15 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 
 		// Constitution / spec-lint reads (govern):
 		api.Get("/v1/workspaces/{wsid}/labels", r.listLabelsStub)
+
+		// gm-o9t8.3.7: workspace secrets vault. Three routes, no plaintext
+		// read endpoint by design. Writes carry the X-GEMBA-Confirm nonce
+		// gate like every other mutation.
+		api.Get("/v1/workspaces/{wsid}/secrets", r.listWorkspaceSecrets)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/workspaces/{wsid}/secrets/{key}", r.putWorkspaceSecret)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/v1/workspaces/{wsid}/secrets/{key}", r.deleteWorkspaceSecret)
 
 		// Convenience verb — gemba no-args (gm-o9t8.1.4.4: real handler,
 		// replaced the 501 stub):
