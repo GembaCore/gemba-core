@@ -2095,6 +2095,44 @@
         }
       }
     },
+    "/api/v1/audit": {
+      "get": {
+        "tags": ["audit"],
+        "summary": "List audit log events.",
+        "description": "Returns the filtered list of append-only audit events (gm-o9t8.3.8). Every record is HMAC-SHA256 signed and chain-linked via prev_id; verification runs server-side on each read so a tampered file surfaces as a 500. For v1, any valid bearer is treated as admin; refinement to per-tenant scoping lands later.",
+        "operationId": "listAudit",
+        "parameters": [
+          {"name": "since", "in": "query", "required": false, "description": "Inclusive lower bound (RFC3339 or YYYY-MM-DD).", "schema": {"type": "string"}},
+          {"name": "until", "in": "query", "required": false, "description": "Inclusive upper bound (RFC3339 or YYYY-MM-DD).", "schema": {"type": "string"}},
+          {"name": "type", "in": "query", "required": false, "description": "Exact event type (e.g. bead.create).", "schema": {"type": "string"}},
+          {"name": "tenant", "in": "query", "required": false, "description": "Exact tenant id; defaults to all tenants visible to the caller.", "schema": {"type": "string"}},
+          {"name": "wsid", "in": "query", "required": false, "description": "Workspace filter.", "schema": {"type": "string"}},
+          {"name": "limit", "in": "query", "required": false, "description": "Cap on returned events (default 1000).", "schema": {"type": "integer"}}
+        ],
+        "responses": {
+          "200": {"description": "Envelope with the filtered events and the total count.", "content": {"application/json": {"schema": {"type": "object", "properties": {"events": {"type": "array", "items": {"type": "object"}}, "total": {"type": "integer"}}}}}},
+          "400": {"$ref": "#/components/responses/BadRequest"},
+          "401": {"description": "Authentication required."},
+          "503": {"description": "Auditor not configured on this server."}
+        }
+      }
+    },
+    "/api/v1/audit/tail": {
+      "get": {
+        "tags": ["audit"],
+        "summary": "Live SSE stream of newly appended audit events.",
+        "description": "Server-Sent Events stream: every Append after subscription is delivered as a data frame with event name `audit`. Filtering by tenant is honored when provided. Closes when the client disconnects (gm-o9t8.3.8).",
+        "operationId": "tailAudit",
+        "parameters": [
+          {"name": "tenant", "in": "query", "required": false, "description": "Restrict the stream to a single tenant id.", "schema": {"type": "string"}}
+        ],
+        "responses": {
+          "200": {"description": "SSE stream of audit events.", "content": {"text/event-stream": {"schema": {"type": "string"}}}},
+          "401": {"description": "Authentication required."},
+          "503": {"description": "Auditor not configured on this server."}
+        }
+      }
+    },
     "/api/v1/workspaces/{wsid}/diff": {
       "get": {
         "tags": [

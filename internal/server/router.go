@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/GembaCore/gemba-core/internal/adapter/registry"
+	"github.com/GembaCore/gemba-core/internal/audit"
 	"github.com/GembaCore/gemba-core/internal/auth"
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
@@ -197,6 +198,13 @@ type Router struct {
 	// gm-o9t8.1.6.2 diff streaming). Bind via AttachWorkspacesRoot;
 	// empty → /api/v1/workspaces/{wsid}/diff returns 503.
 	workspacesRoot string
+
+	// auditor backs /api/v1/audit + /api/v1/audit/tail (gm-o9t8.3.8,
+	// Workstream B). Optional — when nil both endpoints return 503
+	// adaptor_not_configured. Bind via Router.AttachAuditor. Producer
+	// handlers (createWorkItem and the upcoming vault + microVM
+	// wiring) read this field to know whether to emit events.
+	auditor audit.Auditor
 
 	mux http.Handler
 }
@@ -741,6 +749,15 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// workspace repo. GET, so no nonce gate; auth applies via
 		// the shared apiAuth middleware on the /api block.
 		api.Get("/v1/workspaces/{wsid}/diff", r.workspaceDiffHandler)
+
+		// gm-o9t8.3.8 (Workstream B): append-only audit log read
+		// surface. /audit returns the filtered list; /audit/tail
+		// is an SSE live stream. Both 503 until AttachAuditor is
+		// called. The /tail route is registered before /audit so
+		// it isn't shadowed by a wildcard (none currently, but the
+		// ordering is the safe default).
+		api.Get("/v1/audit/tail", r.tailAudit)
+		api.Get("/v1/audit", r.listAudit)
 	})
 
 	mux.Route("/events", func(ev chi.Router) {

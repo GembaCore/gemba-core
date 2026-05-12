@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/GembaCore/gemba-core/core"
+	"github.com/GembaCore/gemba-core/internal/audit"
 	"github.com/GembaCore/gemba-core/internal/server/httperr"
 	"github.com/GembaCore/gemba-core/internal/transport/api"
 )
@@ -93,7 +95,38 @@ func (r *Router) createWorkItem(w http.ResponseWriter, req *http.Request) {
 	if refreshed, err := wp.GetWorkItem(req.Context(), out.ID); err == nil {
 		out = refreshed
 	}
+	// gm-o9t8.3.8: emit a bead.create audit event. Best-effort —
+	// a failure here logs but never trips the response, because
+	// the work item already committed to the WorkPlane and the
+	// SPA must see the 201.
+	r.emitBeadCreate(req.Context(), out)
 	writeJSON(w, http.StatusCreated, out)
+}
+
+// emitBeadCreate writes a bead.create event to the bound Auditor.
+// No-op when no Auditor is attached (the v1 default for tests that
+// don't exercise the audit surface).
+func (r *Router) emitBeadCreate(ctx context.Context, wi core.WorkItem) {
+	if r.auditor == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"id":             wi.ID,
+		"kind":           wi.Kind,
+		"title":          wi.Title,
+		"status":         wi.Status,
+		"state_category": wi.StateCategory,
+	})
+	if err := r.auditor.Append(ctx, audit.Event{
+		Type:     audit.EventBeadCreate,
+		Actor:    "operator",
+		Action:   "create",
+		Outcome:  audit.OutcomeOK,
+		Resource: "workitem:" + string(wi.ID),
+		Payload:  payload,
+	}); err != nil {
+		slog.Warn("audit: bead.create append failed", "err", err, "id", wi.ID)
+	}
 }
 
 // patchWorkItem is PATCH /api/work-items/{id}. Body MUST be a

@@ -228,6 +228,13 @@ type ServeConfig struct {
 	// /api/pools endpoint surfaces both numbers. See
 	// docs/deployment/pool-sizing.md for the full operator guide.
 	PoolConfigPath string
+
+	// AuditDir is the on-disk directory the append-only audit log
+	// writes daily JSONL files to (gm-o9t8.3.8). Empty defaults to
+	// "<dirname(DoltDataDir)>/audit" — the same convention as
+	// WorkspacesRoot. The signing key is read from GEMBA_AUDIT_KEY
+	// (32-byte hex). Missing key → ephemeral random key + WARN log.
+	AuditDir string
 }
 
 // NormalizeListen splits c.Listen if it is in host:port form (e.g.

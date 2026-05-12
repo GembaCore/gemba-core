@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,6 +35,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/adapter/native/agents"
 	"github.com/GembaCore/gemba-core/internal/adapter/native/backend"
 	"github.com/GembaCore/gemba-core/internal/adapter/noop"
+	"github.com/GembaCore/gemba-core/internal/audit"
 	"github.com/GembaCore/gemba-core/internal/auth"
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
@@ -198,6 +200,13 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 	cmd.Flags().StringVar(&cfg.PoolConfigPath, "pool-config", "",
 		"path to pool.toml declaring [pool.<rig>.<persona>] blocks "+
 			"(default: probe .gemba/pool.toml; missing → no pools)")
+
+	// gm-o9t8.3.8: append-only audit log directory. Empty defaults to
+	// "<dirname(--dolt-data-dir)>/audit". GEMBA_AUDIT_KEY (32-byte
+	// hex) signs every event; absent → ephemeral key + WARN.
+	cmd.Flags().StringVar(&cfg.AuditDir, "audit-dir", "",
+		"directory for the append-only audit log "+
+			"(default: <dirname(--dolt-data-dir)>/audit)")
 
 	return cmd
 }
@@ -421,6 +430,16 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 				"non-API routes will return a 503 build hint")
 	}
 	handler := server.NewRouter(cfg, spa, host)
+	// gm-o9t8.3.8: construct + attach the append-only audit log. The
+	// directory defaults to a sibling of the dolt data dir; the
+	// signing key is read from GEMBA_AUDIT_KEY (hex). A missing key
+	// falls back to an ephemeral random key + WARN — events still
+	// chain inside one process, just not across restart.
+	if a, err := newAuditor(cfg); err != nil {
+		slog.Warn("audit: disabled — failed to construct auditor", "err", err)
+	} else if a != nil {
+		handler.AttachAuditor(a)
+	}
 	// gm-s47n.12: surface the resolved pool config to the router so
 	// /api/pools can return declared vs effective sizes.
 	handler.AttachPools(resolvedPools)
@@ -1513,4 +1532,39 @@ func loadPersonaRegistry(cfg config.ServeConfig) *corepersona.Registry {
 		return corepersona.NewRegistry()
 	}
 	return reg
+}
+
+// newAuditor constructs the append-only audit log (gm-o9t8.3.8). The
+// directory defaults to "<dirname(DoltDataDir)>/audit" — the same
+// layout convention as WorkspacesRoot. Returns (nil, nil) when both
+// flag and the dolt-data-dir fallback are empty (no audit surface).
+//
+// The signing key is read from GEMBA_AUDIT_KEY as a 32-byte hex value.
+// A missing or malformed key falls back to an ephemeral random key —
+// audit.New logs the WARN itself so events still chain inside the
+// process lifetime.
+func newAuditor(cfg config.ServeConfig) (audit.Auditor, error) {
+	dir := strings.TrimSpace(cfg.AuditDir)
+	if dir == "" {
+		if cfg.DoltDataDir != "" {
+			dir = filepath.Join(filepath.Dir(cfg.DoltDataDir), "audit")
+		}
+	}
+	if dir == "" {
+		return nil, nil
+	}
+	var key []byte
+	if v := strings.TrimSpace(os.Getenv("GEMBA_AUDIT_KEY")); v != "" {
+		k, err := hex.DecodeString(v)
+		if err != nil {
+			slog.Warn("audit: GEMBA_AUDIT_KEY is not valid hex; falling back to ephemeral key",
+				"err", err)
+		} else if len(k) != 32 {
+			slog.Warn("audit: GEMBA_AUDIT_KEY must decode to 32 bytes; falling back to ephemeral key",
+				"got_bytes", len(k))
+		} else {
+			key = k
+		}
+	}
+	return audit.New(audit.Options{Dir: dir, Key: key})
 }
