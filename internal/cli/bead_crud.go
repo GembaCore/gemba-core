@@ -74,6 +74,15 @@ func mapExit(err error) (int, string) {
 	case errors.Is(err, gembaclient.ErrNotFound):
 		return 5, "not found: " + err.Error()
 	}
+	// Honor a caller-attached exit code (e.g. the raw-HTTP path used
+	// by `gemba diff` builds *diffStatusErr-like errors that carry a
+	// pre-mapped code). This lets non-typed-client surfaces opt into
+	// the same exit-code contract without re-implementing the
+	// mapping table.
+	var coded interface{ ExitCode() int }
+	if errors.As(err, &coded) {
+		return coded.ExitCode(), err.Error()
+	}
 	return 1, err.Error()
 }
 

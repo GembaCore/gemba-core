@@ -1949,6 +1949,73 @@
         }
       }
     },
+    "/api/v1/workspaces/{wsid}/diff": {
+      "get": {
+        "tags": [
+          "convenience"
+        ],
+        "summary": "Stream `git diff` from the server-side workspace repo.",
+        "description": "Spawns `git diff` (or `git diff --cached` when `staged=true`) in the workspace repo at `<workspaces_root>/<wsid>/repo/` and streams stdout straight to the response body as `text/x-patch`. Auth-gated; GET only, so no `X-GEMBA-Confirm` nonce. Path filters are validated against an allow-list to reject `..`, absolute paths, and shell metacharacters. Returns 503 when the server has no workspaces root configured, 404 when the workspace repo is missing, and 400 for unsafe path filters.",
+        "operationId": "workspaceDiff",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkspaceID"
+          },
+          {
+            "name": "staged",
+            "in": "query",
+            "required": false,
+            "description": "When true, run `git diff --cached` to show staged changes only.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "description": "Optional repeatable path filter (equivalent to `git diff -- <paths>`). Only safe relative paths inside the repo are accepted.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Streamed `git diff` output. Empty body when there are no changes.",
+            "content": {
+              "text/x-patch": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "Authentication required."
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "503": {
+            "description": "Workspaces root not configured on this server.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/whoami": {
       "get": {
         "tags": [
