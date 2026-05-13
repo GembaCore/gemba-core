@@ -4,6 +4,7 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -259,6 +260,15 @@ type Router struct {
 	// admin auth (loopback-only deployments) — the routes still require
 	// the shared apiAuth bearer.
 	adminEmails []string
+
+	// adminSessionLister surfaces the operator-console session
+	// inventory. Nil ⇒ GET /api/v1/admin/sessions answers an empty list.
+	adminSessionLister AdminSessionLister
+
+	// adminAuditPubKey + adminAuditRecords back POST /api/v1/admin/audit/verify.
+	// Nil ⇒ 503 adaptor_not_configured.
+	adminAuditPubKey  ed25519.PublicKey
+	adminAuditRecords func(ctx context.Context) ([]audit.Record, error)
 
 	mux http.Handler
 }
@@ -874,6 +884,15 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Delete("/v1/auth/tokens/{token_id}", r.revokeAuthToken)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Post("/v1/auth/tokens/{token_id}/rotate", r.rotateAuthToken)
+
+		// gm-o9t8.4.3: operator console endpoints. Behind the shared
+		// apiAuth bearer + a dedicated admin email-allow-list gate.
+		api.Route("/v1/admin", func(adm chi.Router) {
+			adm.Use(r.requireAdmin)
+			adm.Get("/tenants", r.adminListTenants)
+			adm.Get("/sessions", r.adminListSessions)
+			adm.Post("/audit/verify", r.adminAuditVerify)
+		})
 	})
 
 	// gm-o9t8.3.5.2: device-flow exchange endpoint. Mounted OUTSIDE
