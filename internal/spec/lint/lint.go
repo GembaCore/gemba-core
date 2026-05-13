@@ -1,6 +1,11 @@
-// Package lint implements `gemba constitution lint` rules. The current rule
-// set scans for stray tasks.md / todo.md files when the constitution sets
-// spec_strict_no_tasks_md.
+// Package lint implements constitution-driven lint rules.
+//
+// Two entry points:
+//
+//   - Scan(projectRoot, c) — project-wide tree scan (e.g. forbidden tasks.md
+//     files). Used by `gemba constitution lint`.
+//   - Lint(specPath, constitutionPath) — per-spec validation (frontmatter,
+//     Story sections, AC counts). Used by `gemba spec lint`.
 package lint
 
 import (
@@ -11,11 +16,15 @@ import (
 	"github.com/GembaCore/gemba-core/internal/spec/constitution"
 )
 
-// Finding describes one lint violation.
+// Finding describes one lint violation. Path/Anchor identify the offending
+// location: Path is a project-relative filesystem path (Scan), Anchor is a
+// "file:line" or section anchor inside a spec (Lint).
 type Finding struct {
-	Path    string
-	Rule    string
-	Message string
+	Path     string // project-relative path (project scans)
+	Anchor   string // file:line or section anchor (spec lint)
+	Rule     string
+	Severity string // "error" | "warn"; empty for legacy Scan findings
+	Message  string
 }
 
 // Scan walks projectRoot and returns findings per the typed constitution.
