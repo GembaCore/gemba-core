@@ -251,3 +251,7 @@ The remote design doc (`docs/superpowers/specs/2026-05-11-gemba-remote-design.md
 is the canonical CLI surface reference; this whitepaper is the canonical
 reference for the *approach*; the constitution and per-spec documents are
 downstream of both.
+
+## Decisions
+
+- ADR 0001 — Spec Kit integration: hook-layer only (2026-05-13). See [docs/design/adr/0001-spec-kit-integration-strategy.md](adr/0001-spec-kit-integration-strategy.md).
