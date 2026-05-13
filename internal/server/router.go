@@ -251,6 +251,10 @@ type Router struct {
 	// cmd/gemba serve attaches a real limiter via AttachQuotaLimiter.
 	quotaLimiter *quota.Limiter
 
+	// egressTemplates backs egress-template lookup for new workspaces
+	// (gm-o9t8.4.3). Nil → fall back to package defaults.
+	egressTemplates EgressTemplateProvider
+
 	mux http.Handler
 }
 
