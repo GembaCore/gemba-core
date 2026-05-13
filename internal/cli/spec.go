@@ -42,6 +42,7 @@ func newSpecCmd() *cobra.Command {
 		newSpecDiffCmd(),
 		newSpecApplyCmd(),
 		newSpecPromoteCmd(),
+		newSpecCloseCheckCmd(),
 	)
 	return cmd
 }
