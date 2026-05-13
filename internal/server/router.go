@@ -255,6 +255,10 @@ type Router struct {
 	// (gm-o9t8.4.3). Nil → fall back to package defaults.
 	egressTemplates EgressTemplateProvider
 
+	// workspaceLifecycle backs the /api/v1/tenants/{tid}/workspaces*
+	// lifecycle surface (gm-o9t8.4.2). Nil → endpoints return 503.
+	workspaceLifecycle *workspaceLifecycleHandler
+
 	mux http.Handler
 }
 
