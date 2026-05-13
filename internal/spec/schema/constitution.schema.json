@@ -14,6 +14,24 @@
     "spec_strict_no_tasks_md": {
       "type": "boolean",
       "description": "When true, the PreToolUse hook rejects writes to tasks.md and gemba constitution lint reports their presence as an error. Inherits spec_strict by default."
+    },
+    "require_decision_parent": {
+      "type": "boolean",
+      "description": "When true, spec frontmatter MUST include a decision_parent key. Inherits spec_strict by default."
+    },
+    "forbid_orphan_beads": {
+      "type": "boolean",
+      "description": "When true, every story bead under the spec's decision_parent must have a spec field referencing the spec. Inherits spec_strict by default."
+    },
+    "min_ac_count": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "Every Story section must have at least N items in its AC: list. 0 disables the rule."
+    },
+    "require_priority": {
+      "type": "boolean",
+      "description": "When true, every Story section must declare Priority:. Inherits spec_strict by default."
     }
   },
   "additionalProperties": true
