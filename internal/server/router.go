@@ -27,6 +27,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/egress"
 	"github.com/GembaCore/gemba-core/internal/events"
 	"github.com/GembaCore/gemba-core/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/quota"
 	"github.com/GembaCore/gemba-core/internal/server/audit"
 	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
@@ -247,16 +248,30 @@ type Router struct {
 	// Future work consolidates the two paths.
 	auditEmit func(ctx context.Context, event string, payload any) error
 
-	// usageAggregator backs GET /api/v1/tenants/{tid}/usage (gm-o9t8.4.2).
+	// quotaLimiter backs the per-tenant token-bucket middleware
+	// (gm-o9t8.4.1, wsB slice a). Nil disables quota enforcement;
+	// cmd/gemba serve attaches a real limiter via AttachQuotaLimiter.
+	quotaLimiter *quota.Limiter
+
+	// egressTemplates backs egress-template lookup for new workspaces
+	// (gm-o9t8.4.3, wsB slice a). Nil → fall back to package defaults.
+	egressTemplates EgressTemplateProvider
+
+	// workspaceLifecycle backs the /api/v1/tenants/{tid}/workspaces*
+	// lifecycle surface (gm-o9t8.4.2, wsB slice a). Nil → endpoints
+	// return 503.
+	workspaceLifecycle *workspaceLifecycleHandler
+
+	// usageAggregator backs GET /api/v1/tenants/{tid}/usage (wsB slice b).
 	// Nil ⇒ the endpoint returns 503 adaptor_not_configured.
 	usageAggregator *billing.Aggregator
 
-	// orgGates is the per-tenant GitHub OrgGate registry (gm-o9t8.4.1).
+	// orgGates is the per-tenant GitHub OrgGate registry (wsB slice b).
 	// Nil ⇒ every tenant is open (no policy applied).
 	orgGates *oauth.OrgGateStore
 
 	// adminEmails is the comma-separated allow-list for admin-only
-	// routes mounted at /api/v1/admin/* (gm-o9t8.4.3). Empty disables
+	// routes mounted at /api/v1/admin/* (wsB slice b). Empty disables
 	// admin auth (loopback-only deployments) — the routes still require
 	// the shared apiAuth bearer.
 	adminEmails []string

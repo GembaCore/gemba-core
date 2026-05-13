@@ -47,6 +47,12 @@ const (
 	// hooks. Other bead mutations continue to use KindBeadMutation
 	// until the migration to per-action kinds lands.
 	EventBeadCreate Kind = "bead.create"
+
+	// gm-o9t8.4.2: workspace archive lifecycle event. Soft-delete and
+	// restore reuse EventTenantUpdate so audit consumers can keep the
+	// existing tenant-scoped filter; archive gets its own Kind because
+	// it is destructive (vault keys shredded, on-disk repo removed).
+	EventWorkspaceArchived Kind = "workspace.archived"
 )
 
 // Record is one append-only audit entry. The JSON form is what's written
