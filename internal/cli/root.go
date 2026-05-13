@@ -88,6 +88,7 @@ See https://github.com/GembaCore/gemba-core for documentation.`,
 		newDiffCmd(),
 		newSpecCmd(),
 		newConstitutionCmd(),
+		newAdminCmd(),
 	)
 
 	return root
