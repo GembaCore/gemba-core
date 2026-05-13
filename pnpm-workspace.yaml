@@ -3,3 +3,9 @@ packages:
   - 'testing/e2e'
   - 'testing/acceptance/temperature-spa'
   - 'docs-site'
+allowBuilds:
+  esbuild: true
+  sharp: true
+onlyBuiltDependencies:
+  - esbuild
+  - sharp

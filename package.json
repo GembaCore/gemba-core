@@ -4,5 +4,8 @@
   "description": "Gemba workspace root — see web/ for the SPA and testing/e2e/ for the Playwright library.",
   "scripts": {
     "test:e2e": "pnpm --filter gemba-e2e test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "sharp"]
   }
 }
