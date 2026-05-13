@@ -7,27 +7,62 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
 // Constitution captures the typed knobs that drive enforcement.
 //
-// Fields are pointers so we can distinguish "unset" from "false" for
+// Bool fields are pointers so we can distinguish "unset" from "false" for
 // inheritance defaults (e.g. SpecStrictNoTasksMD inherits SpecStrict).
 type Constitution struct {
 	ASDDMode            *bool
 	SpecStrict          *bool
 	SpecStrictNoTasksMD *bool
+
+	// Spec-quality knobs (gm-v0sp.7 expansion). Bool knobs inherit SpecStrict
+	// when unset; MinACCount is explicit-only.
+	RequireDecisionParent *bool
+	ForbidOrphanBeads     *bool
+	RequirePriority       *bool
+	MinACCount            *int
 }
 
 // SpecStrictNoTasksMDEffective returns the effective value with inheritance:
 // explicit value if set, otherwise inherits SpecStrict, otherwise false.
 func (c Constitution) SpecStrictNoTasksMDEffective() bool {
-	if c.SpecStrictNoTasksMD != nil {
-		return *c.SpecStrictNoTasksMD
+	return effectiveBool(c.SpecStrictNoTasksMD, c.SpecStrict)
+}
+
+// RequireDecisionParentEffective: explicit, else inherits SpecStrict, else false.
+func (c Constitution) RequireDecisionParentEffective() bool {
+	return effectiveBool(c.RequireDecisionParent, c.SpecStrict)
+}
+
+// ForbidOrphanBeadsEffective: explicit, else inherits SpecStrict, else false.
+func (c Constitution) ForbidOrphanBeadsEffective() bool {
+	return effectiveBool(c.ForbidOrphanBeads, c.SpecStrict)
+}
+
+// RequirePriorityEffective: explicit, else inherits SpecStrict, else false.
+func (c Constitution) RequirePriorityEffective() bool {
+	return effectiveBool(c.RequirePriority, c.SpecStrict)
+}
+
+// MinACCountEffective returns the explicit value when set, otherwise 0.
+func (c Constitution) MinACCountEffective() int {
+	if c.MinACCount != nil {
+		return *c.MinACCount
 	}
-	if c.SpecStrict != nil {
-		return *c.SpecStrict
+	return 0
+}
+
+func effectiveBool(explicit, inherit *bool) bool {
+	if explicit != nil {
+		return *explicit
+	}
+	if inherit != nil {
+		return *inherit
 	}
 	return false
 }
@@ -66,20 +101,34 @@ func Parse(data []byte) Constitution {
 		}
 		key := strings.ToLower(m[1])
 		val := strings.TrimSpace(strings.Trim(m[2], "\""))
-		bv, ok := parseBool(val)
-		if !ok {
-			continue
-		}
 		switch key {
-		case "asdd_mode":
+		case "asdd_mode", "spec_strict", "spec_strict_no_tasks_md",
+			"require_decision_parent", "forbid_orphan_beads", "require_priority":
+			bv, ok := parseBool(val)
+			if !ok {
+				continue
+			}
 			b := bv
-			c.ASDDMode = &b
-		case "spec_strict":
-			b := bv
-			c.SpecStrict = &b
-		case "spec_strict_no_tasks_md":
-			b := bv
-			c.SpecStrictNoTasksMD = &b
+			switch key {
+			case "asdd_mode":
+				c.ASDDMode = &b
+			case "spec_strict":
+				c.SpecStrict = &b
+			case "spec_strict_no_tasks_md":
+				c.SpecStrictNoTasksMD = &b
+			case "require_decision_parent":
+				c.RequireDecisionParent = &b
+			case "forbid_orphan_beads":
+				c.ForbidOrphanBeads = &b
+			case "require_priority":
+				c.RequirePriority = &b
+			}
+		case "min_ac_count":
+			n, err := strconv.Atoi(val)
+			if err != nil || n < 0 {
+				continue
+			}
+			c.MinACCount = &n
 		}
 	}
 	return c
