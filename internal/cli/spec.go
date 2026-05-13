@@ -10,6 +10,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,6 +44,7 @@ func newSpecCmd() *cobra.Command {
 
 func newSpecNewCmd() *cobra.Command {
 	var kit bool
+	var force bool
 	var projectRoot string
 	cmd := &cobra.Command{
 		Use:   "new <slug>",
@@ -81,10 +83,24 @@ func newSpecNewCmd() *cobra.Command {
 				}
 			}
 			fmt.Fprintln(cmd.OutOrStdout(), "spec:", specMD)
+
+			// Phase-2 canonical spec doc + lockfile (gm-v0sp.13).
+			owner := resolveOwner(root)
+			canonical, lockPath, err := writePhase2Spec(root, slug, time.Now(), force, owner)
+			if err != nil {
+				if errors.Is(err, ErrSpecExists) {
+					fmt.Fprintln(cmd.OutOrStdout(), "doc: exists (use --force to overwrite):", canonical)
+					return nil
+				}
+				return err
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "doc:", canonical)
+			fmt.Fprintln(cmd.OutOrStdout(), "lock:", lockPath)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&kit, "kit", false, "scaffold .claude/commands/{tasks,implement}.md slash commands")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite an existing docs/specs/<date>-<slug>.md")
 	cmd.Flags().StringVar(&projectRoot, "project", "", "project root (default: cwd)")
 	return cmd
 }

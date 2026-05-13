@@ -22,3 +22,6 @@ var ConstitutionTemplate string
 
 //go:embed schema/constitution.schema.json
 var ConstitutionSchema string
+
+//go:embed templates/spec.md.tmpl
+var SpecMDTemplate string
