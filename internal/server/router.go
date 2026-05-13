@@ -198,6 +198,12 @@ type Router struct {
 	// nil = external-dolt or noop mode (readyz omits the dolt check).
 	doltReadyState
 
+	// healthState carries the dependency probers backing /readyz
+	// (gm-o9t8.4.x M4 slice c). Bind via AttachHealthChecks; an
+	// unattached field reports each component as skipped rather than
+	// silently passing. See health.go for the wire shape.
+	healthState
+
 	// vault is the secrets store backing /api/v1/workspaces/{wsid}/secrets*
 	// (gm-o9t8.3.7). Bind via AttachVault; nil → every secrets endpoint
 	// returns 503 adaptor_not_configured. No endpoint ever exposes
@@ -892,6 +898,15 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 	} else {
 		mux.Method(http.MethodGet, "/metrics", metricsAdapter(&r.metricsHandler))
 	}
+
+	// Liveness + structured readiness probes at the root mux
+	// (gm-o9t8.4.x M4 slice c). /healthz is unauthenticated by
+	// design — it's the kubelet-style "is the process alive" probe
+	// and must answer even when API auth is misconfigured. /readyz
+	// is similarly unauthenticated so external orchestrators can
+	// drain traffic without holding a bearer token.
+	mux.Method(http.MethodGet, "/healthz", http.HandlerFunc(r.healthzPlain))
+	mux.Method(http.MethodGet, "/readyz", http.HandlerFunc(r.readyzPlain))
 
 	// SPA fallback is last and only matches non-API paths.
 	mux.NotFound(r.serveSPA)
