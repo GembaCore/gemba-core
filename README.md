@@ -46,6 +46,7 @@ work — see [Getting Started](#-getting-started) for a quick start.
 - [🚀 About](#-about)
 - [🧱 Architecture](#-architecture)
 - [🎯 Two-Axis Work Planning and Dispatch](#-two-axis-work-planning-and-dispatch)
+- [Spec-driven development (ASDD)](#spec-driven-development-asdd)
 - [🚦 Status](#-status)
 - [✨ What's New](#-whats-new)
 - [📸 Screenshots](#-screenshots)
@@ -156,6 +157,28 @@ consult that ranks candidate epics for sprint composition; it lives at
 `/sprints` and produces narrative recommendations with confidence
 scores. See
 [Dispatch vs Planning](https://gembacore.github.io/gemba-core/concepts/dispatch-vs-planning/).
+
+[⬆ back to top](#top)
+
+## Spec-driven development (ASDD)
+
+Gemba practices Agentic Spec-Driven Development: `spec.md` is the
+human-authored statement of intent, beads are the operational unit of
+filed work, and a reconciler bridges the two with a nonce-gated
+diff/apply loop. The spec stays authored; the work stays inspectable;
+neither side rewrites the other behind your back.
+
+- Whitepaper: [`docs/design/asdd-whitepaper.md`](docs/design/asdd-whitepaper.md)
+- `gemba spec new` — scaffold a new spec from a template
+- `gemba spec lint` — validate spec structure and AC coverage
+- `gemba spec diff` — preview the bead deltas a spec change would produce
+- `gemba spec snapshot` — capture the reconciler's nonce for safe apply
+- `gemba spec analyze` — inspect spec/bead drift and coverage
+
+Gemba also intercepts GitHub Spec Kit flows: a project constitution
+declares ASDD mode, a Claude Code PreToolUse hook blocks legacy
+`tasks.md` writes, and a preflight gate routes Spec Kit intent into the
+bead-backed work plane.
 
 [⬆ back to top](#top)
 
