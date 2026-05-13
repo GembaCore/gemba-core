@@ -107,6 +107,40 @@ func TestDiff_CreatesUpdatesOrphans(t *testing.T) {
 	}
 }
 
+// TestLoad_LegacyLockfileNoResolution confirms that a lockfile written
+// before the Mapping.Resolution field existed still loads cleanly. The
+// field is omitempty so it defaults to "" — which the closure gate
+// (gm-v0sp.12) treats as "no operator annotation, defer to bd status".
+func TestLoad_LegacyLockfileNoResolution(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".spec.lock.json")
+	// Note: no "resolution" key — this is the pre-gm-v0sp.12 shape.
+	legacy := `{
+  "spec_id": "SP-legacy",
+  "nonce": "n-legacy",
+  "applied_at": "2026-01-01T00:00:00Z",
+  "mappings": [
+    {"anchor":"S-01","bead_id":"gm.1","content_hash":"sha256:abc"}
+  ]
+}`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("legacy lockfile failed to load: %v", err)
+	}
+	if len(got.Mappings) != 1 {
+		t.Fatalf("expected 1 mapping, got %d", len(got.Mappings))
+	}
+	if got.Mappings[0].Resolution != "" {
+		t.Errorf("expected empty Resolution, got %q", got.Mappings[0].Resolution)
+	}
+	if got.Mappings[0].BeadID != "gm.1" {
+		t.Errorf("expected bead_id gm.1, got %q", got.Mappings[0].BeadID)
+	}
+}
+
 func TestDiff_NilLockTreatsAllAsCreates(t *testing.T) {
 	spec := &parser.Spec{
 		Stories: []parser.Story{{Anchor: "S-01", Title: "x"}},

@@ -38,10 +38,23 @@ var (
 )
 
 // Mapping links one spec anchor to a bd bead.
+//
+// Resolution is an optional operator annotation used by the closure gate
+// (gm-v0sp.12). Empty string means "no annotation" (default; treated as
+// open). Recognized values:
+//
+//	"wontdo" — story was deliberately abandoned; closure gate treats it
+//	           as resolved even if the bd bead is still in an open status.
+//	"done"   — informational; the gate prefers the bd bead status itself.
+//
+// The field is omitempty so older lockfiles (pre-gm-v0sp.12) continue to
+// load and serialize identically. New writers SHOULD NOT emit Resolution
+// unless an operator has set one.
 type Mapping struct {
 	Anchor      string `json:"anchor"`
 	BeadID      string `json:"bead_id"`
 	ContentHash string `json:"content_hash"`
+	Resolution  string `json:"resolution,omitempty"`
 }
 
 // Lock is the on-disk representation.
