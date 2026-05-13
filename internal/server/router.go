@@ -25,6 +25,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/egress"
 	"github.com/GembaCore/gemba-core/internal/events"
 	"github.com/GembaCore/gemba-core/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/quota"
 	"github.com/GembaCore/gemba-core/internal/server/audit"
 	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
@@ -245,6 +246,10 @@ type Router struct {
 	// Future work consolidates the two paths.
 	auditEmit func(ctx context.Context, event string, payload any) error
 
+	// quotaLimiter backs the per-tenant token-bucket middleware
+	// (gm-o9t8.4.1, wsB slice a). Nil disables quota enforcement;
+	// cmd/gemba serve attaches a real limiter via AttachQuotaLimiter.
+	quotaLimiter *quota.Limiter
 
 	mux http.Handler
 }
