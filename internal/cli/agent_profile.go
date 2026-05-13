@@ -35,6 +35,7 @@ operator-facing knobs land alongside future signals (workspace
 assignment, owner-claim) in their own subcommands.`,
 	}
 	cmd.AddCommand(newAgentProfileCmd())
+	cmd.AddCommand(newAgentDispatchCmd())
 	return cmd
 }
 

@@ -173,6 +173,69 @@ type ServeConfig struct {
 	// surface (GET / POST / PATCH / DELETE; X-GEMBA-Confirm).
 	CORSAllowedOrigins []string
 
+	// EmbeddedDolt, when true, tells `gemba serve` to spawn and
+	// supervise its own dolt sql-server subprocess instead of
+	// connecting to an externally-managed one (gm-o9t8.1.2.3). The
+	// runtime default lands in applyEmbeddedDoltDefault — true when
+	// no --dolt-url is supplied, false otherwise. Both modes can
+	// coexist; the bd CLI / Dolt adaptors don't care which one is
+	// providing the SQL endpoint.
+	EmbeddedDolt bool
+
+	// EmbeddedDoltSet records whether --embedded-dolt was passed
+	// explicitly on the command line. When false the runtime picks
+	// the default ("true if no --dolt-url else false").
+	EmbeddedDoltSet bool
+
+	// DoltDataDir is the on-disk path the embedded dolt sql-server
+	// uses as its working dir. Empty defaults to "<cwd>/data/dolt"
+	// at startup. Created with 0700 on first launch.
+	DoltDataDir string
+
+	// DoltEmbeddedDB is the name of the MySQL database the dolt
+	// adaptor will open against the embedded supervisor when
+	// --embedded-dolt is on and no external --dolt-url is set
+	// (gm-o9t8.1.7). Defaults to "gemba" at startup. Has no effect
+	// when --dolt-url is set (external Dolt selects its own db).
+	DoltEmbeddedDB string
+
+	// WorkspacesRoot is the on-disk parent directory that holds per-
+	// workspace <wsid>/repo/ trees (gm-o9t8.1.16). The router's
+	// /api/v1/workspaces/{wsid}/diff handler resolves
+	// <WorkspacesRoot>/<wsid>/repo/ to find the working tree it
+	// streams `git diff` from. Empty → /diff returns 503
+	// adaptor_not_configured. Defaults at startup to
+	// "<dirname(DoltDataDir)>/workspaces" so the layout follows the
+	// data-dir convention (see internal/server/workspacelayout).
+	WorkspacesRoot string
+
+	// VaultPath is the on-disk file backing the secrets vault
+	// (gm-o9t8.3.7). Empty defaults at startup to
+	// "<dirname(DoltDataDir)>/vault.db" — the same data-dir
+	// convention as WorkspacesRoot. The 32-byte KEK is read from
+	// the GEMBA_VAULT_KEY env var; absent → ephemeral key + WARN.
+	VaultPath string
+
+	// OAuthGitHubClientID is the GitHub OAuth app's client_id used by
+	// the device-flow login (gm-o9t8.3.5.1). Empty disables OAuth on
+	// the server; the legacy single-user PAT path keeps working.
+	//
+	// Resolution: --oauth-github-client-id flag wins; otherwise the
+	// GEMBA_OAUTH_GITHUB_CLIENT_ID env var.
+	OAuthGitHubClientID string
+
+	// OAuthGitHubClientSecret is the GitHub OAuth app's client_secret.
+	// Treated as a secret: never logged, never echoed in help output,
+	// and redacted in any error string that surfaces it. Required
+	// together with OAuthGitHubClientID for OAuthEnabled to flip true.
+	OAuthGitHubClientSecret string
+
+	// MultiTenantMode is the constitution.multi_tenant_mode flag. When
+	// true, OAuth MUST be configured (both client id and secret) or
+	// the server refuses to boot. Single-user / DefaultTenant mode
+	// leaves this false and the PAT path is sufficient.
+	MultiTenantMode bool
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —
@@ -221,6 +284,33 @@ func (c *ServeConfig) NormalizeListen(portFlagSet bool) error {
 	c.Listen = host
 	c.Port = p
 	return nil
+}
+
+// OAuthEnabled reports whether the GitHub OAuth device-flow login is
+// configured. The login endpoints and callback route return 503 when
+// this returns false. Derived (not a flag): true iff both
+// OAuthGitHubClientID and OAuthGitHubClientSecret are non-empty.
+func (c ServeConfig) OAuthEnabled() bool {
+	return strings.TrimSpace(c.OAuthGitHubClientID) != "" &&
+		strings.TrimSpace(c.OAuthGitHubClientSecret) != ""
+}
+
+// ValidateOAuthForMultiTenant enforces the multi-tenant gate: when
+// MultiTenantMode is true the OAuth app config MUST be set or the
+// server refuses to boot. Single-user installs (MultiTenantMode=false)
+// pass through unconditionally — OAuth stays opt-in.
+func (c ServeConfig) ValidateOAuthForMultiTenant() error {
+	if !c.MultiTenantMode {
+		return nil
+	}
+	if c.OAuthEnabled() {
+		return nil
+	}
+	return fmt.Errorf(
+		"multi-tenant mode requires GitHub OAuth: pass " +
+			"--oauth-github-client-id and --oauth-github-client-secret " +
+			"(or set GEMBA_OAUTH_GITHUB_CLIENT_ID / " +
+			"GEMBA_OAUTH_GITHUB_CLIENT_SECRET)")
 }
 
 // EffectiveAuthMode returns the auth mode that will actually be applied,
@@ -317,6 +407,15 @@ func (c ServeConfig) ValidateWorkPlaneFlags() error {
 				"pass one or the other\n" +
 				"  --project-dir routes reads+writes through the bd CLI\n" +
 				"  --dolt-url opens a direct SQL connection to Dolt")
+	}
+	// gm-o9t8.1.15: --project-dir owns its own Dolt config in .beads/
+	// (managed by the bd subprocess). Booting the embedded-dolt
+	// supervisor alongside it leaves the supervisor running but
+	// unused. Reject the combination unless the operator explicitly
+	// opted out via --embedded-dolt=false.
+	if projectDir != "" && c.EmbeddedDoltSet && c.EmbeddedDolt {
+		return fmt.Errorf(
+			"--project-dir owns its own Dolt config; --embedded-dolt is mutually exclusive. Pick one.")
 	}
 	if projectDir == "" && c.DoltURL == "" {
 		return fmt.Errorf(

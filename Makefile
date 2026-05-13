@@ -1,4 +1,4 @@
-.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docker-image docker-run quickstart-image quickstart-run docs docs-dev docs-install install-hooks uninstall-hooks acceptance-purge
+.PHONY: help dev build build-go-only test lint clean fmt frontend-install frontend-build dist-sentinel release release-dry gen codegen lint-openapi deps install uninstall smoke image image-push image-load image-build-only docker-image docker-run quickstart-image quickstart-run docs docs-dev docs-install install-hooks uninstall-hooks acceptance-purge vm-image vm-image-clean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
@@ -256,6 +256,31 @@ docs-dev: docs-install ## run the docs site locally (http://localhost:4321/gemba
 
 docs: docs-install ## build the docs site to docs-site/dist
 	cd docs-site && pnpm build
+
+## --- VM image (Firecracker microVM kernel + rootfs) ---
+
+# vm-image bakes the (vmlinux, rootfs.ext4, manifest.json) triple
+# consumed by internal/adapter/firecracker on the server. The actual
+# bake is Linux-only (Buildroot + Linux kernel source). On macOS /
+# Windows dev hosts we print a friendly skip and exit 0 so this target
+# never breaks a normal `make` flow.
+#
+# To produce real images, run on a Linux host with:
+#   BUILDROOT_DIR=/path/to/buildroot KERNEL_SRC_DIR=/path/to/linux-6.1 \
+#     make vm-image
+#
+# Optional signing: set GEMBA_RELEASE_KEY=/path/to/ed25519.pem to emit
+# dist/vm/manifest.sig alongside the manifest.
+vm-image: ## bake the Firecracker kernel + rootfs (Linux only; prints skip elsewhere)
+	@if [ "$$(uname -s)" != "Linux" ]; then \
+	  echo ">> vm-image must be built on Linux (host is $$(uname -s)); skipping"; \
+	  echo "   See docs/server/vm-image.md for the cross-host build story."; \
+	else \
+	  ./vm-image/scripts/build.sh; \
+	fi
+
+vm-image-clean: ## remove the baked dist/vm artifacts
+	rm -rf dist/vm
 
 ## --- Housekeeping ---
 

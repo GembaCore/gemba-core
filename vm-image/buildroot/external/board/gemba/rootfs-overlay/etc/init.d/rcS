@@ -1,0 +1,5 @@
+#!/bin/sh
+# Buildroot's default rcS — kept as a no-op shim. Real bring-up is
+# performed by /sbin/gemba-vm-init (PID 1). This file only exists so
+# that anything sourcing /etc/init.d/rcS doesn't error.
+exit 0

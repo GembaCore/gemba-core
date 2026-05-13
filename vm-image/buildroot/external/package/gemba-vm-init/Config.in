@@ -1,0 +1,9 @@
+config BR2_PACKAGE_GEMBA_VM_INIT
+	bool "gemba-vm-init"
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  Gemba microVM init binary. Reads MMDS at 169.254.169.254 for
+	  workspace context + secrets, mounts /workspace (virtio-fs with
+	  virtio-blk fallback), and execs the dispatched agent.
+
+	  https://github.com/GembaCore/gemba

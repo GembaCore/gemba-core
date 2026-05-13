@@ -1,0 +1,21 @@
+# Project Constitution
+
+## Principles
+
+- Capture planning decisions close to the work.
+- Tasks live in `bd`, not in `tasks.md`.
+
+## Constraints
+
+- ASDD mode is active. Writes to `tasks.md` / `todo.md` are rejected by hook.
+
+## Config
+
+```yaml
+asdd_mode: true
+spec_strict: true
+# When true, the PreToolUse hook rejects writes to tasks.md and
+# 'gemba constitution lint' reports their presence as an error.
+# Defaults to the value of spec_strict.
+spec_strict_no_tasks_md: true
+```

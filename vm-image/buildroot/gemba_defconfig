@@ -1,0 +1,58 @@
+# Gemba microVM rootfs defconfig.
+#
+# Target: x86_64 Linux guest running under Firecracker. The rootfs is
+# packed as ext4 (Firecracker mounts it block-style off /dev/vda) and
+# kept small — busybox userland + ca-certificates + the gemba-vm-init
+# binary. We deliberately do NOT pull the full Go runtime into the
+# rootfs; gemba-vm-init is statically linked, and the dispatched agent
+# binary (claude-code etc.) is mounted in via virtio-fs at boot.
+#
+# Build with:
+#   make BR2_EXTERNAL=../external O=$PWD/output gemba_defconfig
+#   make -j$(nproc)
+#
+# Outputs land at output/images/rootfs.ext4.
+
+BR2_x86_64=y
+BR2_OPTIMIZE_2=y
+BR2_TOOLCHAIN_BUILDROOT_MUSL=y
+BR2_TOOLCHAIN_BUILDROOT_CXX=y
+
+BR2_SYSTEM_BIN_SH_BUSYBOX=y
+BR2_TARGET_GENERIC_HOSTNAME="gemba-vm"
+BR2_TARGET_GENERIC_ISSUE="Gemba VM"
+BR2_TARGET_GENERIC_GETTY=""
+BR2_INIT_NONE=y
+
+# Filesystem
+BR2_TARGET_ROOTFS_EXT2=y
+BR2_TARGET_ROOTFS_EXT2_4=y
+BR2_TARGET_ROOTFS_EXT2_SIZE="256M"
+# No initrd; we boot rootfs directly off /dev/vda.
+
+# Networking
+BR2_PACKAGE_BUSYBOX=y
+BR2_PACKAGE_CA_CERTIFICATES=y
+BR2_PACKAGE_IPROUTE2=y
+
+# Filesystem clients — virtio-fs (FUSE) for /workspace pass-through.
+BR2_PACKAGE_LIBFUSE3=y
+
+# Git is required for guest-side repo operations by the dispatched
+# agent.
+BR2_PACKAGE_GIT=y
+
+# Our init.
+BR2_PACKAGE_GEMBA_VM_INIT=y
+
+# Rootfs overlay providing /etc/init.d stubs and /sbin/init symlink
+# fallback. Real init handover is owned by the gemba-vm-init package
+# but the overlay also drops /etc/resolv.conf etc.
+BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_GEMBA_PATH)/board/gemba/rootfs-overlay"
+
+# Kernel — we do NOT build the kernel through Buildroot. The Linux
+# image lives in vm-image/kernel/ and is built separately; Buildroot
+# only owns the rootfs side. This keeps kernel iteration fast and lets
+# us pin a known-good Firecracker-tuned config without rebuilding the
+# whole rootfs every time.
+# BR2_LINUX_KERNEL is intentionally not set.

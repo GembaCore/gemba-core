@@ -3,6 +3,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -17,14 +18,19 @@ import (
 
 	"github.com/GembaCore/gemba-core/internal/adapter/registry"
 	"github.com/GembaCore/gemba-core/internal/auth"
+	"github.com/GembaCore/gemba-core/internal/auth/oauth"
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 	"github.com/GembaCore/gemba-core/internal/core/phase"
+	"github.com/GembaCore/gemba-core/internal/egress"
 	"github.com/GembaCore/gemba-core/internal/events"
 	"github.com/GembaCore/gemba-core/internal/persona"
+	"github.com/GembaCore/gemba-core/internal/server/audit"
 	tracemw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/skills/walk_summary"
+	"github.com/GembaCore/gemba-core/internal/tenant"
 	"github.com/GembaCore/gemba-core/internal/transport/api"
+	"github.com/GembaCore/gemba-core/internal/vault"
 	"github.com/GembaCore/gemba-core/internal/walk"
 	"github.com/GembaCore/gemba-core/internal/workflow"
 )
@@ -187,6 +193,59 @@ type Router struct {
 	// empty the endpoint falls back to "<cwd>/.gemba/personas".
 	personasDir string
 
+	// doltReadyState carries the embedded-dolt supervisor handle that
+	// drives /api/readyz (gm-o9t8.1.2.3). Bind via AttachDoltSupervisor;
+	// nil = external-dolt or noop mode (readyz omits the dolt check).
+	doltReadyState
+
+	// vault is the secrets store backing /api/v1/workspaces/{wsid}/secrets*
+	// (gm-o9t8.3.7). Bind via AttachVault; nil → every secrets endpoint
+	// returns 503 adaptor_not_configured. No endpoint ever exposes
+	// plaintext values — only key listing and write/delete.
+	vault vault.Vault
+
+	// workspacesRoot is the on-disk parent directory holding cloned
+	// per-workspace repos at <root>/<wsid>/repo/ (gm-o9t8.1.4.3 +
+	// gm-o9t8.1.6.2 diff streaming). Bind via AttachWorkspacesRoot;
+	// empty → /api/v1/workspaces/{wsid}/diff returns 503.
+	workspacesRoot string
+
+	// tenantStore backs GET /api/v1/tenants/{tid} (gm-o9t8.3.9). When
+	// nil the handler returns 503 adaptor_not_configured; cmd/gemba
+	// serve attaches a real store (SQLStore or MemStore) via
+	// AttachTenantStore after the Dolt pool is up.
+	tenantStore tenant.Store
+
+	// egressStore backs /api/v1/workspaces/{wsid}/egress-rules* (gm-o9t8.3.6.1).
+	egressStore   egress.Store
+	egressAuditor EgressAuditor
+
+	// auditor backs admin-plane handlers (gm-o9t8.3.1.1 tenant CRUD).
+	// Optional — nil disables audit emission.
+	auditor audit.Auditor
+
+	// tenantWorkspaceCount returns the number of workspaces still
+	// referencing a tenant. Tenant DELETE consults this. Nil ⇒ assume 0.
+	tenantWorkspaceCount tenantWorkspaceCountFn
+
+	// oauth backs the GitHub OAuth callback + device-flow login (gm-o9t8.3.5).
+	// Nil = OAuth unconfigured; routes return 503 oauth_not_configured.
+	oauth *oauth.OAuth
+
+	// oauthTokenStore stores hashed gemba bearer tokens minted by the
+	// OAuth login handler (gm-o9t8.3.5.2).
+	oauthTokenStore TokenStore
+
+	// githubUserFetcherOverride is the test seam; production calls oauth.FetchUser.
+	githubUserFetcherOverride func(ctx context.Context, token string) (oauth.GitHubUser, error)
+
+	// auditEmit is the closure-based audit hook for the OAuth slice;
+	// kept separate from the typed `auditor` field above because the
+	// OAuth subagent landed before the typed audit.Auditor refactor.
+	// Future work consolidates the two paths.
+	auditEmit func(ctx context.Context, event string, payload any) error
+
+
 	mux http.Handler
 }
 
@@ -269,6 +328,12 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		if apiAuth != nil {
 			api.Use(apiAuth)
 		}
+		// gm-o9t8.3.9: attach the bearer-bound tenant to every
+		// authenticated request's context. The OAuth resolver lands
+		// in gm-o9t8.3.5; until then SingleUserResolver answers
+		// DefaultTenant. WithTenant runs AFTER apiAuth so it can
+		// assume credentials are valid.
+		api.Use(tracemw.WithTenant(tracemw.SingleUserResolver()))
 		api.NotFound(apiNotFound)
 		api.MethodNotAllowed(apiNotFound)
 
@@ -280,7 +345,17 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		}
 
 		api.Get("/health", r.health)
+		// gm-o9t8.1.2.3: readiness probe that reflects embedded
+		// dependency state. /health stays a pure liveness probe;
+		// /readyz returns 503 when the embedded dolt sql-server
+		// is unreachable so orchestrators can drain traffic.
+		api.Get("/readyz", r.readyz)
 		api.Get("/version", r.version)
+		// gm-o9t8.1.1.2: identity probe for the CLI `gemba login` /
+		// `gemba whoami` flow. Auth-gated; returns the subject the
+		// bearer/cookie maps to (v1: a static "operator" — see
+		// whoami.go for the multi-identity follow-up).
+		api.Get("/whoami", r.whoami)
 		api.Get("/config", r.config)
 		api.Get("/beads-history", r.beadsHistory)
 		api.Get("/beads/health", r.beadsHealth)
@@ -376,6 +451,10 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 			Patch("/work-items/{id}", r.patchWorkItem)
 		api.With(requireConfirmNonce(r.nonceCache)).
 			Delete("/work-items/{id}", r.deleteWorkItem)
+		// gm-o9t8.1.3.2: 501 stub for `gemba bead note`. Wire surface
+		// pinned here; persistence semantics land in a follow-up bead.
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/work-items/{id}/notes", r.noteWorkItemStub)
 		// gm-e4.3.2: out-of-process notify endpoint. Auth-gated;
 		// NOT nonce-gated — the caller is server-internal plumbing
 		// (the bd post-commit git hook from gm-e4.3.3, ops scripts).
@@ -676,7 +755,116 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// KindAdaptorDegraded so the SPA's Insights panel can render
 		// an "awaiting Prometheus" stub. Read-only — no nonce gate.
 		api.Get("/v1/metrics/series", r.metricsSeries)
+
+		// gm-o9t8.14 — Govern + Convenience verb surface stubs. Wire
+		// shape pinned; all handlers return 501 with the
+		// not_implemented envelope until the ASDD epic (gm-v0sp)
+		// lands. Auth applies via the shared apiAuth middleware on
+		// the /api block; write endpoints additionally require the
+		// X-GEMBA-Confirm nonce.
+		//
+		// gm-o9t8.3.9: every /api/v1/workspaces/{wsid}/... route
+		// runs through RequireWSIDTenantMatch so a bearer scoped to
+		// tenant A cannot poke at tenant B's wsids. Bare-wsid M1
+		// routes still work because both sides default to
+		// DefaultTenant. WithTenant on the /api block has already
+		// stamped the bearer's tenant on the context.
+		api.Group(func(ws chi.Router) {
+			ws.Use(tracemw.RequireWSIDTenantMatch)
+
+			// Spec family (govern):
+			ws.Get("/v1/workspaces/{wsid}/specs", r.listSpecsStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Patch("/v1/workspaces/{wsid}/specs/{slug}", r.patchSpecStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/specs/{slug}/reconcile", r.reconcileSpecStub)
+			ws.Get("/v1/workspaces/{wsid}/specs/{slug}/watch", r.watchSpecStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/specs/{slug}/snapshot", r.snapshotSpecStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/specs/{slug}/adopt", r.adoptSpecStub)
+
+			// Decision family (govern):
+			ws.Get("/v1/workspaces/{wsid}/decisions", r.listDecisionsStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/decisions", r.createDecisionStub)
+			ws.Get("/v1/workspaces/{wsid}/decisions/refs", r.decisionRefsStub)
+			ws.Get("/v1/workspaces/{wsid}/decisions/{id}", r.getDecisionStub)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Patch("/v1/workspaces/{wsid}/decisions/{id}/lock", r.lockDecisionStub)
+
+			// Constitution / spec-lint reads (govern):
+			ws.Get("/v1/workspaces/{wsid}/labels", r.listLabelsStub)
+
+			// gm-o9t8.3.7: workspace secrets vault. Three routes, no
+			// plaintext read endpoint by design. Writes carry the
+			// X-GEMBA-Confirm nonce gate like every other mutation.
+			ws.Get("/v1/workspaces/{wsid}/secrets", r.listWorkspaceSecrets)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/secrets/{key}", r.putWorkspaceSecret)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Delete("/v1/workspaces/{wsid}/secrets/{key}", r.deleteWorkspaceSecret)
+
+			// gm-o9t8.3.6.1: per-workspace egress policy storage.
+			// Effective() merges workspace rules with the hardcoded
+			// baseline; the runtime enforcer (3.6.2) consumes the
+			// same view. Defaults can never be deleted.
+			ws.Get("/v1/workspaces/{wsid}/egress-rules", r.listEgressRules)
+			ws.Get("/v1/workspaces/{wsid}/egress-rules/effective", r.effectiveEgressRules)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Post("/v1/workspaces/{wsid}/egress-rules", r.createEgressRule)
+			ws.With(requireConfirmNonce(r.nonceCache)).
+				Delete("/v1/workspaces/{wsid}/egress-rules/{id}", r.deleteEgressRule)
+
+			// Convenience verb — gemba no-args (gm-o9t8.1.4.4:
+			// real handler, replaced the 501 stub):
+			ws.Get("/v1/workspaces/{wsid}/status", r.workspaceStatus)
+
+			// gm-o9t8.1.6.2: stream `git diff` from the server-side
+			// workspace repo. GET, so no nonce gate; auth applies
+			// via the shared apiAuth middleware on the /api block.
+			ws.Get("/v1/workspaces/{wsid}/diff", r.workspaceDiffHandler)
+		})
+
+		// gm-o9t8.3.9: tenant metadata. Auth-gated by the shared
+		// /api middleware; the handler itself enforces "requested
+		// tid == bearer tid" so the route is owner-only without a
+		// dedicated admin role.
+		api.Get("/v1/tenants/{tid}", r.getTenant)
+
+		// gm-o9t8.3.1.1: tenant admin CRUD. Admin-only — the v1
+		// stub treats any valid bearer as admin (same stance as
+		// the audit surface). Mutations are nonce-gated.
+		api.Get("/v1/tenants", r.listTenants)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/tenants", r.createTenant)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Patch("/v1/tenants/{tid}", r.patchTenant)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/v1/tenants/{tid}", r.deleteTenant)
+
+		// gm-o9t8.3.5.1: GitHub OAuth callback. When OAuth is
+		// unconfigured this returns 503 oauth_not_configured.
+		api.Get("/v1/auth/oauth/github/callback", r.oauthCallback)
+
+		// gm-o9t8.3.5.5: OAuth bearer token management surface.
+		// Auth-gated by the shared apiAuth middleware; each handler
+		// further scopes by the bearer's tenant id (so cross-tenant
+		// reads/mutations 404). DELETE + POST are nonce-gated.
+		api.Get("/v1/auth/tokens", r.listAuthTokens)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Delete("/v1/auth/tokens/{token_id}", r.revokeAuthToken)
+		api.With(requireConfirmNonce(r.nonceCache)).
+			Post("/v1/auth/tokens/{token_id}/rotate", r.rotateAuthToken)
 	})
+
+	// gm-o9t8.3.5.2: device-flow exchange endpoint. Mounted OUTSIDE
+	// the apiAuth-protected /api block because the CLI calls it
+	// before it has a gemba bearer — by definition, this endpoint
+	// IS where the bearer is minted. The handler validates the
+	// supplied GitHub OAuth token against api.github.com itself.
+	mux.Method(http.MethodPost, "/api/v1/auth/oauth/github/login",
+		http.HandlerFunc(r.oauthLogin))
 
 	mux.Route("/events", func(ev chi.Router) {
 		if apiAuth != nil {
@@ -779,6 +967,33 @@ func (r *Router) AttachMetricsHandler(h http.Handler) { r.metricsHandler = h }
 // don't depend on a real Prometheus instance. cmd/gemba serve does
 // not call this — production runs use the default 15s-timeout client.
 func (r *Router) AttachMetricsHTTPClient(c *http.Client) { r.metricsHTTPClient = c }
+
+// AttachOAuth wires the GitHub OAuth handle (gm-o9t8.3.5). Nil disables
+// the callback + device-login routes (they 503 with oauth_not_configured).
+// cmd/gemba serve calls this once at boot after parsing the OAuth flags.
+func (r *Router) AttachOAuth(o *oauth.OAuth) { r.oauth = o }
+
+// AttachOAuthTokenStore wires the gemba bearer-token store the OAuth
+// login handler mints into. Nil leaves /api/v1/auth/oauth/github/login
+// returning 503 even when an OAuth handle is attached — both halves
+// are required for the device-flow to complete.
+func (r *Router) AttachOAuthTokenStore(s TokenStore) { r.oauthTokenStore = s }
+
+// AttachAuditEmit wires a best-effort audit hook the OAuth login
+// handler invokes on success. Tests and the no-audit production
+// default leave it nil. Mirror of the AttachMetricsHandler pattern:
+// optional, attach late, fail open when absent.
+func (r *Router) AttachAuditEmit(fn func(ctx context.Context, event string, payload any) error) {
+	r.auditEmit = fn
+}
+
+// SetGitHubUserFetcherForTest is the test seam for the OAuth login
+// handler. Production callers never use this. Exported (test-only
+// hook) rather than declared in oauth_test.go so the cli_test package
+// can wire an httptest-backed fetcher without an internal export.
+func (r *Router) SetGitHubUserFetcherForTest(fn func(ctx context.Context, token string) (oauth.GitHubUser, error)) {
+	r.githubUserFetcherOverride = fn
+}
 
 // metricsAdapter dereferences the Router's metrics handler at request
 // time, so the route can be registered before the handler is set.

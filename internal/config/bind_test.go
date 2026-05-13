@@ -312,6 +312,46 @@ func TestValidateWorkPlaneFlags(t *testing.T) {
 	}
 }
 
+// TestValidateWorkPlaneFlags_ProjectDirWithEmbeddedDolt_Rejected pins
+// gm-o9t8.1.15: --project-dir owns its own Dolt config in .beads/, so
+// running the embedded-dolt supervisor alongside leaves the supervisor
+// running but unused. The combination must be rejected unless the
+// operator explicitly opted out via --embedded-dolt=false.
+func TestValidateWorkPlaneFlags_ProjectDirWithEmbeddedDolt_Rejected(t *testing.T) {
+	cfg := ServeConfig{
+		ProjectDir:      "/tmp/gm",
+		EmbeddedDolt:    true,
+		EmbeddedDoltSet: true,
+	}
+	err := cfg.ValidateWorkPlaneFlags()
+	if err == nil {
+		t.Fatalf("want error for --project-dir + --embedded-dolt; got nil")
+	}
+	for _, want := range []string{"--project-dir", "--embedded-dolt", "mutually exclusive"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error missing %q; got %q", want, err.Error())
+		}
+	}
+
+	// Explicit opt-out (--embedded-dolt=false) must be accepted.
+	cfgOptOut := ServeConfig{
+		ProjectDir:      "/tmp/gm",
+		EmbeddedDolt:    false,
+		EmbeddedDoltSet: true,
+	}
+	if err := cfgOptOut.ValidateWorkPlaneFlags(); err != nil {
+		t.Fatalf("--embedded-dolt=false should be accepted; got %v", err)
+	}
+
+	// Default (--embedded-dolt unset) must be accepted: applyEmbeddedDoltDefault
+	// will turn it off when --project-dir is set; the validator only
+	// rejects an explicit --embedded-dolt=true.
+	cfgDefault := ServeConfig{ProjectDir: "/tmp/gm", EmbeddedDolt: true}
+	if err := cfgDefault.ValidateWorkPlaneFlags(); err != nil {
+		t.Fatalf("--embedded-dolt unset should be accepted; got %v", err)
+	}
+}
+
 // TestValidateWorkPlaneFlags_NeitherSetMentionsBothFlags pins the
 // shape of the "no WorkPlane selected" error: both flag names must
 // appear verbatim so the operator can copy-paste the fix without
@@ -470,6 +510,46 @@ func TestBeadsSource(t *testing.T) {
 			// regressions even if Label/Detail shape changes.
 			if strings.Contains(got.Detail, "hunter2") {
 				t.Errorf("Detail leaks password: %q", got.Detail)
+			}
+		})
+	}
+}
+
+// gm-o9t8.3.5.1 — config-validation matrix for OAuth + MultiTenant.
+func TestOAuthConfigMatrix(t *testing.T) {
+	cases := []struct {
+		name          string
+		cfg           ServeConfig
+		wantEnabled   bool
+		wantMTErr     bool
+	}{
+		{"single_user_unset", ServeConfig{}, false, false},
+		{"single_user_oauth_set", ServeConfig{
+			OAuthGitHubClientID: "id", OAuthGitHubClientSecret: "sec",
+		}, true, false},
+		{"multi_tenant_without_oauth", ServeConfig{
+			MultiTenantMode: true,
+		}, false, true},
+		{"multi_tenant_partial", ServeConfig{
+			MultiTenantMode: true, OAuthGitHubClientID: "id",
+		}, false, true},
+		{"multi_tenant_with_oauth", ServeConfig{
+			MultiTenantMode:         true,
+			OAuthGitHubClientID:     "id",
+			OAuthGitHubClientSecret: "sec",
+		}, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.OAuthEnabled(); got != tc.wantEnabled {
+				t.Fatalf("OAuthEnabled: got %v want %v", got, tc.wantEnabled)
+			}
+			err := tc.cfg.ValidateOAuthForMultiTenant()
+			if tc.wantMTErr && err == nil {
+				t.Fatalf("ValidateOAuthForMultiTenant: want error, got nil")
+			}
+			if !tc.wantMTErr && err != nil {
+				t.Fatalf("ValidateOAuthForMultiTenant: unexpected error: %v", err)
 			}
 		})
 	}
