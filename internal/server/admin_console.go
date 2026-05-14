@@ -234,10 +234,10 @@ func (r *Router) adminAuditVerify(w http.ResponseWriter, req *http.Request) {
 		// also try to recover the int when present.
 		broken := firstBrokenSeq(records, ed25519.PublicKey(r.adminAuditPubKey))
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":          false,
-			"count":       len(records),
-			"error":       err.Error(),
-			"broken_seq":  broken,
+			"ok":         false,
+			"count":      len(records),
+			"error":      err.Error(),
+			"broken_seq": broken,
 		})
 		return
 	}

@@ -23,7 +23,7 @@ type Frontmatter struct {
 
 // Story is a single deliverable under an Epic.
 type Story struct {
-	Anchor   string   // e.g. "S-01"
+	Anchor   string // e.g. "S-01"
 	Title    string
 	Status   string
 	Parent   string

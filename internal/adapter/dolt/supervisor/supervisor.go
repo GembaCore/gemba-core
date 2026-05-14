@@ -129,7 +129,7 @@ type Supervisor struct {
 	// "ready then went sideways → restarting" lane.
 	starting atomic.Bool
 
-	done    chan struct{}      // closed when the supervisor permanently fails
+	done    chan struct{} // closed when the supervisor permanently fails
 	doneErr atomic.Pointer[error]
 
 	cancel context.CancelFunc // cancels the supervisor goroutines

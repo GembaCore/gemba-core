@@ -262,8 +262,8 @@ func matchesTeam(teams []ghTeam, allowed []string) bool {
 // broader tenant-config refactor; this in-memory store mirrors the
 // SQLStore + MemStore split tenant.Store uses today.
 type OrgGateStore struct {
-	mu     sync.RWMutex
-	gates  map[string]OrgGate
+	mu    sync.RWMutex
+	gates map[string]OrgGate
 }
 
 // NewOrgGateStore returns an empty in-memory store.

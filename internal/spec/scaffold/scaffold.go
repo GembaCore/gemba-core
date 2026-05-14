@@ -14,11 +14,11 @@ import (
 
 // Options controls what to scaffold.
 type Options struct {
-	Slug                 string // for {{slug}} replacement in slash-command templates
-	WriteSlashCommands   bool
-	WriteHooks           bool
-	WriteConstitution    bool
-	UpdateClaudeMD       bool
+	Slug               string // for {{slug}} replacement in slash-command templates
+	WriteSlashCommands bool
+	WriteHooks         bool
+	WriteConstitution  bool
+	UpdateClaudeMD     bool
 }
 
 // Result records the paths created or updated.

@@ -4,14 +4,14 @@
 //
 // File layout: <spec_dir>/.spec.lock.json
 //
-//   {
-//     "spec_id":   "SP-001",
-//     "nonce":     "uuid v4",
-//     "applied_at":"2026-05-13T00:00:00Z",
-//     "mappings": [
-//       {"anchor":"M-01","bead_id":"gm-v0sp.7","content_hash":"sha256:..."}
-//     ]
-//   }
+//	{
+//	  "spec_id":   "SP-001",
+//	  "nonce":     "uuid v4",
+//	  "applied_at":"2026-05-13T00:00:00Z",
+//	  "mappings": [
+//	    {"anchor":"M-01","bead_id":"gm-v0sp.7","content_hash":"sha256:..."}
+//	  ]
+//	}
 //
 // Writes are atomic (temp file + rename) so the file is never observed in
 // a half-written state.
@@ -125,9 +125,9 @@ func Save(path string, lock *Lock) error {
 // Diff compares a parsed spec against an existing lock and partitions
 // mappings into three sets:
 //
-//   creates: anchors present in spec but absent from lock (need new beads)
-//   updates: anchors present in both but whose content hash changed
-//   orphans: anchors in lock but absent from spec (candidates for close)
+//	creates: anchors present in spec but absent from lock (need new beads)
+//	updates: anchors present in both but whose content hash changed
+//	orphans: anchors in lock but absent from spec (candidates for close)
 //
 // `creates` and `updates` use the spec's current content hash; `orphans`
 // echo back the stored lock mapping unchanged.

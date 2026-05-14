@@ -98,22 +98,22 @@ type healthState struct {
 // per the contract above. Calling AttachHealthChecks more than once
 // replaces the prior wiring atomically.
 func (r *Router) AttachHealthChecks(vault VaultProber, dolt DoltProber, auditDir string) {
-	r.healthState.mu.Lock()
-	defer r.healthState.mu.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.healthState.vault = vault
-	r.healthState.dolt = dolt
-	r.healthState.auditDir = auditDir
-	if r.healthState.kvmPath == "" {
-		r.healthState.kvmPath = "/dev/kvm"
+	r.dolt = dolt
+	r.auditDir = auditDir
+	if r.kvmPath == "" {
+		r.kvmPath = "/dev/kvm"
 	}
 }
 
 // setHealthKVMPath is a test seam — production callers never override
 // the default /dev/kvm path.
 func (r *Router) setHealthKVMPath(p string) {
-	r.healthState.mu.Lock()
-	defer r.healthState.mu.Unlock()
-	r.healthState.kvmPath = p
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.kvmPath = p
 }
 
 // healthzPlain is the /healthz handler. It returns 200 OK with
@@ -130,12 +130,12 @@ func (r *Router) readyzPlain(w http.ResponseWriter, req *http.Request) {
 	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 	defer cancel()
 
-	r.healthState.mu.RLock()
+	r.mu.RLock()
 	v := r.healthState.vault
-	d := r.healthState.dolt
-	auditDir := r.healthState.auditDir
-	kvmPath := r.healthState.kvmPath
-	r.healthState.mu.RUnlock()
+	d := r.dolt
+	auditDir := r.auditDir
+	kvmPath := r.kvmPath
+	r.mu.RUnlock()
 
 	if kvmPath == "" {
 		kvmPath = "/dev/kvm"

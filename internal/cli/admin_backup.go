@@ -68,10 +68,10 @@ func newAdminCmd() *cobra.Command {
 }
 
 type backupFlags struct {
-	out         string
-	dataDir     string
-	auditLog    string
-	version     string
+	out          string
+	dataDir      string
+	auditLog     string
+	version      string
 	skipDoltDump bool
 }
 
@@ -105,10 +105,10 @@ with 'gemba admin restore --from <path>'.`,
 }
 
 type restoreFlags struct {
-	from    string
-	dataDir string
+	from     string
+	dataDir  string
 	auditLog string
-	force   bool
+	force    bool
 }
 
 func newAdminRestoreCmd() *cobra.Command {

@@ -193,11 +193,11 @@ func (c *Client) PatchWorkItem(ctx context.Context, id string, patch core.WorkIt
 // (gm-o9t8.1.5.5). Decoupled from the server-side type so the wire
 // client stays independent of internal/server.
 type CascadeDispatchResponse struct {
-	WrapperID  string                    `json:"wrapper_id"`
-	Dispatched []CascadeDispatchedItem   `json:"dispatched"`
-	Blocked    []string                  `json:"blocked,omitempty"`
-	Skipped    []string                  `json:"skipped,omitempty"`
-	Errors     []CascadeDispatchError    `json:"errors,omitempty"`
+	WrapperID  string                  `json:"wrapper_id"`
+	Dispatched []CascadeDispatchedItem `json:"dispatched"`
+	Blocked    []string                `json:"blocked,omitempty"`
+	Skipped    []string                `json:"skipped,omitempty"`
+	Errors     []CascadeDispatchError  `json:"errors,omitempty"`
 }
 
 // CascadeDispatchedItem is one entry in the Dispatched slice.

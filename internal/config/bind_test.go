@@ -518,10 +518,10 @@ func TestBeadsSource(t *testing.T) {
 // gm-o9t8.3.5.1 — config-validation matrix for OAuth + MultiTenant.
 func TestOAuthConfigMatrix(t *testing.T) {
 	cases := []struct {
-		name          string
-		cfg           ServeConfig
-		wantEnabled   bool
-		wantMTErr     bool
+		name        string
+		cfg         ServeConfig
+		wantEnabled bool
+		wantMTErr   bool
 	}{
 		{"single_user_unset", ServeConfig{}, false, false},
 		{"single_user_oauth_set", ServeConfig{

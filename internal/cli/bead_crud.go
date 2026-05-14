@@ -32,8 +32,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/GembaCore/gemba-core/core"
-	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
+	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 )
 
 // clientFactory is the seam tests use to inject a pre-baked typed
@@ -477,4 +477,3 @@ Server-side this targets POST /api/work-items/{id}/notes, which is a
 	cmd.Flags().StringVar(&note, "note", "", "note text (alternative to positional)")
 	return cmd
 }
-

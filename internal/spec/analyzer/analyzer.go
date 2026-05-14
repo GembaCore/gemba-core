@@ -12,9 +12,9 @@
 //
 //  1. heuristic.go — deterministic, offline classifier. This is the
 //     baseline and always runs. Rules in short:
-//       * H1 line OR a line starting with "Milestone:" → milestone
-//       * H2 sections (## …) → epics
-//       * markdown checkbox lines (- [ ] / - [x] / * [ ] …) → stories
+//     * H1 line OR a line starting with "Milestone:" → milestone
+//     * H2 sections (## …) → epics
+//     * markdown checkbox lines (- [ ] / - [x] / * [ ] …) → stories
 //
 //  2. llm.go — opt-in refinement. If GEMBA_ANALYZER_LLM is set, the
 //     heuristic proposal + raw payload are POSTed to a configurable

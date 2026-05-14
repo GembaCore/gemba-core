@@ -45,8 +45,8 @@ var ErrTampered = errors.New("secrets: vault blob failed integrity check")
 // Vault is a per-workspace secret store. All methods are safe for
 // concurrent use. The zero value is unusable; obtain a Vault via Open.
 type Vault struct {
-	path        string
-	workspaceID string
+	path         string
+	workspaceID  string
 	workspaceKey [32]byte
 
 	mu sync.Mutex

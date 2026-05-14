@@ -404,4 +404,3 @@ func generateMAC(id string) string {
 	return fmt.Sprintf("02:%02x:%02x:%02x:%02x:%02x",
 		h[0], h[1], h[2], h[3], h[4])
 }
-
