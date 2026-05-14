@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -196,18 +197,17 @@ func TestPollForGitHubToken_Cancel(t *testing.T) {
 	})
 	defer gh.server.Close()
 	ctx, cancel := context.WithCancel(context.Background())
-	// Cancel almost immediately.
-	go func() {
-		time.Sleep(5 * time.Millisecond)
-		cancel()
-	}()
+	// Cancel up-front so the first poll observes ctx.Err() deterministically.
+	// The previous version raced a sleep-then-cancel goroutine against the
+	// poll loop and was flaky under loaded CI runners.
+	cancel()
 	_, err := pollForGitHubToken(ctx, gh.server.Client(),
 		gh.server.URL, "id", "DEV", 1*time.Millisecond)
 	if err == nil {
 		t.Fatalf("expected error on cancel, got nil")
 	}
-	if !strings.Contains(err.Error(), "cancelled") {
-		t.Fatalf("error should mention cancel; got %v", err)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error should wrap context.Canceled; got %v", err)
 	}
 }
 
