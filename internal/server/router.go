@@ -274,7 +274,7 @@ type Router struct {
 
 	// orgGates is the per-tenant GitHub OrgGate registry (wsB slice b).
 	// Nil ⇒ every tenant is open (no policy applied).
-	orgGates *oauth.OrgGateStore
+	orgGates *oauth.OrgGateStore //nolint:unused // consumer lands with PR #9 (oauthLogin gate check)
 
 	// adminEmails is the comma-separated allow-list for admin-only
 	// routes mounted at /api/v1/admin/* (wsB slice b). Empty disables

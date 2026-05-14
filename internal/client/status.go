@@ -90,6 +90,7 @@ func (c *Client) WorkspaceStatus(ctx context.Context, wsid string) (*WorkspaceSt
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}

@@ -135,7 +135,7 @@ type VM struct {
 	// applier during Start. Empty when egress enforcement was not
 	// configured (no provider attached) or when the fallback path
 	// ran. Stop reads it to drive teardownEgressRules.
-	egressTable string
+	egressTable string //nolint:unused // referenced only by firecracker_linux.go
 }
 
 // validate enforces the minimal Spec contract shared by every backend.
@@ -228,7 +228,7 @@ func mergeSecrets(vaultSecrets, explicit map[string]string) map[string]string {
 // errAlreadyStopped is returned by the internal stop path when a VM
 // has already been torn down. Promoted to a no-op nil return at the
 // public Supervisor.Stop boundary so callers can stop idempotently.
-var errAlreadyStopped = errors.New("firecracker: vm already stopped")
+var errAlreadyStopped = errors.New("firecracker: vm already stopped") //nolint:unused // referenced only by firecracker_linux.go
 
 // newVMID generates a per-VM identifier of the shape
 // "ws-<workspace>-<8hex>". Uses crypto/rand so concurrent VMs from

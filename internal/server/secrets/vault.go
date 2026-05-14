@@ -240,7 +240,9 @@ func (v *Vault) write(m map[string][]byte) error {
 		return fmt.Errorf("secrets: nonce: %w", err)
 	}
 	ct := aead.Seal(nil, nonce, pt, []byte(v.workspaceID))
-	blob := append(nonce, ct...)
+	blob := make([]byte, 0, len(nonce)+len(ct))
+	blob = append(blob, nonce...)
+	blob = append(blob, ct...)
 	tmp := v.path + ".tmp"
 	if err := os.WriteFile(tmp, blob, 0o600); err != nil {
 		return fmt.Errorf("secrets: write tmp: %w", err)

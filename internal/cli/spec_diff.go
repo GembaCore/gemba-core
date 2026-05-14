@@ -146,7 +146,7 @@ func renderPlanTable(cmd *cobra.Command, plan *reconcile.Plan) error {
 	emit(plan.Creates)
 	emit(plan.Updates)
 	emit(plan.Orphans)
-	tw.Flush()
+	_ = tw.Flush()
 	fmt.Fprintf(out, "summary: %d create, %d update, %d orphan\n",
 		len(plan.Creates), len(plan.Updates), len(plan.Orphans))
 	return nil

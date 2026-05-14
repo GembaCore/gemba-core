@@ -253,7 +253,7 @@ func promptForTokenMasked(out io.Writer) (string, error) {
 		return "", fmt.Errorf("open /dev/tty: %w (use --token or --token-stdin)", err)
 	}
 	defer tty.Close()
-	fmt.Fprint(out, "Enter personal access token: ")
+	_, _ = fmt.Fprint(out, "Enter personal access token: ")
 	b, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(out)
 	if err != nil {

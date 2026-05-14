@@ -234,7 +234,7 @@ func runAdminRestore(out io.Writer, flags restoreFlags) error {
 	if err != nil {
 		return fmt.Errorf("gzip reader: %w", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 
 	auditOut := flags.auditLog

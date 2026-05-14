@@ -59,7 +59,7 @@ func newSpecLintCmd() *cobra.Command {
 						}
 						fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", sev, f.Rule, f.Anchor, f.Message)
 					}
-					tw.Flush()
+					_ = tw.Flush()
 				}
 			}
 			if strict {

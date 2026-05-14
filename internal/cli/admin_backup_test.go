@@ -147,11 +147,10 @@ func TestAdminBackup_RequiresFlags(t *testing.T) {
 	if err := runAdminBackup(&buf, backupFlags{dataDir: t.TempDir()}); err == nil {
 		t.Fatalf("expected error for missing --out")
 	}
-	if err := runAdminBackup(&buf, backupFlags{out: filepath.Join(t.TempDir(), "x.tgz")}); err == nil {
-		// This may not surface here because the cobra layer validates;
-		// runAdminBackup itself attempts to read data-dir which is "".
-		// Either way, the absence of a tar.gz is the failure mode.
-	}
+	// Missing data-dir: runAdminBackup itself may not surface this (cobra
+	// validates at a higher layer); the absence of a tar.gz is the actual
+	// failure mode. Call it for coverage; ignore the result.
+	_ = runAdminBackup(&buf, backupFlags{out: filepath.Join(t.TempDir(), "x.tgz")})
 }
 
 // TestAdminRestore_RejectsTampered verifies that a backup whose

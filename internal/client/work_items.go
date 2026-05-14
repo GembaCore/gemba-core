@@ -92,6 +92,7 @@ func (c *Client) CreateWorkItem(ctx context.Context, in CreateWorkItemInput) (*c
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -126,6 +127,7 @@ func (c *Client) ListWorkItems(ctx context.Context, f ListWorkItemsFilter) ([]co
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -154,6 +156,7 @@ func (c *Client) GetWorkItem(ctx context.Context, id string) (*core.WorkItem, er
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -178,6 +181,7 @@ func (c *Client) PatchWorkItem(ctx context.Context, id string, patch core.WorkIt
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -244,6 +248,7 @@ func (c *Client) CascadeDispatchWorkItem(ctx context.Context, id string, in Casc
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -276,6 +281,7 @@ func (c *Client) NoteWorkItem(ctx context.Context, id, note string) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return mapErr(resp, raw)
 	}
