@@ -41,7 +41,7 @@ func applyEgressRules(ctx context.Context, log *slog.Logger, vmID, tapIf string,
 	if err != nil {
 		return nil, fmt.Errorf("firecracker/egress: open nftables: %w", err)
 	}
-	defer conn.CloseLasting()
+	defer func() { _ = conn.CloseLasting() }()
 
 	// Best-effort cleanup of any stale table from a prior failed boot.
 	if t, _ := findTable(conn, rs.TableName); t != nil {
@@ -99,7 +99,7 @@ func teardownEgressRules(log *slog.Logger, tableName string) error {
 	if err != nil {
 		return fmt.Errorf("firecracker/egress: open nftables for teardown: %w", err)
 	}
-	defer conn.CloseLasting()
+	defer func() { _ = conn.CloseLasting() }()
 
 	t, _ := findTable(conn, tableName)
 	if t == nil {
