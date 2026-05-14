@@ -15,7 +15,7 @@ import (
 
 type stubMutator struct {
 	mu           sync.Mutex
-	failCreateAt int    // 1-indexed; 0 = never fail
+	failCreateAt int // 1-indexed; 0 = never fail
 	failUpdateAt int
 	failCloseAt  int
 	created      int

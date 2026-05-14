@@ -14,13 +14,13 @@ import "strings"
 //
 // Examples (matrix lives in match_test.go):
 //
-//   pattern               host                  match?
-//   "api.anthropic.com"   "api.anthropic.com"   yes
-//   "*.anthropic.com"     "api.anthropic.com"   yes
-//   "*.anthropic.com"     "foo.bar.anthropic.com" no  (* is one label)
-//   "**.anthropic.com"    "foo.bar.anthropic.com" yes
-//   "**.anthropic.com"    "anthropic.com"       no  (** = one or more)
-//   "github.com"          "GitHub.COM"          yes (case-insensitive)
+//	pattern               host                  match?
+//	"api.anthropic.com"   "api.anthropic.com"   yes
+//	"*.anthropic.com"     "api.anthropic.com"   yes
+//	"*.anthropic.com"     "foo.bar.anthropic.com" no  (* is one label)
+//	"**.anthropic.com"    "foo.bar.anthropic.com" yes
+//	"**.anthropic.com"    "anthropic.com"       no  (** = one or more)
+//	"github.com"          "GitHub.COM"          yes (case-insensitive)
 //
 // Matching is anchored on both ends — the pattern must consume the
 // whole host. The matcher is purely syntactic; CIDR / IP literals are

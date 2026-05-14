@@ -1,11 +1,12 @@
 // gemba spec — ASDD interception layer command tree.
 //
 // Subcommands:
-//   spec new <slug>     Scaffold a new spec directory (and optionally Kit files).
-//   spec init           Seed ASDD project artifacts (constitution, hooks, CLAUDE.md).
-//   spec hook           PreToolUse hook handlers (Write/Edit/NotebookEdit, Bash).
-//   spec preflight      Refuse /implement when tasks.md still exists.
-//   spec reconcile      Stub — to be implemented by the analyzer (gm-v0sp.21).
+//
+//	spec new <slug>     Scaffold a new spec directory (and optionally Kit files).
+//	spec init           Seed ASDD project artifacts (constitution, hooks, CLAUDE.md).
+//	spec hook           PreToolUse hook handlers (Write/Edit/NotebookEdit, Bash).
+//	spec preflight      Refuse /implement when tasks.md still exists.
+//	spec reconcile      Stub — to be implemented by the analyzer (gm-v0sp.21).
 package cli
 
 import (
@@ -127,9 +128,9 @@ func newSpecInitCmd() *cobra.Command {
 				return err
 			}
 			opts := scaffold.Options{
-				WriteHooks:        asdd,
-				WriteConstitution: asdd,
-				UpdateClaudeMD:    asdd || updateClaudeMD,
+				WriteHooks:         asdd,
+				WriteConstitution:  asdd,
+				UpdateClaudeMD:     asdd || updateClaudeMD,
 				WriteSlashCommands: asdd,
 			}
 			r, err := scaffold.Apply(root, opts)

@@ -168,7 +168,7 @@ func emitInterface(t reflect.Type, name string) string {
 				optional = true
 			}
 		}
-		nullable := f.Type.Kind() == reflect.Ptr
+		nullable := f.Type.Kind() == reflect.Pointer
 		tsTypeStr := tsType(f.Type)
 
 		marker := ": "
@@ -199,7 +199,7 @@ func emitInterface(t reflect.Type, name string) string {
 //   - interface{}         -> unknown
 func tsType(t reflect.Type) string {
 	switch t.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return tsType(t.Elem())
 	case reflect.Bool:
 		return "boolean"

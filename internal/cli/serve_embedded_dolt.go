@@ -162,7 +162,7 @@ func bootstrapEmbeddedDoltSchema(ctx context.Context, sup *supervisor.Supervisor
 	if err != nil {
 		return fmt.Errorf("embedded dolt: mkdtemp for bd init: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	bdCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()

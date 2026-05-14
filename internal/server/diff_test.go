@@ -176,8 +176,8 @@ func TestDiff_PathTraversalRejected(t *testing.T) {
 		"path=/etc/passwd",
 		"path=foo/../../bar",
 		"path=-flag",
-		"path=foo%7Cbar",  // pipe — shell metachar
-		"path=foo%60bar",  // backtick
+		"path=foo%7Cbar", // pipe — shell metachar
+		"path=foo%60bar", // backtick
 	}
 	for _, q := range cases {
 		t.Run(q, func(t *testing.T) {

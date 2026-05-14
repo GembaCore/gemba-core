@@ -30,8 +30,8 @@ import (
 	"golang.org/x/term"
 
 	"github.com/GembaCore/gemba-core/internal/auth/credstore"
-	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
+	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 )
 
 // whoamiResponse mirrors internal/server/whoami.go's wire shape.
@@ -253,7 +253,7 @@ func promptForTokenMasked(out io.Writer) (string, error) {
 		return "", fmt.Errorf("open /dev/tty: %w (use --token or --token-stdin)", err)
 	}
 	defer tty.Close()
-	fmt.Fprint(out, "Enter personal access token: ")
+	_, _ = fmt.Fprint(out, "Enter personal access token: ")
 	b, err := term.ReadPassword(int(tty.Fd()))
 	fmt.Fprintln(out)
 	if err != nil {
@@ -399,4 +399,3 @@ func printNotLoggedIn(out io.Writer, asJSON bool, server string) error {
 	fmt.Fprintln(out, "not logged in")
 	return nil
 }
-

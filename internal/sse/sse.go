@@ -84,7 +84,7 @@ func Consume(ctx context.Context, body io.ReadCloser, ch chan<- Event) error {
 			case line == "":
 				// Frame terminator.
 				flush()
-			case strings.HasPrefix(line, ":"):
+			case strings.HasPrefix(line, ":"): //nolint:staticcheck // empty case is intentional — SSE spec ignores comment lines
 				// Comment line — heartbeats / keepalive. Ignore.
 			case strings.HasPrefix(line, "data:"):
 				v := stripField(line, "data:")
@@ -96,7 +96,7 @@ func Consume(ctx context.Context, body io.ReadCloser, ch chan<- Event) error {
 				eventTyp = stripField(line, "event:")
 			case strings.HasPrefix(line, "id:"):
 				eventID = stripField(line, "id:")
-			case strings.HasPrefix(line, "retry:"):
+			case strings.HasPrefix(line, "retry:"): //nolint:staticcheck // empty case is intentional — server retry hints ignored, callers own reconnect cadence
 				// Spec'd, ignored — we don't act on server-suggested retry
 				// timing; callers own reconnect cadence.
 			default:
@@ -117,10 +117,7 @@ func Consume(ctx context.Context, body io.ReadCloser, ch chan<- Event) error {
 // per the SSE spec.
 func stripField(line, prefix string) string {
 	v := strings.TrimPrefix(line, prefix)
-	if strings.HasPrefix(v, " ") {
-		v = v[1:]
-	}
-	return v
+	return strings.TrimPrefix(v, " ")
 }
 
 // deliver tries a non-blocking send. If ch is full we drop the oldest
