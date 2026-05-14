@@ -36,6 +36,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/vault"
 	"github.com/GembaCore/gemba-core/internal/walk"
 	"github.com/GembaCore/gemba-core/internal/workflow"
+	"github.com/GembaCore/gemba-core/internal/workspaces"
 )
 
 // healthBusInterval is zero by design: adaptor health is probed on
@@ -218,6 +219,13 @@ type Router struct {
 	// gm-o9t8.1.6.2 diff streaming). Bind via AttachWorkspacesRoot;
 	// empty → /api/v1/workspaces/{wsid}/diff returns 503.
 	workspacesRoot string
+
+	// workspaces is the multi-tenant workspace registry (gm-o9t8.2.4).
+	// When non-nil the workspaceStatus handler prefers registry
+	// resolution over the legacy config.ListAllProjects basename match;
+	// nil falls back to the M1 behaviour so single-user installs that
+	// never wire a registry stay functional.
+	workspaces workspaces.Registry
 
 	// tenantStore backs GET /api/v1/tenants/{tid} (gm-o9t8.3.9). When
 	// nil the handler returns 503 adaptor_not_configured; cmd/gemba
@@ -1025,6 +1033,13 @@ func (r *Router) StartHealthBus() {
 // router was built without one — test paths that don't exercise
 // adaptor health.
 func (r *Router) HealthBus() *registry.HealthBus { return r.healthBus }
+
+// AttachWorkspaceRegistry binds the multi-tenant workspace registry
+// (gm-o9t8.2.4). When set, handlers that need to resolve a wsid to an
+// on-disk project path consult the registry first and fall back to the
+// legacy projects-config walk on ErrNotFound. Pass nil to detach (used
+// by tests that want the legacy behaviour explicitly).
+func (r *Router) AttachWorkspaceRegistry(reg workspaces.Registry) { r.workspaces = reg }
 
 // AttachWorkflowClient binds the workflow.Client the /api/workflows/*
 // surface dispatches to (gm-e12.22.2). Until called, every workflow

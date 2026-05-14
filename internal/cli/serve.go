@@ -54,6 +54,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/transport/api"
 	"github.com/GembaCore/gemba-core/internal/walk"
 	walksources "github.com/GembaCore/gemba-core/internal/walk/sources"
+	"github.com/GembaCore/gemba-core/internal/workspaces"
 )
 
 func newServeCmd(b BuildInfo) *cobra.Command {
@@ -228,6 +229,13 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"GitHub OAuth app client secret (treated as a secret; never logged)")
 	cmd.Flags().BoolVar(&cfg.MultiTenantMode, "multi-tenant", false,
 		"enable constitution.multi_tenant_mode; requires GitHub OAuth to be configured")
+
+	// gm-o9t8.2.4: first-boot workspace registry bootstrap. Defaults to
+	// true so operators upgrading from M1 get their existing on-disk
+	// projects auto-registered against the default tenant.
+	cfg.WorkspacesBootstrap = true
+	cmd.Flags().BoolVar(&cfg.WorkspacesBootstrap, "workspaces-bootstrap", true,
+		"on first boot, scan --workspaces-root and register existing project dirs under the default tenant")
 
 	// gm-o9t8.4.4.1: GitHub OAuth org/team gating. Empty lists ⇒ no
 	// restriction; any successfully authenticated GitHub user passes.
@@ -703,6 +711,38 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		slog.Warn("tenant store seed failed; /api/v1/tenants returns 503", "err", err)
 	} else {
 		handler.AttachTenantStore(tenantStore)
+	}
+
+	// gm-o9t8.2.4: build and attach the multi-tenant workspace registry.
+	// Selection rule:
+	//   - --multi-tenant + a live *sql.DB (reg.DoltDB) → SQLStore
+	//   - otherwise                                    → MemStore
+	// First boot also scans --workspaces-root and registers any
+	// pre-existing project dirs under the default tenant so M1
+	// deployments don't lose access to their workspaces.
+	{
+		var wsReg workspaces.Registry
+		if cfg.MultiTenantMode && reg.DoltDB != nil {
+			sqlReg := workspaces.NewSQLStore(reg.DoltDB)
+			if mErr := sqlReg.Migrate(ctx); mErr != nil {
+				slog.Warn("workspaces: SQL migrate failed; falling back to in-memory registry",
+					"err", mErr)
+				wsReg = workspaces.NewMemStore()
+			} else {
+				wsReg = sqlReg
+			}
+		} else {
+			wsReg = workspaces.NewMemStore()
+		}
+		if cfg.WorkspacesBootstrap {
+			if n, bErr := workspaces.BootstrapFromDir(ctx, wsReg, resolveWorkspacesRoot(&cfg)); bErr != nil {
+				slog.Warn("workspaces: bootstrap-from-dir failed; status resolution falls back to legacy walk",
+					"err", bErr)
+			} else if n > 0 {
+				slog.Info("workspaces: bootstrapped registry from on-disk projects", "inserted", n)
+			}
+		}
+		handler.AttachWorkspaceRegistry(wsReg)
 	}
 
 	// gm-o9t8.4.2.1: tier-aware quota + rate-limit middleware.

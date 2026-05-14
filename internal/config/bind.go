@@ -276,6 +276,14 @@ type ServeConfig struct {
 	// docs/deployment/pool-sizing.md for the full operator guide.
 	PoolConfigPath string
 
+	// WorkspacesBootstrap controls the gm-o9t8.2.4 first-boot migration
+	// path: when true (the default), the server scans WorkspacesRoot at
+	// startup and registers a workspaces row for every on-disk project
+	// dir keyed to the default tenant. Idempotent — only previously
+	// unregistered slugs are inserted. Operators who manage the
+	// registry externally can set this false to opt out.
+	WorkspacesBootstrap bool
+
 	// QuotaEnforce toggles the tier-aware quota + rate-limit
 	// middleware (gm-o9t8.4.2.1). Defaults to true so multi-tenant
 	// rigs ship with tier enforcement on; --quota-enforce=false lets

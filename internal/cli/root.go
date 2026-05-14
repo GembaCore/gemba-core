@@ -90,6 +90,7 @@ See https://github.com/GembaCore/gemba-core for documentation.`,
 		newConstitutionCmd(),
 		newAdminCmd(),
 		newEgressCmd(),
+		newWorkspaceCmd(),
 	)
 
 	return root
