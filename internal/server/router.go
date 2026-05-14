@@ -1046,6 +1046,11 @@ func (r *Router) AttachOAuth(o *oauth.OAuth) { r.oauth = o }
 // are required for the device-flow to complete.
 func (r *Router) AttachOAuthTokenStore(s TokenStore) { r.oauthTokenStore = s }
 
+// AttachOrgGates wires the per-tenant GitHub OrgGate registry
+// (gm-o9t8.4.4.1). Nil disables org/team gating — every successfully
+// authenticated GitHub user is admitted (the legacy open default).
+func (r *Router) AttachOrgGates(s *oauth.OrgGateStore) { r.orgGates = s }
+
 // AttachAuditEmit wires a best-effort audit hook the OAuth login
 // handler invokes on success. Tests and the no-audit production
 // default leave it nil. Mirror of the AttachMetricsHandler pattern:

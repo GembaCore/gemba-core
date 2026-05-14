@@ -236,6 +236,25 @@ type ServeConfig struct {
 	// leaves this false and the PAT path is sufficient.
 	MultiTenantMode bool
 
+	// OAuthGitHubAllowedOrgs lists GitHub organization logins permitted
+	// to log in via the device flow (gm-o9t8.4.4.1). Empty disables the
+	// org check — any successfully-authenticated GitHub user passes.
+	// Resolution: --oauth-github-allowed-orgs (comma-separated) > env
+	// GEMBA_OAUTH_GITHUB_ALLOWED_ORGS.
+	OAuthGitHubAllowedOrgs []string
+
+	// OAuthGitHubAllowedTeams lists "org/team" pairs permitted to log
+	// in (gm-o9t8.4.4.1). Empty disables the team check. Resolution:
+	// --oauth-github-allowed-team (repeatable). Membership in any
+	// listed org OR team is sufficient (union semantics).
+	OAuthGitHubAllowedTeams []string
+
+	// BillingMetersEnable controls whether the in-memory billing
+	// aggregator is wired into the router on boot (gm-o9t8.4.1.1).
+	// Defaults to true; offline test mode can disable to drop the
+	// /usage endpoint to its 503 adaptor_not_configured branch.
+	BillingMetersEnable bool
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —

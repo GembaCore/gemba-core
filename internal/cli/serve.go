@@ -36,6 +36,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/adapter/noop"
 	"github.com/GembaCore/gemba-core/internal/auth"
 	"github.com/GembaCore/gemba-core/internal/auth/oauth"
+	"github.com/GembaCore/gemba-core/internal/billing"
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 	"github.com/GembaCore/gemba-core/internal/persona"
@@ -219,6 +220,18 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"GitHub OAuth app client secret (treated as a secret; never logged)")
 	cmd.Flags().BoolVar(&cfg.MultiTenantMode, "multi-tenant", false,
 		"enable constitution.multi_tenant_mode; requires GitHub OAuth to be configured")
+
+	// gm-o9t8.4.4.1: GitHub OAuth org/team gating. Empty lists ⇒ no
+	// restriction; any successfully authenticated GitHub user passes.
+	cmd.Flags().StringSliceVar(&cfg.OAuthGitHubAllowedOrgs, "oauth-github-allowed-orgs", nil,
+		"comma-separated GitHub org logins permitted to log in (default: any)")
+	cmd.Flags().StringSliceVar(&cfg.OAuthGitHubAllowedTeams, "oauth-github-allowed-team", nil,
+		"GitHub team in 'org/team' form; repeatable; union semantics with --oauth-github-allowed-orgs")
+
+	// gm-o9t8.4.1.1: in-memory billing usage aggregator default-on.
+	cfg.BillingMetersEnable = true
+	cmd.Flags().BoolVar(&cfg.BillingMetersEnable, "billing-meters-enable", true,
+		"wire the in-memory billing usage aggregator (disable for offline test mode)")
 
 	return cmd
 }
@@ -704,6 +717,31 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		slog.Warn("oauth: half-configured; routes will 503", "err", oaErr)
 	}
 	// ErrUnconfigured → no log; OAuth is opt-in and silent by default.
+
+	// gm-o9t8.4.4.1: per-tenant GitHub OrgGate registry. When the
+	// operator has supplied --oauth-github-allowed-orgs or
+	// --oauth-github-allowed-team flags we install a global gate (keyed
+	// by empty tenant id) so the oauthLogin handler applies the same
+	// policy across every freshly-provisioned tenant. Per-tenant
+	// overrides land with the broader tenant-config refactor.
+	if len(cfg.OAuthGitHubAllowedOrgs) > 0 || len(cfg.OAuthGitHubAllowedTeams) > 0 {
+		gates := oauth.NewOrgGateStore()
+		gates.Set("", oauth.OrgGate{
+			AllowedOrgs:  cfg.OAuthGitHubAllowedOrgs,
+			AllowedTeams: cfg.OAuthGitHubAllowedTeams,
+		})
+		handler.AttachOrgGates(gates)
+		slog.Info("oauth: org-gating configured",
+			"allowed_orgs", len(cfg.OAuthGitHubAllowedOrgs),
+			"allowed_teams", len(cfg.OAuthGitHubAllowedTeams))
+	}
+
+	// gm-o9t8.4.1.1: wire the default in-memory billing aggregator.
+	// Disabled in offline test mode so the /usage endpoint exercises
+	// its 503 adaptor_not_configured branch.
+	if cfg.BillingMetersEnable {
+		handler.AttachUsageAggregator(billing.NewAggregator())
+	}
 
 	srv := &http.Server{
 		Addr:              addr,
