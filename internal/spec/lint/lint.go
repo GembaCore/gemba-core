@@ -9,7 +9,9 @@
 package lint
 
 import (
+	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -67,4 +69,59 @@ func Scan(projectRoot string, c constitution.Constitution) ([]Finding, error) {
 		return nil, err
 	}
 	return findings, nil
+}
+
+// ScanConstitution emits findings about the constitution document at
+// constitutionPath itself. Currently it implements the
+// `constitution-version-mismatch` rule (warn): the document must declare a
+// schema_version equal to constitution.CurrentVersion. A missing version is
+// auto-injected at parse time but still surfaces a warn-level finding so
+// operators know to commit the migration.
+//
+// constitutionPath may be empty, in which case ScanConstitution returns nil
+// (nothing to check).
+func ScanConstitution(constitutionPath string) ([]Finding, error) {
+	if constitutionPath == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(constitutionPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	c := constitution.Parse(raw)
+	var findings []Finding
+	if !hasSchemaVersionLine(raw) {
+		findings = append(findings, Finding{
+			Path:     constitutionPath,
+			Rule:     "constitution-version-mismatch",
+			Severity: "warn",
+			Message:  fmt.Sprintf("constitution is missing schema_version; expected %q (run 'gemba constitution lint' to migrate)", constitution.CurrentVersion),
+		})
+	} else if c.SchemaVersion != constitution.CurrentVersion {
+		findings = append(findings, Finding{
+			Path:     constitutionPath,
+			Rule:     "constitution-version-mismatch",
+			Severity: "warn",
+			Message:  fmt.Sprintf("constitution schema_version %q does not match supported version %q", c.SchemaVersion, constitution.CurrentVersion),
+		})
+	}
+	for _, k := range c.UnknownKeys {
+		findings = append(findings, Finding{
+			Path:     constitutionPath,
+			Rule:     "constitution-unknown-key",
+			Severity: "error",
+			Message:  fmt.Sprintf("unknown constitution key %q (additionalProperties: false)", k),
+		})
+	}
+	return findings, nil
+}
+
+// hasSchemaVersionLine reports whether the raw document explicitly declares
+// schema_version. We look for the literal key prefix to avoid being fooled by
+// the migrated copy of the same input.
+func hasSchemaVersionLine(raw []byte) bool {
+	return strings.Contains(string(raw), "schema_version:")
 }

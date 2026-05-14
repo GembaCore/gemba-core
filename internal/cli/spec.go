@@ -302,13 +302,18 @@ func newConstitutionLintCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, _, _ := constitution.Load(root)
+			c, cpath, _ := constitution.Load(root)
 			findings, err := lint.Scan(root, c)
 			if err != nil {
 				return err
 			}
+			cf, err := lint.ScanConstitution(cpath)
+			if err != nil {
+				return err
+			}
+			findings = append(findings, cf...)
 			for _, f := range findings {
-				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s (rule=%s)\n", f.Path, f.Message, f.Rule)
+				fmt.Fprintf(cmd.OutOrStdout(), "%s: %s (rule=%s severity=%s)\n", f.Path, f.Message, f.Rule, f.Severity)
 			}
 			if strict && len(findings) > 0 {
 				os.Exit(1)

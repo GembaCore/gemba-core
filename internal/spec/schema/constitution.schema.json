@@ -1,26 +1,40 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gemba.dev/schema/constitution-1.0.0.json",
   "title": "Gemba project constitution",
+  "description": "Schema for .gemba/constitution.md (ASDD knobs). The on-disk format is Markdown with a top-level YAML frontmatter block and/or a '## Config' fenced YAML block; this schema validates the merged key/value map.",
   "type": "object",
+  "required": ["schema_version"],
   "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "default": "1.0.0",
+      "description": "Constitution schema version (semver). Current value is 1.0.0; future versions branch in MigrateConstitution."
+    },
     "asdd_mode": {
       "type": "boolean",
+      "default": false,
       "description": "When true, the project uses Agentic Spec-Driven Development (tasks live in bd, not tasks.md)."
     },
     "spec_strict": {
       "type": "boolean",
-      "description": "Master switch: enables strict ASDD enforcement (hooks, lint, preflight)."
+      "default": false,
+      "description": "Master switch: enables strict ASDD enforcement (hooks, lint, preflight). Child knobs inherit this value when unset."
     },
     "spec_strict_no_tasks_md": {
       "type": "boolean",
-      "description": "When true, the PreToolUse hook rejects writes to tasks.md and gemba constitution lint reports their presence as an error. Inherits spec_strict by default."
+      "default": false,
+      "description": "When true, the PreToolUse hook rejects writes to tasks.md / todo.md and 'gemba constitution lint' reports their presence as an error. Inherits spec_strict by default."
     },
     "require_decision_parent": {
       "type": "boolean",
+      "default": false,
       "description": "When true, spec frontmatter MUST include a decision_parent key. Inherits spec_strict by default."
     },
     "forbid_orphan_beads": {
       "type": "boolean",
+      "default": false,
       "description": "When true, every story bead under the spec's decision_parent must have a spec field referencing the spec. Inherits spec_strict by default."
     },
     "min_ac_count": {
@@ -31,8 +45,26 @@
     },
     "require_priority": {
       "type": "boolean",
+      "default": false,
       "description": "When true, every Story section must declare Priority:. Inherits spec_strict by default."
     }
   },
-  "additionalProperties": true
+  "additionalProperties": false,
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "asdd_mode": false,
+      "spec_strict": false
+    },
+    {
+      "schema_version": "1.0.0",
+      "asdd_mode": true,
+      "spec_strict": true,
+      "spec_strict_no_tasks_md": true,
+      "require_decision_parent": true,
+      "forbid_orphan_beads": true,
+      "require_priority": true,
+      "min_ac_count": 3
+    }
+  ]
 }

@@ -1,4 +1,15 @@
-<!-- Reference: docs/design/asdd-whitepaper.md -->
+<!-- Reference: docs/design/asdd-whitepaper.md §10 -->
+---
+schema_version: 1.0.0          # constitution schema version (semver)
+asdd_mode: false               # true => tasks live in bd, not tasks.md
+spec_strict: false             # master switch for strict ASDD enforcement
+spec_strict_no_tasks_md: false # reject writes to tasks.md / todo.md (inherits spec_strict)
+require_decision_parent: false # spec frontmatter must include decision_parent (inherits spec_strict)
+forbid_orphan_beads: false     # every story bead must reference its spec (inherits spec_strict)
+require_priority: false        # every Story section must declare Priority: (inherits spec_strict)
+min_ac_count: 0                # minimum AC list items per Story (0 disables)
+---
+
 # Project Constitution
 
 ## Principles
@@ -8,15 +19,6 @@
 
 ## Constraints
 
-- ASDD mode is active. Writes to `tasks.md` / `todo.md` are rejected by hook.
-
-## Config
-
-```yaml
-asdd_mode: true
-spec_strict: true
-# When true, the PreToolUse hook rejects writes to tasks.md and
-# 'gemba constitution lint' reports their presence as an error.
-# Defaults to the value of spec_strict.
-spec_strict_no_tasks_md: true
-```
+- Permissive defaults. Flip knobs in the frontmatter above to opt into ASDD
+  enforcement (hooks, lint, preflight). See docs/design/asdd-whitepaper.md §10
+  for the full key catalog.
