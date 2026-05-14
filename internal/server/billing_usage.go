@@ -68,9 +68,9 @@ func (r *Router) tenantUsage(w http.ResponseWriter, req *http.Request) {
 	}
 	snap := r.usageAggregator.Snapshot(string(requested))
 	writeJSON(w, http.StatusOK, map[string]any{
-		"tenant_id":     string(requested),
-		"vm_minutes":    snap.VMMinutes,
-		"egress_bytes":  snap.EgressBytes,
-		"audit_log_gb":  snap.AuditLogGB,
+		"tenant_id":    string(requested),
+		"vm_minutes":   snap.VMMinutes,
+		"egress_bytes": snap.EgressBytes,
+		"audit_log_gb": snap.AuditLogGB,
 	})
 }

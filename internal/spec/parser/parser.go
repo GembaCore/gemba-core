@@ -20,9 +20,10 @@ var (
 )
 
 // anchorRe matches an H3 heading whose title begins with a stable handle:
-//   ### M-01 Title
-//   ### E-02 Title
-//   ### S-13 Title
+//
+//	### M-01 Title
+//	### E-02 Title
+//	### S-13 Title
 var anchorRe = regexp.MustCompile(`^###\s+([MES])-(\d{2,})\s+(.+?)\s*$`)
 
 // inlineFieldRe captures `Status:`, `Parent:`, `Priority:` lines.

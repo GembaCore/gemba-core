@@ -19,8 +19,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 	"github.com/GembaCore/gemba-core/internal/cli/serverconfig"
+	gembaclient "github.com/GembaCore/gemba-core/internal/client"
 )
 
 // runClientFactory builds a typed client bound to server. Tests

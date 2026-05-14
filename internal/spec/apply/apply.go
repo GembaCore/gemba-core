@@ -111,13 +111,13 @@ func Apply(ctx context.Context, plan *reconcile.Plan, lock *lockfile.Lock, opts 
 	}
 
 	emit(ctx, opts.Auditor, "spec.apply.start", map[string]any{
-		"spec_id":  plan.SpecID,
-		"nonce":    plan.Nonce,
-		"creates":  len(plan.Creates),
-		"updates":  len(plan.Updates),
-		"orphans":  len(plan.Orphans),
-		"dry_run":  opts.DryRun,
-		"prune":    opts.Prune,
+		"spec_id": plan.SpecID,
+		"nonce":   plan.Nonce,
+		"creates": len(plan.Creates),
+		"updates": len(plan.Updates),
+		"orphans": len(plan.Orphans),
+		"dry_run": opts.DryRun,
+		"prune":   opts.Prune,
 	})
 
 	// Cache lockfile mapping by anchor for in-place mutation on success.

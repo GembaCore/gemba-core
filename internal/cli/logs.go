@@ -50,8 +50,8 @@ going, up to --max-retries times.`,
 			if !follow {
 				return errors.New(
 					"transcript replay not yet implemented (server " +
-						"lacks GET /api/runs/{id}/transcript). Use -f " +
-						"to attach to the live stream instead.")
+						"lacks GET /api/runs/{id}/transcript); use -f " +
+						"to attach to the live stream instead")
 			}
 			return runLogsFollow(cmd, args[0])
 		},

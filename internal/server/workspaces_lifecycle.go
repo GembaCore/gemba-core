@@ -196,14 +196,14 @@ func (f *FakeS3Uploader) Upload(_ context.Context, key string, payload []byte) (
 // egress-template wiring together. Built via NewWorkspaceLifecycle and
 // attached to the Router via AttachWorkspaceLifecycle.
 type workspaceLifecycleHandler struct {
-	store      WorkspaceLifecycleStore
-	vault      VaultDeleter
-	s3         S3Uploader
-	egress     egress.Store
-	dataDir    string
-	clock      func() time.Time
-	idGen      func() string
-	retention  time.Duration
+	store     WorkspaceLifecycleStore
+	vault     VaultDeleter
+	s3        S3Uploader
+	egress    egress.Store
+	dataDir   string
+	clock     func() time.Time
+	idGen     func() string
+	retention time.Duration
 }
 
 // WorkspaceLifecycleConfig bundles the optional collaborators for the

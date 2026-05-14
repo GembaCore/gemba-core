@@ -211,7 +211,9 @@ func fetchStatus(ctx context.Context, c *gembaclient.Client, srv string) (status
 	if err != nil {
 		// Some adaptors won't recognize "open" as a status; that's
 		// fine — fall back to ready+in_progress as the floor.
-		openItems = append(ready, inflight...)
+		openItems = make([]core.WorkItem, 0, len(ready)+len(inflight))
+		openItems = append(openItems, ready...)
+		openItems = append(openItems, inflight...)
 	}
 	closedToday := 0
 	if closed, err := c.ListWorkItemsByStatus(ctx, "closed"); err == nil {
@@ -352,7 +354,7 @@ func renderAdHoc(w io.Writer, p statusPayload) {
 			fmt.Fprintf(tw, "  ○\t%s\t%s\t%s\n",
 				string(wi.ID), priorityBadge(wi.Priority), wi.Title)
 		}
-		tw.Flush()
+		_ = tw.Flush()
 	}
 	fmt.Fprintln(w)
 
@@ -382,7 +384,7 @@ func renderAdHoc(w io.Writer, p statusPayload) {
 			fmt.Fprintf(tw, "  ◐\t%s\t%s\t%s%s\n",
 				string(wi.ID), priorityBadge(wi.Priority), wi.Title, suffix)
 		}
-		tw.Flush()
+		_ = tw.Flush()
 	}
 	fmt.Fprintln(w)
 
@@ -438,4 +440,3 @@ func humanDuration(d time.Duration) string {
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
 }
-

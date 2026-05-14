@@ -115,7 +115,7 @@ func newSpecPromoteCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Fprint(cmd.OutOrStdout(), diff)
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), diff)
 			return nil
 		},
 	}

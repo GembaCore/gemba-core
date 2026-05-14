@@ -164,7 +164,7 @@ func renderProposal(w io.Writer, p *analyzer.Proposal) {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 			b.LocalRef, b.Kind, dashIfEmpty(b.Parent), dashIfEmpty(b.Priority), b.Title)
 	}
-	tw.Flush()
+	_ = tw.Flush()
 }
 
 func dashIfEmpty(s string) string {

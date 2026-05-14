@@ -23,8 +23,8 @@ var _ Vault = (*secrets.Vault)(nil)
 
 // Standard secret names used by gemba-remote DoltHub integration.
 const (
-	SecretRemoteURL    = "DOLTHUB_REMOTE_URL"
-	SecretAuthToken    = "DOLTHUB_AUTH_TOKEN"
+	SecretRemoteURL = "DOLTHUB_REMOTE_URL"
+	SecretAuthToken = "DOLTHUB_AUTH_TOKEN"
 )
 
 // Remote is a per-workspace DoltHub remote handle. RepoPath is the

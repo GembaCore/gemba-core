@@ -51,8 +51,8 @@ func effectiveFromList(workspace []Rule) []Rule {
 // MemStore is a process-local Store used by tests and by the
 // single-user fallback when a Dolt pool isn't wired.
 type MemStore struct {
-	mu    sync.RWMutex
-	byWS  map[string]map[string]Rule // wsid -> id -> rule
+	mu   sync.RWMutex
+	byWS map[string]map[string]Rule // wsid -> id -> rule
 }
 
 // NewMemStore returns an empty in-memory store.

@@ -50,12 +50,12 @@ import (
 // semantics so an unresolvable subsystem renders as null rather than as
 // a misleading zero.
 type WorkspaceStatusResponse struct {
-	WorkspaceID   string                `json:"workspace_id"`
-	Mode          string                `json:"mode"`
-	Repo          *WorkspaceRepoStatus  `json:"repo"`
-	Beads         WorkspaceBeadCounts   `json:"beads"`
-	Agents        WorkspaceAgentSummary `json:"agents"`
-	EmbeddedDolt  *EmbeddedDoltStatus   `json:"embedded_dolt"`
+	WorkspaceID  string                `json:"workspace_id"`
+	Mode         string                `json:"mode"`
+	Repo         *WorkspaceRepoStatus  `json:"repo"`
+	Beads        WorkspaceBeadCounts   `json:"beads"`
+	Agents       WorkspaceAgentSummary `json:"agents"`
+	EmbeddedDolt *EmbeddedDoltStatus   `json:"embedded_dolt"`
 }
 
 // EmbeddedDoltStatus surfaces the embedded-dolt supervisor's posture so
@@ -68,7 +68,7 @@ type WorkspaceStatusResponse struct {
 //   - "starting"   — Start() in flight; first SELECT 1 hasn't landed yet
 //   - "ready"      — last probe succeeded; subprocess healthy
 //   - "restarting" — a recent probe failed; supervisor is in backoff /
-//                    respawn between probes
+//     respawn between probes
 //   - "failed"     — maxConsecutiveFailures exhausted; supervisor gave up
 type EmbeddedDoltStatus struct {
 	Enabled      bool   `json:"enabled"`
@@ -569,9 +569,9 @@ func transcriptPathForSession(transcriptsDir string, s *core.Session) string {
 //
 //   - terminalType: the event_type of the last terminal event, or ""
 //   - note:         the latest bead_note_appended note text (preferred
-//                   summary signal), or ""
+//     summary signal), or ""
 //   - reason:       the "summary" / "reason" field of the terminal
-//                   event when present, or ""
+//     event when present, or ""
 //   - hasTerminal:  true iff we observed any terminal event
 //
 // Parse errors per line are ignored — a corrupt line shouldn't poison

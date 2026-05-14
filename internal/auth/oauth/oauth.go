@@ -228,8 +228,8 @@ func (o *OAuth) CallbackHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"status":   "ok",
-			"flow":     "device",
+			"status":    "ok",
+			"flow":      "device",
 			"client_id": o.ClientID(),
 		})
 	}

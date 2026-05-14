@@ -75,7 +75,7 @@ func TestVaultInterfaceCompat(t *testing.T) {
 	}
 	r := Open(t.TempDir(), v)
 	// Confirm the type satisfies Vault.
-	var _ Vault = r.Vault
+	var _ = r.Vault
 	// Without a real dolt repo, Configure may fail when it tries to add
 	// the remote; we only verify the read-side here.
 	_, err = v.Inject(SecretRemoteURL)

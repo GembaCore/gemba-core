@@ -119,7 +119,8 @@ func runRunCmd(cmd *cobra.Command, beadID string) error {
 			"detached. resume with: gemba logs -f %s\n", runID)
 		// Cobra eats os.Exit-equivalent codes; the parent process gets
 		// 130 by exiting directly. This is the SIGINT convention.
-		os.Exit(exitCodeDetached)
+		stop()
+		os.Exit(exitCodeDetached) //nolint:gocritic // intentional: SIGINT exit convention after manual stop()
 	}
 	return nil
 }

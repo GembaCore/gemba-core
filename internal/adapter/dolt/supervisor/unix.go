@@ -4,6 +4,7 @@ package supervisor
 
 import (
 	"bufio"
+	"context"
 	"io"
 	"log/slog"
 	"os/exec"
@@ -45,7 +46,7 @@ func pipeToSlog(r io.ReadCloser, log *slog.Logger, level slog.Level, source stri
 	buf := make([]byte, 0, 64*1024)
 	scanner.Buffer(buf, 1024*1024)
 	for scanner.Scan() {
-		log.Log(nil, level, "dolt subprocess output",
+		log.Log(context.Background(), level, "dolt subprocess output",
 			"source", source, "line", scanner.Text())
 	}
 }

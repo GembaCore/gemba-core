@@ -46,16 +46,16 @@ type BDMailLister struct {
 // rawBDMail is a permissive shape for the bd mail json output. We only
 // care about a handful of fields; everything else is ignored.
 type rawBDMail struct {
-	ID        string `json:"id"`
-	MailID    string `json:"mail_id"`
-	Subject   string `json:"subject"`
-	Title     string `json:"title"`
-	Body      string `json:"body"`
-	Author    string `json:"author"`
-	From      string `json:"from"`
-	Timestamp string `json:"timestamp"`
-	CreatedAt string `json:"created_at"`
-	Status    string `json:"status"`
+	ID        string   `json:"id"`
+	MailID    string   `json:"mail_id"`
+	Subject   string   `json:"subject"`
+	Title     string   `json:"title"`
+	Body      string   `json:"body"`
+	Author    string   `json:"author"`
+	From      string   `json:"from"`
+	Timestamp string   `json:"timestamp"`
+	CreatedAt string   `json:"created_at"`
+	Status    string   `json:"status"`
 	Labels    []string `json:"labels"`
 }
 

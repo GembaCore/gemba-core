@@ -2,6 +2,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -414,8 +415,8 @@ func (c ServeConfig) ValidateWorkPlaneFlags() error {
 	// unused. Reject the combination unless the operator explicitly
 	// opted out via --embedded-dolt=false.
 	if projectDir != "" && c.EmbeddedDoltSet && c.EmbeddedDolt {
-		return fmt.Errorf(
-			"--project-dir owns its own Dolt config; --embedded-dolt is mutually exclusive. Pick one.")
+		return errors.New(
+			"--project-dir owns its own Dolt config; --embedded-dolt is mutually exclusive — pick one")
 	}
 	if projectDir == "" && c.DoltURL == "" {
 		return fmt.Errorf(

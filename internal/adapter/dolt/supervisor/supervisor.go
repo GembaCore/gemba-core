@@ -129,7 +129,7 @@ type Supervisor struct {
 	// "ready then went sideways → restarting" lane.
 	starting atomic.Bool
 
-	done    chan struct{}      // closed when the supervisor permanently fails
+	done    chan struct{} // closed when the supervisor permanently fails
 	doneErr atomic.Pointer[error]
 
 	cancel context.CancelFunc // cancels the supervisor goroutines
@@ -563,7 +563,7 @@ func pickFreePort(host string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	addr, ok := l.Addr().(*net.TCPAddr)
 	if !ok {
 		return 0, fmt.Errorf("unexpected listener addr type %T", l.Addr())

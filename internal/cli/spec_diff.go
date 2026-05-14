@@ -20,11 +20,11 @@ import (
 // newSpecDiffCmd wires `gemba spec diff <spec.md>`.
 //
 // It is a pure planner — no bd mutations, no disk writes. The CLI:
-//   1. parses spec.md,
-//   2. loads the sibling .spec.lock.json (if any),
-//   3. calls reconcile.Diff with either the real bd lister or a test stub
-//      (--bd-stub <path-to-json>),
-//   4. emits either a human table or JSON.
+//  1. parses spec.md,
+//  2. loads the sibling .spec.lock.json (if any),
+//  3. calls reconcile.Diff with either the real bd lister or a test stub
+//     (--bd-stub <path-to-json>),
+//  4. emits either a human table or JSON.
 func newSpecDiffCmd() *cobra.Command {
 	var jsonOut bool
 	var label string
@@ -146,7 +146,7 @@ func renderPlanTable(cmd *cobra.Command, plan *reconcile.Plan) error {
 	emit(plan.Creates)
 	emit(plan.Updates)
 	emit(plan.Orphans)
-	tw.Flush()
+	_ = tw.Flush()
 	fmt.Fprintf(out, "summary: %d create, %d update, %d orphan\n",
 		len(plan.Creates), len(plan.Updates), len(plan.Orphans))
 	return nil

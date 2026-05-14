@@ -92,6 +92,7 @@ func (c *Client) CreateWorkItem(ctx context.Context, in CreateWorkItemInput) (*c
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -126,6 +127,7 @@ func (c *Client) ListWorkItems(ctx context.Context, f ListWorkItemsFilter) ([]co
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -154,6 +156,7 @@ func (c *Client) GetWorkItem(ctx context.Context, id string) (*core.WorkItem, er
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -178,6 +181,7 @@ func (c *Client) PatchWorkItem(ctx context.Context, id string, patch core.WorkIt
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -193,11 +197,11 @@ func (c *Client) PatchWorkItem(ctx context.Context, id string, patch core.WorkIt
 // (gm-o9t8.1.5.5). Decoupled from the server-side type so the wire
 // client stays independent of internal/server.
 type CascadeDispatchResponse struct {
-	WrapperID  string                    `json:"wrapper_id"`
-	Dispatched []CascadeDispatchedItem   `json:"dispatched"`
-	Blocked    []string                  `json:"blocked,omitempty"`
-	Skipped    []string                  `json:"skipped,omitempty"`
-	Errors     []CascadeDispatchError    `json:"errors,omitempty"`
+	WrapperID  string                  `json:"wrapper_id"`
+	Dispatched []CascadeDispatchedItem `json:"dispatched"`
+	Blocked    []string                `json:"blocked,omitempty"`
+	Skipped    []string                `json:"skipped,omitempty"`
+	Errors     []CascadeDispatchError  `json:"errors,omitempty"`
 }
 
 // CascadeDispatchedItem is one entry in the Dispatched slice.
@@ -244,6 +248,7 @@ func (c *Client) CascadeDispatchWorkItem(ctx context.Context, id string, in Casc
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, mapErr(resp, raw)
 	}
@@ -276,6 +281,7 @@ func (c *Client) NoteWorkItem(ctx context.Context, id, note string) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return mapErr(resp, raw)
 	}
