@@ -132,7 +132,9 @@ func TestBucket_Reset(t *testing.T) {
 		t.Fatal("burst should be exhausted")
 	}
 	b.Reset()
-	if !b.Allow() || !b.Allow() {
+	first := b.Allow()
+	second := b.Allow()
+	if !first || !second {
 		t.Fatal("Reset should refill the bucket to burst")
 	}
 }

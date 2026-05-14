@@ -2,6 +2,12 @@
 /bin/
 /dist/
 /tmp/
+
+# pnpm local store (created by pnpm install when no store config exists)
+/.pnpm-store/
+
+# npm lockfile — this repo uses pnpm-lock.yaml; package-lock.json is incidental
+testing/e2e/package-lock.json
 # Ignore SPA build outputs, but keep the directory itself tracked via
 # web/dist/.gitkeep so `//go:embed all:web/dist` always finds at least
 # one file on a fresh checkout (before `pnpm build` has been run).
