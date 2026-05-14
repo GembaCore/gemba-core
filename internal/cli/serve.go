@@ -40,9 +40,11 @@ import (
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 	"github.com/GembaCore/gemba-core/internal/persona"
 	"github.com/GembaCore/gemba-core/internal/personas/onboarder"
+	"github.com/GembaCore/gemba-core/internal/quota"
 	"github.com/GembaCore/gemba-core/internal/server"
 	"github.com/GembaCore/gemba-core/internal/tenant"
 	"github.com/GembaCore/gemba-core/internal/server/metrics"
+	srvmw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/shader"
 	"github.com/GembaCore/gemba-core/internal/shader/gastown"
 	"github.com/GembaCore/gemba-core/internal/skills/bootstrap_review"
@@ -199,6 +201,12 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 
 	cmd.Flags().BoolVar(&quiet, "quiet", false,
 		"suppress the startup banner")
+
+	// gm-o9t8.4.2.1: tier-aware quota + rate-limit middleware. On by
+	// default so multi-tenant rigs ship with enforcement; flip to
+	// false to disable during incident response or for dev rigs.
+	cmd.Flags().BoolVar(&cfg.QuotaEnforce, "quota-enforce", true,
+		"enforce per-tenant tier limits (rate, concurrent VMs, workspaces)")
 
 	// gm-s47n.12: pool config path. Empty defaults to
 	// .gemba/pool.toml in cwd; missing file = no pools (Phase 0
@@ -682,6 +690,44 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		slog.Warn("tenant store seed failed; /api/v1/tenants returns 503", "err", err)
 	} else {
 		handler.AttachTenantStore(tenantStore)
+	}
+
+	// gm-o9t8.4.2.1: tier-aware quota + rate-limit middleware.
+	// Resolves the request's tenant -> tier via the tenant store and
+	// gates rate/concurrent-VM/workspace limits via the in-process
+	// BucketStore + MemCounters. Production deployments swap the
+	// BucketStore for a Redis-backed implementation (out of scope
+	// for this bead). Disabled when --quota-enforce=false.
+	if cfg.QuotaEnforce {
+		bucketStore := quota.NewBucketStore()
+		counters := quota.NewMemCounters()
+		tierResolver := func(rctx context.Context, id tenant.ID) (quota.Tier, error) {
+			t, err := tenantStore.Get(rctx, id)
+			if err != nil {
+				// Unknown tenant — fall back to free tier so the
+				// middleware does not 500 on a transient miss.
+				return quota.TierFree, nil
+			}
+			tier, perr := quota.ParseTier(t.Tier)
+			if perr != nil {
+				return quota.TierFree, nil
+			}
+			return tier, nil
+		}
+		mw := srvmw.WithQuota(srvmw.QuotaOptions{
+			Store:    bucketStore,
+			Counters: counters,
+			Tier:     tierResolver,
+			VMCreateRoutes: []string{
+				"/api/v1/vms",
+				"/api/v1/workspaces/", // creation goes via POST under wsid
+			},
+			WorkspaceCreateRoutes: []string{
+				"/api/v1/workspaces",
+				"/api/v1/tenants/",
+			},
+		})
+		handler.AttachTierQuotaMiddleware(mw)
 	}
 
 	// gm-o9t8.3.5: GitHub OAuth wiring. Construct the OAuth handle

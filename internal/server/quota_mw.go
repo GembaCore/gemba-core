@@ -25,6 +25,15 @@ import (
 // by QuotaMiddleware. Passing nil disables quota enforcement.
 func (r *Router) AttachQuotaLimiter(l *quota.Limiter) { r.quotaLimiter = l }
 
+// AttachTierQuotaMiddleware installs the tier-aware quota middleware
+// (gm-o9t8.4.2.1) so router assembly layers it onto /api after
+// WithTenant. Passing nil disables the tier middleware. The caller
+// owns the underlying BucketStore + Counters lifetimes; the Router
+// only borrows the wrapped handler.
+func (r *Router) AttachTierQuotaMiddleware(mw func(http.Handler) http.Handler) {
+	r.tierQuotaMW = mw
+}
+
 // QuotaMiddleware returns an http.Handler middleware that consumes one
 // token from the bearer-bound tenant's bucket on every request. When
 // no limiter is attached the middleware is a passthrough.

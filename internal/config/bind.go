@@ -255,6 +255,15 @@ type ServeConfig struct {
 	// /api/pools endpoint surfaces both numbers. See
 	// docs/deployment/pool-sizing.md for the full operator guide.
 	PoolConfigPath string
+
+	// QuotaEnforce toggles the tier-aware quota + rate-limit
+	// middleware (gm-o9t8.4.2.1). Defaults to true so multi-tenant
+	// rigs ship with tier enforcement on; --quota-enforce=false lets
+	// operators disable the gate during incident response or for
+	// dev rigs where the limits would just be friction. The
+	// in-process BucketStore is wiped on shutdown — production
+	// deployments are expected to swap in a Redis-backed store.
+	QuotaEnforce bool
 }
 
 // NormalizeListen splits c.Listen if it is in host:port form (e.g.

@@ -259,6 +259,11 @@ type Router struct {
 	// cmd/gemba serve attaches a real limiter via AttachQuotaLimiter.
 	quotaLimiter *quota.Limiter
 
+	// tierQuotaMW is the tier-aware quota + rate-limit middleware
+	// (gm-o9t8.4.2.1). When non-nil it is layered onto the /api
+	// subtree after tenant resolution. Nil disables enforcement.
+	tierQuotaMW func(http.Handler) http.Handler
+
 	// egressTemplates backs egress-template lookup for new workspaces
 	// (gm-o9t8.4.3, wsB slice a). Nil → fall back to package defaults.
 	egressTemplates EgressTemplateProvider
@@ -379,6 +384,12 @@ func NewRouter(cfg config.ServeConfig, spa fs.FS, host *api.Host) *Router {
 		// DefaultTenant. WithTenant runs AFTER apiAuth so it can
 		// assume credentials are valid.
 		api.Use(tracemw.WithTenant(tracemw.SingleUserResolver()))
+		// gm-o9t8.4.2.1: tier-aware quota + rate-limit. Mounted after
+		// WithTenant so the middleware sees the bearer-bound tenant
+		// on the request context; nil tierQuotaMW skips this hop.
+		if r.tierQuotaMW != nil {
+			api.Use(r.tierQuotaMW)
+		}
 		api.NotFound(apiNotFound)
 		api.MethodNotAllowed(apiNotFound)
 
