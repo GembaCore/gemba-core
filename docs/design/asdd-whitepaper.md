@@ -257,6 +257,31 @@ is the canonical CLI surface reference; this whitepaper is the canonical
 reference for the *approach*; the constitution and per-spec documents are
 downstream of both.
 
+## 10 Constitution Schema (Reference)
+
+The constitution lives at `.gemba/constitution.md`. The canonical JSON
+Schema is `internal/spec/schema/constitution.schema.json` (id
+`https://gemba.dev/schema/constitution-1.0.0.json`). Keys are supplied via a
+top-level YAML frontmatter block and/or a `## Config` yaml fence; both are
+merged. Unknown top-level keys are rejected (`additionalProperties: false`).
+
+Current catalog (schema `1.0.0`):
+
+- `schema_version` (string, semver, required) — constitution schema version.
+- `asdd_mode` (bool, default false) — tasks live in bd, not tasks.md.
+- `spec_strict` (bool, default false) — master strict-mode switch; child knobs inherit when unset.
+- `spec_strict_no_tasks_md` (bool, inherits `spec_strict`) — reject writes to tasks.md / todo.md.
+- `require_decision_parent` (bool, inherits `spec_strict`) — spec frontmatter must declare `decision_parent`.
+- `forbid_orphan_beads` (bool, inherits `spec_strict`) — every story bead must reference its spec.
+- `require_priority` (bool, inherits `spec_strict`) — every Story must declare `Priority:`.
+- `min_ac_count` (integer, default 0) — minimum AC list items per Story; 0 disables.
+
+Versioning. The active version constant lives in
+`internal/spec/constitution/version.go`; future schema changes bump
+`CurrentVersion` and add a branch in `MigrateConstitution`. Existing files
+without `schema_version` are migrated transparently and surface a
+`constitution-version-mismatch` (warn) finding from `gemba constitution lint`.
+
 ## Decisions
 
 - ADR 0001 — Spec Kit integration: hook-layer only (2026-05-13). See [docs/design/adr/0001-spec-kit-integration-strategy.md](adr/0001-spec-kit-integration-strategy.md).
