@@ -1,3 +1,8 @@
+---
+title: "Agentic Spec-Driven Development (ASDD)"
+decision: gm-v0sp
+---
+
 # Agentic Spec-Driven Development (ASDD)
 
 The gemba approach to building software with autonomous and semi-autonomous

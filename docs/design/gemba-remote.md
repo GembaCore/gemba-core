@@ -1,3 +1,8 @@
+---
+title: "Gemba Remote — design proposal"
+decision: gm-o9t8
+---
+
 # Gemba Remote — design proposal
 
 **Status:** draft for review (2026-05-11)
