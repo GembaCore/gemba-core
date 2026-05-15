@@ -24,11 +24,15 @@ const (
 //
 // GitHubLogin / GitHubID are nullable: the DefaultTenant row carries
 // nulls, and pre-OAuth seeded rows may also lack a GitHub identity.
+// Tier is the customer subscription level (gm-o9t8.4.2.1); the column
+// defaults to "free" via the schema, so old rows that pre-date the
+// migration appear as free-tier on read.
 type Tenant struct {
 	ID          ID
 	GitHubLogin *string
 	GitHubID    *int64
 	Kind        Kind
+	Tier        string
 	CreatedAt   time.Time
 }
 
@@ -46,6 +50,11 @@ var ErrTenantExists = errors.New("tenant: already exists")
 // github_id rotation lands with the OAuth story (gm-o9t8.3.5).
 type Update struct {
 	GitHubLogin *string
+	// Tier is the new subscription level. Nil means leave unchanged;
+	// non-nil replaces the stored value. Validation against the
+	// canonical tier enumeration lives in the quota package — Store
+	// callers are expected to feed already-validated values here.
+	Tier *string
 }
 
 // ListOptions controls Store.List pagination. Limit clamps page size
@@ -120,10 +129,21 @@ const createTenantsTable = `CREATE TABLE IF NOT EXISTS tenants (
 	github_login VARCHAR(64)  DEFAULT NULL,
 	github_id    BIGINT       DEFAULT NULL,
 	kind         ENUM('user','org','system') NOT NULL DEFAULT 'user',
+	tier         VARCHAR(32)  NOT NULL DEFAULT 'free',
 	created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	UNIQUE KEY idx_tenants_github_login (github_login),
 	UNIQUE KEY idx_tenants_github_id    (github_id)
 )`
+
+// addTenantTierColumn is the idempotent ALTER for upgrading rigs that
+// pre-date gm-o9t8.4.2.1. We probe information_schema first because
+// Dolt does not implement MySQL 8's IF NOT EXISTS form on ALTER
+// COLUMN, so we have to check-then-act.
+const probeTenantTierColumn = `SELECT COUNT(*) FROM information_schema.columns
+	WHERE table_schema = DATABASE()
+	  AND table_name = 'tenants'
+	  AND column_name = 'tier'`
+const addTenantTierColumn = `ALTER TABLE tenants ADD COLUMN tier VARCHAR(32) NOT NULL DEFAULT 'free'`
 
 // createAuthTokensTable is the migration for the OAuth-minted gemba
 // bearer store (gm-o9t8.3.5.2). Idempotent. Lives next to the tenants
@@ -155,6 +175,19 @@ func (s *SQLStore) Migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, createTenantsTable); err != nil {
 		return fmt.Errorf("tenant: create tenants table: %w", err)
 	}
+	// gm-o9t8.4.2.1: idempotent ALTER for rigs that created the
+	// tenants table before the tier column landed. Probe-then-add so
+	// the operation is a no-op on fresh installs (CREATE already
+	// includes the column).
+	var hasTier int
+	if err := s.db.QueryRowContext(ctx, probeTenantTierColumn).Scan(&hasTier); err != nil {
+		return fmt.Errorf("tenant: probe tier column: %w", err)
+	}
+	if hasTier == 0 {
+		if _, err := s.db.ExecContext(ctx, addTenantTierColumn); err != nil {
+			return fmt.Errorf("tenant: add tier column: %w", err)
+		}
+	}
 	if _, err := s.db.ExecContext(ctx, createAuthTokensTable); err != nil {
 		return fmt.Errorf("tenant: create auth_tokens table: %w", err)
 	}
@@ -174,14 +207,14 @@ func (s *SQLStore) Migrate(ctx context.Context) error {
 // Get implements Store.
 func (s *SQLStore) Get(ctx context.Context, id ID) (Tenant, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, github_login, github_id, kind, created_at FROM tenants WHERE id = ?`, string(id))
+		`SELECT id, github_login, github_id, kind, tier, created_at FROM tenants WHERE id = ?`, string(id))
 	return scanTenant(row)
 }
 
 // GetByGitHub implements Store.
 func (s *SQLStore) GetByGitHub(ctx context.Context, githubID int64) (Tenant, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, github_login, github_id, kind, created_at FROM tenants WHERE github_id = ?`, githubID)
+		`SELECT id, github_login, github_id, kind, tier, created_at FROM tenants WHERE github_id = ?`, githubID)
 	return scanTenant(row)
 }
 
@@ -195,9 +228,12 @@ func (s *SQLStore) Create(ctx context.Context, t Tenant) error {
 	if t.Kind == "" {
 		t.Kind = KindUser
 	}
+	if t.Tier == "" {
+		t.Tier = "free"
+	}
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO tenants (id, github_login, github_id, kind) VALUES (?, ?, ?, ?)`,
-		string(t.ID), nullableString(t.GitHubLogin), nullableInt64(t.GitHubID), string(t.Kind))
+		`INSERT INTO tenants (id, github_login, github_id, kind, tier) VALUES (?, ?, ?, ?, ?)`,
+		string(t.ID), nullableString(t.GitHubLogin), nullableInt64(t.GitHubID), string(t.Kind), t.Tier)
 	if err != nil {
 		return fmt.Errorf("tenant: insert %s: %w", t.ID, err)
 	}
@@ -211,7 +247,7 @@ func (s *SQLStore) List(ctx context.Context, opts ListOptions) ([]Tenant, error)
 		limit = defaultListLimit
 	}
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, github_login, github_id, kind, created_at
+		`SELECT id, github_login, github_id, kind, tier, created_at
 		 FROM tenants
 		 WHERE id > ?
 		 ORDER BY id ASC
@@ -241,6 +277,13 @@ func (s *SQLStore) Update(ctx context.Context, id ID, u Update) (Tenant, error) 
 			return Tenant{}, fmt.Errorf("tenant: update %s: %w", id, err)
 		}
 	}
+	if u.Tier != nil {
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE tenants SET tier = ? WHERE id = ?`,
+			*u.Tier, string(id)); err != nil {
+			return Tenant{}, fmt.Errorf("tenant: update tier %s: %w", id, err)
+		}
+	}
 	return s.Get(ctx, id)
 }
 
@@ -268,12 +311,12 @@ type scanner interface {
 
 func scanTenant(r scanner) (Tenant, error) {
 	var (
-		t           Tenant
-		idStr, kind string
-		login       sql.NullString
-		gid         sql.NullInt64
+		t                 Tenant
+		idStr, kind, tier string
+		login             sql.NullString
+		gid               sql.NullInt64
 	)
-	if err := r.Scan(&idStr, &login, &gid, &kind, &t.CreatedAt); err != nil {
+	if err := r.Scan(&idStr, &login, &gid, &kind, &tier, &t.CreatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Tenant{}, ErrTenantNotFound
 		}
@@ -281,6 +324,10 @@ func scanTenant(r scanner) (Tenant, error) {
 	}
 	t.ID = ID(idStr)
 	t.Kind = Kind(kind)
+	if tier == "" {
+		tier = "free"
+	}
+	t.Tier = tier
 	if login.Valid {
 		v := login.String
 		t.GitHubLogin = &v
@@ -354,6 +401,9 @@ func (m *MemStore) Create(_ context.Context, t Tenant) error {
 	if t.Kind == "" {
 		t.Kind = KindUser
 	}
+	if t.Tier == "" {
+		t.Tier = "free"
+	}
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = time.Now().UTC()
 	}
@@ -420,6 +470,9 @@ func (m *MemStore) Update(_ context.Context, id ID, u Update) (Tenant, error) {
 	if u.GitHubLogin != nil {
 		v := *u.GitHubLogin
 		t.GitHubLogin = &v
+	}
+	if u.Tier != nil {
+		t.Tier = *u.Tier
 	}
 	m.byID[id] = t
 	return t, nil

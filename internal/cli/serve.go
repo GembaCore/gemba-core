@@ -36,12 +36,15 @@ import (
 	"github.com/GembaCore/gemba-core/internal/adapter/noop"
 	"github.com/GembaCore/gemba-core/internal/auth"
 	"github.com/GembaCore/gemba-core/internal/auth/oauth"
+	"github.com/GembaCore/gemba-core/internal/billing"
 	"github.com/GembaCore/gemba-core/internal/config"
 	corepersona "github.com/GembaCore/gemba-core/internal/core/persona"
 	"github.com/GembaCore/gemba-core/internal/persona"
 	"github.com/GembaCore/gemba-core/internal/personas/onboarder"
+	"github.com/GembaCore/gemba-core/internal/quota"
 	"github.com/GembaCore/gemba-core/internal/server"
 	"github.com/GembaCore/gemba-core/internal/server/metrics"
+	srvmw "github.com/GembaCore/gemba-core/internal/server/middleware"
 	"github.com/GembaCore/gemba-core/internal/shader"
 	"github.com/GembaCore/gemba-core/internal/shader/gastown"
 	"github.com/GembaCore/gemba-core/internal/skills/bootstrap_review"
@@ -51,6 +54,7 @@ import (
 	"github.com/GembaCore/gemba-core/internal/transport/api"
 	"github.com/GembaCore/gemba-core/internal/walk"
 	walksources "github.com/GembaCore/gemba-core/internal/walk/sources"
+	"github.com/GembaCore/gemba-core/internal/workspaces"
 )
 
 func newServeCmd(b BuildInfo) *cobra.Command {
@@ -200,6 +204,12 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 	cmd.Flags().BoolVar(&quiet, "quiet", false,
 		"suppress the startup banner")
 
+	// gm-o9t8.4.2.1: tier-aware quota + rate-limit middleware. On by
+	// default so multi-tenant rigs ship with enforcement; flip to
+	// false to disable during incident response or for dev rigs.
+	cmd.Flags().BoolVar(&cfg.QuotaEnforce, "quota-enforce", true,
+		"enforce per-tenant tier limits (rate, concurrent VMs, workspaces)")
+
 	// gm-s47n.12: pool config path. Empty defaults to
 	// .gemba/pool.toml in cwd; missing file = no pools (Phase 0
 	// zero-delta). When non-empty AND the file exists, the
@@ -219,6 +229,25 @@ authentication. Binding a non-loopback interface without --auth is an error.`,
 		"GitHub OAuth app client secret (treated as a secret; never logged)")
 	cmd.Flags().BoolVar(&cfg.MultiTenantMode, "multi-tenant", false,
 		"enable constitution.multi_tenant_mode; requires GitHub OAuth to be configured")
+
+	// gm-o9t8.2.4: first-boot workspace registry bootstrap. Defaults to
+	// true so operators upgrading from M1 get their existing on-disk
+	// projects auto-registered against the default tenant.
+	cfg.WorkspacesBootstrap = true
+	cmd.Flags().BoolVar(&cfg.WorkspacesBootstrap, "workspaces-bootstrap", true,
+		"on first boot, scan --workspaces-root and register existing project dirs under the default tenant")
+
+	// gm-o9t8.4.4.1: GitHub OAuth org/team gating. Empty lists ⇒ no
+	// restriction; any successfully authenticated GitHub user passes.
+	cmd.Flags().StringSliceVar(&cfg.OAuthGitHubAllowedOrgs, "oauth-github-allowed-orgs", nil,
+		"comma-separated GitHub org logins permitted to log in (default: any)")
+	cmd.Flags().StringSliceVar(&cfg.OAuthGitHubAllowedTeams, "oauth-github-allowed-team", nil,
+		"GitHub team in 'org/team' form; repeatable; union semantics with --oauth-github-allowed-orgs")
+
+	// gm-o9t8.4.1.1: in-memory billing usage aggregator default-on.
+	cfg.BillingMetersEnable = true
+	cmd.Flags().BoolVar(&cfg.BillingMetersEnable, "billing-meters-enable", true,
+		"wire the in-memory billing usage aggregator (disable for offline test mode)")
 
 	return cmd
 }
@@ -684,6 +713,76 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		handler.AttachTenantStore(tenantStore)
 	}
 
+	// gm-o9t8.2.4: build and attach the multi-tenant workspace registry.
+	// Selection rule:
+	//   - --multi-tenant + a live *sql.DB (reg.DoltDB) → SQLStore
+	//   - otherwise                                    → MemStore
+	// First boot also scans --workspaces-root and registers any
+	// pre-existing project dirs under the default tenant so M1
+	// deployments don't lose access to their workspaces.
+	{
+		var wsReg workspaces.Registry
+		if cfg.MultiTenantMode && reg.DoltDB != nil {
+			sqlReg := workspaces.NewSQLStore(reg.DoltDB)
+			if mErr := sqlReg.Migrate(ctx); mErr != nil {
+				slog.Warn("workspaces: SQL migrate failed; falling back to in-memory registry",
+					"err", mErr)
+				wsReg = workspaces.NewMemStore()
+			} else {
+				wsReg = sqlReg
+			}
+		} else {
+			wsReg = workspaces.NewMemStore()
+		}
+		if cfg.WorkspacesBootstrap {
+			if n, bErr := workspaces.BootstrapFromDir(ctx, wsReg, resolveWorkspacesRoot(&cfg)); bErr != nil {
+				slog.Warn("workspaces: bootstrap-from-dir failed; status resolution falls back to legacy walk",
+					"err", bErr)
+			} else if n > 0 {
+				slog.Info("workspaces: bootstrapped registry from on-disk projects", "inserted", n)
+			}
+		}
+		handler.AttachWorkspaceRegistry(wsReg)
+	}
+
+	// gm-o9t8.4.2.1: tier-aware quota + rate-limit middleware.
+	// Resolves the request's tenant -> tier via the tenant store and
+	// gates rate/concurrent-VM/workspace limits via the in-process
+	// BucketStore + MemCounters. Production deployments swap the
+	// BucketStore for a Redis-backed implementation (out of scope
+	// for this bead). Disabled when --quota-enforce=false.
+	if cfg.QuotaEnforce {
+		bucketStore := quota.NewBucketStore()
+		counters := quota.NewMemCounters()
+		tierResolver := func(rctx context.Context, id tenant.ID) (quota.Tier, error) {
+			t, err := tenantStore.Get(rctx, id)
+			if err != nil {
+				// Unknown tenant — fall back to free tier so the
+				// middleware does not 500 on a transient miss.
+				return quota.TierFree, nil
+			}
+			tier, perr := quota.ParseTier(t.Tier)
+			if perr != nil {
+				return quota.TierFree, nil
+			}
+			return tier, nil
+		}
+		mw := srvmw.WithQuota(srvmw.QuotaOptions{
+			Store:    bucketStore,
+			Counters: counters,
+			Tier:     tierResolver,
+			VMCreateRoutes: []string{
+				"/api/v1/vms",
+				"/api/v1/workspaces/", // creation goes via POST under wsid
+			},
+			WorkspaceCreateRoutes: []string{
+				"/api/v1/workspaces",
+				"/api/v1/tenants/",
+			},
+		})
+		handler.AttachTierQuotaMiddleware(mw)
+	}
+
 	// gm-o9t8.3.5: GitHub OAuth wiring. Construct the OAuth handle
 	// from the resolved flags; ErrUnconfigured means OAuth is opt-in
 	// and the operator hasn't opted in, which is fine — the callback
@@ -704,6 +803,31 @@ func runServe(ctx context.Context, cfg config.ServeConfig, b BuildInfo, quiet bo
 		slog.Warn("oauth: half-configured; routes will 503", "err", oaErr)
 	}
 	// ErrUnconfigured → no log; OAuth is opt-in and silent by default.
+
+	// gm-o9t8.4.4.1: per-tenant GitHub OrgGate registry. When the
+	// operator has supplied --oauth-github-allowed-orgs or
+	// --oauth-github-allowed-team flags we install a global gate (keyed
+	// by empty tenant id) so the oauthLogin handler applies the same
+	// policy across every freshly-provisioned tenant. Per-tenant
+	// overrides land with the broader tenant-config refactor.
+	if len(cfg.OAuthGitHubAllowedOrgs) > 0 || len(cfg.OAuthGitHubAllowedTeams) > 0 {
+		gates := oauth.NewOrgGateStore()
+		gates.Set("", oauth.OrgGate{
+			AllowedOrgs:  cfg.OAuthGitHubAllowedOrgs,
+			AllowedTeams: cfg.OAuthGitHubAllowedTeams,
+		})
+		handler.AttachOrgGates(gates)
+		slog.Info("oauth: org-gating configured",
+			"allowed_orgs", len(cfg.OAuthGitHubAllowedOrgs),
+			"allowed_teams", len(cfg.OAuthGitHubAllowedTeams))
+	}
+
+	// gm-o9t8.4.1.1: wire the default in-memory billing aggregator.
+	// Disabled in offline test mode so the /usage endpoint exercises
+	// its 503 adaptor_not_configured branch.
+	if cfg.BillingMetersEnable {
+		handler.AttachUsageAggregator(billing.NewAggregator())
+	}
 
 	srv := &http.Server{
 		Addr:              addr,

@@ -237,6 +237,25 @@ type ServeConfig struct {
 	// leaves this false and the PAT path is sufficient.
 	MultiTenantMode bool
 
+	// OAuthGitHubAllowedOrgs lists GitHub organization logins permitted
+	// to log in via the device flow (gm-o9t8.4.4.1). Empty disables the
+	// org check — any successfully-authenticated GitHub user passes.
+	// Resolution: --oauth-github-allowed-orgs (comma-separated) > env
+	// GEMBA_OAUTH_GITHUB_ALLOWED_ORGS.
+	OAuthGitHubAllowedOrgs []string
+
+	// OAuthGitHubAllowedTeams lists "org/team" pairs permitted to log
+	// in (gm-o9t8.4.4.1). Empty disables the team check. Resolution:
+	// --oauth-github-allowed-team (repeatable). Membership in any
+	// listed org OR team is sufficient (union semantics).
+	OAuthGitHubAllowedTeams []string
+
+	// BillingMetersEnable controls whether the in-memory billing
+	// aggregator is wired into the router on boot (gm-o9t8.4.1.1).
+	// Defaults to true; offline test mode can disable to drop the
+	// /usage endpoint to its 503 adaptor_not_configured branch.
+	BillingMetersEnable bool
+
 	// PoolConfigPath points at a TOML file declaring the
 	// [pool.<rig>.<persona>] blocks that drive the auto-dispatch
 	// daemon (gm-s47n.12, spec §3.3). Empty means "no pool config" —
@@ -256,6 +275,23 @@ type ServeConfig struct {
 	// /api/pools endpoint surfaces both numbers. See
 	// docs/deployment/pool-sizing.md for the full operator guide.
 	PoolConfigPath string
+
+	// WorkspacesBootstrap controls the gm-o9t8.2.4 first-boot migration
+	// path: when true (the default), the server scans WorkspacesRoot at
+	// startup and registers a workspaces row for every on-disk project
+	// dir keyed to the default tenant. Idempotent — only previously
+	// unregistered slugs are inserted. Operators who manage the
+	// registry externally can set this false to opt out.
+	WorkspacesBootstrap bool
+
+	// QuotaEnforce toggles the tier-aware quota + rate-limit
+	// middleware (gm-o9t8.4.2.1). Defaults to true so multi-tenant
+	// rigs ship with tier enforcement on; --quota-enforce=false lets
+	// operators disable the gate during incident response or for
+	// dev rigs where the limits would just be friction. The
+	// in-process BucketStore is wiped on shutdown — production
+	// deployments are expected to swap in a Redis-backed store.
+	QuotaEnforce bool
 }
 
 // NormalizeListen splits c.Listen if it is in host:port form (e.g.

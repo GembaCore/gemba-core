@@ -152,6 +152,39 @@ func (r *Router) oauthLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// gm-o9t8.4.4.1: apply the GitHub org/team gate before provisioning
+	// a tenant. The store is keyed by tenant id; the global policy
+	// installed by serve.go lives under the empty-string key and is the
+	// only one consulted today (per-tenant overrides land later).
+	// IsOpen short-circuits — the GitHub API is only hit when at least
+	// one org or team predicate is configured.
+	if r.orgGates != nil {
+		gate := r.orgGates.Get("")
+		if !gate.IsOpen() {
+			if _, gErr := gate.Allow(ctx, in.GitHubAccessToken); gErr != nil {
+				if errors.Is(gErr, oauth.ErrNotInAllowed) {
+					writeJSON(w, http.StatusForbidden, map[string]any{
+						"error": map[string]string{
+							"code":    "not_in_allowed_orgs",
+							"message": gErr.Error(),
+						},
+					})
+					return
+				}
+				// Token rejection or transport error from GitHub —
+				// surface as 401 github_token_rejected to match the
+				// existing error envelope for any /user-level failure.
+				writeJSON(w, http.StatusUnauthorized, map[string]any{
+					"error": map[string]string{
+						"code":    "github_token_rejected",
+						"message": gErr.Error(),
+					},
+				})
+				return
+			}
+		}
+	}
+
 	// Find-or-create the tenant. Subsequent logins from the same
 	// github_id resolve to the existing tenant row; first login
 	// provisions one.

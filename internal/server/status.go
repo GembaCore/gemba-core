@@ -198,12 +198,32 @@ func embeddedDoltStatus(r DoltStatusReporter) *EmbeddedDoltStatus {
 	return out
 }
 
-// resolveWorkspacePath maps a wsid to a workspace root on disk. It
-// uses the same project registry /api/v1/projects walks: load user
-// config, list projects, match on name. wsid "_" or "" resolves to
-// the active project (gm-root.18 in-process state). Returns "" when
-// no match is found — callers treat that as "skip repo stripe".
+// resolveWorkspacePath maps a wsid to a workspace root on disk.
+//
+// Resolution order (gm-o9t8.2.4):
+//
+//  1. Multi-tenant workspace registry, if attached. Both canonical
+//     "<tenant-prefix>:<slug>" and legacy bare-slug wsids are accepted;
+//     ErrNotFound falls through to the legacy path so single-user
+//     installs that never registered the row keep working.
+//  2. Legacy projects-config walk: load user config, list projects,
+//     match on basename. wsid "_" or "" resolves to the active project
+//     (gm-root.18 in-process state) or the first complete project.
+//
+// Returns "" when no match is found — callers treat that as "skip repo
+// stripe".
 func (r *Router) resolveWorkspacePath(wsid string) string {
+	if r.workspaces != nil && strings.TrimSpace(wsid) != "" && wsid != "_" {
+		ws, err := r.workspaces.Resolve(context.Background(), wsid)
+		if err == nil && ws != nil && ws.ProjectPath != "" {
+			return ws.ProjectPath
+		}
+		// Any failure (workspaces.ErrNotFound, malformed wsid, etc.)
+		// falls through to the legacy projects-config walk. This keeps
+		// the status endpoint useful for single-user installs that
+		// never wired a registry, and for operators who typed a wsid
+		// the registry doesn't know yet.
+	}
 	ucfg, err := config.LoadUserConfig(r.cfg.ConfigPath)
 	if err != nil {
 		return ""

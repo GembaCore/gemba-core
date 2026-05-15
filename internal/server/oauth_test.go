@@ -178,6 +178,49 @@ func TestOAuthCallback_Disabled(t *testing.T) {
 	}
 }
 
+// TestOAuthLogin_OrgGateRefusesNonMember verifies gm-o9t8.4.4.1: when
+// the operator has configured --oauth-github-allowed-orgs, a GitHub
+// token whose owner is not in any allowed org is rejected with 403
+// not_in_allowed_orgs before any tenant row is provisioned.
+func TestOAuthLogin_OrgGateRefusesNonMember(t *testing.T) {
+	r, _, _ := newTestRouterWithOAuth(t, oauth.GitHubUser{ID: 7, Login: "outsider"})
+
+	// Stub GitHub API: /user returns the outsider identity; /user/orgs
+	// returns an empty array (no org membership); /user/teams returns
+	// empty. The gate's policy requires "acme" so denial is expected.
+	gh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		switch req.URL.Path {
+		case "/user":
+			_, _ = w.Write([]byte(`{"login":"outsider","id":7}`))
+		case "/user/orgs", "/user/teams":
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, req)
+		}
+	}))
+	defer gh.Close()
+
+	gates := oauth.NewOrgGateStore()
+	gates.Set("", oauth.OrgGate{AllowedOrgs: []string{"acme"}}.WithAPIBase(gh.URL))
+	r.AttachOrgGates(gates)
+
+	req := httptest.NewRequest(http.MethodPost, oauth.LoginPath,
+		bytes.NewReader([]byte(`{"github_access_token":"gho_x"}`)))
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("status: %d body=%s (want 403)", rr.Code, rr.Body.String())
+	}
+	var body struct {
+		Error map[string]string `json:"error"`
+	}
+	_ = json.Unmarshal(rr.Body.Bytes(), &body)
+	if body.Error["code"] != "not_in_allowed_orgs" {
+		t.Fatalf("code: %q want not_in_allowed_orgs", body.Error["code"])
+	}
+}
+
 // TestOAuthCallback_Enabled returns the device-flow status when OAuth
 // is configured.
 func TestOAuthCallback_Enabled(t *testing.T) {
