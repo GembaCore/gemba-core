@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -110,6 +111,12 @@ func TestTranslate_SanitizesTableName(t *testing.T) {
 // touching the kernel. Linux integration tests live in
 // egress_linux_integration_test.go and are gated on root + GOOS=linux.
 func TestApplyEgressRules_FallbackBehavior(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		// On Linux applyEgressRules hits the real nftables path, which needs
+		// CAP_NET_ADMIN. CI runners don't have it; Linux-specific coverage
+		// lives in egress_linux_test.go behind a root-only gate.
+		t.Skip("Linux path exercises real nftables; see egress_linux_test.go")
+	}
 	var buf bytes.Buffer
 	log := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
