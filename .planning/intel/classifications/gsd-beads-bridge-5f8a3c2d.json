@@ -1,0 +1,29 @@
+{
+  "source_path": "/Users/mikebengtson/Documents/GitHub/gemba/docs/process/gsd-beads-bridge.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "GSD \u2194 Beads bridge",
+  "summary": "Locks the loosely-coupled integration model between GSD (plan + autonomous executor) and Beads (durable tracker) via a naming convention, with no bidirectional sync daemon.",
+  "scope": [
+    "GSD",
+    "Beads",
+    "PLAN.md task schema",
+    "ROADMAP.md",
+    "gsd-executor",
+    "bead lifecycle (claim/note/close)",
+    "label conventions",
+    "gemba-lite initiative bootstrap"
+  ],
+  "cross_refs": [
+    "ROADMAP.md",
+    "PLAN.md",
+    "docs/design/",
+    "/gsd-ingest-docs",
+    "/gsd-new-project",
+    "gsd-plan-phase"
+  ],
+  "locked": true,
+  "precedence": 0,
+  "notes": "Manifest-declared ADR with precedence 0 (highest). Document encodes multiple locked decisions: (1) GSD owns plan + executor, Beads owns tracker; (2) no bidirectional sync daemon; (3) every gsd task in PLAN.md carries a `bead:` reference; (4) executor performs claim/note/close around each task; (5) mapping table: project root\u2192Decision, ROADMAP entry\u2192Milestone, phase\u2192Epic, PLAN task\u2192Story; (6) reviews and verification logs are gsd artifacts, not bead rows; (7) per-task atomic commits captured as bead notes, not separate beads; (8) cumulative labels required (initiative + strategic + layer + type). No explicit `Status: Accepted` header, but manifest authoritatively classifies as ADR."
+}

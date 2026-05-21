@@ -69,3 +69,8 @@ CLAUDE.local.md
 mail/
 .DS_Store
 .gitnexus
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
