@@ -1,6 +1,8 @@
 // Package core: see doc.go for the overview.
 package core
 
+import "context"
+
 // This file carries the session-IO contract: the typed payloads
 // every OrchestrationPlaneAdaptor uses to deliver input to a live
 // session and stream output back out. Kept in its own file (rather
@@ -70,4 +72,39 @@ type SessionEvent struct {
 	Kind  string         `json:"kind"`
 	Bytes []byte         `json:"bytes,omitempty"`
 	Meta  map[string]any `json:"meta,omitempty"`
+}
+
+// UnsupportedSessionIO is the default-noop mixin every adaptor that
+// has not yet implemented session IO embeds (G-9). The three methods
+// return a tagged *AdaptorError{Kind: KindUnsupported} so the
+// capability-negotiation UI hides the control and conformance Group F
+// (gm-faz) passes.
+//
+// Phase A embeds this in every existing in-tree adaptor (native, gt,
+// mock, noop, plus the orchestration_test noopOrchestrator fixture).
+// Phase B's native-tmux adaptor will override StreamSession +
+// SendInput and provide a real (no-op) ResizeSession; downstream
+// Docker / k8s / microVM adaptors will override per-runtime.
+//
+// Adaptors that override only a subset (e.g. StreamSession but not
+// SendInput) still embed the mixin and shadow the methods they own —
+// the embedded methods cover whatever's left.
+type UnsupportedSessionIO struct{}
+
+// SendInput returns KindUnsupported. Embedding adaptors that gain a
+// real implementation shadow this with their own method.
+func (UnsupportedSessionIO) SendInput(context.Context, string, SessionInput) error {
+	return NewAdaptorError(KindUnsupported, "adaptor does not implement SendInput")
+}
+
+// ResizeSession returns KindUnsupported. Embedding adaptors that gain
+// a real implementation shadow this with their own method.
+func (UnsupportedSessionIO) ResizeSession(context.Context, string, int, int) error {
+	return NewAdaptorError(KindUnsupported, "adaptor does not implement ResizeSession")
+}
+
+// StreamSession returns KindUnsupported. Embedding adaptors that gain
+// a real implementation shadow this with their own method.
+func (UnsupportedSessionIO) StreamSession(context.Context, string) (<-chan SessionEvent, error) {
+	return nil, NewAdaptorError(KindUnsupported, "adaptor does not implement StreamSession")
 }
