@@ -14,6 +14,12 @@ import (
 // scaffold with a real StartSession path; methods that haven't been
 // implemented yet still return KindUnsupported.
 type OrchestrationPlane struct {
+	// UnsupportedSessionIO is the Phase A default-noop mixin for the
+	// session-IO trio (SendInput / ResizeSession / StreamSession).
+	// Phase B overrides StreamSession + SendInput and provides a real
+	// (no-op) ResizeSession for native tmux.
+	core.UnsupportedSessionIO
+
 	cfg    Config
 	fanout *bridge.Fanout
 

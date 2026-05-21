@@ -28,6 +28,11 @@ import (
 
 // OrchestrationPlane is the in-process mock plane.
 type OrchestrationPlane struct {
+	// UnsupportedSessionIO is the Phase A default-noop mixin for the
+	// session-IO trio. Mock has no live IO surface to drive, so the
+	// KindUnsupported defaults are correct here.
+	core.UnsupportedSessionIO
+
 	mu sync.RWMutex
 
 	// sessions holds the live Session map keyed by session id.

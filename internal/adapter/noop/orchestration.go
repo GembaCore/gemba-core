@@ -23,6 +23,11 @@ import (
 // Everything else returns KindProcessFailed with a "not implemented by
 // noop" message so callers can still branch on the tagged envelope.
 type OrchestrationPlane struct {
+	// UnsupportedSessionIO is the Phase A default-noop mixin for the
+	// session-IO trio. The noop adaptor never runs real sessions, so
+	// KindUnsupported is the correct response.
+	core.UnsupportedSessionIO
+
 	mu          sync.Mutex
 	assignments map[string]core.Assignment
 	sessions    map[string]*core.Session

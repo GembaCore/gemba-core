@@ -62,6 +62,11 @@ type gtProbeRunner func(ctx context.Context, args ...string) ([]byte, error)
 // channel disables emission (used by tests that don't care about
 // recycle events).
 type OrchestrationPlane struct {
+	// UnsupportedSessionIO is the Phase A default-noop mixin for the
+	// session-IO trio (SendInput / ResizeSession / StreamSession).
+	// Phase B+ will override per gt's runtime model.
+	core.UnsupportedSessionIO
+
 	run            gtProbeRunner
 	root           string
 	caps           gtCapabilities
