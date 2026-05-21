@@ -99,6 +99,49 @@ func TestListAgentsSurfacesRegistry(t *testing.T) {
 	}
 }
 
+// TestSessionIO_DefaultUnsupported pins the Phase A invariant that the
+// native plane embeds core.UnsupportedSessionIO and therefore returns
+// KindUnsupported from all three session-IO trio methods until Phase B
+// overrides them. Catches the case where a future change removes the
+// embed but forgets to add a real implementation.
+func TestSessionIO_DefaultUnsupported(t *testing.T) {
+	p := New()
+	ctx := context.Background()
+	const sid = "sid-phase-a"
+
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{"SendInput", func() error {
+			return p.SendInput(ctx, sid, core.SessionInput{Mode: core.InputLiteral, Keys: "x"})
+		}},
+		{"ResizeSession", func() error {
+			return p.ResizeSession(ctx, sid, 80, 24)
+		}},
+		{"StreamSession", func() error {
+			ch, err := p.StreamSession(ctx, sid)
+			if ch != nil {
+				t.Errorf("StreamSession returned non-nil channel; want nil")
+			}
+			return err
+		}},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			err := c.call()
+			if err == nil {
+				t.Fatalf("%s: want error, got nil", c.name)
+			}
+			var aerr *core.AdaptorError
+			if !errors.As(err, &aerr) || aerr.Kind != core.KindUnsupported {
+				t.Errorf("%s: want AdaptorError{KindUnsupported}, got %T: %v", c.name, err, err)
+			}
+		})
+	}
+}
+
 func TestSubscribeClosesOnContextDone(t *testing.T) {
 	p := New()
 	ctx, cancel := context.WithCancel(context.Background())

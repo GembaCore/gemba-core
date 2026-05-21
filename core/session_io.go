@@ -74,6 +74,17 @@ type SessionEvent struct {
 	Meta  map[string]any `json:"meta,omitempty"`
 }
 
+// SessionEventKinds is the exhaustive set of valid SessionEvent.Kind
+// wire tokens (G-5). Iterating this slice keeps test + future code in
+// lockstep with the four LOCKED values without restating the list at
+// each call site. Adding a fifth requires a CONTEXT.md amendment.
+var SessionEventKinds = []string{
+	"output",
+	"status",
+	"exit",
+	"disconnect",
+}
+
 // UnsupportedSessionIO is the default-noop mixin every adaptor that
 // has not yet implemented session IO embeds (G-9). The three methods
 // return a tagged *AdaptorError{Kind: KindUnsupported} so the
