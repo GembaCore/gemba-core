@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/GembaCore/gemba-core/core"
 )
@@ -54,6 +55,14 @@ type Tmux struct {
 	// runner shells out to tmux. Tests inject a fake; production code
 	// uses defaultTmuxRunner which forks/exec via exec.CommandContext.
 	runner tmuxRunner
+	// pipeMu guards activePipes. gm-v01.3.4 (Streamable extension).
+	pipeMu sync.Mutex
+	// activePipes records pane ids for which StartPipe has been
+	// invoked. Used to make StartPipe idempotent and to short-circuit
+	// StopPipe when no pipe was ever opened. Lazily initialized via
+	// pipePaneState() so older constructors don't need to know about
+	// the field.
+	activePipes map[string]struct{}
 }
 
 // NewTmux constructs a Tmux backend. Returns an error when tmux is
@@ -65,7 +74,7 @@ func NewTmux() (*Tmux, error) {
 	if err != nil {
 		return nil, fmt.Errorf("native/backend/tmux: tmux not found on PATH: %w", err)
 	}
-	t := &Tmux{binary: p, sessionName: "gemba"}
+	t := &Tmux{binary: p, sessionName: "gemba", activePipes: make(map[string]struct{})}
 	t.runner = t.defaultRunner
 	return t, nil
 }
