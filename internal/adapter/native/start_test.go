@@ -28,6 +28,20 @@ type fakeBackend struct {
 	spawnCalls []backend.SpawnSpec
 	killCalls  []string
 	spawnErr   error
+
+	// sendInputCalls records every SendInput dispatch so the session_io
+	// override tests can assert (paneID, payload) tuples. Populated
+	// regardless of test; assertions in tests that don't care simply
+	// ignore it.
+	sendInputCalls []sendInputCall
+	// sendInputErr is returned from SendInput when set, so tests can
+	// drive the non-typed-error wrapping branch in the adapter.
+	sendInputErr error
+}
+
+type sendInputCall struct {
+	paneID string
+	in     core.SessionInput
 }
 
 func newFakeBackend() *fakeBackend {
@@ -68,6 +82,13 @@ func (f *fakeBackend) SpawnPane(_ context.Context, spec backend.SpawnSpec) (back
 }
 
 func (f *fakeBackend) SendKeys(context.Context, string, string) error { return nil }
+
+func (f *fakeBackend) SendInput(_ context.Context, paneID string, in core.SessionInput) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sendInputCalls = append(f.sendInputCalls, sendInputCall{paneID: paneID, in: in})
+	return f.sendInputErr
+}
 
 func (f *fakeBackend) CapturePane(context.Context, string, int) (string, error) { return "", nil }
 

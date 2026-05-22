@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // ITerm implements Backend against iTerm2 via AppleScript (gm-native.5).
@@ -117,6 +119,32 @@ func (*ITerm) SendKeys(ctx context.Context, paneID, keys string) error {
 end tell`, quoteApplescriptString(paneID), quoteApplescriptString(keys))
 	_, err := runOsascript(ctx, script)
 	return err
+}
+
+// SendInput delivers a typed SessionInput payload. gm-v01.3.1. iTerm's
+// AppleScript surface only supports `write text` which always appends
+// a newline, so we degrade to the existing SendKeys path for literal/
+// keys modes and surface KindUnsupported for signal mode (no terminal
+// control sequence delivery via AppleScript).
+func (i *ITerm) SendInput(ctx context.Context, paneID string, in core.SessionInput) error {
+	if paneID == "" {
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/iterm: SendInput requires pane id")
+	}
+	if in.Keys == "" {
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/iterm: SendInput requires non-empty Keys")
+	}
+	switch in.Mode {
+	case core.InputLiteral, core.InputKeys:
+		return i.SendKeys(ctx, paneID, in.Keys)
+	case core.InputSignal:
+		return core.NewAdaptorError(core.KindUnsupported,
+			"native/backend/iterm: SendInput signal mode unsupported")
+	default:
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/iterm: unknown SessionInputMode %q", in.Mode)
+	}
 }
 
 // CapturePane returns the last `lines` of the session's contents.

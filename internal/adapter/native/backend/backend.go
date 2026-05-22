@@ -190,7 +190,27 @@ type Backend interface {
 	// by the backend into a real newline (tmux convention); callers
 	// that want to send the literal 4-char sequence "Enter" must
 	// split the send.
+	//
+	// Legacy verb kept for start.go's preamble-injection path and the
+	// escalation responder. New code that needs typed
+	// literal/keys/signal dispatch should call SendInput instead.
 	SendKeys(ctx context.Context, sessionID string, keys string) error
+
+	// SendInput delivers a typed core.SessionInput payload to the
+	// session. gm-v01.3.1. Modes:
+	//
+	//   - core.InputLiteral — raw bytes byte-for-byte to the session's
+	//     stdin / pty.
+	//   - core.InputKeys    — named keys (Enter, C-c, Up, M-x, …) the
+	//     backend translates to its native control sequence.
+	//   - core.InputSignal  — POSIX signal name; backend may surrogate
+	//     via the corresponding terminal control key (tmux), via
+	//     `docker kill --signal` (container backends), or return
+	//     core.KindUnsupported.
+	//
+	// Backends MUST return core.KindValidation on empty session id,
+	// empty Keys, unknown mode, or unsupported signal.
+	SendInput(ctx context.Context, sessionID string, in core.SessionInput) error
 
 	// CapturePane returns the last `lines` rendered lines of output.
 	// Implementations strip ANSI if they can cheaply; callers should

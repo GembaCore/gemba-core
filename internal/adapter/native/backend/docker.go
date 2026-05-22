@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // Docker implements Backend by shelling to the `docker` CLI — no Go
@@ -367,6 +369,37 @@ func (d *Docker) SendKeys(ctx context.Context, sessionID, keys string) error {
 			sessionID, err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+// SendInput delivers a typed SessionInput payload. gm-v01.3.1. Docker
+// has no native key-name surface (no shared tty); literal mode delivers
+// raw bytes via the existing SendKeys stdin path, keys mode mirrors that
+// (callers are responsible for translating named keys to control
+// sequences before posting), and signal mode shells out to
+// `docker kill --signal=<name>` so SIGINT/SIGTERM actually deliver as
+// real POSIX signals to the container's init process.
+func (d *Docker) SendInput(ctx context.Context, sessionID string, in core.SessionInput) error {
+	if sessionID == "" {
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/docker: SendInput requires session id")
+	}
+	if in.Keys == "" {
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/docker: SendInput requires non-empty Keys")
+	}
+	switch in.Mode {
+	case core.InputLiteral, core.InputKeys:
+		return d.SendKeys(ctx, sessionID, in.Keys)
+	case core.InputSignal:
+		if _, err := d.runner(ctx, d.binary, "kill", "--signal="+in.Keys, sessionID); err != nil {
+			return core.WrapAdaptorError(core.KindProcessFailed, err,
+				"native/backend/docker: docker kill --signal=%s %s", in.Keys, sessionID)
+		}
+		return nil
+	default:
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/docker: unknown SessionInputMode %q", in.Mode)
+	}
 }
 
 // CapturePane returns the last `lines` of the container's stdout +

@@ -7,7 +7,37 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/GembaCore/gemba-core/core"
 )
+
+// tmuxRunner executes a tmux command. Swapped in tests so we can
+// assert argv shape without a real tmux server.
+type tmuxRunner func(ctx context.Context, stdin *strings.Reader, args ...string) ([]byte, error)
+
+// signalToKey translates POSIX signal names into the tmux send-keys
+// token that produces the equivalent terminal control sequence. tmux
+// has no native "send signal" verb — every entry below is therefore a
+// keystroke surrogate that the foreground process's tty interprets as
+// the corresponding signal under default termios (`stty -a`).
+//
+//   - SIGINT  → "C-c"  (^C, default INTR)
+//   - SIGTERM → "C-\\" (^\, default QUIT — best-effort surrogate; tmux
+//     has no way to actually raise SIGTERM via a keystroke. Callers
+//     that need a guaranteed SIGTERM should target the pane PID directly
+//     via the OS, not through this adaptor.)
+//   - SIGQUIT → "C-\\" (^\, default QUIT)
+//   - SIGTSTP → "C-z"  (^Z, default SUSP)
+//   - SIGHUP  → "C-d"  (^D, EOF — best-effort surrogate; shells exit on
+//     EOF which is the closest tty-level effect a keystroke can produce
+//     for SIGHUP. Same caveat as SIGTERM applies.)
+var signalToKey = map[string]string{
+	"SIGINT":  "C-c",
+	"SIGTERM": `C-\`,
+	"SIGQUIT": `C-\`,
+	"SIGTSTP": "C-z",
+	"SIGHUP":  "C-d",
+}
 
 // Tmux implements Backend by shelling to the `tmux` CLI. gm-native.4.
 // Every method re-invokes tmux; there is no long-lived control
@@ -21,6 +51,9 @@ type Tmux struct {
 	// sessionName is the tmux session new panes get attached to.
 	// Empty means "create a new session on first SpawnPane."
 	sessionName string
+	// runner shells out to tmux. Tests inject a fake; production code
+	// uses defaultTmuxRunner which forks/exec via exec.CommandContext.
+	runner tmuxRunner
 }
 
 // NewTmux constructs a Tmux backend. Returns an error when tmux is
@@ -32,7 +65,9 @@ func NewTmux() (*Tmux, error) {
 	if err != nil {
 		return nil, fmt.Errorf("native/backend/tmux: tmux not found on PATH: %w", err)
 	}
-	return &Tmux{binary: p, sessionName: "gemba"}, nil
+	t := &Tmux{binary: p, sessionName: "gemba"}
+	t.runner = t.defaultRunner
+	return t, nil
 }
 
 // Name implements Backend.
@@ -205,12 +240,25 @@ func (t *Tmux) Kill(ctx context.Context, paneID string) error {
 }
 
 // run is the single shell-out point so tests can swap it via an
-// injected exec.Cmd factory later (gm-native.9 startup path).
+// injected runner (gm-v01.3.1). Production callers use NewTmux which
+// wires defaultRunner; tests construct a *Tmux directly and inject a
+// closure that captures argv.
 func (t *Tmux) run(ctx context.Context, args ...string) ([]byte, error) {
 	return t.runWithStdin(ctx, nil, args...)
 }
 
 func (t *Tmux) runWithStdin(ctx context.Context, stdin *strings.Reader, args ...string) ([]byte, error) {
+	runner := t.runner
+	if runner == nil {
+		runner = t.defaultRunner
+	}
+	return runner(ctx, stdin, args...)
+}
+
+// defaultRunner is the real fork/exec path. Kept as a method (not a
+// free function) so the receiver's `binary` field is captured without
+// an extra closure allocation.
+func (t *Tmux) defaultRunner(ctx context.Context, stdin *strings.Reader, args ...string) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
 	cmd := exec.CommandContext(ctx, t.binary, args...)
 	if stdin != nil {
@@ -223,6 +271,71 @@ func (t *Tmux) runWithStdin(ctx context.Context, stdin *strings.Reader, args ...
 			strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
+}
+
+// SendInput is the typed dispatch counterpart to legacy SendKeys.
+// gm-v01.3.1. Mode discriminates how `in.Keys` is delivered to the
+// pane:
+//
+//   - core.InputLiteral — raw bytes; uses `send-keys -l --` for short
+//     single-line payloads, falls through to pasteText (load-buffer +
+//     paste-buffer -d) when the payload contains a newline or exceeds
+//     256 bytes so quoting + control-char stripping stay safe.
+//   - core.InputKeys    — caller-supplied named keys (Enter, C-c, Up,
+//     M-x, …); tmux owns the name table so we pass through verbatim
+//     via `send-keys --` (no -l).
+//   - core.InputSignal  — POSIX signal name (SIGINT, SIGTERM, …) is
+//     translated via the signalToKey map to a terminal control key
+//     and delivered via the InputKeys path. Unknown signals return a
+//     core.KindValidation error before any tmux invocation.
+//
+// Validation: empty paneID returns an error; empty Keys returns an
+// error for every Mode (the no-op send is meaningless and would mask
+// upstream bugs). All argv asserted by tmux_test.go::TestSendInput_*.
+func (t *Tmux) SendInput(ctx context.Context, paneID string, in core.SessionInput) error {
+	if paneID == "" {
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/tmux: SendInput requires pane id")
+	}
+	if in.Keys == "" {
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/tmux: SendInput requires non-empty Keys (mode=%q)", in.Mode)
+	}
+	switch in.Mode {
+	case core.InputLiteral:
+		return t.sendLiteral(ctx, paneID, in.Keys)
+	case core.InputKeys:
+		return t.sendNamedKeys(ctx, paneID, in.Keys)
+	case core.InputSignal:
+		key, ok := signalToKey[in.Keys]
+		if !ok {
+			return core.NewAdaptorError(core.KindValidation,
+				"native/backend/tmux: signal %q unsupported", in.Keys)
+		}
+		return t.sendNamedKeys(ctx, paneID, key)
+	default:
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/tmux: unknown SessionInputMode %q", in.Mode)
+	}
+}
+
+// sendLiteral routes byte-literal payloads. Short single-line payloads
+// go through `send-keys -l --` so tmux treats every byte as a literal
+// character (no key-name interpretation). Multi-line or large payloads
+// route through pasteText where buffer-mode delivery preserves quoting.
+func (t *Tmux) sendLiteral(ctx context.Context, paneID, text string) error {
+	if strings.Contains(text, "\n") || len(text) > 256 {
+		return t.pasteText(ctx, paneID, text)
+	}
+	_, err := t.run(ctx, "send-keys", "-t", paneID, "-l", "--", text)
+	return err
+}
+
+// sendNamedKeys delivers caller-supplied tmux key names (Enter, C-c,
+// Up, M-x, …) without -l so tmux's key-name table interprets them.
+func (t *Tmux) sendNamedKeys(ctx context.Context, paneID, keys string) error {
+	_, err := t.run(ctx, "send-keys", "-t", paneID, "--", keys)
+	return err
 }
 
 func safeTmuxBufferName(id string) string {

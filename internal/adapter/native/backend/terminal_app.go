@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/GembaCore/gemba-core/core"
 )
 
 // TerminalApp implements Backend against macOS Terminal.app via
@@ -125,6 +127,31 @@ func (*TerminalApp) SendKeys(ctx context.Context, paneID, keys string) error {
 end tell`, quoteApplescriptString(keys), tidx, wid)
 	_, err = runOsascript(ctx, script)
 	return err
+}
+
+// SendInput delivers a typed SessionInput payload. gm-v01.3.1.
+// Terminal.app's AppleScript surface only supports `do script` which
+// appends newline, so literal/keys degrade to SendKeys; signal mode is
+// unsupported (AppleScript has no terminal control-key surface).
+func (ta *TerminalApp) SendInput(ctx context.Context, paneID string, in core.SessionInput) error {
+	if paneID == "" {
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/terminal: SendInput requires pane id")
+	}
+	if in.Keys == "" {
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/terminal: SendInput requires non-empty Keys")
+	}
+	switch in.Mode {
+	case core.InputLiteral, core.InputKeys:
+		return ta.SendKeys(ctx, paneID, in.Keys)
+	case core.InputSignal:
+		return core.NewAdaptorError(core.KindUnsupported,
+			"native/backend/terminal: SendInput signal mode unsupported")
+	default:
+		return core.NewAdaptorError(core.KindValidation,
+			"native/backend/terminal: unknown SessionInputMode %q", in.Mode)
+	}
 }
 
 // CapturePane returns the last `lines` of the tab's visible buffer.
