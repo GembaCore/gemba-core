@@ -1,0 +1,10 @@
+docs:
+  - path: docs/design/gemba-lite.md
+    type: SPEC
+    precedence: 0
+  - path: docs/process/gsd-beads-bridge.md
+    type: ADR
+    precedence: 0
+  - path: docs/design/containerized-sessions.md
+    type: SPEC
+    precedence: 1

@@ -828,6 +828,14 @@ type ConfirmNonce string
 // the adaptor MUST release any process, workspace lease, transport
 // socket, or pending-request queue associated with the session.
 //
+// Session-IO trio (SendInput / ResizeSession / StreamSession): adaptors
+// that have not yet implemented live session IO embed
+// UnsupportedSessionIO (defined in session_io.go) to satisfy the three
+// methods with a tagged *AdaptorError{Kind: KindUnsupported} (G-9).
+// Phase B's native-tmux adaptor will override StreamSession + SendInput
+// and ship a real (no-op) ResizeSession; downstream Docker / k8s /
+// microVM adaptors translate ResizeSession to their resize primitive.
+//
 // Implementations MUST be safe for concurrent use.
 type OrchestrationPlaneAdaptor interface {
 	// Describe returns the capability manifest.
@@ -962,4 +970,26 @@ type OrchestrationPlaneAdaptor interface {
 	// closes the channel when ctx is cancelled or the underlying
 	// transport disconnects.
 	Subscribe(ctx context.Context, f SubscribeFilter) (<-chan OrchestrationEvent, error)
+
+	// SendInput delivers a keystroke / signal payload to a live session.
+	// Adaptors that cannot inject input return KindUnsupported (G-9).
+	// Mode is one of InputLiteral / InputKeys / InputSignal (G-4).
+	// sessionID is opaque (C-21) — the adaptor resolves it internally.
+	SendInput(ctx context.Context, sessionID string, in SessionInput) error
+
+	// ResizeSession communicates a new viewport geometry to the session
+	// (cols × rows). Native tmux is a no-op (tmux owns geometry);
+	// Docker / k8s / microVM adaptors translate to their resize
+	// primitive. Resize is intentionally its own method — never smuggled
+	// through SendInput (G-6) — so the future runtimes never need to
+	// re-cut the wire. sessionID is opaque (C-21).
+	ResizeSession(ctx context.Context, sessionID string, cols, rows int) error
+
+	// StreamSession returns a channel of SessionEvents for the given
+	// session. The adaptor closes the channel on ctx cancellation OR
+	// when the underlying transport detaches. Refcounted fan-out (G-7)
+	// is an adaptor-side implementation detail; callers see one channel
+	// per call, but adaptors MAY share underlying IO across subscribers.
+	// sessionID is opaque (C-21) — adaptors resolve it internally.
+	StreamSession(ctx context.Context, sessionID string) (<-chan SessionEvent, error)
 }

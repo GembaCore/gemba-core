@@ -222,3 +222,46 @@ func TestSyntheticEscalationLifecycle(t *testing.T) {
 func TestInterfaceConformance(t *testing.T) {
 	var _ core.OrchestrationPlaneAdaptor = (*OrchestrationPlane)(nil)
 }
+
+// TestSessionIO_DefaultUnsupported pins the Phase A invariant that the
+// mock plane embeds core.UnsupportedSessionIO and therefore returns
+// KindUnsupported from all three session-IO trio methods. Mock will
+// never grow real session-IO — it's a test fixture — so this
+// assertion is the long-term contract, not a Phase B placeholder.
+func TestSessionIO_DefaultUnsupported(t *testing.T) {
+	p := NewOrchestrationPlane(Config{ProjectDir: "/tmp/x"})
+	ctx := context.Background()
+	const sid = "sid-phase-a"
+
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{"SendInput", func() error {
+			return p.SendInput(ctx, sid, core.SessionInput{Mode: core.InputLiteral, Keys: "x"})
+		}},
+		{"ResizeSession", func() error {
+			return p.ResizeSession(ctx, sid, 80, 24)
+		}},
+		{"StreamSession", func() error {
+			ch, err := p.StreamSession(ctx, sid)
+			if ch != nil {
+				t.Errorf("StreamSession returned non-nil channel; want nil")
+			}
+			return err
+		}},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			err := c.call()
+			if err == nil {
+				t.Fatalf("%s: want error, got nil", c.name)
+			}
+			ae := core.AsAdaptorError(err)
+			if ae == nil || ae.Kind != core.KindUnsupported {
+				t.Errorf("%s: want AdaptorError{KindUnsupported}, got %T: %v", c.name, err, err)
+			}
+		})
+	}
+}

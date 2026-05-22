@@ -557,3 +557,48 @@ func TestPeekTargetFromSessionID(t *testing.T) {
 		}
 	}
 }
+
+// TestSessionIO_DefaultUnsupported pins the Phase A invariant that the
+// gt plane embeds core.UnsupportedSessionIO and therefore returns
+// KindUnsupported from all three session-IO trio methods. The gt
+// adaptor routes through `gt` CLI which has no native input-injection
+// primitive yet; this assertion documents that default and fails loudly
+// if a future change removes the mixin without providing a real
+// implementation.
+func TestSessionIO_DefaultUnsupported(t *testing.T) {
+	plane, _ := newPlaneWith(t, nil)
+	ctx := context.Background()
+	const sid = "sid-phase-a"
+
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{"SendInput", func() error {
+			return plane.SendInput(ctx, sid, core.SessionInput{Mode: core.InputLiteral, Keys: "x"})
+		}},
+		{"ResizeSession", func() error {
+			return plane.ResizeSession(ctx, sid, 80, 24)
+		}},
+		{"StreamSession", func() error {
+			ch, err := plane.StreamSession(ctx, sid)
+			if ch != nil {
+				t.Errorf("StreamSession returned non-nil channel; want nil")
+			}
+			return err
+		}},
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			err := c.call()
+			if err == nil {
+				t.Fatalf("%s: want error, got nil", c.name)
+			}
+			ae := core.AsAdaptorError(err)
+			if ae == nil || ae.Kind != core.KindUnsupported {
+				t.Errorf("%s: want AdaptorError{KindUnsupported}, got %T: %v", c.name, err, err)
+			}
+		})
+	}
+}

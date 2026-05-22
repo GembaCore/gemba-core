@@ -99,6 +99,10 @@ func (silentWorkPlane) Subscribe(ctx context.Context, _ core.WorkPlaneSubscribeF
 // silentOrchestration mirrors silentWorkPlane on the OrchestrationPlane
 // side: state mutations succeed, Subscribe never emits.
 type silentOrchestration struct {
+	// UnsupportedSessionIO is the Phase A default-noop mixin for the
+	// session-IO trio (SendInput / ResizeSession / StreamSession).
+	core.UnsupportedSessionIO
+
 	sessions map[string]*core.Session
 }
 

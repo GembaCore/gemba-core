@@ -1,0 +1,41 @@
+{
+  "source_path": "/Users/mikebengtson/Documents/GitHub/gemba/docs/design/containerized-sessions.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Containerized sessions — architecture + threat model",
+  "summary": "Architecture spec for containerized agent sessions (Docker today, k8s/microVM future) as a peer session model to tmux panes within gemba's OrchestrationPlaneAdaptor.",
+  "scope": [
+    "OrchestrationPlaneAdaptor",
+    "Backend interface (internal/adapter/native/backend)",
+    "Docker backend",
+    "SSH transport",
+    "Session lifecycle (Spawn/SendKeys/Capture/Kill/Pause/Resume/End)",
+    "Security envelope and threat model",
+    "Network policy",
+    "Secret injection",
+    "Workspace volume model",
+    "Orphan reaper",
+    "MCP compatibility",
+    "Preamble injection",
+    "agents.toml container schema",
+    "Pack-ins (native/containerized/gastown)",
+    "SPA session surface",
+    "Kubernetes future-proofing",
+    "Observability events",
+    "Release artifacts (ghcr.io images)"
+  ],
+  "cross_refs": [
+    "internal/adapter/native/backend.Backend",
+    "internal/adapter/native/backend/tmux.go",
+    "internal/adapter/native/backend/docker.go",
+    "internal/adapter/native/worktrees/",
+    "cmd/gemba-bridge",
+    ".gemba/agents.toml",
+    ".gemba/pack.json",
+    "deploy/containers/"
+  ],
+  "locked": false,
+  "precedence": 1,
+  "notes": "Ratified design doc (ratified_at 2026-04-24, decision gm-nsdl/D9) referenced by epic gm-root.15; manifest declared SPEC with precedence 1, honored as authoritative."
+}

@@ -336,7 +336,11 @@ func TestOrchestrationPlaneAdaptorIsImplementable(t *testing.T) {
 	var _ OrchestrationPlaneAdaptor = (*noopOrchestrator)(nil)
 }
 
-type noopOrchestrator struct{}
+type noopOrchestrator struct {
+	// UnsupportedSessionIO is the Phase A default-noop mixin for the
+	// session-IO trio (SendInput / ResizeSession / StreamSession).
+	UnsupportedSessionIO
+}
 
 func (noopOrchestrator) Describe() OrchestrationCapabilityManifest {
 	return OrchestrationCapabilityManifest{

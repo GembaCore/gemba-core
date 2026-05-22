@@ -257,6 +257,10 @@ func (f *FakeWorkPlane) EmitEvent(ev core.WorkPlaneEvent) {
 // custom struct. Same convention as FakeWorkPlane: nil hook → the
 // per-method default (typically nil/empty).
 type FakeOrchestrationPlane struct {
+	// UnsupportedSessionIO is the Phase A default-noop mixin for the
+	// session-IO trio (SendInput / ResizeSession / StreamSession).
+	core.UnsupportedSessionIO
+
 	Manifest core.OrchestrationCapabilityManifest
 
 	// AgentsFn — when set, ListAgents dispatches through it. Default

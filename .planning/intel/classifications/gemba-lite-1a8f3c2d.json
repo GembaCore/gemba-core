@@ -1,0 +1,34 @@
+{
+  "source_path": "/Users/mikebengtson/Documents/GitHub/gemba/docs/design/gemba-lite.md",
+  "type": "SPEC",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "gemba-lite — Native dispatch workspace",
+  "summary": "Technical spec for a tmux-backed native dispatch release with a desktop-style three-pane session workspace UX, defining adapter interfaces, HTTP endpoints, and execution slices.",
+  "scope": [
+    "session workspace UX",
+    "tmux backend",
+    "OrchestrationPlaneAdaptor interface",
+    "SSE streaming endpoint",
+    "session input endpoint",
+    "session status endpoint",
+    "xterm.js frontend",
+    "multi-runtime adapter matrix (native/docker/k8s/microVM)",
+    "WSID multi-tenant boundary",
+    "execution slicing plan"
+  ],
+  "cross_refs": [
+    "core/orchestration.go",
+    "internal/adapter/native/backend",
+    "web/src/views/sessions/",
+    "web/src/pages/SessionsPage.tsx",
+    "web/src/components/sessions/NewSessionDialog.tsx",
+    "/api/sessions",
+    "/api/sessions/{id}/stream",
+    "/api/sessions/{id}/input",
+    "/api/sessions/{id}/status"
+  ],
+  "locked": false,
+  "precedence": 0,
+  "notes": "Classified per MANIFEST_TYPE=SPEC; content strongly corroborates (Go interface definitions, endpoint contracts, adapter matrix table, NFR-style risk constraints)."
+}
