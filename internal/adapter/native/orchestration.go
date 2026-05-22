@@ -16,8 +16,10 @@ import (
 type OrchestrationPlane struct {
 	// UnsupportedSessionIO is the Phase A default-noop mixin for the
 	// session-IO trio (SendInput / ResizeSession / StreamSession).
-	// Phase B overrides StreamSession + SendInput and provides a real
-	// (no-op) ResizeSession for native tmux.
+	// Phase B (plan 01) overrides SendInput + ResizeSession on the
+	// outer struct (see session_io.go); StreamSession still inherits
+	// the mixin's KindUnsupported behavior until plan 03 wires it
+	// through bridge.Fanout.
 	core.UnsupportedSessionIO
 
 	cfg    Config
