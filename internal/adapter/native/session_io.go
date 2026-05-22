@@ -9,8 +9,9 @@ import (
 
 // This file carries the Phase B overrides for the
 // core.UnsupportedSessionIO mixin embedded on OrchestrationPlane.
-// SendInput + ResizeSession are now real; StreamSession stays
-// unsupported until plan 03 (bridge.Fanout → SessionEvent channel).
+// SendInput + ResizeSession + StreamSession are all real after
+// Plan B-03 (gm-v01.3.5); the mixin embed is retained for
+// forward-compatibility in case Phase C adds another verb.
 //
 // Method-resolution rule we rely on: Go prefers a method defined
 // directly on the outer struct over a method promoted from an
@@ -101,4 +102,45 @@ func (o *OrchestrationPlane) ResizeSession(ctx context.Context, sessionID string
 	// adaptors override this with real geometry pushes.
 	_ = ctx
 	return nil
+}
+
+// StreamSession returns a channel of SessionEvents backed by the
+// sessionIOHub (Plan B-02). The hub does the heavy lifting — single
+// pipe-pane per pane, refcounted subscribers, FIFO lifecycle — so this
+// override stays a thin guard.
+//
+// Errors:
+//
+//   - Backend nil  -> core.KindUnsupported (zero-config adaptor matches
+//     the other Backend-gated verbs).
+//   - hub nil      -> core.KindUnsupported with the backend name in the
+//     message. Reached when cfg.Backend does not satisfy
+//     backend.Streamable (e.g. AppleScript today). Also reached after
+//     Close() has nil-ed the hub — clean shutdown means no re-attach.
+//   - empty sessionID -> core.KindValidation.
+//   - unknown sessionID -> core.KindSessionNotFound (propagated from
+//     the resolver inside hub.Attach).
+//
+// Snapshot-first contract: every subscriber receives a snapshot event
+// (Kind="output") before any live-output events, even when the pipe is
+// already running for a prior subscriber. See iohub.go.
+//
+// Opacity guard: this method speaks sessionID; the pane id translation
+// lives inside the resolver closure injected at NewWithConfig time.
+// Transport-layer code (this file, the eventual HTTP /stream handler)
+// MUST NOT pattern-match on sessionID shape. See
+// core/session_id_opacity_test.go.
+func (o *OrchestrationPlane) StreamSession(ctx context.Context, sessionID string) (<-chan core.SessionEvent, error) {
+	if o.cfg.Backend == nil {
+		return nil, unsupported("StreamSession")
+	}
+	if o.hub == nil {
+		return nil, core.NewAdaptorError(core.KindUnsupported,
+			"native: backend %q does not implement Streamable", o.cfg.Backend.Name())
+	}
+	if sessionID == "" {
+		return nil, core.NewAdaptorError(core.KindValidation,
+			"native: StreamSession requires session id")
+	}
+	return o.hub.Attach(ctx, sessionID)
 }

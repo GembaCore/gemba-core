@@ -16,14 +16,19 @@ import (
 type OrchestrationPlane struct {
 	// UnsupportedSessionIO is the Phase A default-noop mixin for the
 	// session-IO trio (SendInput / ResizeSession / StreamSession).
-	// Phase B (plan 01) overrides SendInput + ResizeSession on the
-	// outer struct (see session_io.go); StreamSession still inherits
-	// the mixin's KindUnsupported behavior until plan 03 wires it
-	// through bridge.Fanout.
+	// Phase B overrides SendInput + ResizeSession + StreamSession on
+	// the outer struct (see session_io.go); the mixin embed is
+	// retained for forward-compatibility if Phase C adds verbs.
 	core.UnsupportedSessionIO
 
 	cfg    Config
 	fanout *bridge.Fanout
+	// hub multiplexes pipe-pane bytes to N subscribers per session.
+	// nil when cfg.Backend does not satisfy backend.Streamable (the
+	// zero-config plane, or backends like AppleScript that have no
+	// server-side fan-out). StreamSession returns KindUnsupported when
+	// hub is nil. Constructed in NewWithConfig, torn down in Close().
+	hub *sessionIOHub
 
 	mu sync.Mutex
 	// sessions by id — populated on StartSession, removed on EndSession.
@@ -81,6 +86,28 @@ func NewWithConfig(cfg Config) *OrchestrationPlane {
 		p.escalations.handleEvent(ev)
 		p.handleStateEvent(ev)
 	})
+	// Streamable hub (gm-v01.3.5). Only construct when the backend
+	// can actually fan-out pane bytes server-side — type-asserting
+	// here keeps the StreamSession override a thin guard. The
+	// resolver closure captures p by reference so it reads the
+	// session map at Attach time, not at construction time; it takes
+	// p.mu briefly per call rather than holding the lock across hub
+	// internals.
+	if cfg.Backend != nil {
+		if s, ok := cfg.Backend.(backend.Streamable); ok {
+			resolver := func(sessionID string) (string, bool) {
+				p.mu.Lock()
+				defer p.mu.Unlock()
+				sess, ok := p.sessions[sessionID]
+				if !ok || sess == nil {
+					return "", false
+				}
+				paneID, _ := sess.ProviderMetadata["pane_id"].(string)
+				return paneID, paneID != ""
+			}
+			p.hub = newSessionIOHub(s, resolver, 2000)
+		}
+	}
 	// Pool-lifecycle background loops (gm-s47n.11). Both are opt-in
 	// via Config — zero-config adaptors (no Backend) skip them so
 	// today's unit tests stay deterministic.
@@ -96,7 +123,19 @@ func NewWithConfig(cfg Config) *OrchestrationPlane {
 // Close stops the background goroutines (reaper, reconcile loop)
 // the constructor launched. Call from the server's shutdown path.
 // Safe to call multiple times; safe on a zero-config adaptor.
+//
+// Order matters: the streaming hub is torn down BEFORE the reaper +
+// reconcile loops are cancelled. The hub's subscribers may still be
+// reading bytes that the loops indirectly emit (status events on a
+// reconcile pass); draining them first means no goroutine is holding
+// a stale channel when the loops stop. After Close() the hub field
+// is nil-ed so subsequent StreamSession calls fast-fail KindUnsupported
+// (clean shutdown, no re-attach).
 func (o *OrchestrationPlane) Close() {
+	if o.hub != nil {
+		o.hub.Close()
+		o.hub = nil
+	}
 	if o.stopReaper != nil {
 		o.stopReaper()
 	}
