@@ -9,7 +9,7 @@
 // one agent type, one repository) the form pre-selects it so the
 // 80% case is a single click + a prompt.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listRepositories } from '@/api/repositories';
 import { useAgents } from '@/hooks/useAgents';
@@ -39,6 +39,7 @@ export interface NewSessionDialogProps {
 type Mode = 'bead' | 'manual';
 
 export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: NewSessionDialogProps) {
+  const wasOpenRef = useRef(false);
   const [mode, setMode] = useState<Mode>('bead');
 
   // Bead-mode local state.
@@ -72,19 +73,28 @@ export function NewSessionDialog({ open, onClose, prefilledBeadId, onStarted }: 
   const start = useStartSession();
   const resetStart = start.reset;
 
-  // Reset on every open. prefilledBeadId hydrates bead mode; otherwise
-  // operators get a blank slate.
+  // Only mutate local/query state when the dialog actually transitions
+  // open/closed. When mounted closed, repeating reset() on every render
+  // can self-trigger a render loop through React Query mutation state.
   useEffect(() => {
+    const wasOpen = wasOpenRef.current;
     if (!open) {
-      setBeadId('');
-      setSearch('');
-      setAgentType('');
-      setPersonaId('');
-      setRepositoryId('');
-      setPrompt('');
-      setMode('bead');
-      resetStart();
-    } else if (prefilledBeadId) {
+      if (wasOpen) {
+        setBeadId('');
+        setSearch('');
+        setAgentType('');
+        setPersonaId('');
+        setRepositoryId('');
+        setPrompt('');
+        setMode('bead');
+        resetStart();
+      }
+      wasOpenRef.current = false;
+      return;
+    }
+
+    wasOpenRef.current = true;
+    if (prefilledBeadId) {
       setBeadId(prefilledBeadId);
       setMode('bead');
     }
