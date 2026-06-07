@@ -6,6 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as reactQuery from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { NewSessionDialog } from '../NewSessionDialog';
 
@@ -228,5 +229,65 @@ describe('NewSessionDialog bead-mode happy path', () => {
       bead_id: 'gm-7',
       agent_type: 'claude',
     });
+  });
+});
+
+describe('NewSessionDialog lifecycle resets', () => {
+  it('does not reset the start mutation on an initial closed mount', () => {
+    const reset = vi.fn();
+    const useMutationSpy = vi.spyOn(reactQuery, 'useMutation');
+    useMutationSpy.mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync: vi.fn(),
+      reset,
+      status: 'idle',
+      isIdle: true,
+      isPending: false,
+      isSuccess: false,
+      isError: false,
+      isPaused: false,
+      data: undefined,
+      error: null,
+      failureCount: 0,
+      failureReason: null,
+      submittedAt: 0,
+      variables: undefined,
+      context: undefined,
+    } as never);
+
+    render(wrap(<NewSessionDialog open={false} onClose={() => {}} />));
+
+    expect(reset).not.toHaveBeenCalled();
+    useMutationSpy.mockRestore();
+  });
+
+  it('resets exactly once when the dialog closes after being opened', () => {
+    const reset = vi.fn();
+    const useMutationSpy = vi.spyOn(reactQuery, 'useMutation');
+    useMutationSpy.mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync: vi.fn(),
+      reset,
+      status: 'idle',
+      isIdle: true,
+      isPending: false,
+      isSuccess: false,
+      isError: false,
+      isPaused: false,
+      data: undefined,
+      error: null,
+      failureCount: 0,
+      failureReason: null,
+      submittedAt: 0,
+      variables: undefined,
+      context: undefined,
+    } as never);
+
+    const { rerender } = render(wrap(<NewSessionDialog open onClose={() => {}} />));
+    rerender(wrap(<NewSessionDialog open={false} onClose={() => {}} />));
+    rerender(wrap(<NewSessionDialog open={false} onClose={() => {}} />));
+
+    expect(reset).toHaveBeenCalledTimes(1);
+    useMutationSpy.mockRestore();
   });
 });
