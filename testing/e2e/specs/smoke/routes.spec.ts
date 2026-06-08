@@ -16,15 +16,11 @@ import { AppShell } from '../../pages/AppShell';
 // through to NotFoundPage inside AppShell — that's still a valid
 // smoke target (AppShell renders, no console error).
 //
-// Excluded:
-//   /sessions — React "Maximum update depth exceeded" in
-//               NewSessionDialog (gm-dt9y). Re-add here once
-//               that bead closes.
 const ROUTES = [
   '/board',
   '/backlog',
   '/grid',
-  // '/sessions', // re-enable after gm-dt9y
+  '/sessions',
   '/agents',
   '/graph',
   '/capabilities',

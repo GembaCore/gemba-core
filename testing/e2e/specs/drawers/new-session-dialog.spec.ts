@@ -2,9 +2,9 @@
 //
 // NewSessionDialog. Opens via the Dispatch button on EpicDetail or
 // WorkItemDrawer (gm-native.21) or the standalone /sessions header.
-// The /sessions route currently surfaces an unrelated render-loop
-// (gm-dt9y) — until that's fixed, drive the dialog through the
-// EpicDetail's Dispatch button instead.
+// These route specs stay focused on the drawer entrypoint; the
+// standalone /sessions path has its own coverage under specs/sessions
+// and smoke/routes.
 //
 // Submission verification (POST /api/sessions + tmux pane + worktree
 // materialised) is tagged @deep — gm-5v8v.2.
