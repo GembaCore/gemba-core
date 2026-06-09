@@ -4,12 +4,11 @@ name: E2E
 # testing/e2e/playwright.config.ts (see testing/e2e/README.md):
 #
 #   pr-fast — every fake project + smoke-deep        (~2-3 min)
-#   merge   — every fake project + the deep tiers    (~8-10 min)
-#             that have stable infra (smoke-deep
-#             plus route-deep / realtime-deep as
-#             those activate; chrome-deep retired in
-#             gm-5v8v.18 — chrome specs are backend-
-#             agnostic and ride chrome-fake only)
+#   merge   — every fake project only              (~5-7 min)
+#             deep-mode projects stay gated behind
+#             GEMBA_E2E_RUN_DEEP / nightly until
+#             the gm-h4n bd-isolation footgun is
+#             fully retired in upstream bd
 #   nightly — the full deep matrix incl. integration (~25 min)
 #
 # workflow_dispatch lets an operator re-run a single project on demand.
@@ -168,7 +167,7 @@ jobs:
           if-no-files-found: ignore
 
   merge:
-    name: merge (fake + deep tiers)
+    name: merge (fake tiers)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -223,29 +222,12 @@ jobs:
         run: pnpm --filter gemba-e2e exec playwright install --with-deps chromium
 
       - name: Run merge lane
-        env:
-          GEMBA_E2E_RUN_DEEP: '1'
         run: |
-          # Pending deep projects (route-deep, realtime-deep) have
-          # testIgnore=['**/*'] today, so naming them is a no-op
-          # until the matching child bead activates them. Listing
-          # them now lets the lane "just work" without a workflow
-          # edit at activation time.
-          #
-          # chrome-deep was retired (gm-5v8v.18 — chrome specs are
-          # backend-agnostic, the chrome-fake project covers them);
-          # do NOT add it back here without a corresponding entry in
-          # testing/e2e/playwright.config.ts.
           pnpm --filter gemba-e2e exec playwright test \
             --project=smoke-fake \
             --project=chrome-fake \
             --project=route-fake \
-            --project=smoke-deep \
-            --project=route-deep \
             --workers=2
-          pnpm --filter gemba-e2e exec playwright test \
-            --project=realtime-deep \
-            --workers=1
 
       - name: Upload Playwright report
         if: always()
