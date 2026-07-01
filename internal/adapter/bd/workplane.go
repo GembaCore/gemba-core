@@ -106,11 +106,7 @@ func NewWorkPlane(cfg Config) (*WorkPlane, error) {
 	}
 	beadsDir := cfg.BeadsDir
 	runner := func(ctx context.Context, args ...string) ([]byte, error) {
-		cmd := exec.CommandContext(ctx, path, args...)
-		if beadsDir != "" {
-			cmd.Dir = beadsDir
-		}
-		return cmd.Output()
+		return runBdCommand(ctx, path, beadsDir, args...)
 	}
 	format := cfg.DescriptionFormat
 	if format == "" {

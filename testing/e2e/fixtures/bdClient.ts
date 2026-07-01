@@ -13,6 +13,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileP = promisify(execFile);
+const LOCK_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000, 4_000, 8_000];
 
 export type BdCreateOptions = {
   title: string;
@@ -89,10 +90,42 @@ export class BdClient {
   }
 
   private async run(args: string[]) {
-    return execFileP(this.bin, args, {
-      cwd: this.cwd,
-      env: this.env,
-      maxBuffer: 16 * 1024 * 1024,
-    });
+    let lastErr: unknown;
+    for (let attempt = 0; attempt <= LOCK_RETRY_DELAYS_MS.length; attempt += 1) {
+      try {
+        return await execFileP(this.bin, args, {
+          cwd: this.cwd,
+          env: this.env,
+          maxBuffer: 16 * 1024 * 1024,
+        });
+      } catch (err) {
+        lastErr = err;
+        if (!isEmbeddedDoltLockError(err) || attempt === LOCK_RETRY_DELAYS_MS.length) {
+          throw err;
+        }
+        const retryDelayMs = LOCK_RETRY_DELAYS_MS[attempt];
+        if (retryDelayMs === undefined) throw err;
+        await delay(retryDelayMs);
+      }
+    }
+    throw lastErr;
   }
+}
+
+function isEmbeddedDoltLockError(err: unknown): boolean {
+  const combined = `${errorField(err, 'message')}\n${errorField(err, 'stderr')}`;
+  return (
+    combined.includes('another process holds the exclusive lock') ||
+    combined.includes('embedded backend supports only one writer at a time')
+  );
+}
+
+function errorField(err: unknown, field: 'message' | 'stderr'): string {
+  if (!err || typeof err !== 'object' || !(field in err)) return '';
+  const value = (err as Record<string, unknown>)[field];
+  return typeof value === 'string' ? value : '';
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

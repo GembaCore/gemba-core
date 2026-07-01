@@ -108,23 +108,31 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
     const shortID = beadID.split('/').pop() ?? beadID;
 
     // 2. Sanity: the seeded bead surfaces in /api/work-items.
-    const items = await page
-      .request.get(`${realServer.baseURL}/api/work-items?limit=200`)
-      .then((r) => r.json() as Promise<{ items: { id: string; title?: string }[] }>);
-    const seeded = items.items.find(
-      (i) =>
-        i.id === beadID ||
-        i.id.endsWith(`/${beadID}`) ||
-        i.id.split('/').pop() === shortID ||
-        i.title === targetTitle,
-    );
+    let seeded: { id: string; title?: string } | undefined;
+    await expect
+      .poll(
+        async () => {
+          const response = await page.request.get(`${realServer.baseURL}/api/work-items?limit=200`);
+          if (!response.ok()) return false;
+          const payload = (await response.json()) as { items?: { id: string; title?: string }[] };
+          seeded = payload.items?.find(
+            (i) =>
+              i.id === beadID ||
+              i.id.endsWith(`/${beadID}`) ||
+              i.id.split('/').pop() === shortID ||
+              i.title === targetTitle,
+          );
+          return Boolean(seeded);
+        },
+        { timeout: 45_000 },
+      )
+      .toBe(true);
     expect(seeded, 'seeded bead in /api/work-items').toBeTruthy();
     const apiBeadID = seeded!.id;
 
     // 3. Open the board.
     const network = recordSpawnNetwork(page);
     await page.goto(`${realServer.baseURL}/board?layout=epic`);
-    await page.waitForSelector('[data-testid^="board-epic-cell-"]', { timeout: 20_000 });
 
     // The default swimlane mode hides orphan epics under a separate
     // lane below the fold; "none" puts every epic in a single flat
@@ -147,7 +155,7 @@ test.describe('@deep dispatch chain — drag → PATCH → POST /sessions → tm
       .locator('[data-epic-card="true"]')
       .filter({ hasText: shortID })
       .first();
-    await expect(card, 'epic card on board').toBeVisible({ timeout: 10_000 });
+    await expect(card, 'epic card on board').toBeVisible({ timeout: 45_000 });
 
     // 5. Pick the In-Progress cell on the same swimlane row so the
     //    drag stays short and predictable.

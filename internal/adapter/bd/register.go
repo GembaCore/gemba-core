@@ -120,11 +120,8 @@ func probe() registry.DetectResult {
 	// almost no data. A daemon outage surfaces here as a non-zero exit
 	// within a few hundred ms; a hung server is killed by the context
 	// deadline.
-	cmd := exec.CommandContext(ctx, "bd", "list", "--limit", "1", "--json")
-	if dir, err := effectiveProbeDir(); err == nil {
-		cmd.Dir = dir
-	}
-	out, err := cmd.CombinedOutput()
+	dir, _ := effectiveProbeDir()
+	out, err := runBdCommand(ctx, "bd", dir, "list", "--limit", "1", "--json")
 	if err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return registry.DetectResult{

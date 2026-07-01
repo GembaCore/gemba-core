@@ -325,6 +325,12 @@ export async function spinRealServer(opts: SpinOptions): Promise<RealServer> {
     ...(opts.serveEnv ?? {}),
     PWD: baseDir,
     BEADS_DIR: isolatedEnv.BEADS_DIR,
+    // Hosted CI can spend multiple seconds cold-starting embedded Dolt
+    // after bd init. Keep the production probe aggressive, but give the
+    // isolated e2e workspace the same budget as the acceptance harness so
+    // /api/adaptors does not transiently mark Beads degraded while the
+    // board is loading.
+    GEMBA_BD_PROBE_TIMEOUT: opts.serveEnv?.GEMBA_BD_PROBE_TIMEOUT ?? '10s',
   };
 
   const child = spawn(gembaBin, args, {
